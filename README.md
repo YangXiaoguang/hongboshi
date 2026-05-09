@@ -1,6 +1,6 @@
 # 红博士心理小讲堂
 
-心理咨询与成长陪伴项目，包含 PC 课程中心与小程序端预览两套体验。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话和课程权益权限守卫，咨询预约、测评等能力仍在逐步工程化。
+心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览与用户学习工作台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫和“我的课程”入口，咨询预约、测评等能力仍在逐步工程化。
 
 ## 技术栈
 
@@ -94,6 +94,7 @@ docs/
 - 课程 seed 来自 `shared/data/mockCourses.ts`，开发和生产 API 共用同一份数据
 - 共享业务类型位于 `shared/domain`
 - PC 端主页面位于 `client/src/pages/Home.tsx`
+- 用户学习工作台位于 `client/src/pages/MyCourses.tsx`，通过 `/me/courses` 聚合课程权益、学习进度、收藏、会员和订单
 - 小程序端预览位于 `client/src/components/MobileView.tsx`
 - 登录状态由 `/api/auth/session`、`/api/auth/login/phone`、`/api/auth/login/wechat` 和 `AuthContext` 共同管理
 - 课程目录、课程详情和课程权益由 `/api/courses`、`/api/course-access` 提供
@@ -106,6 +107,7 @@ docs/
 
 1. 将课程权益 JSON Store 替换为 PostgreSQL/Prisma 或 Drizzle。
 2. 接入真实短信/微信登录服务，并将当前内存 session/协议记录迁移到数据库。
-3. 建立心理测评、推荐路径和咨询预约状态机。
-4. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
-5. 引入 ESLint 或统一的代码质量检查规则。
+3. 将 `/me/courses` 扩展为完整个人中心，接入咨询预约、测评报告和成长档案。
+4. 建立心理测评、推荐路径和咨询预约状态机。
+5. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
+6. 引入 ESLint 或统一的代码质量检查规则。

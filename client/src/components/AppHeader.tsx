@@ -11,17 +11,19 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
-  { label: "首页", href: "/", active: true },
-  { label: "咨询服务", href: "/consulting", active: false },
-  { label: "心理课程", href: "/courses", active: false },
-  { label: "成长测评", href: "/assessment", active: false },
-  { label: "关于我们", href: "/about", active: false },
+  { label: "首页", href: "/" },
+  { label: "咨询服务", href: "/consulting" },
+  { label: "心理课程", href: "/" },
+  { label: "成长测评", href: "/assessment" },
+  { label: "关于我们", href: "/about" },
 ];
 
 export default function AppHeader() {
+  const [location, navigate] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -29,7 +31,10 @@ export default function AppHeader() {
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(e.target as Node)
+      ) {
         setUserMenuOpen(false);
       }
     };
@@ -39,10 +44,19 @@ export default function AppHeader() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [userMenuOpen]);
 
-  const handleNavClick = (label: string) => {
-    if (label !== "首页") {
-      toast("功能开发中", { description: `「${label}」页面即将上线` });
+  const isNavActive = (label: string) => {
+    if (label === "首页") return location === "/";
+    if (label === "心理课程") return location.startsWith("/courses");
+    return false;
+  };
+
+  const handleNavClick = (item: (typeof navItems)[number]) => {
+    if (item.href === "/") {
+      navigate("/");
+      return;
     }
+
+    toast("功能开发中", { description: `「${item.label}」页面即将上线` });
   };
 
   const handleLogout = () => {
@@ -55,12 +69,12 @@ export default function AppHeader() {
     {
       icon: BookOpen,
       label: "我的课程",
-      onClick: () => toast("我的课程", { description: "功能即将上线" }),
+      onClick: () => navigate("/me/courses"),
     },
     {
       icon: Heart,
       label: "我的收藏",
-      onClick: () => toast("我的收藏", { description: "功能即将上线" }),
+      onClick: () => navigate("/me/courses"),
     },
     {
       icon: Settings,
@@ -71,15 +85,14 @@ export default function AppHeader() {
 
   const getAvatarText = () => {
     if (!user) return "";
-    if (user.loginMethod === "wechat") return user.nickname.charAt(0);
-    return user.nickname.slice(-2, -1) || "用";
+    return user.nickname.trim().charAt(0) || "用";
   };
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#E8DED0]/80 bg-[#F9F5EE]/86 backdrop-blur-xl">
       <div className="mx-auto flex h-[62px] max-w-[1280px] items-center justify-between px-4 lg:px-8">
         <button
-          onClick={() => handleNavClick("首页")}
+          onClick={() => navigate("/")}
           className="flex items-center gap-3"
           aria-label="红博士心理小讲堂首页"
         >
@@ -97,12 +110,12 @@ export default function AppHeader() {
         </button>
 
         <nav className="hidden items-center gap-1 md:flex">
-          {navItems.map((item) => (
+          {navItems.map(item => (
             <button
               key={item.label}
-              onClick={() => handleNavClick(item.label)}
+              onClick={() => handleNavClick(item)}
               className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                item.active
+                isNavActive(item.label)
                   ? "bg-[#E6EDDF] text-[#243B35]"
                   : "text-[#68736D] hover:bg-white/70 hover:text-[#243B35]"
               }`}
@@ -154,12 +167,14 @@ export default function AppHeader() {
                       {user.nickname}
                     </p>
                     <p className="mt-1 text-xs text-[#8A918B]">
-                      {user.loginMethod === "wechat" ? "微信登录" : "手机号登录"}
+                      {user.loginMethod === "wechat"
+                        ? "微信登录"
+                        : "手机号登录"}
                     </p>
                   </div>
 
                   <div className="py-1">
-                    {userMenuItems.map((item) => (
+                    {userMenuItems.map(item => (
                       <button
                         key={item.label}
                         onClick={() => {
@@ -201,7 +216,11 @@ export default function AppHeader() {
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="打开导航"
           >
-            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {mobileMenuOpen ? (
+              <X className="h-5 w-5" />
+            ) : (
+              <Menu className="h-5 w-5" />
+            )}
           </button>
         </div>
       </div>
@@ -209,15 +228,15 @@ export default function AppHeader() {
       {mobileMenuOpen && (
         <div className="border-t border-[#E8DED0] bg-[#FFFCF7] md:hidden">
           <nav className="mx-auto flex max-w-[1280px] flex-col gap-1 px-4 py-3">
-            {navItems.map((item) => (
+            {navItems.map(item => (
               <button
                 key={item.label}
                 onClick={() => {
-                  handleNavClick(item.label);
+                  handleNavClick(item);
                   setMobileMenuOpen(false);
                 }}
                 className={`rounded-xl px-4 py-3 text-left text-sm font-medium transition ${
-                  item.active
+                  isNavActive(item.label)
                     ? "bg-[#E6EDDF] text-[#243B35]"
                     : "text-[#68736D] hover:bg-[#F4EFE6]"
                 }`}
