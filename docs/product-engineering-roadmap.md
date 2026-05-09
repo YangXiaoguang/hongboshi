@@ -79,10 +79,12 @@ flowchart LR
 ### M3: 用户系统与会员体系
 
 - 建立 `/api/auth/session`、手机号登录和微信登录的会话 API，前端通过 auth adapter 同步服务端会话。
-- 接入真实短信/微信服务、资料页、协议同意记录。
+- 登录时生成 terms/privacy 协议记录，并随 session 返回。
+- 接入真实短信/微信服务、资料页、协议同意持久化。
 - 建立 RBAC：visitor、member、counselor、operator、admin。
 - 补充会员权益、订单关联和内容访问控制。
-- 将当前开发期登录实现替换为真实会话鉴权中间件，并逐步移除 `x-hongboshi-user-id` 兜底。
+- 课程购买和会员开通接入 `member` 权限守卫；后续扩展 operator/admin 后台权限。
+- 将当前开发期登录实现替换为真实会话鉴权中间件，并逐步移除读取场景里的 `x-hongboshi-user-id` 兜底。
 
 验收标准：
 

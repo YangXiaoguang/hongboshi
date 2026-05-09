@@ -1,4 +1,5 @@
 import {
+  type ApiError,
   ApiResponseSchema,
   CourseAccessStateSchema,
   COURSE_ACCESS_USER_ID_HEADER,
@@ -10,6 +11,17 @@ const CourseAccessResponseSchema = ApiResponseSchema(CourseAccessStateSchema);
 
 const API_BASE = "/api/course-access";
 
+export class CourseAccessRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code?: ApiError["code"],
+    readonly status?: number
+  ) {
+    super(message);
+    this.name = "CourseAccessRequestError";
+  }
+}
+
 async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
@@ -20,8 +32,18 @@ async function readJson(response: Response): Promise<unknown> {
 
 export function parseCourseAccessResponse(payload: unknown): CourseAccessState {
   const parsed = CourseAccessResponseSchema.parse(payload);
-  if (!parsed.ok) throw new Error(parsed.error.message);
+  if (!parsed.ok) {
+    throw new CourseAccessRequestError(parsed.error.message, parsed.error.code);
+  }
   return parsed.data;
+}
+
+function withStatus(err: unknown, status: number): Error {
+  if (err instanceof CourseAccessRequestError) {
+    return new CourseAccessRequestError(err.message, err.code, status);
+  }
+
+  return err instanceof Error ? err : new Error("课程权益服务暂时不可用");
 }
 
 async function requestAccessState(
@@ -37,11 +59,21 @@ async function requestAccessState(
       ...init?.headers,
     },
     cache: "no-store",
+    credentials: "same-origin",
     ...init,
   });
   const payload = await readJson(response);
-  if (!response.ok) throw new Error("课程权益服务暂时不可用");
-  return parseCourseAccessResponse(payload);
+  try {
+    const accessState = parseCourseAccessResponse(payload);
+    if (!response.ok) throw new CourseAccessRequestError(
+      "课程权益服务暂时不可用",
+      undefined,
+      response.status
+    );
+    return accessState;
+  } catch (err) {
+    throw withStatus(err, response.status);
+  }
 }
 
 export const httpCourseAccessRepository = {

@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
 import { z } from "zod";
+import { authorizeRequest } from "../auth/authorization";
 import { resolveRequestUserId } from "../auth/currentUser";
 import { courses as seedCourses } from "../../../shared/data/mockCourses";
 import {
@@ -43,7 +44,10 @@ function statePayload(state: CourseAccessState) {
   });
 }
 
-function errorPayload(code: "BAD_REQUEST" | "NOT_FOUND", message: string) {
+function errorPayload(
+  code: "BAD_REQUEST" | "NOT_FOUND" | "UNAUTHORIZED" | "FORBIDDEN",
+  message: string
+) {
   return {
     ok: false,
     error: {
@@ -137,6 +141,12 @@ export function registerCourseAccessApi(app: Express) {
   });
 
   app.post("/api/course-access/purchases", (req: Request, res: Response) => {
+    const auth = authorizeRequest(req, "course:purchase");
+    if (!auth.ok) {
+      sendJson(res, auth.status, auth.body);
+      return;
+    }
+
     const parsed = PurchaseCourseRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       sendJson(res, 400, errorPayload("BAD_REQUEST", "课程购买参数不合法"));
@@ -145,13 +155,19 @@ export function registerCourseAccessApi(app: Express) {
 
     const payload = purchaseCoursePayload(
       parsed.data.courseId,
-      resolveRequestUserId(req)
+      auth.session.user.id
     );
     sendJson(res, payload.status, payload.body);
   });
 
   app.post("/api/course-access/membership", (req: Request, res: Response) => {
-    const payload = activateMembershipPayload(resolveRequestUserId(req));
+    const auth = authorizeRequest(req, "membership:activate");
+    if (!auth.ok) {
+      sendJson(res, auth.status, auth.body);
+      return;
+    }
+
+    const payload = activateMembershipPayload(auth.session.user.id);
     sendJson(res, payload.status, payload.body);
   });
 }
@@ -171,12 +187,24 @@ export function handleCourseAccessApiRequest(
   }
 
   if (req.method === "POST" && url.pathname === "/api/course-access/membership") {
-    const payload = activateMembershipPayload(userId);
+    const auth = authorizeRequest(req, "membership:activate");
+    if (!auth.ok) {
+      sendJson(res, auth.status, auth.body);
+      return true;
+    }
+
+    const payload = activateMembershipPayload(auth.session.user.id);
     sendJson(res, payload.status, payload.body);
     return true;
   }
 
   if (req.method === "POST" && url.pathname === "/api/course-access/purchases") {
+    const auth = authorizeRequest(req, "course:purchase");
+    if (!auth.ok) {
+      sendJson(res, auth.status, auth.body);
+      return true;
+    }
+
     void readRequestBody(req).then((body) => {
       const parsed = PurchaseCourseRequestSchema.safeParse(body);
       if (!parsed.success) {
@@ -184,7 +212,7 @@ export function handleCourseAccessApiRequest(
         return;
       }
 
-      const payload = purchaseCoursePayload(parsed.data.courseId, userId);
+      const payload = purchaseCoursePayload(parsed.data.courseId, auth.session.user.id);
       sendJson(res, payload.status, payload.body);
     });
     return true;

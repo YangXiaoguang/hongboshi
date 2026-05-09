@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Course } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
-import { httpCourseAccessRepository } from "../api/httpCourseAccessRepository";
+import {
+  CourseAccessRequestError,
+  httpCourseAccessRepository,
+} from "../api/httpCourseAccessRepository";
 import { localCourseAccessRepository } from "../api/localCourseAccessRepository";
 import {
   activateCourseMembership,
@@ -13,7 +16,7 @@ import {
 } from "../model/courseAccess";
 
 export function useCourseAccess() {
-  const { user } = useAuth();
+  const { user, openLoginModal } = useAuth();
   const accessUserId = user?.id ?? LOCAL_COURSE_ACCESS_USER_ID;
   const [state, setState] = useState(() =>
     localCourseAccessRepository.load(accessUserId)
@@ -59,8 +62,21 @@ export function useCourseAccess() {
     [state.ownedCourseIds]
   );
 
+  const requireLoggedInAccess = useCallback(() => {
+    setAccessError("请先登录后继续操作");
+    openLoginModal();
+    return "auth_required" as const;
+  }, [openLoginModal]);
+
+  const shouldUseLocalFallback = (err: unknown) => {
+    if (!(err instanceof CourseAccessRequestError)) return true;
+    return !["UNAUTHORIZED", "FORBIDDEN"].includes(err.code ?? "");
+  };
+
   const purchaseCourse = useCallback(
     async (course: Course) => {
+      if (!user) return requireLoggedInAccess();
+
       setIsSyncing(true);
       try {
         const remoteState = await httpCourseAccessRepository.purchaseCourse(
@@ -71,6 +87,12 @@ export function useCourseAccess() {
         setAccessError(undefined);
         return "api" as const;
       } catch (err) {
+        if (!shouldUseLocalFallback(err)) {
+          setAccessError(err instanceof Error ? err.message : "请先登录后继续操作");
+          openLoginModal();
+          return "auth_required" as const;
+        }
+
         setState((prev) => persist(grantPurchasedCourseAccess(prev, course)));
         setAccessError(err instanceof Error ? err.message : "课程权益服务暂时不可用");
         return "fallback" as const;
@@ -78,10 +100,12 @@ export function useCourseAccess() {
         setIsSyncing(false);
       }
     },
-    [accessUserId, persist]
+    [accessUserId, openLoginModal, persist, requireLoggedInAccess, user]
   );
 
   const activateMembership = useCallback(() => {
+    if (!user) return Promise.resolve(requireLoggedInAccess());
+
     setIsSyncing(true);
     return httpCourseAccessRepository
       .activateMembership(accessUserId)
@@ -91,6 +115,12 @@ export function useCourseAccess() {
         return "api" as const;
       })
       .catch((err) => {
+        if (!shouldUseLocalFallback(err)) {
+          setAccessError(err instanceof Error ? err.message : "请先登录后继续操作");
+          openLoginModal();
+          return "auth_required" as const;
+        }
+
         setState((prev) => persist(activateCourseMembership(prev)));
         setAccessError(err instanceof Error ? err.message : "课程权益服务暂时不可用");
         return "fallback" as const;
@@ -98,7 +128,7 @@ export function useCourseAccess() {
       .finally(() => {
         setIsSyncing(false);
       });
-  }, [accessUserId, persist]);
+  }, [accessUserId, openLoginModal, persist, requireLoggedInAccess, user]);
 
   const getCourseAccess = useCallback(
     (course: Course) => resolveCourseAccess(state, course),

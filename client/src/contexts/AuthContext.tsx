@@ -12,7 +12,12 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import type { LoginProvider, LoginSession, UserRole } from "@shared/domain";
+import {
+  CURRENT_USER_CONSENT_VERSION,
+  type LoginProvider,
+  type LoginSession,
+  type UserRole,
+} from "@shared/domain";
 import { httpAuthRepository } from "@/features/auth/api/httpAuthRepository";
 
 export interface UserInfo {
@@ -113,6 +118,15 @@ function createFallbackSession(provider: LoginProvider, phone?: string): LoginSe
       createdAt: now,
       updatedAt: now,
     },
+    consents: (["terms", "privacy"] as const).map((type) => ({
+      userId:
+        provider === "phone"
+          ? `u_phone_${phone?.slice(-4) ?? "demo"}`
+          : "u_wechat_demo",
+      type,
+      version: CURRENT_USER_CONSENT_VERSION,
+      acceptedAt: now,
+    })),
   };
 }
 

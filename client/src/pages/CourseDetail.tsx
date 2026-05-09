@@ -152,6 +152,13 @@ export default function CourseDetail() {
 
   const handlePurchaseCourse = () => {
     void purchaseCourse(course).then((syncMode) => {
+      if (syncMode === "auth_required") {
+        toast("请先登录", {
+          description: "登录后即可购买课程，并同步学习权益。",
+        });
+        return;
+      }
+
       toast("课程已解锁", {
         description:
           syncMode === "api"
@@ -163,6 +170,13 @@ export default function CourseDetail() {
 
   const handleActivateMembership = () => {
     void activateMembership().then((syncMode) => {
+      if (syncMode === "auth_required") {
+        toast("请先登录", {
+          description: "登录后即可开通会员，并同步 VIP 课程权益。",
+        });
+        return;
+      }
+
       toast("会员已开通", {
         description:
           syncMode === "api"

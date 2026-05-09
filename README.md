@@ -1,6 +1,6 @@
 # 红博士心理小讲堂
 
-心理咨询与成长陪伴项目，包含 PC 课程中心与小程序端预览两套体验。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化和基础登录会话，咨询预约、测评等能力仍在逐步工程化。
+心理咨询与成长陪伴项目，包含 PC 课程中心与小程序端预览两套体验。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话和课程权益权限守卫，咨询预约、测评等能力仍在逐步工程化。
 
 ## 技术栈
 
@@ -98,13 +98,14 @@ docs/
 - 登录状态由 `/api/auth/session`、`/api/auth/login/phone`、`/api/auth/login/wechat` 和 `AuthContext` 共同管理
 - 课程目录、课程详情和课程权益由 `/api/courses`、`/api/course-access` 提供
 - 课程权益开发期默认写入 `.hongboshi-data/course-access.json`
-- 课程权益优先使用服务端 session cookie 识别用户，`x-hongboshi-user-id` 仅作为开发期兜底
+- 课程权益读取优先使用服务端 session cookie 识别用户，`x-hongboshi-user-id` 仅作为开发期读取兜底
+- 课程购买和会员开通必须具备 `member` 权限，登录时会记录 terms/privacy 协议版本
 - 生产构建后由 `server/index.ts` 托管 `dist/public`
 
 ## 后续二开建议
 
 1. 将课程权益 JSON Store 替换为 PostgreSQL/Prisma 或 Drizzle。
-2. 接入真实短信/微信登录服务、协议同意记录和 RBAC 权限守卫。
+2. 接入真实短信/微信登录服务，并将当前内存 session/协议记录迁移到数据库。
 3. 建立心理测评、推荐路径和咨询预约状态机。
 4. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
 5. 引入 ESLint 或统一的代码质量检查规则。

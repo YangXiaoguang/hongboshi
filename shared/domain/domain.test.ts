@@ -4,7 +4,9 @@ import {
   CounselingAppointmentSchema,
   CourseListQuerySchema,
   CourseSchema,
+  LoginSessionSchema,
   UserProfileSchema,
+  userCan,
 } from "./index";
 import { courses } from "../../client/src/lib/mockData";
 
@@ -79,5 +81,37 @@ describe("domain contracts", () => {
         updatedAt: "2026-05-09T10:00:00+08:00",
       }).success
     ).toBe(true);
+  });
+
+  it("maps user roles to stable permissions", () => {
+    expect(userCan({ roles: ["visitor"] }, "course_access:read")).toBe(true);
+    expect(userCan({ roles: ["visitor"] }, "course:purchase")).toBe(false);
+    expect(userCan({ roles: ["member"] }, "course:purchase")).toBe(true);
+    expect(userCan({ roles: ["admin"] }, "admin:manage")).toBe(true);
+  });
+
+  it("captures consent records in login sessions", () => {
+    const session = LoginSessionSchema.parse({
+      provider: "phone",
+      accessTokenExpiresAt: "2026-05-17T10:00:00+08:00",
+      user: {
+        id: "user_1",
+        displayName: "测试用户",
+        roles: ["member"],
+        isMinor: false,
+        createdAt: "2026-05-10T10:00:00+08:00",
+        updatedAt: "2026-05-10T10:00:00+08:00",
+      },
+      consents: [
+        {
+          userId: "user_1",
+          type: "terms",
+          version: "2026.05",
+          acceptedAt: "2026-05-10T10:00:00+08:00",
+        },
+      ],
+    });
+
+    expect(session.consents[0].type).toBe("terms");
   });
 });

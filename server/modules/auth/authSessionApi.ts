@@ -3,11 +3,14 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { randomUUID } from "crypto";
 import {
   ApiResponseSchema,
+  CURRENT_USER_CONSENT_VERSION,
   LoginSessionSchema,
   PhoneLoginRequestSchema,
+  UserConsentSchema,
   WechatLoginRequestSchema,
   type LoginProvider,
   type LoginSession,
+  type UserConsent,
   type UserProfile,
 } from "../../../shared/domain";
 
@@ -17,6 +20,7 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const AuthSessionResponseSchema = ApiResponseSchema(LoginSessionSchema.nullable());
 
 const sessionStore = new Map<string, LoginSession>();
+const consentStore = new Map<string, UserConsent[]>();
 
 function sendJson(res: Response | ServerResponse, status: number, payload: unknown) {
   res.statusCode = status;
@@ -73,16 +77,39 @@ function createUserProfile(
   };
 }
 
-function createSession(provider: LoginProvider, phone?: string) {
+function createConsentRecords(
+  userId: string,
+  acceptedAt: string,
+  version = CURRENT_USER_CONSENT_VERSION
+): UserConsent[] {
+  return ["terms", "privacy"].map((type) =>
+    UserConsentSchema.parse({
+      userId,
+      type,
+      version,
+      acceptedAt,
+    })
+  );
+}
+
+function createSession(
+  provider: LoginProvider,
+  phone?: string,
+  consentVersion = CURRENT_USER_CONSENT_VERSION
+) {
   const now = new Date().toISOString();
   const accessTokenExpiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+  const user = createUserProfile(provider, now, phone);
+  const consents = createConsentRecords(user.id, now, consentVersion);
   const session = LoginSessionSchema.parse({
-    user: createUserProfile(provider, now, phone),
+    user,
     provider,
     accessTokenExpiresAt,
+    consents,
   });
   const token = randomUUID();
   sessionStore.set(token, session);
+  consentStore.set(user.id, consents);
 
   return { token, session };
 }
@@ -148,8 +175,17 @@ export function getLoginSessionFromRequest(req: Request | IncomingMessage) {
   return getLoginSession(readAuthSessionToken(req));
 }
 
+export function destroyLoginSession(token: string | undefined) {
+  if (token) sessionStore.delete(token);
+}
+
 export function resetAuthSessionStore() {
   sessionStore.clear();
+  consentStore.clear();
+}
+
+export function getUserConsents(userId: string) {
+  return consentStore.get(userId) ?? [];
 }
 
 export function loginWithPhonePayload(body: unknown) {
@@ -161,7 +197,11 @@ export function loginWithPhonePayload(body: unknown) {
     } as const;
   }
 
-  const { token, session } = createSession("phone", parsed.data.phone);
+  const { token, session } = createSession(
+    "phone",
+    parsed.data.phone,
+    parsed.data.consentVersion
+  );
   return {
     status: 200,
     token,
@@ -178,7 +218,11 @@ export function loginWithWechatPayload(body: unknown) {
     } as const;
   }
 
-  const { token, session } = createSession("wechat");
+  const { token, session } = createSession(
+    "wechat",
+    undefined,
+    parsed.data.consentVersion
+  );
   return {
     status: 200,
     token,
@@ -240,7 +284,8 @@ export function registerAuthApi(app: Express) {
     sendJson(res, payload.status, payload.body);
   });
 
-  app.post("/api/auth/logout", (_req: Request, res: Response) => {
+  app.post("/api/auth/logout", (req: Request, res: Response) => {
+    destroyLoginSession(readAuthSessionToken(req));
     applyClearAuthCookie(res);
     sendJson(res, 200, sessionPayload(null));
   });
@@ -258,6 +303,7 @@ export function handleAuthApiRequest(
   }
 
   if (req.method === "POST" && req.url.startsWith("/api/auth/logout")) {
+    destroyLoginSession(readAuthSessionToken(req));
     applyClearAuthCookie(res);
     sendJson(res, 200, sessionPayload(null));
     return true;

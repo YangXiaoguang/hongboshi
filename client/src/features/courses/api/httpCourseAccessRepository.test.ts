@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseCourseAccessResponse } from "./httpCourseAccessRepository";
+import {
+  CourseAccessRequestError,
+  parseCourseAccessResponse,
+} from "./httpCourseAccessRepository";
 
 describe("http course access repository parsing", () => {
   it("parses a successful access state response", () => {
@@ -28,5 +31,20 @@ describe("http course access repository parsing", () => {
         },
       })
     ).toThrow("课程购买参数不合法");
+  });
+
+  it("preserves authorization error codes", () => {
+    try {
+      parseCourseAccessResponse({
+        ok: false,
+        error: {
+          code: "UNAUTHORIZED",
+          message: "请先登录后继续操作",
+        },
+      });
+    } catch (err) {
+      expect(err).toBeInstanceOf(CourseAccessRequestError);
+      expect((err as CourseAccessRequestError).code).toBe("UNAUTHORIZED");
+    }
   });
 });
