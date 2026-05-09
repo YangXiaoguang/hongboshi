@@ -26,6 +26,34 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+const AUTH_STORAGE_KEY = "hongboshi.auth.user.v1";
+
+function loadStoredUser(): UserInfo | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as UserInfo) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredUser(user: UserInfo) {
+  try {
+    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+  } catch {
+    // Ignore local session persistence failures.
+  }
+}
+
+function clearStoredUser() {
+  try {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {
+    // Ignore local session persistence failures.
+  }
+}
 
 // Mock user data
 const mockPhoneUser: UserInfo = {
@@ -45,30 +73,35 @@ const mockWechatUser: UserInfo = {
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserInfo | null>(null);
+  const [user, setUser] = useState<UserInfo | null>(() => loadStoredUser());
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   const openLoginModal = useCallback(() => setShowLoginModal(true), []);
   const closeLoginModal = useCallback(() => setShowLoginModal(false), []);
 
+  const commitUser = useCallback((nextUser: UserInfo) => {
+    setUser(nextUser);
+    saveStoredUser(nextUser);
+    setShowLoginModal(false);
+  }, []);
+
   const loginWithPhone = useCallback((phone: string) => {
     // Mask middle digits of phone number
     const maskedPhone = phone.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2");
-    setUser({
+    commitUser({
       ...mockPhoneUser,
       phone,
       nickname: `用户${maskedPhone}`,
     });
-    setShowLoginModal(false);
-  }, []);
+  }, [commitUser]);
 
   const loginWithWechat = useCallback(() => {
-    setUser({ ...mockWechatUser });
-    setShowLoginModal(false);
-  }, []);
+    commitUser({ ...mockWechatUser });
+  }, [commitUser]);
 
   const logout = useCallback(() => {
     setUser(null);
+    clearStoredUser();
   }, []);
 
   return (

@@ -2,24 +2,29 @@ import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
 import { z } from "zod";
+import { resolveRequestUserId } from "../auth/currentUser";
 import { courses as seedCourses } from "../../../shared/data/mockCourses";
 import {
   ApiResponseSchema,
   CourseAccessStateSchema,
   CourseSchema,
+  LOCAL_COURSE_ACCESS_USER_ID,
   LegacyNumericIdSchema,
   activateCourseMembership,
-  createEmptyCourseAccessState,
   grantPurchasedCourseAccess,
   type CourseAccessState,
 } from "../../../shared/domain";
+import {
+  createDefaultCourseAccessStore,
+  type CourseAccessStore,
+} from "./courseAccessStore";
 
 const CourseAccessResponseSchema = ApiResponseSchema(CourseAccessStateSchema);
 const PurchaseCourseRequestSchema = z.object({
   courseId: LegacyNumericIdSchema,
 });
 
-let courseAccessState = createEmptyCourseAccessState();
+let courseAccessStore = createDefaultCourseAccessStore();
 
 function validatedCourses() {
   return seedCourses.map((course) => CourseSchema.parse(course));
@@ -31,7 +36,7 @@ function sendJson(res: Response | ServerResponse, status: number, payload: unkno
   res.end(JSON.stringify(payload));
 }
 
-function statePayload(state: CourseAccessState = courseAccessState) {
+function statePayload(state: CourseAccessState) {
   return CourseAccessResponseSchema.parse({
     ok: true,
     data: state,
@@ -73,15 +78,30 @@ function readRequestBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
-export function resetCourseAccessStore(state = createEmptyCourseAccessState()) {
-  courseAccessState = CourseAccessStateSchema.parse(state);
+export function setCourseAccessStore(store: CourseAccessStore) {
+  courseAccessStore = store;
 }
 
-export function getCourseAccessPayload() {
-  return statePayload();
+export function resetCourseAccessStore(
+  state?: CourseAccessState,
+  userId = LOCAL_COURSE_ACCESS_USER_ID
+) {
+  if (state) {
+    courseAccessStore.reset(userId, CourseAccessStateSchema.parse(state));
+    return;
+  }
+
+  courseAccessStore.clear();
 }
 
-export function purchaseCoursePayload(courseId: number) {
+export function getCourseAccessPayload(userId = LOCAL_COURSE_ACCESS_USER_ID) {
+  return statePayload(courseAccessStore.load(userId));
+}
+
+export function purchaseCoursePayload(
+  courseId: number,
+  userId = LOCAL_COURSE_ACCESS_USER_ID
+) {
   const course = findCourse(courseId);
   if (!course) {
     return {
@@ -90,24 +110,30 @@ export function purchaseCoursePayload(courseId: number) {
     } as const;
   }
 
-  courseAccessState = grantPurchasedCourseAccess(courseAccessState, course);
+  const currentState = courseAccessStore.load(userId);
+  const nextState = grantPurchasedCourseAccess(currentState, course, undefined, userId);
+  courseAccessStore.save(userId, nextState);
+
   return {
     status: 200,
-    body: statePayload(),
+    body: statePayload(nextState),
   } as const;
 }
 
-export function activateMembershipPayload() {
-  courseAccessState = activateCourseMembership(courseAccessState);
+export function activateMembershipPayload(userId = LOCAL_COURSE_ACCESS_USER_ID) {
+  const currentState = courseAccessStore.load(userId);
+  const nextState = activateCourseMembership(currentState);
+  courseAccessStore.save(userId, nextState);
+
   return {
     status: 200,
-    body: statePayload(),
+    body: statePayload(nextState),
   } as const;
 }
 
 export function registerCourseAccessApi(app: Express) {
-  app.get("/api/course-access", (_req: Request, res: Response) => {
-    sendJson(res, 200, getCourseAccessPayload());
+  app.get("/api/course-access", (req: Request, res: Response) => {
+    sendJson(res, 200, getCourseAccessPayload(resolveRequestUserId(req)));
   });
 
   app.post("/api/course-access/purchases", (req: Request, res: Response) => {
@@ -117,12 +143,15 @@ export function registerCourseAccessApi(app: Express) {
       return;
     }
 
-    const payload = purchaseCoursePayload(parsed.data.courseId);
+    const payload = purchaseCoursePayload(
+      parsed.data.courseId,
+      resolveRequestUserId(req)
+    );
     sendJson(res, payload.status, payload.body);
   });
 
-  app.post("/api/course-access/membership", (_req: Request, res: Response) => {
-    const payload = activateMembershipPayload();
+  app.post("/api/course-access/membership", (req: Request, res: Response) => {
+    const payload = activateMembershipPayload(resolveRequestUserId(req));
     sendJson(res, payload.status, payload.body);
   });
 }
@@ -134,14 +163,15 @@ export function handleCourseAccessApiRequest(
   if (!req.url || !req.url.startsWith("/api/course-access")) return false;
 
   const url = new URL(req.url, "http://localhost");
+  const userId = resolveRequestUserId(req);
 
   if (req.method === "GET" && url.pathname === "/api/course-access") {
-    sendJson(res, 200, getCourseAccessPayload());
+    sendJson(res, 200, getCourseAccessPayload(userId));
     return true;
   }
 
   if (req.method === "POST" && url.pathname === "/api/course-access/membership") {
-    const payload = activateMembershipPayload();
+    const payload = activateMembershipPayload(userId);
     sendJson(res, payload.status, payload.body);
     return true;
   }
@@ -154,7 +184,7 @@ export function handleCourseAccessApiRequest(
         return;
       }
 
-      const payload = purchaseCoursePayload(parsed.data.courseId);
+      const payload = purchaseCoursePayload(parsed.data.courseId, userId);
       sendJson(res, payload.status, payload.body);
     });
     return true;

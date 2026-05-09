@@ -1,6 +1,8 @@
 import {
   ApiResponseSchema,
   CourseAccessStateSchema,
+  COURSE_ACCESS_USER_ID_HEADER,
+  LOCAL_COURSE_ACCESS_USER_ID,
   type CourseAccessState,
 } from "@shared/domain";
 
@@ -24,12 +26,14 @@ export function parseCourseAccessResponse(payload: unknown): CourseAccessState {
 
 async function requestAccessState(
   path = "",
-  init?: RequestInit
+  init?: RequestInit,
+  userId = LOCAL_COURSE_ACCESS_USER_ID
 ): Promise<CourseAccessState> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      [COURSE_ACCESS_USER_ID_HEADER]: userId,
       ...init?.headers,
     },
     cache: "no-store",
@@ -41,20 +45,31 @@ async function requestAccessState(
 }
 
 export const httpCourseAccessRepository = {
-  load(): Promise<CourseAccessState> {
-    return requestAccessState();
+  load(userId = LOCAL_COURSE_ACCESS_USER_ID): Promise<CourseAccessState> {
+    return requestAccessState("", undefined, userId);
   },
 
-  purchaseCourse(courseId: number): Promise<CourseAccessState> {
-    return requestAccessState("/purchases", {
-      method: "POST",
-      body: JSON.stringify({ courseId }),
-    });
+  purchaseCourse(
+    courseId: number,
+    userId = LOCAL_COURSE_ACCESS_USER_ID
+  ): Promise<CourseAccessState> {
+    return requestAccessState(
+      "/purchases",
+      {
+        method: "POST",
+        body: JSON.stringify({ courseId }),
+      },
+      userId
+    );
   },
 
-  activateMembership(): Promise<CourseAccessState> {
-    return requestAccessState("/membership", {
-      method: "POST",
-    });
+  activateMembership(userId = LOCAL_COURSE_ACCESS_USER_ID): Promise<CourseAccessState> {
+    return requestAccessState(
+      "/membership",
+      {
+        method: "POST",
+      },
+      userId
+    );
   },
 };

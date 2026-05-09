@@ -1,4 +1,5 @@
 import {
+  LOCAL_COURSE_ACCESS_USER_ID,
   createEmptyCourseAccessState,
   normalizeCourseAccessState,
   type CourseAccessState,
@@ -7,16 +8,24 @@ import {
 const STORAGE_KEY = "hongboshi.courseAccess.v1";
 
 export interface CourseAccessRepository {
-  load(): CourseAccessState;
-  save(state: CourseAccessState): void;
+  load(userId?: string): CourseAccessState;
+  save(state: CourseAccessState, userId?: string): void;
+}
+
+function storageKeyForUser(userId = LOCAL_COURSE_ACCESS_USER_ID) {
+  return `${STORAGE_KEY}.${userId}`;
 }
 
 export const localCourseAccessRepository: CourseAccessRepository = {
-  load() {
+  load(userId = LOCAL_COURSE_ACCESS_USER_ID) {
     if (typeof window === "undefined") return createEmptyCourseAccessState();
 
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const raw =
+        window.localStorage.getItem(storageKeyForUser(userId)) ??
+        (userId === LOCAL_COURSE_ACCESS_USER_ID
+          ? window.localStorage.getItem(STORAGE_KEY)
+          : null);
       if (!raw) return createEmptyCourseAccessState();
       return normalizeCourseAccessState(JSON.parse(raw));
     } catch {
@@ -24,12 +33,12 @@ export const localCourseAccessRepository: CourseAccessRepository = {
     }
   },
 
-  save(state) {
+  save(state, userId = LOCAL_COURSE_ACCESS_USER_ID) {
     if (typeof window === "undefined") return;
 
     try {
       window.localStorage.setItem(
-        STORAGE_KEY,
+        storageKeyForUser(userId),
         JSON.stringify(normalizeCourseAccessState(state))
       );
     } catch {

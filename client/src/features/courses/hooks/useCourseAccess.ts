@@ -1,31 +1,41 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Course } from "@shared/domain";
+import { useAuth } from "@/contexts/AuthContext";
 import { httpCourseAccessRepository } from "../api/httpCourseAccessRepository";
 import { localCourseAccessRepository } from "../api/localCourseAccessRepository";
 import {
   activateCourseMembership,
   grantPurchasedCourseAccess,
   hasActiveCourseMembership,
+  LOCAL_COURSE_ACCESS_USER_ID,
   resolveCourseAccess,
   type CourseAccessState,
 } from "../model/courseAccess";
 
 export function useCourseAccess() {
-  const [state, setState] = useState(() => localCourseAccessRepository.load());
+  const { user } = useAuth();
+  const accessUserId = user?.id ?? LOCAL_COURSE_ACCESS_USER_ID;
+  const [state, setState] = useState(() =>
+    localCourseAccessRepository.load(accessUserId)
+  );
   const [isSyncing, setIsSyncing] = useState(true);
   const [accessError, setAccessError] = useState<string | undefined>();
 
-  const persist = useCallback((nextState: CourseAccessState) => {
-    localCourseAccessRepository.save(nextState);
-    return nextState;
-  }, []);
+  const persist = useCallback(
+    (nextState: CourseAccessState) => {
+      localCourseAccessRepository.save(nextState, accessUserId);
+      return nextState;
+    },
+    [accessUserId]
+  );
 
   useEffect(() => {
     let mounted = true;
     setIsSyncing(true);
+    setState(localCourseAccessRepository.load(accessUserId));
 
     httpCourseAccessRepository
-      .load()
+      .load(accessUserId)
       .then((remoteState) => {
         if (!mounted) return;
         setState(persist(remoteState));
@@ -42,7 +52,7 @@ export function useCourseAccess() {
     return () => {
       mounted = false;
     };
-  }, [persist]);
+  }, [accessUserId, persist]);
 
   const ownedCourseIds = useMemo(
     () => new Set(state.ownedCourseIds),
@@ -53,7 +63,10 @@ export function useCourseAccess() {
     async (course: Course) => {
       setIsSyncing(true);
       try {
-        const remoteState = await httpCourseAccessRepository.purchaseCourse(course.id);
+        const remoteState = await httpCourseAccessRepository.purchaseCourse(
+          course.id,
+          accessUserId
+        );
         setState(persist(remoteState));
         setAccessError(undefined);
         return "api" as const;
@@ -65,13 +78,13 @@ export function useCourseAccess() {
         setIsSyncing(false);
       }
     },
-    [persist]
+    [accessUserId, persist]
   );
 
   const activateMembership = useCallback(() => {
     setIsSyncing(true);
     return httpCourseAccessRepository
-      .activateMembership()
+      .activateMembership(accessUserId)
       .then((remoteState) => {
         setState(persist(remoteState));
         setAccessError(undefined);
@@ -85,7 +98,7 @@ export function useCourseAccess() {
       .finally(() => {
         setIsSyncing(false);
       });
-  }, [persist]);
+  }, [accessUserId, persist]);
 
   const getCourseAccess = useCallback(
     (course: Course) => resolveCourseAccess(state, course),

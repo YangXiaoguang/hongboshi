@@ -8,6 +8,7 @@ import { DateTimeLikeSchema, LegacyNumericIdSchema } from "./common";
 import { OrderSchema, type Order } from "./order";
 
 export const LOCAL_COURSE_ACCESS_USER_ID = "local-user";
+export const COURSE_ACCESS_USER_ID_HEADER = "x-hongboshi-user-id";
 
 const MembershipStatusSchema = z.enum(["none", "active", "expired"]);
 

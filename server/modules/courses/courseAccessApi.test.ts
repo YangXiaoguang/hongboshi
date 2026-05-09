@@ -42,4 +42,14 @@ describe("course access API payloads", () => {
     expect(payload.body.data.membership.status).toBe("active");
     expect(payload.body.data.membership.expiresAt).toBeTruthy();
   });
+
+  it("keeps course access isolated by user id", () => {
+    const firstUser = purchaseCoursePayload(16, "u_10001");
+    const secondUser = getCourseAccessPayload("u_20001");
+
+    expect(firstUser.status).toBe(200);
+    expect(secondUser.ok).toBe(true);
+    if (!secondUser.ok) return;
+    expect(secondUser.data.ownedCourseIds).toEqual([]);
+  });
 });

@@ -7,10 +7,10 @@
 ```text
 client/src/features/courses/
   api/
-    httpCourseAccessRepository.ts # 课程权益 API adapter，失败时回落到本地状态
+    httpCourseAccessRepository.ts # 课程权益 API adapter，随请求携带用户 ID
     httpCourseRepository.ts  # 课程 API adapter，失败时由 hook 回落到 mock
     mockCourseRepository.ts  # 当前 mock 数据源 adapter
-    localCourseAccessRepository.ts # 本地课程购买与会员权益状态
+    localCourseAccessRepository.ts # 按用户隔离的本地课程购买与会员权益 fallback
     localCourseEngagementRepository.ts # 本地收藏与学习进度持久化
   hooks/
     useCourseCatalog.ts      # 页面消费的课程列表状态与动作
@@ -38,7 +38,8 @@ client/src/features/courses/
 - 后续接后端时，优先替换 `httpCourseRepository` 和 `/api/courses` 实现，保留 mock repository 作为本地 fallback。
 - 课程详情页位于 `client/src/pages/CourseDetail.tsx`，当前通过 `useCourseDetail` 读取 API/fallback 数据。
 - 收藏与学习进度当前写入 localStorage；接入用户系统后替换 engagement repository 即可。
-- 购买状态与会员权益优先同步 `/api/course-access`，失败时回落 localStorage；接真实支付时替换 access API 的订单回调即可。
+- 购买状态与会员权益优先同步 `/api/course-access`，请求通过 `x-hongboshi-user-id` 区分用户，失败时回落当前用户的 localStorage；接真实支付时替换 access API 的订单回调即可。
+- 服务端课程权益状态由 `server/modules/courses/courseAccessStore.ts` 管理，默认写入 `.hongboshi-data/course-access.json`，后续替换为数据库时保持 `CourseAccessStore` 接口不变。
 
 ## 当前 API
 
@@ -48,10 +49,12 @@ client/src/features/courses/
 - `POST /api/course-access/purchases`：模拟课程购买并返回最新权益状态。
 - `POST /api/course-access/membership`：模拟开通成长会员并返回最新权益状态。
 
+以上课程权益 API 接收可选请求头 `x-hongboshi-user-id`。未传时默认落到 `local-user`，用于未登录访客和本地开发。
+
 ## 后续落点
 
 1. 将 `/api/courses` 从 seed 数据替换为数据库查询，并把当前 shared 查询模型映射到数据库索引。
-2. 将 `/api/course-access` 从内存状态替换为真实订单、会员和支付回调。
+2. 将 `CourseAccessStore` 从 JSON 文件替换为真实订单、会员和支付回调。
 3. 扩展 loading、empty、error 和权限状态到订单、会员、学习记录。
 4. 把移动预览里的课程卡片继续拆成可复用组件。
 5. 将章节、作业、资料下载和学习记录落到服务端持久化模型。

@@ -45,6 +45,7 @@ pids
 *.pid
 *.seed
 *.pid.lock
+.hongboshi-data/
 
 # Coverage directory used by tools like istanbul
 coverage/

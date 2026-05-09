@@ -1,6 +1,6 @@
 # 红博士心理小讲堂
 
-课程发现页前端项目，包含 PC 课程中心与小程序端预览两套体验。当前版本以高保真前端原型为主，课程、登录、收藏、分享、优惠券等业务能力均为前端 mock，后端只负责生产环境静态文件托管。
+心理咨询与成长陪伴项目，包含 PC 课程中心与小程序端预览两套体验。当前版本已完成课程目录、课程详情、课程权益 API adapter 和本地开发期持久化，登录、咨询预约、测评等能力仍在逐步工程化。
 
 ## 技术栈
 
@@ -9,7 +9,7 @@
 - TypeScript
 - Tailwind CSS 4
 - shadcn/ui 风格组件
-- Express 静态生产服务
+- Express API 与静态生产服务
 - pnpm 10
 
 ## 环境要求
@@ -60,7 +60,8 @@ client/
     hooks/          # 通用 hooks
     lib/            # mock 数据与工具函数
 server/
-  index.ts          # 生产静态服务入口
+  index.ts          # API 与生产静态服务入口
+  modules/          # 课程、认证等后端模块
 shared/
   const.ts          # 前后端共享常量
   domain/           # 前后端共享业务契约与 Zod 校验
@@ -77,7 +78,7 @@ docs/
 
 ## 环境变量
 
-复制 `.env.example` 为 `.env.local` 后按需填写。当前主流程不依赖环境变量，以下变量只在替换 mock 登录或启用地图组件时需要：
+复制 `.env.example` 为 `.env.local` 后按需填写。当前主流程可直接运行，以下变量用于替换 mock 登录、启用地图组件或调整本地课程权益持久化：
 
 - `VITE_OAUTH_PORTAL_URL`
 - `VITE_APP_ID`
@@ -85,20 +86,24 @@ docs/
 - `VITE_FRONTEND_FORGE_API_URL`
 - `VITE_ANALYTICS_ENDPOINT`
 - `VITE_ANALYTICS_WEBSITE_ID`
+- `HONGBOSHI_COURSE_ACCESS_STORE`
+- `HONGBOSHI_COURSE_ACCESS_FILE`
 
 ## 当前业务状态
 
-- 课程数据来自 `client/src/lib/mockData.ts`
+- 课程 seed 来自 `shared/data/mockCourses.ts`，开发和生产 API 共用同一份数据
 - 共享业务类型位于 `shared/domain`
 - PC 端主页面位于 `client/src/pages/Home.tsx`
 - 小程序端预览位于 `client/src/components/MobileView.tsx`
 - 登录状态由 `client/src/contexts/AuthContext.tsx` 模拟
+- 课程目录、课程详情和课程权益由 `/api/courses`、`/api/course-access` 提供
+- 课程权益开发期默认写入 `.hongboshi-data/course-access.json`
 - 生产构建后由 `server/index.ts` 托管 `dist/public`
 
 ## 后续二开建议
 
-1. 定义真实课程、用户、收藏、优惠券、订单和会员 API。
-2. 将 mock 数据迁移到 API adapter，保留 mock 作为开发 fallback。
-3. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
-4. 为筛选、分页、登录、收藏等核心行为补充单元测试。
+1. 将课程权益 JSON Store 替换为 PostgreSQL/Prisma 或 Drizzle。
+2. 接入真实登录会话、协议同意和 RBAC 权限守卫。
+3. 建立心理测评、推荐路径和咨询预约状态机。
+4. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
 5. 引入 ESLint 或统一的代码质量检查规则。
