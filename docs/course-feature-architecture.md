@@ -7,11 +7,13 @@
 ```text
 client/src/features/courses/
   api/
+    httpCourseRepository.ts  # 课程 API adapter，失败时由 hook 回落到 mock
     mockCourseRepository.ts  # 当前 mock 数据源 adapter
     localCourseAccessRepository.ts # 本地课程购买与会员权益状态
     localCourseEngagementRepository.ts # 本地收藏与学习进度持久化
   hooks/
     useCourseCatalog.ts      # 页面消费的课程列表状态与动作
+    useCourseDetail.ts       # 课程详情 API/fallback 读取状态
     useCourseAccess.ts       # 课程权益、模拟购买和会员解锁动作
     useCourseEngagement.ts   # 收藏、学习状态和章节进度动作
   model/
@@ -30,16 +32,22 @@ client/src/features/courses/
 
 - 页面和组件只从 `@/features/courses` 获取课程相关类型、常量和动作。
 - `client/src/lib/mockData.ts` 只保留原型数据，不再承载筛选、分页、排序等业务规则。
+- 课程 mock seed 已上移到 `shared/data/mockCourses.ts`，前端、开发期 API 和生产 Express API 共用同一份数据。
 - `shared/domain/course.ts` 负责跨端契约，`features/courses/model` 负责前端课程场景逻辑。
-- 后续接后端时，优先新增真实 `CourseRepository` adapter，再替换 `useCourseCatalog` 的数据源。
-- 课程详情页位于 `client/src/pages/CourseDetail.tsx`，当前通过 repository 读取 mock detail，之后可平滑切换 API detail。
+- 后续接后端时，优先替换 `httpCourseRepository` 和 `/api/courses` 实现，保留 mock repository 作为本地 fallback。
+- 课程详情页位于 `client/src/pages/CourseDetail.tsx`，当前通过 `useCourseDetail` 读取 API/fallback 数据。
 - 收藏与学习进度当前写入 localStorage；接入用户系统后替换 engagement repository 即可。
 - 购买状态与会员权益当前写入 localStorage，并通过 `courseAccess` 模型统一判断是否可学习；接真实支付时替换 access repository 和订单回调即可。
 
+## 当前 API
+
+- `GET /api/courses`：返回课程 seed 列表，开发环境由 Vite middleware 提供，生产环境由 Express 提供。
+- `GET /api/courses/:courseId`：返回单个课程基础信息，详情页再通过前端领域模型组装章节、适合人群和推荐内容。
+
 ## 后续落点
 
-1. 为课程列表和详情接入真实 API adapter，保留 mock adapter 作为本地 fallback。
+1. 将 `/api/courses` 从 seed 数据替换为数据库查询，并补充分页、筛选和排序参数。
 2. 将本地模拟购买、会员权益和访问控制迁移到真实订单/会员 API。
-3. 加入 loading、empty、error 和权限状态。
+3. 扩展 loading、empty、error 和权限状态到订单、会员、学习记录。
 4. 把移动预览里的课程卡片继续拆成可复用组件。
 5. 将章节、作业、资料下载和学习记录落到服务端持久化模型。

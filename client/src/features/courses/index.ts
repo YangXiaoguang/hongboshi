@@ -2,7 +2,9 @@ export {
   mockCourseRepository,
   type CourseRepository,
 } from "./api/mockCourseRepository";
+export { httpCourseRepository } from "./api/httpCourseRepository";
 export { useCourseCatalog } from "./hooks/useCourseCatalog";
+export { useCourseDetail } from "./hooks/useCourseDetail";
 export { useCourseAccess } from "./hooks/useCourseAccess";
 export { useCourseEngagement } from "./hooks/useCourseEngagement";
 export {

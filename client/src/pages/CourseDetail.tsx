@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { useLocation, useRoute } from "wouter";
 import {
   ArrowLeft,
@@ -22,8 +21,8 @@ import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
 import NotFound from "@/pages/NotFound";
 import {
-  mockCourseRepository,
   useCourseAccess,
+  useCourseDetail,
   useCourseEngagement,
   type Course,
   type CourseAccessStatus,
@@ -80,16 +79,24 @@ export default function CourseDetail() {
     toggleFavorite,
   } = useCourseEngagement();
   const courseId = Number(params?.courseId);
+  const { course, relatedCourses, isLoading } = useCourseDetail(
+    Number.isInteger(courseId) ? courseId : undefined
+  );
 
-  const course = useMemo(() => {
-    if (!Number.isInteger(courseId)) return undefined;
-    return mockCourseRepository.getCourseDetailById(courseId);
-  }, [courseId]);
-
-  const relatedCourses = useMemo(() => {
-    if (!Number.isInteger(courseId)) return [];
-    return mockCourseRepository.listRelatedCourses(courseId, 3);
-  }, [courseId]);
+  if (!course && isLoading) {
+    return (
+      <div className="min-h-screen bg-[#F9F5EE] text-[#243B35]">
+        <AppHeader />
+        <main className="flex min-h-[520px] items-center justify-center px-5">
+          <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] px-8 py-7 text-center shadow-sm">
+            <p className="text-sm font-semibold text-[#6F8F83]">正在同步课程内容</p>
+            <p className="mt-3 text-xs text-[#7B817C]">请稍候，马上进入课程详情。</p>
+          </div>
+        </main>
+        <AppFooter />
+      </div>
+    );
+  }
 
   if (!course) return <NotFound />;
 

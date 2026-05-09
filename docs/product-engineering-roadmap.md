@@ -63,6 +63,7 @@ flowchart LR
 
 - 将课程列表、筛选、排序、收藏、详情页拆为 `features/courses`。
 - 引入 API adapter，保留 mock adapter 作为本地 fallback。
+- 提供开发期和生产期一致的 `GET /api/courses` 课程接口。
 - 完成课程详情、章节、学习进度、收藏列表。
 - 建立本地课程权益模型，覆盖免费、已购、会员可学和待购买状态。
 - 为筛选、分页、收藏、价格展示补单元测试。

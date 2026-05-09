@@ -25,7 +25,7 @@ import CourseFilter from "@/components/CourseFilter";
 import CourseToolbar from "@/components/CourseToolbar";
 import MobileView from "@/components/MobileView";
 import {
-  mockCourseRepository,
+  getRecommendedCourses,
   useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
@@ -119,6 +119,7 @@ export default function Home() {
     paginatedCourses,
     totalCount,
     pageNumbers,
+    allCourses,
     setCategory,
     setType,
     setSort,
@@ -136,8 +137,8 @@ export default function Home() {
   const heroY = useTransform(scrollYProgress, [0, 0.35], [0, 38]);
 
   const recommendedCourses = useMemo(() => {
-    return mockCourseRepository.listRecommendedCourses(selectedNeed.category);
-  }, [selectedNeed.category]);
+    return getRecommendedCourses(allCourses, selectedNeed.category);
+  }, [allCourses, selectedNeed.category]);
 
   const handleNeedSelect = (need: (typeof supportNeeds)[number]) => {
     setSelectedNeed(need);

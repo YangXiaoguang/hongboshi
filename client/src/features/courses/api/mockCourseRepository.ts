@@ -15,6 +15,7 @@ import {
 } from "../model/courseCatalog";
 
 export interface CourseRepository {
+  listAllCourses(): Course[];
   listCourses(query: CourseCatalogQuery): CourseCatalogResult;
   listRecommendedCourses(category: CourseCategoryFilter, limit?: number): Course[];
   getCourseById(courseId: number): Course | undefined;
@@ -27,6 +28,9 @@ function getValidatedMockCourses(): Course[] {
 }
 
 export const mockCourseRepository: CourseRepository = {
+  listAllCourses() {
+    return getValidatedMockCourses();
+  },
   listCourses(query) {
     return listCoursesByQuery(getValidatedMockCourses(), query);
   },
