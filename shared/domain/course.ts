@@ -67,6 +67,28 @@ export const CourseSchema = z.object({
   discount: CourseDiscountSchema.optional(),
 });
 
+export const CourseAudienceSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().min(1),
+});
+
+export const CourseChapterSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  durationMinutes: z.number().int().positive(),
+  lessonCount: z.number().int().positive(),
+});
+
+export const CourseDetailSchema = CourseSchema.extend({
+  subtitle: z.string().min(1),
+  summary: z.string().min(1),
+  suitableFor: z.array(CourseAudienceSchema).min(1),
+  outcomes: z.array(z.string().min(1)).min(1),
+  chapters: z.array(CourseChapterSchema).min(1),
+  supportPath: z.string().min(1),
+});
+
 export const CourseListQuerySchema = PaginationQuerySchema.extend({
   category: z.union([CourseCategorySchema, z.literal("全部")]).default("全部"),
   type: z.union([CourseTypeSchema, z.literal("全部")]).default("全部"),
@@ -94,5 +116,8 @@ export type CourseCategory = z.infer<typeof CourseCategorySchema>;
 export type CourseType = z.infer<typeof CourseTypeSchema>;
 export type CourseSort = z.infer<typeof CourseSortSchema>;
 export type Course = z.infer<typeof CourseSchema>;
+export type CourseAudience = z.infer<typeof CourseAudienceSchema>;
+export type CourseChapter = z.infer<typeof CourseChapterSchema>;
+export type CourseDetail = z.infer<typeof CourseDetailSchema>;
 export type CourseListQuery = z.infer<typeof CourseListQuerySchema>;
 export type CourseProgress = z.infer<typeof CourseProgressSchema>;

@@ -8,6 +8,7 @@
 import { useState, useEffect } from "react";
 import { Search, Bell, Users, Heart, Share2, X, Copy, Clock, Ticket, User, Smartphone, MessageSquare, Shield, Loader2, LogOut, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   categories,
@@ -61,6 +62,7 @@ export default function MobileView({
   favorites,
   onToggleFavorite,
 }: MobileViewProps) {
+  const [, navigate] = useLocation();
   const { user, isLoggedIn, loginWithPhone, loginWithWechat, logout } = useAuth();
   const [visibleCount, setVisibleCount] = useState(6);
   const [searchValue, setSearchValue] = useState("");
@@ -301,11 +303,7 @@ export default function MobileView({
           return (
             <div
               key={course.id}
-              onClick={() =>
-                toast("课程详情", {
-                  description: `即将进入「${course.title}」`,
-                })
-              }
+              onClick={() => navigate(`/courses/${course.id}`)}
               className="bg-white rounded-lg overflow-hidden shadow-sm active:scale-[0.98] transition-transform"
             >
               {/* Horizontal card layout */}

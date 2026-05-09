@@ -1,5 +1,11 @@
 import { courses as mockCourses } from "@/lib/mockData";
-import { CourseSchema, type Course } from "@shared/domain";
+import {
+  CourseDetailSchema,
+  CourseSchema,
+  type Course,
+  type CourseDetail,
+} from "@shared/domain";
+import { buildCourseDetail, getRelatedCourses } from "../model/courseDetail";
 import {
   getRecommendedCourses,
   listCoursesByQuery,
@@ -12,6 +18,8 @@ export interface CourseRepository {
   listCourses(query: CourseCatalogQuery): CourseCatalogResult;
   listRecommendedCourses(category: CourseCategoryFilter, limit?: number): Course[];
   getCourseById(courseId: number): Course | undefined;
+  getCourseDetailById(courseId: number): CourseDetail | undefined;
+  listRelatedCourses(courseId: number, limit?: number): Course[];
 }
 
 function getValidatedMockCourses(): Course[] {
@@ -27,5 +35,16 @@ export const mockCourseRepository: CourseRepository = {
   },
   getCourseById(courseId) {
     return getValidatedMockCourses().find((course) => course.id === courseId);
+  },
+  getCourseDetailById(courseId) {
+    const course = getValidatedMockCourses().find((item) => item.id === courseId);
+    if (!course) return undefined;
+    return CourseDetailSchema.parse(buildCourseDetail(course));
+  },
+  listRelatedCourses(courseId, limit) {
+    const courses = getValidatedMockCourses();
+    const course = courses.find((item) => item.id === courseId);
+    if (!course) return [];
+    return getRelatedCourses(courses, course, limit);
   },
 };

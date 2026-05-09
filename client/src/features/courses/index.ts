@@ -22,4 +22,13 @@ export {
   type CourseSortOption,
   type CourseTypeFilter,
 } from "./model/courseCatalog";
-export type { Course, CourseCategory, CourseSort, CourseType } from "@shared/domain";
+export { buildCourseDetail, getRelatedCourses } from "./model/courseDetail";
+export type {
+  Course,
+  CourseAudience,
+  CourseCategory,
+  CourseChapter,
+  CourseDetail,
+  CourseSort,
+  CourseType,
+} from "@shared/domain";

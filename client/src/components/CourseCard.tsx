@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 import type { Course } from "@/features/courses";
 
 interface CourseCardProps {
@@ -51,6 +52,7 @@ export default function CourseCard({
   isFavorited = false,
   onToggleFavorite,
 }: CourseCardProps) {
+  const [, navigate] = useLocation();
   const [showSharePopup, setShowSharePopup] = useState(false);
   const [heartAnimating, setHeartAnimating] = useState(false);
   const [countdown, setCountdown] = useState(() =>
@@ -66,9 +68,7 @@ export default function CourseCard({
   }, [course.discount?.endsAt]);
 
   const handleClick = () => {
-    toast("课程详情", {
-      description: `即将进入「${course.title}」详情页`,
-    });
+    navigate(`/courses/${course.id}`);
   };
 
   const handleFavorite = (e: React.MouseEvent) => {

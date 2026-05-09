@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
+import { useLocation } from "wouter";
 import {
   ArrowRight,
   CalendarCheck,
@@ -104,6 +105,7 @@ const featuredJourney = [
 ];
 
 export default function Home() {
+  const [, navigate] = useLocation();
   const {
     selectedCategory,
     selectedType,
@@ -336,11 +338,7 @@ export default function Home() {
                   {recommendedCourses.map((course) => (
                     <button
                       key={course.id}
-                      onClick={() =>
-                        toast("课程推荐", {
-                          description: `即将进入「${course.title}」详情页`,
-                        })
-                      }
+                      onClick={() => navigate(`/courses/${course.id}`)}
                       className="group border-l border-[#DCD3C4] pl-5 text-left"
                     >
                       <span className="text-xs font-medium text-[#6F8F83]">
