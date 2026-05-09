@@ -1,14 +1,18 @@
-/*
- * CourseCard - 单个课程卡片（升级版 v3）
- * 「知性蓝调」设计: 轻微阴影、8px圆角、hover上浮+光晕+操作按钮浮现
- * 功能: 收藏、分享到微信、优惠券标签、限时折扣标签、增强hover动效
- * 包含: 封面图、标题、标签、讲师、学习人数、价格、促销标签、操作按钮
- */
-
-import { useState, useEffect } from "react";
-import { Users, Heart, Share2, X, Copy, Clock, Ticket } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  ArrowRight,
+  BookOpen,
+  Clock,
+  Copy,
+  Heart,
+  MessageCircle,
+  Share2,
+  Ticket,
+  Users,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
-import type { Course } from "@/lib/mockData";
+import type { Course } from "@/features/courses";
 
 interface CourseCardProps {
   course: Course;
@@ -17,10 +21,10 @@ interface CourseCardProps {
   onToggleFavorite?: (courseId: number) => void;
 }
 
-const typeColorMap: Record<string, string> = {
-  直播: "#E8553A",
-  录播: "#4A90D9",
-  专栏: "#7B9E87",
+const typeToneMap: Record<string, string> = {
+  直播: "bg-[#F4E5DE] text-[#A65F48]",
+  录播: "bg-[#E6EDDF] text-[#4E7366]",
+  专栏: "bg-[#EFE7D8] text-[#8C6E4A]",
 };
 
 function formatLearners(n: number): string {
@@ -29,7 +33,6 @@ function formatLearners(n: number): string {
   return String(n);
 }
 
-/** Calculate remaining time string from endsAt */
 function getCountdown(endsAt: string): string {
   const now = new Date().getTime();
   const end = new Date(endsAt).getTime();
@@ -54,7 +57,6 @@ export default function CourseCard({
     course.discount?.endsAt ? getCountdown(course.discount.endsAt) : ""
   );
 
-  // Update countdown every minute
   useEffect(() => {
     if (!course.discount?.endsAt) return;
     const timer = setInterval(() => {
@@ -72,13 +74,12 @@ export default function CourseCard({
   const handleFavorite = (e: React.MouseEvent) => {
     e.stopPropagation();
     setHeartAnimating(true);
-    setTimeout(() => setHeartAnimating(false), 600);
+    setTimeout(() => setHeartAnimating(false), 520);
     onToggleFavorite?.(course.id);
     toast(isFavorited ? "已取消收藏" : "已收藏课程", {
       description: isFavorited
         ? `「${course.title}」已从收藏夹移除`
         : `「${course.title}」已加入收藏夹`,
-      icon: isFavorited ? "💔" : "❤️",
     });
   };
 
@@ -89,37 +90,23 @@ export default function CourseCard({
 
   const handleCopyLink = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const shareText = `【红博士心理小讲堂】${course.title} - ${course.teacher} | ${course.isFree ? "免费" : `¥${course.price}`}`;
-    navigator.clipboard.writeText(shareText).then(() => {
-      toast("链接已复制", {
-        description: "可粘贴到微信聊天中分享给好友",
-        icon: "✅",
+    const shareText = `【红博士心理小讲堂】${course.title} - ${course.teacher} | ${
+      course.isFree ? "免费" : `¥${course.price}`
+    }`;
+    navigator.clipboard.writeText(shareText).finally(() => {
+      toast("分享内容已复制", {
+        description: "可粘贴到微信或聊天窗口发送给好友",
       });
-    }).catch(() => {
-      toast("复制成功", {
-        description: "分享内容已准备好，可粘贴到微信",
-        icon: "✅",
-      });
-    });
-    setShowSharePopup(false);
-  };
-
-  const handleShareToMoments = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    toast("分享到朋友圈", {
-      description: "请截图或复制链接后分享到微信朋友圈",
-      icon: "🔗",
     });
     setShowSharePopup(false);
   };
 
   const handleShareToFriend = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const shareText = `推荐一门好课：「${course.title}」— ${course.teacher}`;
+    const shareText = `推荐一门心理成长课程：「${course.title}」— ${course.teacher}`;
     navigator.clipboard.writeText(shareText).catch(() => {});
     toast("分享给好友", {
-      description: "课程信息已复制，打开微信粘贴发送给好友",
-      icon: "💬",
+      description: "课程信息已复制，打开微信粘贴发送",
     });
     setShowSharePopup(false);
   };
@@ -128,319 +115,235 @@ export default function CourseCard({
     e.stopPropagation();
     toast("优惠券已领取", {
       description: `「${course.coupon!.label}」已放入您的账户，下单时自动抵扣`,
-      icon: "🎫",
     });
   };
 
-  const hasPromo = !course.isFree && (course.discount || course.coupon);
+  const discountActive = course.discount && countdown !== "已结束";
 
   return (
     <div
       onClick={handleClick}
-      className="course-card group bg-white rounded-lg overflow-hidden border border-gray-100 cursor-pointer relative"
+      className="course-card group relative cursor-pointer overflow-hidden rounded-[26px] border border-[#E4DCCF] bg-[#FFFDF8] transition"
       style={{
-        animationDelay: `${index * 50}ms`,
-        animation: "fadeInUp 0.4s ease-out both",
+        animationDelay: `${index * 48}ms`,
+        animation: "courseFadeIn 0.45s ease-out both",
       }}
     >
-      {/* Cover image area */}
-      <div className="relative aspect-video overflow-hidden bg-gray-100">
+      <div className="relative aspect-[4/3] overflow-hidden bg-[#EEE6DB]">
         <img
           src={course.coverUrl}
           alt={course.title}
-          className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
+          className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
           loading="lazy"
         />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#1E332D]/72 via-transparent to-transparent opacity-70" />
 
-        {/* Hover overlay gradient */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        <div className="absolute left-3 top-3 flex flex-wrap gap-2">
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+              typeToneMap[course.type] || "bg-[#E6EDDF] text-[#4E7366]"
+            }`}
+          >
+            {course.type}
+          </span>
+          {course.isVip && (
+            <span className="rounded-full bg-[#EFE7D8] px-2.5 py-1 text-[11px] font-semibold text-[#8C6E4A]">
+              会员
+            </span>
+          )}
+          {course.isFree && (
+            <span className="rounded-full bg-[#DDE8D9] px-2.5 py-1 text-[11px] font-semibold text-[#41675A]">
+              免费
+            </span>
+          )}
+        </div>
 
-        {/* Action buttons - appear on hover */}
-        <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 translate-y-[-8px] group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 ease-out z-10">
+        <div className="absolute right-3 top-3 flex gap-2 opacity-0 transition duration-300 group-hover:opacity-100">
           <button
             onClick={handleFavorite}
-            className={`w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md transition-all duration-300 ${
+            className={`flex h-9 w-9 items-center justify-center rounded-full backdrop-blur transition ${
               isFavorited
-                ? "bg-red-500/90 text-white shadow-lg shadow-red-500/25"
-                : "bg-white/80 text-gray-600 hover:bg-white hover:text-red-500 hover:shadow-md"
+                ? "bg-[#B86F56] text-white"
+                : "bg-white/82 text-[#5F6B64] hover:text-[#B86F56]"
             }`}
             title={isFavorited ? "取消收藏" : "收藏课程"}
           >
             <Heart
-              className={`w-4 h-4 transition-transform duration-300 ${
+              className={`h-4 w-4 transition ${
                 heartAnimating ? "scale-125" : "scale-100"
               } ${isFavorited ? "fill-current" : ""}`}
             />
           </button>
           <button
             onClick={handleShare}
-            className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-md flex items-center justify-center text-gray-600 hover:bg-white hover:text-green-600 hover:shadow-md transition-all duration-300"
-            title="分享到微信"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/82 text-[#5F6B64] backdrop-blur transition hover:text-[#41675A]"
+            title="分享课程"
           >
-            <Share2 className="w-4 h-4" />
+            <Share2 className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Type tag - bottom left */}
-        <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
-          <span
-            className="px-2 py-0.5 rounded text-xs font-medium text-white shadow-sm"
-            style={{ backgroundColor: typeColorMap[course.type] || "#4A90D9" }}
-          >
-            {course.type}
-          </span>
-        </div>
-
-        {/* Discount ribbon - top left diagonal */}
-        {course.discount && !course.isFree && (
-          <div className="absolute top-0 left-0 z-[5]">
-            <div className="discount-ribbon flex items-center gap-1 px-2.5 py-1 text-white text-[10px] font-bold shadow-md">
-              <Clock className="w-3 h-3" />
-              <span>{course.discount.label}</span>
-            </div>
+        <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-3 text-white">
+          <div className="flex items-center gap-1.5 text-xs text-white/82">
+            <Users className="h-3.5 w-3.5" />
+            <span>{formatLearners(course.learners)} 人学习</span>
           </div>
-        )}
-
-        {/* VIP badge - top right triangle (hidden when action buttons visible) */}
-        {course.isVip && (
-          <div className="absolute top-0 right-0 group-hover:opacity-0 transition-opacity duration-300">
-            <div
-              className="w-0 h-0"
-              style={{
-                borderLeft: "40px solid transparent",
-                borderTop: "40px solid #D4A853",
-              }}
-            />
-            <span className="absolute top-[3px] right-[2px] text-[10px] font-bold text-white rotate-45">
-              VIP
+          {discountActive && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/16 px-2.5 py-1 text-[11px] font-medium backdrop-blur">
+              <Clock className="h-3 w-3" />
+              {countdown}
             </span>
-          </div>
-        )}
-
-        {/* Free badge */}
-        {course.isFree && (
-          <div
-            className="absolute top-2 left-2 px-2 py-0.5 rounded text-xs font-semibold text-white"
-            style={{ backgroundColor: "#52B788" }}
-          >
-            免费
-          </div>
-        )}
-      </div>
-
-      {/* Card body */}
-      <div className="p-3.5">
-        {/* Title - 2 line clamp */}
-        <h3 className="text-sm font-medium text-gray-800 leading-snug line-clamp-2 min-h-[2.5rem] group-hover:text-[#4A90D9] transition-colors duration-300">
-          {course.title}
-        </h3>
-
-        {/* Teacher + learners */}
-        <div className="flex items-center justify-between mt-2.5">
-          <span className="text-xs text-gray-400">{course.teacher}</span>
-          <div className="flex items-center gap-1 text-xs text-gray-400">
-            <Users className="w-3 h-3" />
-            <span>{formatLearners(course.learners)}</span>
-          </div>
-        </div>
-
-        {/* Promo tags area - coupon + countdown */}
-        {hasPromo && (
-          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-            {/* Coupon tag */}
-            {course.coupon && (
-              <button
-                onClick={handleCouponClick}
-                className="coupon-tag inline-flex items-center gap-0.5 px-1.5 py-[2px] rounded border text-[10px] font-medium transition-all hover:shadow-sm active:scale-95"
-                style={{
-                  color: "#E8553A",
-                  borderColor: "#E8553A",
-                  backgroundColor: "rgba(232, 85, 58, 0.05)",
-                }}
-              >
-                <Ticket className="w-3 h-3" />
-                {course.coupon.label}
-              </button>
-            )}
-            {/* Countdown tag */}
-            {course.discount && countdown !== "已结束" && (
-              <span
-                className="inline-flex items-center gap-0.5 px-1.5 py-[2px] rounded text-[10px] font-medium"
-                style={{
-                  color: "#fff",
-                  background: "linear-gradient(135deg, #FF6B35, #E8553A)",
-                }}
-              >
-                <Clock className="w-2.5 h-2.5" />
-                {countdown}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Price area */}
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50">
-          <div className="flex items-baseline gap-2">
-            {course.isFree ? (
-              <span
-                className="text-sm font-semibold"
-                style={{ color: "#52B788" }}
-              >
-                免费
-              </span>
-            ) : (
-              <>
-                <span
-                  className="text-base font-bold tabular-nums"
-                  style={{ color: "#E8553A" }}
-                >
-                  ¥{course.price.toFixed(1)}
-                </span>
-                {course.originalPrice > course.price && (
-                  <span className="text-xs text-gray-300 line-through tabular-nums">
-                    ¥{course.originalPrice.toFixed(1)}
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Small favorite indicator (always visible if favorited) */}
-          {isFavorited && (
-            <Heart className="w-3.5 h-3.5 text-red-400 fill-current opacity-60" />
           )}
         </div>
       </div>
 
-      {/* WeChat Share Popup */}
+      <div className="p-4">
+        <div className="flex items-center gap-2 text-xs font-medium text-[#6F8F83]">
+          <BookOpen className="h-3.5 w-3.5" />
+          {course.category}
+        </div>
+
+        <h3 className="mt-3 min-h-[3rem] text-base font-semibold leading-snug text-[#243B35] transition group-hover:text-[#5F7F73]">
+          {course.title}
+        </h3>
+
+        <div className="mt-3 flex items-center justify-between gap-3 text-sm text-[#7B817C]">
+          <span className="truncate">{course.teacher}</span>
+          {isFavorited && <Heart className="h-4 w-4 shrink-0 fill-current text-[#B86F56]" />}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {course.coupon && (
+            <button
+              onClick={handleCouponClick}
+              className="inline-flex items-center gap-1 rounded-full border border-[#D8B9A9] px-2.5 py-1 text-[11px] font-semibold text-[#A65F48] transition hover:bg-[#F8E8E2]"
+            >
+              <Ticket className="h-3 w-3" />
+              {course.coupon.label}
+            </button>
+          )}
+          {course.discount && discountActive && (
+            <span className="rounded-full bg-[#F4E5DE] px-2.5 py-1 text-[11px] font-semibold text-[#A65F48]">
+              {course.discount.label}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-4 flex items-end justify-between border-t border-[#EFE6DA] pt-4">
+          <div>
+            <p className="text-[11px] text-[#9AA19B]">适合自学与陪伴练习</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              {course.isFree ? (
+                <span className="text-lg font-semibold text-[#41675A]">免费</span>
+              ) : (
+                <>
+                  <span className="text-lg font-semibold text-[#A65F48]">
+                    ¥{course.price.toFixed(1)}
+                  </span>
+                  {course.originalPrice > course.price && (
+                    <span className="text-xs text-[#B6B4AD] line-through">
+                      ¥{course.originalPrice.toFixed(1)}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#E6EDDF] text-[#41675A] transition group-hover:bg-[#243B35] group-hover:text-white">
+            <ArrowRight className="h-4 w-4" />
+          </span>
+        </div>
+      </div>
+
       {showSharePopup && (
         <div
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 rounded-lg backdrop-blur-sm"
+          className="absolute inset-0 z-50 flex items-center justify-center bg-[#1E332D]/62 p-4 backdrop-blur-sm"
           onClick={(e) => {
             e.stopPropagation();
             setShowSharePopup(false);
           }}
         >
           <div
-            className="bg-white rounded-xl shadow-2xl p-4 mx-4 w-[calc(100%-2rem)] max-w-[280px] share-popup-enter"
+            className="share-popup-enter w-full max-w-[292px] rounded-3xl bg-[#FFFDF8] p-4 shadow-2xl shadow-black/20"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-gray-800">分享到微信</h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-[#243B35]">分享课程</h4>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowSharePopup(false);
                 }}
-                className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F4EFE6] text-[#7B817C] transition hover:text-[#243B35]"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="flex items-center gap-2.5 p-2.5 bg-gray-50 rounded-lg mb-3">
+            <div className="mt-4 flex items-center gap-3 rounded-2xl bg-[#F4EFE6] p-3">
               <img
                 src={course.coverUrl}
                 alt=""
-                className="w-12 h-8 rounded object-cover shrink-0"
+                className="h-12 w-16 shrink-0 rounded-xl object-cover"
               />
               <div className="min-w-0">
-                <p className="text-xs font-medium text-gray-700 line-clamp-1">{course.title}</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">{course.teacher}</p>
+                <p className="line-clamp-1 text-xs font-semibold text-[#243B35]">
+                  {course.title}
+                </p>
+                <p className="mt-1 text-[11px] text-[#8A918B]">{course.teacher}</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="mt-4 grid grid-cols-2 gap-2">
               <button
                 onClick={handleShareToFriend}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-lg hover:bg-green-50 transition-colors group/share"
+                className="flex items-center justify-center gap-2 rounded-2xl bg-[#E6EDDF] px-3 py-3 text-xs font-semibold text-[#41675A] transition hover:bg-[#DDE8D9]"
               >
-                <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center shadow-sm group-hover/share:shadow-md transition-shadow">
-                  <svg viewBox="0 0 24 24" className="w-5 h-5 text-white fill-current">
-                    <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 01.213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 00.167-.054l1.903-1.114a.864.864 0 01.717-.098 10.16 10.16 0 002.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 01-1.162 1.178A1.17 1.17 0 014.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 01-1.162 1.178 1.17 1.17 0 01-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 01.598.082l1.584.926a.272.272 0 00.14.045c.134 0 .24-.11.24-.245 0-.06-.024-.12-.04-.178l-.325-1.233a.492.492 0 01.177-.554C23.028 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-7.062-6.122zM14.53 13.39c.535 0 .969.44.969.983a.976.976 0 01-.969.983.976.976 0 01-.969-.983c0-.542.434-.983.97-.983zm4.844 0c.535 0 .969.44.969.983a.976.976 0 01-.969.983.976.976 0 01-.969-.983c0-.542.434-.983.97-.983z" />
-                  </svg>
-                </div>
-                <span className="text-[10px] text-gray-600 font-medium">微信好友</span>
+                <MessageCircle className="h-4 w-4" />
+                微信好友
               </button>
-
-              <button
-                onClick={handleShareToMoments}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-lg hover:bg-green-50 transition-colors group/share"
-              >
-                <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center shadow-sm group-hover/share:shadow-md transition-shadow">
-                  <svg viewBox="0 0 24 24" className="w-5 h-5 text-white fill-current">
-                    <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 2c1.82 0 3.507.613 4.855 1.644L7.644 16.855A7.96 7.96 0 014 12c0-4.411 3.589-8 8-8zm0 16a7.96 7.96 0 01-4.855-1.644l9.211-9.211A7.96 7.96 0 0120 12c0 4.411-3.589 8-8 8z" />
-                  </svg>
-                </div>
-                <span className="text-[10px] text-gray-600 font-medium">朋友圈</span>
-              </button>
-
               <button
                 onClick={handleCopyLink}
-                className="flex flex-col items-center gap-1.5 p-2.5 rounded-lg hover:bg-blue-50 transition-colors group/share"
+                className="flex items-center justify-center gap-2 rounded-2xl bg-[#243B35] px-3 py-3 text-xs font-semibold text-white transition hover:bg-[#315047]"
               >
-                <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-sm group-hover/share:shadow-md transition-shadow" style={{ backgroundColor: "#4A90D9" }}>
-                  <Copy className="w-5 h-5 text-white" />
-                </div>
-                <span className="text-[10px] text-gray-600 font-medium">复制链接</span>
+                <Copy className="h-4 w-4" />
+                复制内容
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Enhanced hover styles + promo tag styles */}
       <style>{`
         .course-card {
-          transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-                      box-shadow 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-                      border-color 0.3s ease;
-          box-shadow: 0 1px 3px rgba(27, 54, 93, 0.06);
+          box-shadow: 0 1px 2px rgba(36, 59, 53, 0.04);
         }
         .course-card:hover {
-          transform: translateY(-6px);
-          box-shadow: 0 12px 28px rgba(27, 54, 93, 0.12),
-                      0 4px 10px rgba(74, 144, 217, 0.08);
-          border-color: rgba(74, 144, 217, 0.2);
+          transform: translateY(-4px);
+          border-color: rgba(111, 143, 131, 0.42);
+          box-shadow: 0 18px 34px rgba(36, 59, 53, 0.1);
         }
-        .course-card:active {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 16px rgba(27, 54, 93, 0.1);
-        }
-        .discount-ribbon {
-          background: linear-gradient(135deg, #FF6B35, #E8553A);
-          border-radius: 0 0 8px 0;
-          letter-spacing: 0.5px;
-        }
-        .coupon-tag {
-          position: relative;
-          overflow: hidden;
-        }
-        .coupon-tag::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: -100%;
-          width: 100%;
-          height: 100%;
-          background: linear-gradient(90deg, transparent, rgba(232, 85, 58, 0.08), transparent);
-          animation: couponShimmer 3s ease-in-out infinite;
-        }
-        @keyframes couponShimmer {
-          0%, 100% { left: -100%; }
-          50% { left: 100%; }
+        @keyframes courseFadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(14px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
         .share-popup-enter {
-          animation: sharePopupIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+          animation: sharePopupIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
         @keyframes sharePopupIn {
           from {
             opacity: 0;
-            transform: scale(0.85) translateY(8px);
+            transform: translateY(10px) scale(0.96);
           }
           to {
             opacity: 1;
-            transform: scale(1) translateY(0);
+            transform: translateY(0) scale(1);
           }
         }
       `}</style>

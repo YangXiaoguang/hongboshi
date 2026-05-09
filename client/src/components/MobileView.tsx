@@ -9,12 +9,18 @@ import { useState, useEffect } from "react";
 import { Search, Bell, Users, Heart, Share2, X, Copy, Clock, Ticket, User, Smartphone, MessageSquare, Shield, Loader2, LogOut, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { categories, courseTypes } from "@/lib/mockData";
-import type { Course } from "@/lib/mockData";
+import {
+  categories,
+  courseTypes,
+  searchCourses,
+  type Course,
+  type CourseCategoryFilter,
+  type CourseTypeFilter,
+} from "@/features/courses";
 
 const typeColorMap: Record<string, string> = {
-  直播: "#E8553A",
-  录播: "#4A90D9",
+  直播: "#B86F56",
+  录播: "#6F8F83",
   专栏: "#7B9E87",
 };
 
@@ -38,10 +44,10 @@ function getCountdown(endsAt: string): string {
 
 interface MobileViewProps {
   courses: Course[];
-  selectedCategory: string;
-  selectedType: string;
-  onCategoryChange: (cat: string) => void;
-  onTypeChange: (type: string) => void;
+  selectedCategory: CourseCategoryFilter;
+  selectedType: CourseTypeFilter;
+  onCategoryChange: (cat: CourseCategoryFilter) => void;
+  onTypeChange: (type: CourseTypeFilter) => void;
   favorites: Set<number>;
   onToggleFavorite: (courseId: number) => void;
 }
@@ -120,13 +126,7 @@ export default function MobileView({
     toast("已退出登录", { icon: "👋" });
   };
 
-  const filteredCourses = searchValue
-    ? courses.filter(
-        (c) =>
-          c.title.includes(searchValue) ||
-          c.teacher.includes(searchValue)
-      )
-    : courses;
+  const filteredCourses = searchCourses(courses, searchValue);
 
   const visibleCourses = filteredCourses.slice(0, visibleCount);
 
@@ -188,12 +188,12 @@ export default function MobileView({
   return (
     <div className="min-h-full relative" style={{ fontFamily: "'Noto Sans SC', sans-serif" }}>
       {/* Status bar placeholder */}
-      <div className="h-[44px]" style={{ backgroundColor: "#1B365D" }} />
+      <div className="h-[44px]" style={{ backgroundColor: "#243B35" }} />
 
       {/* Mini program header */}
       <div
         className="px-4 pb-3 pt-1"
-        style={{ backgroundColor: "#1B365D" }}
+        style={{ backgroundColor: "#243B35" }}
       >
         <div className="flex items-center justify-between mb-3">
           <span className="text-white font-semibold text-[15px]">红博士心理小讲堂</span>
@@ -214,8 +214,8 @@ export default function MobileView({
                 className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
                 style={{
                   background: user.loginMethod === "wechat"
-                    ? "linear-gradient(135deg, #52B788, #2D6A4F)"
-                    : "linear-gradient(135deg, #4A90D9, #1B365D)",
+                    ? "linear-gradient(135deg, #7B9E87, #41675A)"
+                    : "linear-gradient(135deg, #6F8F83, #243B35)",
                 }}
               >
                 {user.nickname.charAt(0)}
@@ -259,7 +259,7 @@ export default function MobileView({
                 }`}
                 style={
                   selectedCategory === cat
-                    ? { backgroundColor: "#4A90D9" }
+                    ? { backgroundColor: "#6F8F83" }
                     : {}
                 }
               >
@@ -284,7 +284,7 @@ export default function MobileView({
             }`}
             style={
               selectedType === type
-                ? { backgroundColor: "#4A90D9", borderColor: "#4A90D9" }
+                ? { backgroundColor: "#6F8F83", borderColor: "#6F8F83" }
                 : {}
             }
           >
@@ -334,7 +334,7 @@ export default function MobileView({
                   {course.discount && !course.isFree && (
                     <span
                       className="absolute top-0 left-0 px-1.5 py-px text-[8px] font-bold text-white rounded-br-md"
-                      style={{ background: "linear-gradient(135deg, #FF6B35, #E8553A)" }}
+                      style={{ background: "linear-gradient(135deg, #C98B6A, #B86F56)" }}
                     >
                       {course.discount.label}
                     </span>
@@ -355,8 +355,8 @@ export default function MobileView({
                           onClick={(e) => handleCouponClick(e, course)}
                           className="inline-flex items-center gap-0.5 px-1 py-px rounded border text-[9px] font-medium active:scale-95 transition-transform"
                           style={{
-                            color: "#E8553A",
-                            borderColor: "#E8553A",
+                            color: "#B86F56",
+                            borderColor: "#B86F56",
                             backgroundColor: "rgba(232, 85, 58, 0.05)",
                           }}
                         >
@@ -367,7 +367,7 @@ export default function MobileView({
                       {course.discount && (
                         <span
                           className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[9px] font-medium text-white"
-                          style={{ background: "linear-gradient(135deg, #FF6B35, #E8553A)" }}
+                          style={{ background: "linear-gradient(135deg, #C98B6A, #B86F56)" }}
                         >
                           <Clock className="w-2.5 h-2.5" />
                           {getCountdown(course.discount.endsAt)}
@@ -379,14 +379,14 @@ export default function MobileView({
                   <div className="flex items-center justify-between mt-0.5">
                     <div className="flex items-baseline gap-1.5">
                       {course.isFree ? (
-                        <span className="text-xs font-semibold" style={{ color: "#52B788" }}>
+                        <span className="text-xs font-semibold" style={{ color: "#7B9E87" }}>
                           免费
                         </span>
                       ) : (
                         <>
                           <span
                             className="text-sm font-bold tabular-nums"
-                            style={{ color: "#E8553A" }}
+                            style={{ color: "#B86F56" }}
                           >
                             ¥{course.price}
                           </span>
@@ -469,7 +469,7 @@ export default function MobileView({
                 className={`text-[10px] ${
                   tab.active ? "font-medium" : "text-gray-400"
                 }`}
-                style={tab.active ? { color: "#4A90D9" } : {}}
+                style={tab.active ? { color: "#6F8F83" } : {}}
               >
                 {tab.label}
               </span>
@@ -537,7 +537,7 @@ export default function MobileView({
                 onClick={handleCopyLink}
                 className="flex flex-col items-center gap-2 py-3 rounded-xl active:bg-blue-50 transition-colors"
               >
-                <div className="w-12 h-12 rounded-full flex items-center justify-center shadow-sm" style={{ backgroundColor: "#4A90D9" }}>
+                <div className="w-12 h-12 rounded-full flex items-center justify-center shadow-sm" style={{ backgroundColor: "#6F8F83" }}>
                   <Copy className="w-6 h-6 text-white" />
                 </div>
                 <span className="text-[11px] text-gray-600 font-medium">复制链接</span>
@@ -557,7 +557,7 @@ export default function MobileView({
       {showMobileLogin && (
         <div className="absolute inset-0 z-50 bg-white mobile-sheet-enter" style={{ fontFamily: "'Noto Sans SC', sans-serif" }}>
           {/* Header */}
-          <div className="flex items-center h-11 px-3" style={{ backgroundColor: "#1B365D" }}>
+          <div className="flex items-center h-11 px-3" style={{ backgroundColor: "#243B35" }}>
             <button onClick={() => setShowMobileLogin(false)} className="text-white/70">
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -568,8 +568,8 @@ export default function MobileView({
           <div className="px-6 pt-8">
             {/* Logo */}
             <div className="flex flex-col items-center mb-8">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold mb-3" style={{ backgroundColor: "#4A90D9" }}>红</div>
-              <h3 className="text-base font-bold" style={{ color: "#1B365D" }}>红博士心理小讲堂</h3>
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold mb-3" style={{ backgroundColor: "#6F8F83" }}>红</div>
+              <h3 className="text-base font-bold" style={{ color: "#243B35" }}>红博士心理小讲堂</h3>
               <p className="text-[11px] text-gray-400 mt-1">登录后享受更多课程权益</p>
             </div>
 
@@ -593,7 +593,7 @@ export default function MobileView({
               <div>
                 {/* Phone input */}
                 <div className="mb-3">
-                  <div className="flex items-center h-11 border border-gray-200 rounded-xl px-3" style={{ backgroundColor: "#FAFBFC" }}>
+                  <div className="flex items-center h-11 border border-gray-200 rounded-xl px-3" style={{ backgroundColor: "#FFFDF8" }}>
                     <span className="text-xs text-gray-400 mr-2">+86</span>
                     <span className="w-px h-4 bg-gray-200 mr-2" />
                     <input
@@ -607,7 +607,7 @@ export default function MobileView({
                 </div>
                 {/* Code input */}
                 <div className="flex gap-2 mb-5">
-                  <div className="flex-1 flex items-center h-11 border border-gray-200 rounded-xl px-3" style={{ backgroundColor: "#FAFBFC" }}>
+                  <div className="flex-1 flex items-center h-11 border border-gray-200 rounded-xl px-3" style={{ backgroundColor: "#FFFDF8" }}>
                     <MessageSquare className="w-3.5 h-3.5 text-gray-300 mr-2" />
                     <input
                       type="text"
@@ -623,7 +623,7 @@ export default function MobileView({
                     className={`shrink-0 h-11 px-3 rounded-xl text-xs font-medium transition-all ${
                       mobileCountdown > 0 ? "bg-gray-100 text-gray-400" : "text-white"
                     }`}
-                    style={mobileCountdown > 0 ? {} : { backgroundColor: "#4A90D9" }}
+                    style={mobileCountdown > 0 ? {} : { backgroundColor: "#6F8F83" }}
                   >
                     {mobileCountdown > 0 ? `${mobileCountdown}s` : "获取验证码"}
                   </button>
@@ -633,7 +633,7 @@ export default function MobileView({
                   onClick={handleMobilePhoneLogin}
                   disabled={mobileSubmitting}
                   className="w-full h-11 rounded-xl text-white text-sm font-medium flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-60"
-                  style={{ background: "linear-gradient(135deg, #1B365D, #4A90D9)" }}
+                  style={{ background: "linear-gradient(135deg, #243B35, #6F8F83)" }}
                 >
                   {mobileSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />登录中...</> : <>登录 / 注册</>}
                 </button>
@@ -653,7 +653,7 @@ export default function MobileView({
                   onClick={handleMobileWechatLogin}
                   disabled={mobileSubmitting}
                   className="w-full h-11 rounded-xl text-white text-sm font-medium flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-60"
-                  style={{ backgroundColor: "#52B788" }}
+                  style={{ backgroundColor: "#7B9E87" }}
                 >
                   {mobileSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />授权中...</> : <>微信授权登录</>}
                 </button>
@@ -667,15 +667,15 @@ export default function MobileView({
                 className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all ${
                   mobileAgreed ? "border-transparent text-white" : "border-gray-300"
                 }`}
-                style={mobileAgreed ? { backgroundColor: "#4A90D9" } : {}}
+                style={mobileAgreed ? { backgroundColor: "#6F8F83" } : {}}
               >
                 {mobileAgreed && <svg viewBox="0 0 12 12" className="w-3 h-3 fill-current"><path d="M10.28 2.28a.75.75 0 00-1.06-1.06L4.5 5.94 2.78 4.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.06 0l5.25-5.25z" /></svg>}
               </button>
               <p className="text-[10px] text-gray-400 leading-relaxed">
                 我已阅读并同意
-                <span className="mx-0.5 underline" style={{ color: "#4A90D9" }}>《用户服务协议》</span>
+                <span className="mx-0.5 underline" style={{ color: "#6F8F83" }}>《用户服务协议》</span>
                 和
-                <span className="mx-0.5 underline" style={{ color: "#4A90D9" }}>《隐私政策》</span>
+                <span className="mx-0.5 underline" style={{ color: "#6F8F83" }}>《隐私政策》</span>
               </p>
             </div>
           </div>
@@ -686,7 +686,7 @@ export default function MobileView({
       {showMobileProfile && isLoggedIn && user && (
         <div className="absolute inset-0 z-50 bg-gray-50 mobile-sheet-enter" style={{ fontFamily: "'Noto Sans SC', sans-serif" }}>
           {/* Header */}
-          <div className="flex items-center h-11 px-3" style={{ backgroundColor: "#1B365D" }}>
+          <div className="flex items-center h-11 px-3" style={{ backgroundColor: "#243B35" }}>
             <button onClick={() => setShowMobileProfile(false)} className="text-white/70">
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -701,8 +701,8 @@ export default function MobileView({
                 className="w-14 h-14 rounded-full flex items-center justify-center text-white text-lg font-bold"
                 style={{
                   background: user.loginMethod === "wechat"
-                    ? "linear-gradient(135deg, #52B788, #2D6A4F)"
-                    : "linear-gradient(135deg, #4A90D9, #1B365D)",
+                    ? "linear-gradient(135deg, #7B9E87, #41675A)"
+                    : "linear-gradient(135deg, #6F8F83, #243B35)",
                 }}
               >
                 {user.nickname.charAt(0)}

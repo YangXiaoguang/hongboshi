@@ -63,7 +63,17 @@ server/
   index.ts          # 生产静态服务入口
 shared/
   const.ts          # 前后端共享常量
+  domain/           # 前后端共享业务契约与 Zod 校验
+docs/
+  product-engineering-roadmap.md  # 产品工程路线
+  domain-contracts.md             # 领域契约说明
 ```
+
+## 产品工程文档
+
+- [产品工程路线](./docs/product-engineering-roadmap.md)
+- [领域契约说明](./docs/domain-contracts.md)
+- [课程中心 Feature 架构](./docs/course-feature-architecture.md)
 
 ## 环境变量
 
@@ -79,6 +89,7 @@ shared/
 ## 当前业务状态
 
 - 课程数据来自 `client/src/lib/mockData.ts`
+- 共享业务类型位于 `shared/domain`
 - PC 端主页面位于 `client/src/pages/Home.tsx`
 - 小程序端预览位于 `client/src/components/MobileView.tsx`
 - 登录状态由 `client/src/contexts/AuthContext.tsx` 模拟

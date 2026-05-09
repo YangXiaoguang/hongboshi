@@ -1,34 +1,11 @@
 /*
- * 「知性蓝调」设计系统 - Mock 数据
- * 色彩: 深海蓝导航 + 天空蓝交互色 + 暖灰内容底色
- * 用途: 课程发现页面的模拟数据
+ * 课程发现页 mock 数据。
+ * 后续接入 API 时保留为本地 fallback，数据形状由 shared/domain/course 统一约束。
  */
 
-export interface Course {
-  id: number;
-  title: string;
-  coverUrl: string;
-  category: string;
-  type: "直播" | "录播" | "专栏";
-  teacher: string;
-  learners: number;
-  price: number;
-  originalPrice: number;
-  isFree: boolean;
-  isVip: boolean;
-  createdAt: string;
-  /** 优惠券信息 */
-  coupon?: {
-    label: string;       // 如 "领券减50" "新人专享"
-    amount: number;      // 优惠金额
-  };
-  /** 限时折扣信息 */
-  discount?: {
-    label: string;       // 如 "限时6折" "今日特惠"
-    endsAt: string;      // 截止时间 ISO string
-    percent?: number;    // 折扣百分比，如 60 表示6折
-  };
-}
+import type { Course } from "@shared/domain";
+
+export type { Course };
 
 export const COVER_IMAGES = {
   emotion: "https://d2xsxph8kpxj0f.cloudfront.net/110778359/jJ8VD4MsjQ8YJb6CrXvwEn/course-cover-emotion-nm2h7f9rTqhVZUGScFedR9.webp",
@@ -50,33 +27,6 @@ const UNSPLASH_COVERS = [
   "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=225&fit=crop",
   "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&h=225&fit=crop",
   "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&h=225&fit=crop",
-];
-
-export const categories = [
-  "全部",
-  "个人成长",
-  "情绪管理",
-  "职场心理",
-  "家庭教育",
-  "心理科普",
-  "婚姻关系",
-  "青少年心理",
-  "心理咨询师",
-  "正念冥想",
-  "认知行为",
-  "催眠治疗",
-  "沙盘疗法",
-  "绘画疗法",
-  "团体辅导",
-];
-
-export const courseTypes = ["全部", "直播", "录播", "专栏"];
-
-export const sortOptions = [
-  { label: "综合", value: "comprehensive" },
-  { label: "最新", value: "newest" },
-  { label: "最热", value: "hottest" },
-  { label: "价格", value: "price" },
 ];
 
 function getCoverForIndex(i: number): string {
@@ -487,5 +437,3 @@ export const courses: Course[] = [
     createdAt: "2026-01-01",
   },
 ];
-
-export const PAGE_SIZE = 12;

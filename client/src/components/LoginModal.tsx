@@ -191,7 +191,7 @@ export default function LoginModal() {
           className="h-[3px] w-full"
           style={{
             background:
-              "linear-gradient(90deg, #1B365D 0%, #4A90D9 40%, #52B788 70%, #4A90D9 100%)",
+              "linear-gradient(90deg, #243B35 0%, #6F8F83 40%, #7B9E87 70%, #6F8F83 100%)",
           }}
         />
 
@@ -208,13 +208,13 @@ export default function LoginModal() {
           <div className="flex items-center justify-center gap-2 mb-2">
             <div
               className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-sm"
-              style={{ backgroundColor: "#4A90D9" }}
+              style={{ backgroundColor: "#6F8F83" }}
             >
               红
             </div>
             <h2
               className="text-xl font-bold"
-              style={{ color: "#1B365D" }}
+              style={{ color: "#243B35" }}
             >
               红博士心理小讲堂
             </h2>
@@ -281,7 +281,7 @@ export default function LoginModal() {
                         ? "border-red-300 focus:ring-red-200 focus:border-red-400"
                         : "border-gray-200 focus:ring-blue-100 focus:border-blue-400"
                     }`}
-                    style={{ backgroundColor: "#FAFBFC" }}
+                    style={{ backgroundColor: "#FFFDF8" }}
                   />
                 </div>
                 {phoneError && (
@@ -311,7 +311,7 @@ export default function LoginModal() {
                           ? "border-red-300 focus:ring-red-200 focus:border-red-400"
                           : "border-gray-200 focus:ring-blue-100 focus:border-blue-400"
                       }`}
-                      style={{ backgroundColor: "#FAFBFC" }}
+                      style={{ backgroundColor: "#FFFDF8" }}
                     />
                   </div>
                   <button
@@ -325,7 +325,7 @@ export default function LoginModal() {
                     style={
                       countdown > 0
                         ? {}
-                        : { backgroundColor: "#4A90D9" }
+                        : { backgroundColor: "#6F8F83" }
                     }
                   >
                     {countdown > 0
@@ -350,7 +350,7 @@ export default function LoginModal() {
                 className="w-full h-11 rounded-xl text-white text-sm font-medium flex items-center justify-center gap-2 transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed mt-5"
                 style={{
                   background:
-                    "linear-gradient(135deg, #1B365D 0%, #4A90D9 100%)",
+                    "linear-gradient(135deg, #243B35 0%, #6F8F83 100%)",
                 }}
               >
                 {isSubmitting ? (
@@ -380,7 +380,7 @@ export default function LoginModal() {
               <div className="flex flex-col items-center py-2">
                 <div
                   className="relative w-[200px] h-[200px] rounded-2xl border-2 border-dashed flex items-center justify-center mb-4 overflow-hidden"
-                  style={{ borderColor: "#52B788" }}
+                  style={{ borderColor: "#7B9E87" }}
                 >
                   {/* Mock QR code pattern */}
                   <div className="w-[170px] h-[170px] relative">
@@ -389,17 +389,17 @@ export default function LoginModal() {
                       {/* Background */}
                       <rect width="170" height="170" fill="white" />
                       {/* Corner markers */}
-                      <rect x="10" y="10" width="40" height="40" rx="4" fill="#1B365D" />
+                      <rect x="10" y="10" width="40" height="40" rx="4" fill="#243B35" />
                       <rect x="15" y="15" width="30" height="30" rx="2" fill="white" />
-                      <rect x="20" y="20" width="20" height="20" rx="1" fill="#1B365D" />
+                      <rect x="20" y="20" width="20" height="20" rx="1" fill="#243B35" />
                       
-                      <rect x="120" y="10" width="40" height="40" rx="4" fill="#1B365D" />
+                      <rect x="120" y="10" width="40" height="40" rx="4" fill="#243B35" />
                       <rect x="125" y="15" width="30" height="30" rx="2" fill="white" />
-                      <rect x="130" y="20" width="20" height="20" rx="1" fill="#1B365D" />
+                      <rect x="130" y="20" width="20" height="20" rx="1" fill="#243B35" />
                       
-                      <rect x="10" y="120" width="40" height="40" rx="4" fill="#1B365D" />
+                      <rect x="10" y="120" width="40" height="40" rx="4" fill="#243B35" />
                       <rect x="15" y="125" width="30" height="30" rx="2" fill="white" />
-                      <rect x="20" y="130" width="20" height="20" rx="1" fill="#1B365D" />
+                      <rect x="20" y="130" width="20" height="20" rx="1" fill="#243B35" />
                       
                       {/* Data modules - random pattern */}
                       {[
@@ -418,12 +418,12 @@ export default function LoginModal() {
                         [60,140],[70,140],[80,140],[90,140],[100,140],[110,140],[130,140],[140,140],
                         [60,150],[80,150],[100,150],[120,150],[130,150],[150,150],
                       ].map(([x, y], i) => (
-                        <rect key={i} x={x} y={y} width="8" height="8" fill="#1B365D" opacity={0.85} />
+                        <rect key={i} x={x} y={y} width="8" height="8" fill="#243B35" opacity={0.85} />
                       ))}
                       
                       {/* Center logo */}
                       <rect x="65" y="65" width="40" height="40" rx="8" fill="white" />
-                      <rect x="68" y="68" width="34" height="34" rx="6" fill="#4A90D9" />
+                      <rect x="68" y="68" width="34" height="34" rx="6" fill="#6F8F83" />
                       <text x="85" y="91" textAnchor="middle" fill="white" fontSize="16" fontWeight="bold">红</text>
                     </svg>
 
@@ -431,7 +431,7 @@ export default function LoginModal() {
                     {wechatScanning && (
                       <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded-xl">
                         <div className="flex flex-col items-center gap-2">
-                          <Loader2 className="w-8 h-8 animate-spin" style={{ color: "#52B788" }} />
+                          <Loader2 className="w-8 h-8 animate-spin" style={{ color: "#7B9E87" }} />
                           <span className="text-xs text-gray-500">扫码成功，确认中...</span>
                         </div>
                       </div>
@@ -441,8 +441,8 @@ export default function LoginModal() {
                     {wechatScanned && (
                       <div className="absolute inset-0 flex items-center justify-center bg-white/90 rounded-xl">
                         <div className="flex flex-col items-center gap-2">
-                          <CheckCircle2 className="w-10 h-10" style={{ color: "#52B788" }} />
-                          <span className="text-xs font-medium" style={{ color: "#52B788" }}>登录成功</span>
+                          <CheckCircle2 className="w-10 h-10" style={{ color: "#7B9E87" }} />
+                          <span className="text-xs font-medium" style={{ color: "#7B9E87" }}>登录成功</span>
                         </div>
                       </div>
                     )}
@@ -450,7 +450,7 @@ export default function LoginModal() {
 
                   {/* Scanning line animation */}
                   {!wechatScanning && !wechatScanned && (
-                    <div className="absolute top-0 left-0 right-0 h-1 qr-scan-line" style={{ backgroundColor: "#52B788" }} />
+                    <div className="absolute top-0 left-0 right-0 h-1 qr-scan-line" style={{ backgroundColor: "#7B9E87" }} />
                   )}
                 </div>
 
@@ -466,7 +466,7 @@ export default function LoginModal() {
                   <button
                     onClick={handleWechatLogin}
                     className="mt-4 px-6 py-2 rounded-lg text-sm font-medium text-white transition-all hover:opacity-90 active:scale-[0.98]"
-                    style={{ backgroundColor: "#52B788" }}
+                    style={{ backgroundColor: "#7B9E87" }}
                   >
                     模拟扫码登录
                   </button>
@@ -484,7 +484,7 @@ export default function LoginModal() {
                   ? "border-transparent text-white"
                   : "border-gray-300 text-transparent hover:border-gray-400"
               }`}
-              style={agreed ? { backgroundColor: "#4A90D9" } : {}}
+              style={agreed ? { backgroundColor: "#6F8F83" } : {}}
             >
               <svg viewBox="0 0 12 12" className="w-3 h-3 fill-current">
                 <path d="M10.28 2.28a.75.75 0 00-1.06-1.06L4.5 5.94 2.78 4.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.06 0l5.25-5.25z" />
@@ -495,7 +495,7 @@ export default function LoginModal() {
               <button
                 onClick={() => toast("用户协议", { description: "用户服务协议页面即将上线" })}
                 className="mx-0.5 underline underline-offset-2 hover:text-gray-600 transition-colors"
-                style={{ color: "#4A90D9" }}
+                style={{ color: "#6F8F83" }}
               >
                 《用户服务协议》
               </button>
@@ -503,7 +503,7 @@ export default function LoginModal() {
               <button
                 onClick={() => toast("隐私政策", { description: "隐私政策页面即将上线" })}
                 className="mx-0.5 underline underline-offset-2 hover:text-gray-600 transition-colors"
-                style={{ color: "#4A90D9" }}
+                style={{ color: "#6F8F83" }}
               >
                 《隐私政策》
               </button>

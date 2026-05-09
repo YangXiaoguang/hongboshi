@@ -1,16 +1,10 @@
-/*
- * CourseToolbar - 排序与搜索工具栏
- * 「知性蓝调」设计: 排序Tab使用3px蓝色下划线指示器
- * 包含: 排序标签 + 会员课程复选框 + 搜索框
- */
-
 import { useState } from "react";
-import { Search } from "lucide-react";
-import { sortOptions } from "@/lib/mockData";
+import { Search, Sparkles } from "lucide-react";
+import { sortOptions, type CourseSort } from "@/features/courses";
 
 interface CourseToolbarProps {
-  activeSort: string;
-  onSortChange: (sort: string) => void;
+  activeSort: CourseSort;
+  onSortChange: (sort: CourseSort) => void;
   onSearch: (keyword: string) => void;
   vipOnly: boolean;
   onVipToggle: (checked: boolean) => void;
@@ -36,69 +30,54 @@ export default function CourseToolbar({
   };
 
   return (
-    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-      {/* Left: Sort tabs + VIP checkbox */}
-      <div className="flex items-center gap-6">
-        <div className="flex items-center gap-1">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="inline-flex w-fit rounded-full bg-[#FFFDF8]/76 p-1">
           {sortOptions.map((opt) => (
             <button
               key={opt.value}
               onClick={() => onSortChange(opt.value)}
-              className={`relative px-4 py-2 text-sm transition-all duration-200 rounded-md ${
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                 activeSort === opt.value
-                  ? "font-semibold"
-                  : "text-gray-500 hover:text-gray-800"
+                  ? "bg-[#243B35] text-white"
+                  : "text-[#68736D] hover:text-[#243B35]"
               }`}
-              style={
-                activeSort === opt.value
-                  ? { color: "#1B365D" }
-                  : {}
-              }
             >
               {opt.label}
-              {activeSort === opt.value && (
-                <span
-                  className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-[3px] rounded-full"
-                  style={{ backgroundColor: "#4A90D9" }}
-                />
-              )}
             </button>
           ))}
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-gray-500 cursor-pointer select-none">
+        <label className="inline-flex w-fit items-center gap-2 rounded-full border border-[#E1D7C7] bg-white/60 px-4 py-2 text-sm font-medium text-[#68736D]">
           <input
             type="checkbox"
             checked={vipOnly}
             onChange={(e) => onVipToggle(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300 accent-blue-500"
+            className="h-4 w-4 rounded border-[#CFC4B3] accent-[#6F8F83]"
           />
-          <span>会员课程</span>
+          <Sparkles className="h-4 w-4 text-[#8C6E4A]" />
+          会员内容
         </label>
 
-        <span className="text-xs text-gray-400 hidden sm:inline">
-          共 {totalCount} 门课程
-        </span>
+        <span className="text-sm text-[#7B817C]">共 {totalCount} 门课程</span>
       </div>
 
-      {/* Right: Search box */}
-      <div className="flex items-center w-full sm:w-auto">
-        <div className="relative w-full sm:w-[280px]">
-          <input
-            type="text"
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="输入关键词搜索课程"
-            className="w-full h-9 pl-4 pr-10 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all placeholder:text-gray-300"
-          />
-          <button
-            onClick={handleSearch}
-            className="absolute right-0 top-0 h-9 w-9 flex items-center justify-center text-gray-400 hover:text-blue-500 transition-colors"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-        </div>
+      <div className="relative w-full lg:w-[320px]">
+        <input
+          type="text"
+          value={searchValue}
+          onChange={(e) => setSearchValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="搜索课程、老师或主题"
+          className="h-11 w-full rounded-full border border-[#E1D7C7] bg-[#FFFDF8]/86 pl-4 pr-12 text-sm text-[#243B35] transition placeholder:text-[#A8AAA5] focus:border-[#AFC2AB] focus:outline-none focus:ring-4 focus:ring-[#DDE8D9]/60"
+        />
+        <button
+          onClick={handleSearch}
+          className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-full bg-[#6F8F83] text-white transition hover:bg-[#5F7F73]"
+          aria-label="搜索"
+        >
+          <Search className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );

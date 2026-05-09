@@ -9,7 +9,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "preview": "vite preview --host",
     "check": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --root . --passWithNoTests",
     "ci": "pnpm check && pnpm test && pnpm build",
     "format": "prettier --write ."
   },

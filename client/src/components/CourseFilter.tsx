@@ -1,18 +1,17 @@
-/*
- * CourseFilter - 课程筛选区
- * 「知性蓝调」设计: 横向胶囊标签，选中态为天空蓝
- * 包含: 学科领域筛选 + 授课类型筛选，支持展开/收起
- */
-
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { categories, courseTypes } from "@/lib/mockData";
+import {
+  categories,
+  courseTypes,
+  type CourseCategoryFilter,
+  type CourseTypeFilter,
+} from "@/features/courses";
 
 interface CourseFilterProps {
-  selectedCategory: string;
-  selectedType: string;
-  onCategoryChange: (category: string) => void;
-  onTypeChange: (type: string) => void;
+  selectedCategory: CourseCategoryFilter;
+  selectedType: CourseTypeFilter;
+  onCategoryChange: (category: CourseCategoryFilter) => void;
+  onTypeChange: (type: CourseTypeFilter) => void;
 }
 
 export default function CourseFilter({
@@ -22,77 +21,61 @@ export default function CourseFilter({
   onTypeChange,
 }: CourseFilterProps) {
   const [expanded, setExpanded] = useState(false);
-
   const visibleCategories = expanded ? categories : categories.slice(0, 9);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-100 shadow-sm">
-      {/* Subject filter */}
-      <div className="px-5 py-4 border-b border-gray-50">
-        <div className="flex items-start gap-4">
-          <span className="text-sm font-medium text-gray-500 shrink-0 pt-1 w-[72px]">
-            学科领域：
-          </span>
-          <div className="flex flex-wrap gap-2 flex-1">
+    <div className="rounded-[28px] border border-[#E1D7C7] bg-[#FFFDF8]/82 p-5 backdrop-blur">
+      <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-start">
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <p className="text-xs font-semibold text-[#6F8F83]">关注主题</p>
+            {categories.length > 9 && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#7B817C] transition hover:text-[#243B35]"
+              >
+                {expanded ? (
+                  <>
+                    收起 <ChevronUp className="h-3.5 w-3.5" />
+                  </>
+                ) : (
+                  <>
+                    展开 <ChevronDown className="h-3.5 w-3.5" />
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
             {visibleCategories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => onCategoryChange(cat)}
-                className={`px-3.5 py-1.5 rounded-full text-sm transition-all duration-200 border ${
+                className={`rounded-full px-3.5 py-2 text-sm font-medium transition ${
                   selectedCategory === cat
-                    ? "text-white border-transparent font-medium shadow-sm"
-                    : "text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600 bg-white"
+                    ? "bg-[#243B35] text-white"
+                    : "bg-[#F5EFE6] text-[#66726C] hover:bg-[#E6EDDF] hover:text-[#243B35]"
                 }`}
-                style={
-                  selectedCategory === cat
-                    ? { backgroundColor: "#4A90D9", borderColor: "#4A90D9" }
-                    : {}
-                }
               >
                 {cat}
               </button>
             ))}
           </div>
-          {categories.length > 9 && (
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-1 text-sm text-gray-400 hover:text-blue-500 shrink-0 pt-1 transition-colors"
-            >
-              {expanded ? (
-                <>
-                  收起 <ChevronUp className="w-4 h-4" />
-                </>
-              ) : (
-                <>
-                  展开 <ChevronDown className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          )}
         </div>
-      </div>
 
-      {/* Type filter */}
-      <div className="px-5 py-4">
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-medium text-gray-500 shrink-0 w-[72px]">
-            授课类型：
-          </span>
-          <div className="flex flex-wrap gap-2">
+        <div className="min-w-[220px] border-t border-[#E8DED0] pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+          <p className="mb-3 text-xs font-semibold text-[#6F8F83]">学习形式</p>
+          <div className="flex flex-wrap gap-2 lg:max-w-[220px]">
             {courseTypes.map((type) => (
               <button
                 key={type}
                 onClick={() => onTypeChange(type)}
-                className={`px-3.5 py-1.5 rounded-full text-sm transition-all duration-200 border ${
+                className={`rounded-full px-3.5 py-2 text-sm font-medium transition ${
                   selectedType === type
-                    ? "text-white border-transparent font-medium shadow-sm"
-                    : "text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600 bg-white"
+                    ? "bg-[#6F8F83] text-white"
+                    : "bg-white/80 text-[#66726C] hover:bg-[#E6EDDF] hover:text-[#243B35]"
                 }`}
-                style={
-                  selectedType === type
-                    ? { backgroundColor: "#4A90D9", borderColor: "#4A90D9" }
-                    : {}
-                }
               >
                 {type}
               </button>
