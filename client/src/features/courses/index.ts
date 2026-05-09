@@ -3,6 +3,11 @@ export {
   type CourseRepository,
 } from "./api/mockCourseRepository";
 export { useCourseCatalog } from "./hooks/useCourseCatalog";
+export { useCourseEngagement } from "./hooks/useCourseEngagement";
+export {
+  localCourseEngagementRepository,
+  type CourseEngagementRepository,
+} from "./api/localCourseEngagementRepository";
 export {
   ALL_COURSE_CATEGORY,
   ALL_COURSE_TYPE,
@@ -22,6 +27,18 @@ export {
   type CourseSortOption,
   type CourseTypeFilter,
 } from "./model/courseCatalog";
+export {
+  LOCAL_COURSE_USER_ID,
+  completeCourseChapter,
+  createEmptyCourseEngagementState,
+  getCourseProgress,
+  getCourseProgressPercent,
+  isCourseFavorited,
+  normalizeCourseEngagementState,
+  startCourseProgress,
+  toggleCourseFavorite,
+  type CourseEngagementState,
+} from "./model/courseEngagement";
 export { buildCourseDetail, getRelatedCourses } from "./model/courseDetail";
 export type {
   Course,
@@ -29,6 +46,8 @@ export type {
   CourseCategory,
   CourseChapter,
   CourseDetail,
+  CourseProgress,
+  CourseProgressStatus,
   CourseSort,
   CourseType,
 } from "@shared/domain";

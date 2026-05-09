@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Clock3,
   HeartHandshake,
+  Heart,
   PlayCircle,
   ShieldCheck,
   Sparkles,
@@ -17,7 +18,11 @@ import { toast } from "sonner";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
 import NotFound from "@/pages/NotFound";
-import { mockCourseRepository, type Course } from "@/features/courses";
+import {
+  mockCourseRepository,
+  useCourseEngagement,
+  type Course,
+} from "@/features/courses";
 
 function formatLearners(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
@@ -32,6 +37,14 @@ function formatPrice(course: Course): string {
 export default function CourseDetail() {
   const [, navigate] = useLocation();
   const [, params] = useRoute("/courses/:courseId");
+  const {
+    completeChapter,
+    getProgress,
+    getProgressPercent,
+    isFavorited,
+    startCourse,
+    toggleFavorite,
+  } = useCourseEngagement();
   const courseId = Number(params?.courseId);
 
   const course = useMemo(() => {
@@ -54,6 +67,29 @@ export default function CourseDetail() {
     (sum, chapter) => sum + chapter.lessonCount,
     0
   );
+  const progress = getProgress(course.id);
+  const progressPercent = getProgressPercent(course.id, course.chapters.length);
+  const completedChapterIds = new Set(progress?.completedChapterIds ?? []);
+  const hasStarted = Boolean(progress);
+  const favorite = isFavorited(course.id);
+
+  const handleStartLearning = () => {
+    startCourse(course.id);
+    toast(hasStarted ? "继续学习" : "已加入学习计划", {
+      description: hasStarted
+        ? "已为你更新最近学习时间。"
+        : "学习进度会在本机保存，后续可接入真实账号同步。",
+    });
+  };
+
+  const handleToggleFavorite = () => {
+    toggleFavorite(course.id);
+    toast(favorite ? "已取消收藏" : "已收藏课程", {
+      description: favorite
+        ? `「${course.title}」已从收藏夹移除。`
+        : `「${course.title}」已加入你的成长清单。`,
+    });
+  };
 
   return (
     <div className="min-h-screen bg-[#F9F5EE] text-[#243B35]">
@@ -111,7 +147,20 @@ export default function CourseDetail() {
             </div>
 
             <aside className="self-end rounded-[28px] border border-white/14 bg-[#FFFDF8] p-5 text-[#243B35] shadow-2xl shadow-black/20">
-              <p className="text-xs font-semibold text-[#6F8F83]">课程权益</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold text-[#6F8F83]">课程权益</p>
+                <button
+                  onClick={handleToggleFavorite}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+                    favorite
+                      ? "bg-[#F4E5DE] text-[#A65F48]"
+                      : "bg-[#E6EDDF] text-[#41675A] hover:bg-[#DDE8D9]"
+                  }`}
+                >
+                  <Heart className={`h-3.5 w-3.5 ${favorite ? "fill-current" : ""}`} />
+                  {favorite ? "已收藏" : "收藏"}
+                </button>
+              </div>
               <div className="mt-3 flex items-end justify-between gap-4">
                 <div>
                   <p className="text-3xl font-semibold text-[#A65F48]">
@@ -128,6 +177,32 @@ export default function CourseDetail() {
                 </span>
               </div>
 
+              <div className="mt-5 rounded-[20px] bg-[#F4EFE6] p-4">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span className="text-[#6D746F]">学习状态</span>
+                  <span className={hasStarted ? "text-[#41675A]" : "text-[#9AA19B]"}>
+                    {hasStarted
+                      ? progress?.status === "completed"
+                        ? "已完成"
+                        : "学习中"
+                      : "未开始"}
+                  </span>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                  <div
+                    className="h-full rounded-full bg-[#6F8F83] transition-all"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <p className="mt-3 text-xs leading-5 text-[#7B817C]">
+                  {hasStarted
+                    ? progressPercent > 0
+                      ? `已完成 ${progressPercent}% 的章节。`
+                      : "已加入学习计划，建议从第一章开始。"
+                    : "点击开始学习后，会在本机记录你的进度。"}
+                </p>
+              </div>
+
               <div className="mt-5 space-y-3 text-sm text-[#5F6B64]">
                 <p className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-[#6F8F83]" />
@@ -140,15 +215,11 @@ export default function CourseDetail() {
               </div>
 
               <button
-                onClick={() =>
-                  toast("开始学习", {
-                    description: "学习进度与订单能力将在下一阶段接入。",
-                  })
-                }
+                onClick={handleStartLearning}
                 className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
               >
                 <PlayCircle className="mr-2 h-4 w-4" />
-                开始学习
+                {hasStarted ? "继续学习" : "开始学习"}
               </button>
               <button
                 onClick={() =>
@@ -217,9 +288,30 @@ export default function CourseDetail() {
                         {chapter.description}
                       </p>
                     </div>
-                    <div className="flex items-center gap-3 text-xs font-semibold text-[#7B817C] sm:justify-end">
+                    <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-[#7B817C] sm:justify-end">
                       <span>{chapter.lessonCount} 节</span>
                       <span>{chapter.durationMinutes} 分钟</span>
+                      <button
+                        onClick={() => {
+                          completeChapter(course.id, chapter.id, course.chapters.length);
+                          toast(
+                            completedChapterIds.has(chapter.id)
+                              ? "章节已完成"
+                              : "已记录章节进度",
+                            {
+                              description: `「${chapter.title}」已同步到本机学习记录。`,
+                            }
+                          );
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 transition ${
+                          completedChapterIds.has(chapter.id)
+                            ? "bg-[#DDE8D9] text-[#41675A]"
+                            : "bg-white text-[#6D746F] hover:text-[#243B35]"
+                        }`}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {completedChapterIds.has(chapter.id) ? "已完成" : "标记完成"}
+                      </button>
                     </div>
                   </div>
                 ))}

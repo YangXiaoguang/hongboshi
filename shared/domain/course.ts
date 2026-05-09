@@ -120,4 +120,5 @@ export type CourseAudience = z.infer<typeof CourseAudienceSchema>;
 export type CourseChapter = z.infer<typeof CourseChapterSchema>;
 export type CourseDetail = z.infer<typeof CourseDetailSchema>;
 export type CourseListQuery = z.infer<typeof CourseListQuerySchema>;
+export type CourseProgressStatus = z.infer<typeof CourseProgressStatusSchema>;
 export type CourseProgress = z.infer<typeof CourseProgressSchema>;

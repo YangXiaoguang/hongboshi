@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { useLocation } from "wouter";
 import {
@@ -27,6 +27,7 @@ import MobileView from "@/components/MobileView";
 import {
   mockCourseRepository,
   useCourseCatalog,
+  useCourseEngagement,
   type CourseCategory,
 } from "@/features/courses";
 
@@ -124,25 +125,13 @@ export default function Home() {
     setVipOnlyFilter,
     setCurrentPage,
   } = useCourseCatalog();
+  const { favoriteCourseIds, favoriteCount, toggleFavorite } = useCourseEngagement();
   const [viewMode, setViewMode] = useState<"pc" | "mobile">("pc");
   const [selectedNeed, setSelectedNeed] = useState(supportNeeds[0]);
-  const [favorites, setFavorites] = useState<Set<number>>(new Set());
 
   const { scrollYProgress } = useScroll();
   const heroScale = useTransform(scrollYProgress, [0, 0.35], [1, 1.08]);
   const heroY = useTransform(scrollYProgress, [0, 0.35], [0, 38]);
-
-  const handleToggleFavorite = useCallback((courseId: number) => {
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (next.has(courseId)) {
-        next.delete(courseId);
-      } else {
-        next.add(courseId);
-      }
-      return next;
-    });
-  }, []);
 
   const recommendedCourses = useMemo(() => {
     return mockCourseRepository.listRecommendedCourses(selectedNeed.category);
@@ -180,8 +169,8 @@ export default function Home() {
                   selectedType={selectedType}
                   onCategoryChange={setCategory}
                   onTypeChange={setType}
-                  favorites={favorites}
-                  onToggleFavorite={handleToggleFavorite}
+                  favorites={favoriteCourseIds}
+                  onToggleFavorite={toggleFavorite}
                 />
               </div>
             </div>
@@ -462,6 +451,11 @@ export default function Home() {
                 <p className="mt-3 max-w-[620px] text-sm leading-7 text-[#6D746F]">
                   这里保留完整课程发现能力，但去掉过度促销感，把重点放回适合谁、解决什么问题。
                 </p>
+                {favoriteCount > 0 && (
+                  <p className="mt-3 inline-flex rounded-full bg-[#FFFDF8]/80 px-4 py-2 text-xs font-semibold text-[#8C6E4A]">
+                    已收藏 {favoriteCount} 门课程
+                  </p>
+                )}
               </div>
               <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
             </div>
@@ -492,8 +486,8 @@ export default function Home() {
                       key={course.id}
                       course={course}
                       index={i}
-                      isFavorited={favorites.has(course.id)}
-                      onToggleFavorite={handleToggleFavorite}
+                      isFavorited={favoriteCourseIds.has(course.id)}
+                      onToggleFavorite={toggleFavorite}
                     />
                   ))}
                 </div>
