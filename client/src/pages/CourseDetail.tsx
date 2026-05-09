@@ -7,10 +7,13 @@ import {
   CalendarCheck,
   CheckCircle2,
   Clock3,
+  Crown,
   HeartHandshake,
   Heart,
+  Lock,
   PlayCircle,
   ShieldCheck,
+  ShoppingBag,
   Sparkles,
   Users,
 } from "lucide-react";
@@ -20,8 +23,10 @@ import AppHeader from "@/components/AppHeader";
 import NotFound from "@/pages/NotFound";
 import {
   mockCourseRepository,
+  useCourseAccess,
   useCourseEngagement,
   type Course,
+  type CourseAccessStatus,
 } from "@/features/courses";
 
 function formatLearners(n: number): string {
@@ -34,9 +39,38 @@ function formatPrice(course: Course): string {
   return course.isFree ? "免费" : `¥${course.price.toFixed(1)}`;
 }
 
+const accessCopy = {
+  free: {
+    label: "免费学习",
+    description: "无需购买，适合先低压力开始。",
+  },
+  owned: {
+    label: "已解锁",
+    description: "你已拥有本课程，可继续学习并记录进度。",
+  },
+  member_included: {
+    label: "会员权益",
+    description: "当前会员权益已覆盖本课程。",
+  },
+  requires_purchase: {
+    label: "需购买",
+    description: "购买后可记录学习进度，并保留在个人课程中。",
+  },
+  requires_membership: {
+    label: "会员可学",
+    description: "开通会员可学习本课，也可以单独购买。",
+  },
+} satisfies Record<CourseAccessStatus, { label: string; description: string }>;
+
 export default function CourseDetail() {
   const [, navigate] = useLocation();
   const [, params] = useRoute("/courses/:courseId");
+  const {
+    activateMembership,
+    getCourseAccess,
+    hasActiveMembership,
+    purchaseCourse,
+  } = useCourseAccess();
   const {
     completeChapter,
     getProgress,
@@ -72,8 +106,25 @@ export default function CourseDetail() {
   const completedChapterIds = new Set(progress?.completedChapterIds ?? []);
   const hasStarted = Boolean(progress);
   const favorite = isFavorited(course.id);
+  const access = getCourseAccess(course);
+  const locked = !access.canStart;
+  const visibleProgressPercent = access.canStart ? progressPercent : 0;
+  const visibleLearningStatus = locked
+    ? "待解锁"
+    : hasStarted
+      ? progress?.status === "completed"
+        ? "已完成"
+        : "学习中"
+      : "未开始";
 
   const handleStartLearning = () => {
+    if (!access.canStart) {
+      toast("请先解锁课程", {
+        description: accessCopy[access.status].description,
+      });
+      return;
+    }
+
     startCourse(course.id);
     toast(hasStarted ? "继续学习" : "已加入学习计划", {
       description: hasStarted
@@ -89,6 +140,34 @@ export default function CourseDetail() {
         ? `「${course.title}」已从收藏夹移除。`
         : `「${course.title}」已加入你的成长清单。`,
     });
+  };
+
+  const handlePurchaseCourse = () => {
+    purchaseCourse(course);
+    toast("课程已解锁", {
+      description: "已生成模拟已支付订单，后续可替换为真实支付回调。",
+    });
+  };
+
+  const handleActivateMembership = () => {
+    activateMembership();
+    toast("会员已开通", {
+      description: "会员权益已写入本机状态，VIP 课程会自动解锁。",
+    });
+  };
+
+  const handlePrimaryAction = () => {
+    if (access.canStart) {
+      handleStartLearning();
+      return;
+    }
+
+    if (access.status === "requires_membership") {
+      handleActivateMembership();
+      return;
+    }
+
+    handlePurchaseCourse();
   };
 
   return (
@@ -173,29 +252,27 @@ export default function CourseDetail() {
                   )}
                 </div>
                 <span className="rounded-full bg-[#E6EDDF] px-3 py-1 text-xs font-semibold text-[#41675A]">
-                  可收藏学习
+                  {accessCopy[access.status].label}
                 </span>
               </div>
 
               <div className="mt-5 rounded-[20px] bg-[#F4EFE6] p-4">
                 <div className="flex items-center justify-between text-xs font-semibold">
                   <span className="text-[#6D746F]">学习状态</span>
-                  <span className={hasStarted ? "text-[#41675A]" : "text-[#9AA19B]"}>
-                    {hasStarted
-                      ? progress?.status === "completed"
-                        ? "已完成"
-                        : "学习中"
-                      : "未开始"}
+                  <span className={locked ? "text-[#A65F48]" : hasStarted ? "text-[#41675A]" : "text-[#9AA19B]"}>
+                    {visibleLearningStatus}
                   </span>
                 </div>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
                   <div
                     className="h-full rounded-full bg-[#6F8F83] transition-all"
-                    style={{ width: `${progressPercent}%` }}
+                    style={{ width: `${visibleProgressPercent}%` }}
                   />
                 </div>
                 <p className="mt-3 text-xs leading-5 text-[#7B817C]">
-                  {hasStarted
+                  {locked
+                    ? accessCopy[access.status].description
+                    : hasStarted
                     ? progressPercent > 0
                       ? `已完成 ${progressPercent}% 的章节。`
                       : "已加入学习计划，建议从第一章开始。"
@@ -212,15 +289,41 @@ export default function CourseDetail() {
                   <HeartHandshake className="h-4 w-4 text-[#6F8F83]" />
                   可衔接测评与咨询支持
                 </p>
+                {course.isVip && (
+                  <p className="flex items-center gap-2">
+                    <Crown className="h-4 w-4 text-[#C4A46A]" />
+                    {hasActiveMembership ? "会员权益已生效" : "开通会员可解锁更多课程"}
+                  </p>
+                )}
               </div>
 
               <button
-                onClick={handleStartLearning}
+                onClick={handlePrimaryAction}
                 className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
               >
-                <PlayCircle className="mr-2 h-4 w-4" />
-                {hasStarted ? "继续学习" : "开始学习"}
+                {access.canStart ? (
+                  <PlayCircle className="mr-2 h-4 w-4" />
+                ) : access.status === "requires_membership" ? (
+                  <Crown className="mr-2 h-4 w-4" />
+                ) : (
+                  <ShoppingBag className="mr-2 h-4 w-4" />
+                )}
+                {access.canStart
+                  ? hasStarted
+                    ? "继续学习"
+                    : "开始学习"
+                  : access.status === "requires_membership"
+                    ? "开通会员学习"
+                    : "购买并解锁"}
               </button>
+              {access.status === "requires_membership" && access.canPurchase && (
+                <button
+                  onClick={handlePurchaseCourse}
+                  className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#EFE7D8] text-sm font-semibold text-[#7A5B31] transition hover:bg-[#E8D8BD]"
+                >
+                  单独购买本课 ¥{course.price.toFixed(1)}
+                </button>
+              )}
               <button
                 onClick={() =>
                   toast("预约咨询", {
@@ -293,6 +396,13 @@ export default function CourseDetail() {
                       <span>{chapter.durationMinutes} 分钟</span>
                       <button
                         onClick={() => {
+                          if (!access.canStart) {
+                            toast("课程尚未解锁", {
+                              description: accessCopy[access.status].description,
+                            });
+                            return;
+                          }
+
                           completeChapter(course.id, chapter.id, course.chapters.length);
                           toast(
                             completedChapterIds.has(chapter.id)
@@ -304,13 +414,23 @@ export default function CourseDetail() {
                           );
                         }}
                         className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 transition ${
-                          completedChapterIds.has(chapter.id)
+                          !access.canStart
+                            ? "bg-[#F4E5DE] text-[#A65F48]"
+                            : completedChapterIds.has(chapter.id)
                             ? "bg-[#DDE8D9] text-[#41675A]"
                             : "bg-white text-[#6D746F] hover:text-[#243B35]"
                         }`}
                       >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        {completedChapterIds.has(chapter.id) ? "已完成" : "标记完成"}
+                        {!access.canStart ? (
+                          <Lock className="h-3.5 w-3.5" />
+                        ) : (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        )}
+                        {!access.canStart
+                          ? "待解锁"
+                          : completedChapterIds.has(chapter.id)
+                            ? "已完成"
+                            : "标记完成"}
                       </button>
                     </div>
                   </div>

@@ -26,6 +26,7 @@ import CourseToolbar from "@/components/CourseToolbar";
 import MobileView from "@/components/MobileView";
 import {
   mockCourseRepository,
+  useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
   type CourseCategory,
@@ -126,6 +127,7 @@ export default function Home() {
     setCurrentPage,
   } = useCourseCatalog();
   const { favoriteCourseIds, favoriteCount, toggleFavorite } = useCourseEngagement();
+  const { getCourseAccess, hasActiveMembership, ownedCourseCount } = useCourseAccess();
   const [viewMode, setViewMode] = useState<"pc" | "mobile">("pc");
   const [selectedNeed, setSelectedNeed] = useState(supportNeeds[0]);
 
@@ -171,6 +173,7 @@ export default function Home() {
                   onTypeChange={setType}
                   favorites={favoriteCourseIds}
                   onToggleFavorite={toggleFavorite}
+                  getCourseAccessStatus={(course) => getCourseAccess(course).status}
                 />
               </div>
             </div>
@@ -456,6 +459,13 @@ export default function Home() {
                     已收藏 {favoriteCount} 门课程
                   </p>
                 )}
+                {(ownedCourseCount > 0 || hasActiveMembership) && (
+                  <p className="ml-2 mt-3 inline-flex rounded-full bg-[#DDE8D9] px-4 py-2 text-xs font-semibold text-[#41675A]">
+                    {hasActiveMembership
+                      ? "成长会员权益已生效"
+                      : `已解锁 ${ownedCourseCount} 门课程`}
+                  </p>
+                )}
               </div>
               <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
             </div>
@@ -487,6 +497,7 @@ export default function Home() {
                       course={course}
                       index={i}
                       isFavorited={favoriteCourseIds.has(course.id)}
+                      accessStatus={getCourseAccess(course).status}
                       onToggleFavorite={toggleFavorite}
                     />
                   ))}

@@ -8,11 +8,15 @@
 client/src/features/courses/
   api/
     mockCourseRepository.ts  # 当前 mock 数据源 adapter
+    localCourseAccessRepository.ts # 本地课程购买与会员权益状态
     localCourseEngagementRepository.ts # 本地收藏与学习进度持久化
   hooks/
     useCourseCatalog.ts      # 页面消费的课程列表状态与动作
+    useCourseAccess.ts       # 课程权益、模拟购买和会员解锁动作
     useCourseEngagement.ts   # 收藏、学习状态和章节进度动作
   model/
+    courseAccess.ts          # 免费、已购、会员、待购买等访问控制纯逻辑
+    courseAccess.test.ts     # 权益判断与模拟订单单测
     courseCatalog.ts         # 筛选、搜索、排序、分页、推荐纯逻辑
     courseCatalog.test.ts    # 领域逻辑单测
     courseDetail.ts          # 课程详情、章节、适合人群与相关课程构造
@@ -30,11 +34,12 @@ client/src/features/courses/
 - 后续接后端时，优先新增真实 `CourseRepository` adapter，再替换 `useCourseCatalog` 的数据源。
 - 课程详情页位于 `client/src/pages/CourseDetail.tsx`，当前通过 repository 读取 mock detail，之后可平滑切换 API detail。
 - 收藏与学习进度当前写入 localStorage；接入用户系统后替换 engagement repository 即可。
+- 购买状态与会员权益当前写入 localStorage，并通过 `courseAccess` 模型统一判断是否可学习；接真实支付时替换 access repository 和订单回调即可。
 
 ## 后续落点
 
 1. 为课程列表和详情接入真实 API adapter，保留 mock adapter 作为本地 fallback。
-2. 将购买状态、会员权益和访问控制接入订单/会员模块。
+2. 将本地模拟购买、会员权益和访问控制迁移到真实订单/会员 API。
 3. 加入 loading、empty、error 和权限状态。
 4. 把移动预览里的课程卡片继续拆成可复用组件。
 5. 将章节、作业、资料下载和学习记录落到服务端持久化模型。

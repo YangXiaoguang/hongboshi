@@ -15,6 +15,7 @@ import {
   courseTypes,
   searchCourses,
   type Course,
+  type CourseAccessStatus,
   type CourseCategoryFilter,
   type CourseTypeFilter,
 } from "@/features/courses";
@@ -51,6 +52,7 @@ interface MobileViewProps {
   onTypeChange: (type: CourseTypeFilter) => void;
   favorites: Set<number>;
   onToggleFavorite: (courseId: number) => void;
+  getCourseAccessStatus?: (course: Course) => CourseAccessStatus;
 }
 
 export default function MobileView({
@@ -61,6 +63,7 @@ export default function MobileView({
   onTypeChange,
   favorites,
   onToggleFavorite,
+  getCourseAccessStatus,
 }: MobileViewProps) {
   const [, navigate] = useLocation();
   const { user, isLoggedIn, loginWithPhone, loginWithWechat, logout } = useAuth();
@@ -300,6 +303,9 @@ export default function MobileView({
         {visibleCourses.map((course) => {
           const isFav = favorites.has(course.id);
           const hasPromo = !course.isFree && (course.discount || course.coupon);
+          const accessStatus = getCourseAccessStatus?.(course);
+          const unlocked =
+            accessStatus === "owned" || accessStatus === "member_included";
           return (
             <div
               key={course.id}
@@ -326,6 +332,11 @@ export default function MobileView({
                   {course.isVip && (
                     <span className="absolute top-1 right-1 px-1 py-px rounded text-[8px] font-bold text-white bg-amber-500">
                       VIP
+                    </span>
+                  )}
+                  {unlocked && (
+                    <span className="absolute right-1 bottom-1 px-1.5 py-px rounded text-[8px] font-bold text-white bg-emerald-700">
+                      已解锁
                     </span>
                   )}
                   {/* Discount badge on cover */}

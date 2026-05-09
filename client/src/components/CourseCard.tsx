@@ -13,12 +13,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import type { Course } from "@/features/courses";
+import type { Course, CourseAccessStatus } from "@/features/courses";
 
 interface CourseCardProps {
   course: Course;
   index: number;
   isFavorited?: boolean;
+  accessStatus?: CourseAccessStatus;
   onToggleFavorite?: (courseId: number) => void;
 }
 
@@ -26,6 +27,11 @@ const typeToneMap: Record<string, string> = {
   直播: "bg-[#F4E5DE] text-[#A65F48]",
   录播: "bg-[#E6EDDF] text-[#4E7366]",
   专栏: "bg-[#EFE7D8] text-[#8C6E4A]",
+};
+
+const unlockedBadgeMap: Partial<Record<CourseAccessStatus, string>> = {
+  owned: "已购",
+  member_included: "会员可学",
 };
 
 function formatLearners(n: number): string {
@@ -50,6 +56,7 @@ export default function CourseCard({
   course,
   index,
   isFavorited = false,
+  accessStatus,
   onToggleFavorite,
 }: CourseCardProps) {
   const [, navigate] = useLocation();
@@ -154,6 +161,11 @@ export default function CourseCard({
           {course.isFree && (
             <span className="rounded-full bg-[#DDE8D9] px-2.5 py-1 text-[11px] font-semibold text-[#41675A]">
               免费
+            </span>
+          )}
+          {accessStatus && unlockedBadgeMap[accessStatus] && (
+            <span className="rounded-full bg-[#243B35] px-2.5 py-1 text-[11px] font-semibold text-white">
+              {unlockedBadgeMap[accessStatus]}
             </span>
           )}
         </div>

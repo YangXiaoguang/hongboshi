@@ -3,7 +3,12 @@ export {
   type CourseRepository,
 } from "./api/mockCourseRepository";
 export { useCourseCatalog } from "./hooks/useCourseCatalog";
+export { useCourseAccess } from "./hooks/useCourseAccess";
 export { useCourseEngagement } from "./hooks/useCourseEngagement";
+export {
+  localCourseAccessRepository,
+  type CourseAccessRepository,
+} from "./api/localCourseAccessRepository";
 export {
   localCourseEngagementRepository,
   type CourseEngagementRepository,
@@ -39,9 +44,21 @@ export {
   toggleCourseFavorite,
   type CourseEngagementState,
 } from "./model/courseEngagement";
+export {
+  activateCourseMembership,
+  createEmptyCourseAccessState,
+  grantPurchasedCourseAccess,
+  hasActiveCourseMembership,
+  normalizeCourseAccessState,
+  resolveCourseAccess,
+  type CourseAccessResult,
+  type CourseAccessState,
+  type CourseMembership,
+} from "./model/courseAccess";
 export { buildCourseDetail, getRelatedCourses } from "./model/courseDetail";
 export type {
   Course,
+  CourseAccessStatus,
   CourseAudience,
   CourseCategory,
   CourseChapter,

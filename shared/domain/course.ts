@@ -103,6 +103,14 @@ export const CourseProgressStatusSchema = z.enum([
   "completed",
 ]);
 
+export const CourseAccessStatusSchema = z.enum([
+  "free",
+  "owned",
+  "member_included",
+  "requires_purchase",
+  "requires_membership",
+]);
+
 export const CourseProgressSchema = z.object({
   userId: z.string().min(1),
   courseId: LegacyNumericIdSchema,
@@ -120,5 +128,6 @@ export type CourseAudience = z.infer<typeof CourseAudienceSchema>;
 export type CourseChapter = z.infer<typeof CourseChapterSchema>;
 export type CourseDetail = z.infer<typeof CourseDetailSchema>;
 export type CourseListQuery = z.infer<typeof CourseListQuerySchema>;
+export type CourseAccessStatus = z.infer<typeof CourseAccessStatusSchema>;
 export type CourseProgressStatus = z.infer<typeof CourseProgressStatusSchema>;
 export type CourseProgress = z.infer<typeof CourseProgressSchema>;
