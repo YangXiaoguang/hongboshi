@@ -47,7 +47,7 @@ server/
     migrations/
 ```
 
-当前课程 seed 位于 `shared/data/mockCourses.ts`，开发环境和生产 Express 都通过 `GET /api/courses` 暴露同一份课程数据。后续接数据库时，API 返回结构应继续通过 `CourseSchema` 校验。
+当前课程 seed 位于 `shared/data/mockCourses.ts`，开发环境和生产 Express 都通过 `GET /api/courses` 暴露同一份课程数据。课程目录查询逻辑位于 `shared/domain/courseCatalog.ts`，后续接数据库时，API 返回结构应继续通过 `CourseCatalogResultSchema` 和 `CourseSchema` 校验。
 
 ## 前端落地建议
 

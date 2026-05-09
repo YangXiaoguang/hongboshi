@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Course, CourseSort } from "@shared/domain";
+import type { Course, CourseCatalogResult, CourseSort } from "@shared/domain";
 import { httpCourseRepository } from "../api/httpCourseRepository";
 import { mockCourseRepository } from "../api/mockCourseRepository";
 import {
@@ -16,6 +16,7 @@ export function useCourseCatalog() {
   const [courses, setCourses] = useState<Course[]>(() =>
     mockCourseRepository.listAllCourses()
   );
+  const [remoteCatalog, setRemoteCatalog] = useState<CourseCatalogResult>();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [dataSource, setDataSource] = useState<"api" | "fallback">("fallback");
@@ -40,27 +41,43 @@ export function useCourseCatalog() {
     [activeSort, currentPage, searchKeyword, selectedCategory, selectedType, vipOnly]
   );
 
+  const fallbackCatalog = useMemo(
+    () => listCoursesByQuery(courses, query),
+    [courses, query]
+  );
+
   const loadCourses = useCallback(async () => {
     setIsLoading(true);
     try {
-      const remoteCourses = await httpCourseRepository.listAllCourses();
-      setCourses(remoteCourses);
+      const catalogResult = await httpCourseRepository.listCourses(query);
+      setRemoteCatalog(catalogResult);
+      if (
+        query.category === ALL_COURSE_CATEGORY &&
+        query.type === ALL_COURSE_TYPE &&
+        query.sort === "comprehensive" &&
+        !query.keyword &&
+        !query.vipOnly
+      ) {
+        setCourses(catalogResult.items);
+      }
       setDataSource("api");
       setError(undefined);
     } catch (err) {
       setCourses(mockCourseRepository.listAllCourses());
+      setRemoteCatalog(undefined);
       setDataSource("fallback");
       setError(err instanceof Error ? err.message : "课程服务暂时不可用");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [query]);
 
   useEffect(() => {
     void loadCourses();
   }, [loadCourses]);
 
-  const catalog = useMemo(() => listCoursesByQuery(courses, query), [courses, query]);
+  const catalog =
+    dataSource === "api" && remoteCatalog ? remoteCatalog : fallbackCatalog;
 
   const setCategory = useCallback((category: CourseCategoryFilter) => {
     setSelectedCategory(category);

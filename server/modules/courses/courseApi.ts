@@ -1,15 +1,18 @@
 import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
-import { z } from "zod";
 import { courses as seedCourses } from "../../../shared/data/mockCourses";
 import {
   ApiResponseSchema,
+  CourseCatalogResultSchema,
+  CourseListQuerySchema,
   CourseSchema,
   LegacyNumericIdSchema,
+  listCoursesByQuery,
+  type CourseCatalogQuery,
 } from "../../../shared/domain";
 
-const CourseListResponseSchema = ApiResponseSchema(z.array(CourseSchema));
+const CourseListResponseSchema = ApiResponseSchema(CourseCatalogResultSchema);
 const CourseResponseSchema = ApiResponseSchema(CourseSchema);
 
 function validatedCourses() {
@@ -46,28 +49,63 @@ function getCoursePayload(courseId: number) {
   } as const;
 }
 
-export function listCoursesPayload() {
+function queryFromSearchParams(searchParams: URLSearchParams): unknown {
+  const rawPage = searchParams.get("page");
+  const rawPageSize = searchParams.get("pageSize");
+  const rawVipOnly = searchParams.get("vipOnly");
+
+  return {
+    category: searchParams.get("category") ?? undefined,
+    type: searchParams.get("type") ?? undefined,
+    sort: searchParams.get("sort") ?? undefined,
+    keyword: searchParams.get("keyword") ?? undefined,
+    vipOnly: rawVipOnly === "true",
+    page: rawPage ? Number(rawPage) : undefined,
+    pageSize: rawPageSize ? Number(rawPageSize) : undefined,
+  };
+}
+
+function sendBadRequest(res: Response | ServerResponse, message: string) {
+  sendJson(res, 400, {
+    ok: false,
+    error: {
+      code: "BAD_REQUEST",
+      message,
+    },
+  });
+}
+
+export function listCoursesPayload(query: CourseCatalogQuery) {
   return CourseListResponseSchema.parse({
     ok: true,
-    data: validatedCourses(),
+    data: listCoursesByQuery(validatedCourses(), query),
   });
 }
 
 export function registerCourseApi(app: Express) {
-  app.get("/api/courses", (_req: Request, res: Response) => {
-    sendJson(res, 200, listCoursesPayload());
+  app.get("/api/courses", (req: Request, res: Response) => {
+    const parsedQuery = CourseListQuerySchema.safeParse({
+      category: req.query.category,
+      type: req.query.type,
+      sort: req.query.sort,
+      keyword: req.query.keyword,
+      vipOnly: req.query.vipOnly === "true",
+      page: req.query.page ? Number(req.query.page) : undefined,
+      pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+    });
+
+    if (!parsedQuery.success) {
+      sendBadRequest(res, "课程查询参数不合法");
+      return;
+    }
+
+    sendJson(res, 200, listCoursesPayload(parsedQuery.data));
   });
 
   app.get("/api/courses/:courseId", (req: Request, res: Response) => {
     const parsedCourseId = LegacyNumericIdSchema.safeParse(Number(req.params.courseId));
     if (!parsedCourseId.success) {
-      sendJson(res, 400, {
-        ok: false,
-        error: {
-          code: "BAD_REQUEST",
-          message: "课程 ID 不合法",
-        },
-      });
+      sendBadRequest(res, "课程 ID 不合法");
       return;
     }
 
@@ -96,7 +134,15 @@ export function handleCourseApiRequest(
   }
 
   if (url.pathname === "/api/courses") {
-    sendJson(res, 200, listCoursesPayload());
+    const parsedQuery = CourseListQuerySchema.safeParse(
+      queryFromSearchParams(url.searchParams)
+    );
+    if (!parsedQuery.success) {
+      sendBadRequest(res, "课程查询参数不合法");
+      return true;
+    }
+
+    sendJson(res, 200, listCoursesPayload(parsedQuery.data));
     return true;
   }
 
@@ -105,13 +151,7 @@ export function handleCourseApiRequest(
 
   const parsedCourseId = LegacyNumericIdSchema.safeParse(Number(match[1]));
   if (!parsedCourseId.success) {
-    sendJson(res, 400, {
-      ok: false,
-      error: {
-        code: "BAD_REQUEST",
-        message: "课程 ID 不合法",
-      },
-    });
+    sendBadRequest(res, "课程 ID 不合法");
     return true;
   }
 

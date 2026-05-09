@@ -21,7 +21,23 @@ const course = {
 
 describe("http course repository parsing", () => {
   it("parses a successful course list response", () => {
-    expect(parseCourseListResponse({ ok: true, data: [course] })).toEqual([course]);
+    expect(
+      parseCourseListResponse({
+        ok: true,
+        data: {
+          items: [course],
+          paginatedItems: [course],
+          totalCount: 1,
+          totalPages: 1,
+          page: 1,
+          pageSize: 12,
+        },
+      })
+    ).toMatchObject({
+      items: [course],
+      totalCount: 1,
+      totalPages: 1,
+    });
   });
 
   it("parses a successful single course response", () => {

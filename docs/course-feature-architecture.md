@@ -41,12 +41,12 @@ client/src/features/courses/
 
 ## 当前 API
 
-- `GET /api/courses`：返回课程 seed 列表，开发环境由 Vite middleware 提供，生产环境由 Express 提供。
+- `GET /api/courses`：返回课程目录结果，支持 `category`、`type`、`sort`、`keyword`、`vipOnly`、`page`、`pageSize` 查询参数；开发环境由 Vite middleware 提供，生产环境由 Express 提供。
 - `GET /api/courses/:courseId`：返回单个课程基础信息，详情页再通过前端领域模型组装章节、适合人群和推荐内容。
 
 ## 后续落点
 
-1. 将 `/api/courses` 从 seed 数据替换为数据库查询，并补充分页、筛选和排序参数。
+1. 将 `/api/courses` 从 seed 数据替换为数据库查询，并把当前 shared 查询模型映射到数据库索引。
 2. 将本地模拟购买、会员权益和访问控制迁移到真实订单/会员 API。
 3. 扩展 loading、empty、error 和权限状态到订单、会员、学习记录。
 4. 把移动预览里的课程卡片继续拆成可复用组件。

@@ -1,11 +1,13 @@
-import { z } from "zod";
 import {
   ApiResponseSchema,
+  CourseCatalogResultSchema,
   CourseSchema,
+  type CourseCatalogQuery,
+  type CourseCatalogResult,
   type Course,
 } from "@shared/domain";
 
-const CourseListResponseSchema = ApiResponseSchema(z.array(CourseSchema));
+const CourseListResponseSchema = ApiResponseSchema(CourseCatalogResultSchema);
 const CourseResponseSchema = ApiResponseSchema(CourseSchema);
 
 const API_BASE = "/api/courses";
@@ -18,7 +20,7 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-export function parseCourseListResponse(payload: unknown): Course[] {
+export function parseCourseListResponse(payload: unknown): CourseCatalogResult {
   const parsed = CourseListResponseSchema.parse(payload);
   if (!parsed.ok) throw new Error(parsed.error.message);
   return parsed.data;
@@ -35,13 +37,38 @@ export function parseCourseResponse(payload: unknown): Course | undefined {
 
 export const httpCourseRepository = {
   async listAllCourses(): Promise<Course[]> {
-    const response = await fetch(API_BASE, {
+    const result = await this.listCourses({
+      category: "全部",
+      type: "全部",
+      sort: "comprehensive",
+      keyword: "",
+      vipOnly: false,
+      page: 1,
+      pageSize: 100,
+    });
+    return result.items;
+  },
+
+  async listCourses(query: CourseCatalogQuery): Promise<CourseCatalogResult> {
+    const params = new URLSearchParams({
+      category: query.category,
+      type: query.type,
+      sort: query.sort,
+      keyword: query.keyword,
+      vipOnly: String(query.vipOnly),
+      page: String(query.page),
+      pageSize: String(query.pageSize),
+    });
+
+    const url = `${API_BASE}?${params.toString()}`;
+    const queriedResponse = await fetch(url, {
       headers: {
         Accept: "application/json",
       },
+      cache: "no-store",
     });
-    const payload = await readJson(response);
-    if (!response.ok) {
+    const payload = await readJson(queriedResponse);
+    if (!queriedResponse.ok) {
       throw new Error("课程服务暂时不可用");
     }
     return parseCourseListResponse(payload);
