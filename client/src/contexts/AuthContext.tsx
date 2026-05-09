@@ -1,28 +1,41 @@
 /*
  * AuthContext - 用户认证状态管理
- * 管理登录状态、用户信息、登录弹窗显示
- * Mock实现：模拟手机号验证码登录和微信登录
+ * 管理登录状态、用户信息、登录弹窗显示。
+ * 通过服务端 session API 管理登录状态，开发期保留本地 fallback。
  */
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
+import type { LoginProvider, LoginSession, UserRole } from "@shared/domain";
+import { httpAuthRepository } from "@/features/auth/api/httpAuthRepository";
 
 export interface UserInfo {
   id: string;
   nickname: string;
   avatar: string;
-  phone: string;
-  loginMethod: "phone" | "wechat";
+  phoneMasked?: string;
+  loginMethod: LoginProvider;
+  roles: UserRole[];
+  sessionExpiresAt: string;
 }
 
 interface AuthContextType {
   user: UserInfo | null;
   isLoggedIn: boolean;
+  isAuthSyncing: boolean;
+  authError?: string;
   showLoginModal: boolean;
   openLoginModal: () => void;
   closeLoginModal: () => void;
-  loginWithPhone: (phone: string) => void;
-  loginWithWechat: () => void;
-  logout: () => void;
+  loginWithPhone: (phone: string, code: string) => Promise<void>;
+  loginWithWechat: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -40,6 +53,8 @@ function loadStoredUser(): UserInfo | null {
 }
 
 function saveStoredUser(user: UserInfo) {
+  if (typeof window === "undefined") return;
+
   try {
     window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
   } catch {
@@ -48,6 +63,8 @@ function saveStoredUser(user: UserInfo) {
 }
 
 function clearStoredUser() {
+  if (typeof window === "undefined") return;
+
   try {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
   } catch {
@@ -55,53 +72,137 @@ function clearStoredUser() {
   }
 }
 
-// Mock user data
-const mockPhoneUser: UserInfo = {
-  id: "u_10001",
-  nickname: "心理学爱好者",
-  avatar: "",
-  phone: "",
-  loginMethod: "phone",
-};
+function maskPhone(phone: string) {
+  return phone.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2");
+}
 
-const mockWechatUser: UserInfo = {
-  id: "u_20001",
-  nickname: "微信用户_Lily",
-  avatar: "",
-  phone: "",
-  loginMethod: "wechat",
-};
+function sessionToUserInfo(session: LoginSession): UserInfo {
+  return {
+    id: session.user.id,
+    nickname: session.user.displayName,
+    avatar: session.user.avatarUrl ?? "",
+    phoneMasked: session.user.phoneMasked,
+    loginMethod: session.provider,
+    roles: session.user.roles,
+    sessionExpiresAt: session.accessTokenExpiresAt,
+  };
+}
+
+function createFallbackSession(provider: LoginProvider, phone?: string): LoginSession {
+  const now = new Date().toISOString();
+  const accessTokenExpiresAt = new Date(
+    Date.now() + 7 * 24 * 60 * 60 * 1000
+  ).toISOString();
+  const phoneMasked = phone ? maskPhone(phone) : undefined;
+
+  return {
+    provider,
+    accessTokenExpiresAt,
+    user: {
+      id:
+        provider === "phone"
+          ? `u_phone_${phone?.slice(-4) ?? "demo"}`
+          : "u_wechat_demo",
+      displayName:
+        provider === "phone" && phoneMasked
+          ? `用户${phoneMasked}`
+          : "微信用户_Lily",
+      phoneMasked,
+      roles: ["member"],
+      isMinor: false,
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(() => loadStoredUser());
+  const [isAuthSyncing, setIsAuthSyncing] = useState(true);
+  const [authError, setAuthError] = useState<string | undefined>();
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   const openLoginModal = useCallback(() => setShowLoginModal(true), []);
   const closeLoginModal = useCallback(() => setShowLoginModal(false), []);
 
-  const commitUser = useCallback((nextUser: UserInfo) => {
+  const commitSession = useCallback((session: LoginSession) => {
+    const nextUser = sessionToUserInfo(session);
     setUser(nextUser);
     saveStoredUser(nextUser);
     setShowLoginModal(false);
   }, []);
 
-  const loginWithPhone = useCallback((phone: string) => {
-    // Mask middle digits of phone number
-    const maskedPhone = phone.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2");
-    commitUser({
-      ...mockPhoneUser,
-      phone,
-      nickname: `用户${maskedPhone}`,
-    });
-  }, [commitUser]);
+  useEffect(() => {
+    let mounted = true;
 
-  const loginWithWechat = useCallback(() => {
-    commitUser({ ...mockWechatUser });
-  }, [commitUser]);
+    httpAuthRepository
+      .getSession()
+      .then((session) => {
+        if (!mounted) return;
 
-  const logout = useCallback(() => {
-    setUser(null);
-    clearStoredUser();
+        if (session) {
+          commitSession(session);
+          setAuthError(undefined);
+          return;
+        }
+
+        setUser(null);
+        clearStoredUser();
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        setAuthError(err instanceof Error ? err.message : "登录服务暂时不可用");
+      })
+      .finally(() => {
+        if (mounted) setIsAuthSyncing(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [commitSession]);
+
+  const loginWithPhone = useCallback(
+    async (phone: string, code: string) => {
+      setIsAuthSyncing(true);
+      try {
+        const session = await httpAuthRepository.loginWithPhone(phone, code);
+        commitSession(session);
+        setAuthError(undefined);
+      } catch (err) {
+        commitSession(createFallbackSession("phone", phone));
+        setAuthError(err instanceof Error ? err.message : "登录服务暂时不可用");
+      } finally {
+        setIsAuthSyncing(false);
+      }
+    },
+    [commitSession]
+  );
+
+  const loginWithWechat = useCallback(async () => {
+    setIsAuthSyncing(true);
+    try {
+      const session = await httpAuthRepository.loginWithWechat();
+      commitSession(session);
+      setAuthError(undefined);
+    } catch (err) {
+      commitSession(createFallbackSession("wechat"));
+      setAuthError(err instanceof Error ? err.message : "登录服务暂时不可用");
+    } finally {
+      setIsAuthSyncing(false);
+    }
+  }, [commitSession]);
+
+  const logout = useCallback(async () => {
+    try {
+      await httpAuthRepository.logout();
+      setAuthError(undefined);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "登录服务暂时不可用");
+    } finally {
+      setUser(null);
+      clearStoredUser();
+    }
   }, []);
 
   return (
@@ -109,6 +210,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         isLoggedIn: !!user,
+        isAuthSyncing,
+        authError,
         showLoginModal,
         openLoginModal,
         closeLoginModal,

@@ -10,7 +10,7 @@
 | `course.ts` | 课程、优惠、折扣、学习进度 |
 | `courseCatalog.ts` | 课程目录筛选、搜索、排序、分页 |
 | `courseAccess.ts` | 课程购买权益、会员权益、访问判断 |
-| `user.ts` | 用户资料、角色、登录来源、协议同意 |
+| `user.ts` | 用户资料、角色、登录来源、协议同意、登录请求 |
 | `assessment.ts` | 测评题目、答案、报告、推荐、风险等级 |
 | `counseling.ts` | 咨询师、擅长方向、时段、预约状态 |
 | `order.ts` | 可购买对象、订单、支付 |
@@ -49,7 +49,7 @@ server/
     migrations/
 ```
 
-当前课程 seed 位于 `shared/data/mockCourses.ts`，开发环境和生产 Express 都通过 `GET /api/courses` 暴露同一份课程数据。课程目录查询逻辑位于 `shared/domain/courseCatalog.ts`，课程权益逻辑位于 `shared/domain/courseAccess.ts`。课程权益 API 已通过 `x-hongboshi-user-id` 做用户隔离，服务端默认使用 JSON 文件持久化，后续接数据库时，API 返回结构应继续通过 `CourseCatalogResultSchema`、`CourseAccessStateSchema` 和 `CourseSchema` 校验。
+当前课程 seed 位于 `shared/data/mockCourses.ts`，开发环境和生产 Express 都通过 `GET /api/courses` 暴露同一份课程数据。课程目录查询逻辑位于 `shared/domain/courseCatalog.ts`，课程权益逻辑位于 `shared/domain/courseAccess.ts`。登录会话由 `/api/auth/session` 和 `/api/auth/login/*` 提供，服务端优先通过 HttpOnly session cookie 识别用户；课程权益 API 仍保留 `x-hongboshi-user-id` 作为开发期兜底，服务端默认使用 JSON 文件持久化。后续接数据库时，API 返回结构应继续通过 `LoginSessionSchema`、`CourseCatalogResultSchema`、`CourseAccessStateSchema` 和 `CourseSchema` 校验。
 
 ## 前端落地建议
 

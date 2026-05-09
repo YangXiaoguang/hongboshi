@@ -5,6 +5,7 @@ import {
   COURSE_ACCESS_USER_ID_HEADER,
   LOCAL_COURSE_ACCESS_USER_ID,
 } from "../../../shared/domain";
+import { getLoginSessionFromRequest } from "./authSessionApi";
 
 const RequestUserIdSchema = z
   .string()
@@ -19,6 +20,9 @@ function firstHeaderValue(value: string | string[] | undefined): string | undefi
 }
 
 export function resolveRequestUserId(req: Request | IncomingMessage): string {
+  const session = getLoginSessionFromRequest(req);
+  if (session) return session.user.id;
+
   const rawUserId = firstHeaderValue(req.headers[COURSE_ACCESS_USER_ID_HEADER]);
   const parsed = RequestUserIdSchema.safeParse(rawUserId);
   return parsed.success ? parsed.data : LOCAL_COURSE_ACCESS_USER_ID;

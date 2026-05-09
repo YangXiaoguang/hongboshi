@@ -44,9 +44,21 @@ export const LoginSessionSchema = z.object({
   accessTokenExpiresAt: DateTimeLikeSchema,
 });
 
+export const PhoneLoginRequestSchema = z.object({
+  phone: z.string().regex(/^1[3-9]\d{9}$/),
+  code: z.string().regex(/^\d{6}$/),
+  acceptedConsent: z.literal(true),
+});
+
+export const WechatLoginRequestSchema = z.object({
+  acceptedConsent: z.literal(true),
+});
+
 export type UserRole = z.infer<typeof UserRoleSchema>;
 export type LoginProvider = z.infer<typeof LoginProviderSchema>;
 export type ConsentType = z.infer<typeof ConsentTypeSchema>;
 export type UserProfile = z.infer<typeof UserProfileSchema>;
 export type UserConsent = z.infer<typeof UserConsentSchema>;
 export type LoginSession = z.infer<typeof LoginSessionSchema>;
+export type PhoneLoginRequest = z.infer<typeof PhoneLoginRequestSchema>;
+export type WechatLoginRequest = z.infer<typeof WechatLoginRequestSchema>;

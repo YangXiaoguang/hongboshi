@@ -38,7 +38,7 @@ client/src/features/courses/
 - 后续接后端时，优先替换 `httpCourseRepository` 和 `/api/courses` 实现，保留 mock repository 作为本地 fallback。
 - 课程详情页位于 `client/src/pages/CourseDetail.tsx`，当前通过 `useCourseDetail` 读取 API/fallback 数据。
 - 收藏与学习进度当前写入 localStorage；接入用户系统后替换 engagement repository 即可。
-- 购买状态与会员权益优先同步 `/api/course-access`，请求通过 `x-hongboshi-user-id` 区分用户，失败时回落当前用户的 localStorage；接真实支付时替换 access API 的订单回调即可。
+- 购买状态与会员权益优先同步 `/api/course-access`，服务端优先通过 auth session cookie 识别用户；请求头 `x-hongboshi-user-id` 仅作为开发期兜底，失败时回落当前用户的 localStorage；接真实支付时替换 access API 的订单回调即可。
 - 服务端课程权益状态由 `server/modules/courses/courseAccessStore.ts` 管理，默认写入 `.hongboshi-data/course-access.json`，后续替换为数据库时保持 `CourseAccessStore` 接口不变。
 
 ## 当前 API
@@ -49,7 +49,7 @@ client/src/features/courses/
 - `POST /api/course-access/purchases`：模拟课程购买并返回最新权益状态。
 - `POST /api/course-access/membership`：模拟开通成长会员并返回最新权益状态。
 
-以上课程权益 API 接收可选请求头 `x-hongboshi-user-id`。未传时默认落到 `local-user`，用于未登录访客和本地开发。
+以上课程权益 API 会先读取登录 session。未登录且未传开发期请求头时默认落到 `local-user`，用于未登录访客和本地开发。
 
 ## 后续落点
 

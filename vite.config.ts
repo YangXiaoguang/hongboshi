@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
+import { handleAuthApiRequest } from "./server/modules/auth/authSessionApi";
 import { handleCourseAccessApiRequest } from "./server/modules/courses/courseAccessApi";
 import { handleCourseApiRequest } from "./server/modules/courses/courseApi";
 //import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
@@ -101,6 +102,7 @@ function vitePluginManusDebugCollector(): Plugin {
 
     configureServer(server: ViteDevServer) {
       server.middlewares.use((req, res, next) => {
+        if (handleAuthApiRequest(req, res)) return;
         if (handleCourseAccessApiRequest(req, res)) return;
         if (handleCourseApiRequest(req, res)) return;
         next();

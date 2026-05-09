@@ -108,8 +108,7 @@ export default function MobileView({
     if (!/^\d{6}$/.test(mobileCode)) { toast("请输入6位验证码", { icon: "⚠️" }); return; }
     if (!mobileAgreed) { toast("请先同意用户协议", { icon: "📋" }); return; }
     setMobileSubmitting(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    loginWithPhone(mobilePhone);
+    await loginWithPhone(mobilePhone, mobileCode);
     setMobileSubmitting(false);
     setShowMobileLogin(false);
     toast("登录成功", { description: "欢迎来到红博士心理小讲堂", icon: "🎉" });
@@ -118,8 +117,7 @@ export default function MobileView({
   const handleMobileWechatLogin = async () => {
     if (!mobileAgreed) { toast("请先同意用户协议", { icon: "📋" }); return; }
     setMobileSubmitting(true);
-    await new Promise((r) => setTimeout(r, 1500));
-    loginWithWechat();
+    await loginWithWechat();
     setMobileSubmitting(false);
     setShowMobileLogin(false);
     toast("微信登录成功", { description: "欢迎来到红博士心理小讲堂", icon: "🎉" });

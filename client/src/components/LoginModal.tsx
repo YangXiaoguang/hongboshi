@@ -129,9 +129,7 @@ export default function LoginModal() {
     }
 
     setIsSubmitting(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    loginWithPhone(phone);
+    await loginWithPhone(phone, code);
     setIsSubmitting(false);
     toast("登录成功", {
       description: "欢迎来到红博士心理小讲堂",
@@ -154,7 +152,7 @@ export default function LoginModal() {
     setWechatScanning(false);
     setWechatScanned(true);
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    loginWithWechat();
+    await loginWithWechat();
     toast("微信登录成功", {
       description: "欢迎来到红博士心理小讲堂",
       icon: "🎉",
