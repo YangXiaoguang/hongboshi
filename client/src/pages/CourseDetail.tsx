@@ -68,6 +68,7 @@ export default function CourseDetail() {
     activateMembership,
     getCourseAccess,
     hasActiveMembership,
+    isSyncing,
     purchaseCourse,
   } = useCourseAccess();
   const {
@@ -150,16 +151,24 @@ export default function CourseDetail() {
   };
 
   const handlePurchaseCourse = () => {
-    purchaseCourse(course);
-    toast("课程已解锁", {
-      description: "已生成模拟已支付订单，后续可替换为真实支付回调。",
+    void purchaseCourse(course).then((syncMode) => {
+      toast("课程已解锁", {
+        description:
+          syncMode === "api"
+            ? "课程权益已同步，后续可替换为真实支付回调。"
+            : "课程权益已先保存在本机，网络恢复后可再同步。",
+      });
     });
   };
 
   const handleActivateMembership = () => {
-    activateMembership();
-    toast("会员已开通", {
-      description: "会员权益已写入本机状态，VIP 课程会自动解锁。",
+    void activateMembership().then((syncMode) => {
+      toast("会员已开通", {
+        description:
+          syncMode === "api"
+            ? "会员权益已同步，VIP 课程会自动解锁。"
+            : "会员权益已先保存在本机，网络恢复后可再同步。",
+      });
     });
   };
 
@@ -306,7 +315,8 @@ export default function CourseDetail() {
 
               <button
                 onClick={handlePrimaryAction}
-                className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
+                disabled={isSyncing}
+                className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-65"
               >
                 {access.canStart ? (
                   <PlayCircle className="mr-2 h-4 w-4" />
@@ -315,7 +325,9 @@ export default function CourseDetail() {
                 ) : (
                   <ShoppingBag className="mr-2 h-4 w-4" />
                 )}
-                {access.canStart
+                {isSyncing
+                  ? "同步中"
+                  : access.canStart
                   ? hasStarted
                     ? "继续学习"
                     : "开始学习"
@@ -326,9 +338,10 @@ export default function CourseDetail() {
               {access.status === "requires_membership" && access.canPurchase && (
                 <button
                   onClick={handlePurchaseCourse}
-                  className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#EFE7D8] text-sm font-semibold text-[#7A5B31] transition hover:bg-[#E8D8BD]"
+                  disabled={isSyncing}
+                  className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#EFE7D8] text-sm font-semibold text-[#7A5B31] transition hover:bg-[#E8D8BD] disabled:cursor-wait disabled:opacity-65"
                 >
-                  单独购买本课 ¥{course.price.toFixed(1)}
+                  {isSyncing ? "同步中" : `单独购买本课 ¥${course.price.toFixed(1)}`}
                 </button>
               )}
               <button

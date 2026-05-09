@@ -2,6 +2,7 @@ import express from "express";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
+import { registerCourseAccessApi } from "./modules/courses/courseAccessApi";
 import { registerCourseApi } from "./modules/courses/courseApi";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,6 +12,8 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
+  app.use(express.json());
+  registerCourseAccessApi(app);
   registerCourseApi(app);
 
   // Serve static files from dist/public in production

@@ -7,6 +7,7 @@
 ```text
 client/src/features/courses/
   api/
+    httpCourseAccessRepository.ts # 课程权益 API adapter，失败时回落到本地状态
     httpCourseRepository.ts  # 课程 API adapter，失败时由 hook 回落到 mock
     mockCourseRepository.ts  # 当前 mock 数据源 adapter
     localCourseAccessRepository.ts # 本地课程购买与会员权益状态
@@ -33,21 +34,24 @@ client/src/features/courses/
 - 页面和组件只从 `@/features/courses` 获取课程相关类型、常量和动作。
 - `client/src/lib/mockData.ts` 只保留原型数据，不再承载筛选、分页、排序等业务规则。
 - 课程 mock seed 已上移到 `shared/data/mockCourses.ts`，前端、开发期 API 和生产 Express API 共用同一份数据。
-- `shared/domain/course.ts` 负责跨端契约，`features/courses/model` 负责前端课程场景逻辑。
+- `shared/domain/course.ts`、`courseCatalog.ts`、`courseAccess.ts` 负责跨端契约和纯业务规则，`features/courses/model` 只保留前端 feature 出口。
 - 后续接后端时，优先替换 `httpCourseRepository` 和 `/api/courses` 实现，保留 mock repository 作为本地 fallback。
 - 课程详情页位于 `client/src/pages/CourseDetail.tsx`，当前通过 `useCourseDetail` 读取 API/fallback 数据。
 - 收藏与学习进度当前写入 localStorage；接入用户系统后替换 engagement repository 即可。
-- 购买状态与会员权益当前写入 localStorage，并通过 `courseAccess` 模型统一判断是否可学习；接真实支付时替换 access repository 和订单回调即可。
+- 购买状态与会员权益优先同步 `/api/course-access`，失败时回落 localStorage；接真实支付时替换 access API 的订单回调即可。
 
 ## 当前 API
 
 - `GET /api/courses`：返回课程目录结果，支持 `category`、`type`、`sort`、`keyword`、`vipOnly`、`page`、`pageSize` 查询参数；开发环境由 Vite middleware 提供，生产环境由 Express 提供。
 - `GET /api/courses/:courseId`：返回单个课程基础信息，详情页再通过前端领域模型组装章节、适合人群和推荐内容。
+- `GET /api/course-access`：返回当前课程权益状态。
+- `POST /api/course-access/purchases`：模拟课程购买并返回最新权益状态。
+- `POST /api/course-access/membership`：模拟开通成长会员并返回最新权益状态。
 
 ## 后续落点
 
 1. 将 `/api/courses` 从 seed 数据替换为数据库查询，并把当前 shared 查询模型映射到数据库索引。
-2. 将本地模拟购买、会员权益和访问控制迁移到真实订单/会员 API。
+2. 将 `/api/course-access` 从内存状态替换为真实订单、会员和支付回调。
 3. 扩展 loading、empty、error 和权限状态到订单、会员、学习记录。
 4. 把移动预览里的课程卡片继续拆成可复用组件。
 5. 将章节、作业、资料下载和学习记录落到服务端持久化模型。

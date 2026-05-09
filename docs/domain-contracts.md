@@ -7,7 +7,9 @@
 | 文件 | 责任 |
 | --- | --- |
 | `common.ts` | ID、日期、分页、金额、API 响应和错误结构 |
-| `course.ts` | 课程、优惠、折扣、课程查询、访问权益、学习进度 |
+| `course.ts` | 课程、优惠、折扣、学习进度 |
+| `courseCatalog.ts` | 课程目录筛选、搜索、排序、分页 |
+| `courseAccess.ts` | 课程购买权益、会员权益、访问判断 |
 | `user.ts` | 用户资料、角色、登录来源、协议同意 |
 | `assessment.ts` | 测评题目、答案、报告、推荐、风险等级 |
 | `counseling.ts` | 咨询师、擅长方向、时段、预约状态 |
@@ -47,7 +49,7 @@ server/
     migrations/
 ```
 
-当前课程 seed 位于 `shared/data/mockCourses.ts`，开发环境和生产 Express 都通过 `GET /api/courses` 暴露同一份课程数据。课程目录查询逻辑位于 `shared/domain/courseCatalog.ts`，后续接数据库时，API 返回结构应继续通过 `CourseCatalogResultSchema` 和 `CourseSchema` 校验。
+当前课程 seed 位于 `shared/data/mockCourses.ts`，开发环境和生产 Express 都通过 `GET /api/courses` 暴露同一份课程数据。课程目录查询逻辑位于 `shared/domain/courseCatalog.ts`，课程权益逻辑位于 `shared/domain/courseAccess.ts`。后续接数据库时，API 返回结构应继续通过 `CourseCatalogResultSchema`、`CourseAccessStateSchema` 和 `CourseSchema` 校验。
 
 ## 前端落地建议
 
