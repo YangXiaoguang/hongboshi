@@ -2,10 +2,7 @@ import { randomUUID } from "crypto";
 import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
-import {
-  counselorProfiles,
-  generateUpcomingCounselingSlots,
-} from "../../../shared/data/counselingSeed";
+import { counselorProfiles } from "../../../shared/data/counselingSeed";
 import {
   ApiResponseSchema,
   CounselingAppointmentCreateRequestSchema,
@@ -20,6 +17,11 @@ import {
   type RiskEvent,
 } from "../../../shared/domain";
 import { getLoginSessionFromRequest } from "../auth/authSessionApi";
+import {
+  createDefaultCounselingAppointmentStore,
+  type CounselingAppointmentStore,
+} from "./counselingAppointmentStore";
+import { resetRiskEventStore, saveRiskEvent } from "../risk/riskEventStore";
 
 const CounselingAvailabilityResponseSchema = ApiResponseSchema(
   CounselingAvailabilitySchema
@@ -31,11 +33,7 @@ const CounselingAppointmentListResponseSchema = ApiResponseSchema(
   CounselingAppointmentListSchema
 );
 
-const appointmentStore = new Map<string, CounselingAppointment>();
-const appointmentRiskEventStore = new Map<string, RiskEvent>();
-let slotStore = new Map(
-  generateUpcomingCounselingSlots().map(slot => [slot.id, slot])
-);
+let counselingAppointmentStore = createDefaultCounselingAppointmentStore();
 
 function sendJson(
   res: Response | ServerResponse,
@@ -143,11 +141,12 @@ function buildNextSteps(riskEvent: RiskEvent | undefined) {
 }
 
 export function resetCounselingAppointmentStore(now = new Date()) {
-  appointmentStore.clear();
-  appointmentRiskEventStore.clear();
-  slotStore = new Map(
-    generateUpcomingCounselingSlots({ now }).map(slot => [slot.id, slot])
-  );
+  counselingAppointmentStore.reset(now);
+  resetRiskEventStore();
+}
+
+export function setCounselingAppointmentStore(store: CounselingAppointmentStore) {
+  counselingAppointmentStore = store;
 }
 
 export function getCounselingAvailabilityPayload(
@@ -157,7 +156,7 @@ export function getCounselingAvailabilityPayload(
     ok: true,
     data: {
       counselors: counselorProfiles,
-      slots: Array.from(slotStore.values()),
+      slots: counselingAppointmentStore.listSlots(),
       serverTime: now,
     },
   });
@@ -194,7 +193,7 @@ export function createCounselingAppointmentPayload(
     } as const;
   }
 
-  const slot = slotStore.get(request.slotId);
+  const slot = counselingAppointmentStore.getSlot(request.slotId);
   if (!slot || slot.counselorId !== request.counselorId) {
     return {
       status: 404,
@@ -220,7 +219,7 @@ export function createCounselingAppointmentPayload(
     ...slot,
     available: false,
   };
-  slotStore.set(slot.id, reservedSlot);
+  counselingAppointmentStore.saveSlot(reservedSlot);
 
   const appointment: CounselingAppointment = {
     id: `appointment_${randomUUID()}`,
@@ -234,10 +233,9 @@ export function createCounselingAppointmentPayload(
     createdAt: now,
     updatedAt: now,
   };
-  appointmentStore.set(appointment.id, appointment);
-
   const riskEvent = resolveRiskEvent({ request, userId, now });
-  if (riskEvent) appointmentRiskEventStore.set(appointment.id, riskEvent);
+  counselingAppointmentStore.saveAppointment(appointment, riskEvent);
+  if (riskEvent) saveRiskEvent(riskEvent);
 
   return {
     status: 200,
@@ -260,21 +258,22 @@ function appointmentToRecord(
   const counselor = counselorProfiles.find(
     item => item.id === appointment.counselorId
   );
-  const slot = slotStore.get(appointment.slotId);
+  const slot = counselingAppointmentStore.getSlot(appointment.slotId);
   if (!counselor || !slot) return undefined;
 
   return {
     appointment,
     counselor,
     slot,
-    riskEvent: appointmentRiskEventStore.get(appointment.id),
+    riskEvent: counselingAppointmentStore.getRiskEventForAppointment(
+      appointment.id
+    ),
   };
 }
 
 export function listCounselingAppointmentRecords(userId: string) {
-  return Array.from(appointmentStore.values())
-    .filter(appointment => appointment.userId === userId)
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+  return counselingAppointmentStore
+    .listAppointmentsByUser(userId)
     .map(appointmentToRecord)
     .filter((record): record is CounselingAppointmentRecord => Boolean(record));
 }

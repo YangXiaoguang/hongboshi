@@ -5,18 +5,22 @@ import { quickAssessmentFlow } from "../../../shared/data/assessmentQuestions";
 import {
   ApiResponseSchema,
   AssessmentFlowSchema,
-  type AssessmentResult,
   AssessmentResultSchema,
   AssessmentSubmitRequestSchema,
   generateAssessmentResult,
 } from "../../../shared/domain";
 import { getLoginSessionFromRequest } from "../auth/authSessionApi";
+import {
+  createDefaultAssessmentResultStore,
+  type AssessmentResultStore,
+} from "./assessmentResultStore";
+import { resetRiskEventStore, saveRiskEvent } from "../risk/riskEventStore";
 
 const AssessmentFlowResponseSchema = ApiResponseSchema(AssessmentFlowSchema);
 const AssessmentResultResponseSchema = ApiResponseSchema(
   AssessmentResultSchema
 );
-const assessmentResultStore = new Map<string, AssessmentResult[]>();
+let assessmentResultStore = createDefaultAssessmentResultStore();
 
 function sendJson(
   res: Response | ServerResponse,
@@ -69,13 +73,18 @@ export function getQuickAssessmentFlowPayload() {
   });
 }
 
+export function setAssessmentResultStore(store: AssessmentResultStore) {
+  assessmentResultStore = store;
+}
+
 export function resetAssessmentResultStore() {
   assessmentResultStore.clear();
+  resetRiskEventStore();
 }
 
 export function getLatestAssessmentResult(userId?: string) {
   if (!userId) return undefined;
-  return assessmentResultStore.get(userId)?.[0];
+  return assessmentResultStore.latest(userId);
 }
 
 export function submitQuickAssessmentPayload(body: unknown, userId?: string) {
@@ -95,10 +104,8 @@ export function submitQuickAssessmentPayload(body: unknown, userId?: string) {
     });
 
     if (userId) {
-      assessmentResultStore.set(userId, [
-        result,
-        ...(assessmentResultStore.get(userId) ?? []),
-      ]);
+      assessmentResultStore.save(userId, result);
+      if (result.riskEvent) saveRiskEvent(result.riskEvent);
     }
 
     return {

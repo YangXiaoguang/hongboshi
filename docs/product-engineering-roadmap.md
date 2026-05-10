@@ -142,6 +142,7 @@ flowchart LR
 - 前端：继续使用 Vite + React + TypeScript；按 `features / entities / shared` 分层拆分业务。
 - API：先用 Express 模块化承接，稳定后可迁移到更完整的服务框架。
 - 数据库：PostgreSQL，配合 Prisma 或 Drizzle 管理 schema 与 migration。
+- 持久化：各业务模块先暴露 Store/repository 接口，API 只依赖接口，数据库实现负责事务、锁和审计。
 - 缓存与队列：Redis 用于验证码、预约时段锁、限流和后台异步任务。
 - 契约：共享 Zod schema 作为请求/响应校验，避免前后端类型漂移。
 - 测试：领域 schema 单测、前端交互测试、后端 API 集成测试、关键流程端到端测试。
