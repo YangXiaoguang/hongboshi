@@ -2,12 +2,19 @@ import {
   AssessmentResultSchema,
   type AssessmentResult,
 } from "../../../shared/domain";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
+import { PostgresAssessmentResultStore } from "./postgresAssessmentResultStore";
+
+type MaybePromise<T> = T | Promise<T>;
 
 export interface AssessmentResultStore {
-  save(userId: string, result: AssessmentResult): AssessmentResult;
-  latest(userId: string): AssessmentResult | undefined;
-  listByUser(userId: string): AssessmentResult[];
-  clear(): void;
+  save(
+    userId: string,
+    result: AssessmentResult
+  ): MaybePromise<AssessmentResult>;
+  latest(userId: string): MaybePromise<AssessmentResult | undefined>;
+  listByUser(userId: string): MaybePromise<AssessmentResult[]>;
+  clear(): MaybePromise<void>;
 }
 
 function cloneAssessmentResult(result: AssessmentResult): AssessmentResult {
@@ -42,5 +49,13 @@ export class InMemoryAssessmentResultStore implements AssessmentResultStore {
 }
 
 export function createDefaultAssessmentResultStore(): AssessmentResultStore {
+  if (
+    process.env.HONGBOSHI_ASSESSMENT_RESULT_STORE === "postgres" ||
+    (process.env.HONGBOSHI_ASSESSMENT_RESULT_STORE !== "memory" &&
+      getDatabaseUrl())
+  ) {
+    return new PostgresAssessmentResultStore(getSharedPostgresPool());
+  }
+
   return new InMemoryAssessmentResultStore();
 }

@@ -28,7 +28,10 @@ function sendJson(
   res.end(JSON.stringify(payload));
 }
 
-function errorPayload(code: "UNAUTHORIZED" | "NOT_FOUND", message: string) {
+function errorPayload(
+  code: "UNAUTHORIZED" | "NOT_FOUND" | "INTERNAL_ERROR",
+  message: string
+) {
   return {
     ok: false,
     error: {
@@ -52,9 +55,12 @@ function orderTimelineItem(order: Order): GrowthTimelineItem {
   };
 }
 
-function buildGrowthProfile(userId: string, now: string): GrowthProfile {
+async function buildGrowthProfile(
+  userId: string,
+  now: string
+): Promise<GrowthProfile> {
   const courseAccess = loadCourseAccessState(userId);
-  const latestAssessment = getLatestAssessmentResult(userId);
+  const latestAssessment = await getLatestAssessmentResult(userId);
   const appointments = listCounselingAppointmentRecords(userId);
   const upcomingCounselingCount = appointments.filter(record => {
     return (
@@ -88,7 +94,10 @@ function buildGrowthProfile(userId: string, now: string): GrowthProfile {
     });
   }
 
-  if (courseAccess.membership.status === "active" && courseAccess.membership.activatedAt) {
+  if (
+    courseAccess.membership.status === "active" &&
+    courseAccess.membership.activatedAt
+  ) {
     timeline.push({
       id: `timeline_membership_${courseAccess.membership.activatedAt}`,
       type: "membership",
@@ -115,7 +124,10 @@ function buildGrowthProfile(userId: string, now: string): GrowthProfile {
       orderCount: courseAccess.orders.length,
       counselingAppointmentCount: appointments.length,
       upcomingCounselingCount,
-      hasActiveMembership: hasActiveCourseMembership(courseAccess.membership, now),
+      hasActiveMembership: hasActiveCourseMembership(
+        courseAccess.membership,
+        now
+      ),
       latestAssessmentRiskLevel: latestAssessment?.report.riskLevel,
       lastActivityAt: timeline[0]?.occurredAt,
     },
@@ -124,7 +136,7 @@ function buildGrowthProfile(userId: string, now: string): GrowthProfile {
   });
 }
 
-export function getGrowthProfilePayload(
+export async function getGrowthProfilePayload(
   userId?: string,
   now = new Date().toISOString()
 ) {
@@ -139,15 +151,15 @@ export function getGrowthProfilePayload(
     status: 200,
     body: GrowthProfileResponseSchema.parse({
       ok: true,
-      data: buildGrowthProfile(userId, now),
+      data: await buildGrowthProfile(userId, now),
     }),
   } as const;
 }
 
 export function registerGrowthProfileApi(app: Express) {
-  app.get("/api/growth/profile", (req: Request, res: Response) => {
+  app.get("/api/growth/profile", async (req: Request, res: Response) => {
     const session = getLoginSessionFromRequest(req);
-    const payload = getGrowthProfilePayload(session?.user.id);
+    const payload = await getGrowthProfilePayload(session?.user.id);
     sendJson(res, payload.status, payload.body);
   });
 }
@@ -161,9 +173,14 @@ export function handleGrowthProfileApiRequest(
   const url = new URL(req.url, "http://localhost");
 
   if (req.method === "GET" && url.pathname === "/api/growth/profile") {
-    const session = getLoginSessionFromRequest(req);
-    const payload = getGrowthProfilePayload(session?.user.id);
-    sendJson(res, payload.status, payload.body);
+    void (async () => {
+      const session = getLoginSessionFromRequest(req);
+      const payload = await getGrowthProfilePayload(session?.user.id);
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "成长档案读取失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "成长档案读取失败"));
+    });
     return true;
   }
 

@@ -22,10 +22,8 @@ const AssessmentResultResponseSchema = ApiResponseSchema(
 );
 let assessmentResultStore = createDefaultAssessmentResultStore();
 
-function reportRiskEventStoreError(err: unknown) {
-  console.error(
-    err instanceof Error ? err.message : "风险事件持久化失败"
-  );
+function reportStoreError(err: unknown) {
+  console.error(err instanceof Error ? err.message : "测评结果持久化失败");
 }
 
 function sendJson(
@@ -84,16 +82,21 @@ export function setAssessmentResultStore(store: AssessmentResultStore) {
 }
 
 export function resetAssessmentResultStore() {
-  assessmentResultStore.clear();
-  void resetRiskEventStore().catch(reportRiskEventStoreError);
+  return Promise.all([
+    Promise.resolve(assessmentResultStore.clear()),
+    resetRiskEventStore(),
+  ]).then(() => undefined);
 }
 
 export function getLatestAssessmentResult(userId?: string) {
-  if (!userId) return undefined;
-  return assessmentResultStore.latest(userId);
+  if (!userId) return Promise.resolve(undefined);
+  return Promise.resolve(assessmentResultStore.latest(userId));
 }
 
-export function submitQuickAssessmentPayload(body: unknown, userId?: string) {
+export async function submitQuickAssessmentPayload(
+  body: unknown,
+  userId?: string
+) {
   const parsed = AssessmentSubmitRequestSchema.safeParse(body);
   if (!parsed.success) {
     return {
@@ -110,10 +113,10 @@ export function submitQuickAssessmentPayload(body: unknown, userId?: string) {
     });
 
     if (userId) {
-      assessmentResultStore.save(userId, result);
       if (result.riskEvent) {
-        void saveRiskEvent(result.riskEvent).catch(reportRiskEventStoreError);
+        await saveRiskEvent(result.riskEvent);
       }
+      await assessmentResultStore.save(userId, result);
     }
 
     return {
@@ -139,11 +142,17 @@ export function registerAssessmentApi(app: Express) {
     sendJson(res, 200, getQuickAssessmentFlowPayload());
   });
 
-  app.post("/api/assessments/quick/report", (req: Request, res: Response) => {
-    const session = getLoginSessionFromRequest(req);
-    const payload = submitQuickAssessmentPayload(req.body, session?.user.id);
-    sendJson(res, payload.status, payload.body);
-  });
+  app.post(
+    "/api/assessments/quick/report",
+    async (req: Request, res: Response) => {
+      const session = getLoginSessionFromRequest(req);
+      const payload = await submitQuickAssessmentPayload(
+        req.body,
+        session?.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
 }
 
 export function handleAssessmentApiRequest(
@@ -163,11 +172,19 @@ export function handleAssessmentApiRequest(
     req.method === "POST" &&
     url.pathname === "/api/assessments/quick/report"
   ) {
-    void readRequestBody(req).then(body => {
-      const session = getLoginSessionFromRequest(req);
-      const payload = submitQuickAssessmentPayload(body, session?.user.id);
-      sendJson(res, payload.status, payload.body);
-    });
+    void readRequestBody(req)
+      .then(async body => {
+        const session = getLoginSessionFromRequest(req);
+        const payload = await submitQuickAssessmentPayload(
+          body,
+          session?.user.id
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(err => {
+        reportStoreError(err);
+        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "测评报告生成失败"));
+      });
     return true;
   }
 

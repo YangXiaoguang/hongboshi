@@ -7,8 +7,8 @@ import {
 } from "./assessmentApi";
 
 describe("assessment api payloads", () => {
-  beforeEach(() => {
-    resetAssessmentResultStore();
+  beforeEach(async () => {
+    await resetAssessmentResultStore();
   });
 
   it("returns the quick assessment flow", () => {
@@ -23,11 +23,11 @@ describe("assessment api payloads", () => {
     }
   });
 
-  it("generates a report from submitted answers", () => {
+  it("generates a report from submitted answers", async () => {
     const flowPayload = getQuickAssessmentFlowPayload();
     if (!flowPayload.ok) throw new Error("expected flow");
 
-    const payload = submitQuickAssessmentPayload(
+    const payload = await submitQuickAssessmentPayload(
       {
         answers: flowPayload.data.questions.map(question => ({
           questionId: question.id,
@@ -44,14 +44,16 @@ describe("assessment api payloads", () => {
       expect(payload.body.data.report.recommendations[0].target).toBe(
         "counseling"
       );
-      expect(getLatestAssessmentResult("user_1")?.report.id).toBe(
-        payload.body.data.report.id
-      );
+      await expect(getLatestAssessmentResult("user_1")).resolves.toMatchObject({
+        report: {
+          id: payload.body.data.report.id,
+        },
+      });
     }
   });
 
-  it("rejects incomplete answers", () => {
-    const payload = submitQuickAssessmentPayload({ answers: [] });
+  it("rejects incomplete answers", async () => {
+    const payload = await submitQuickAssessmentPayload({ answers: [] });
 
     expect(payload.status).toBe(400);
     expect(payload.body.ok).toBe(false);

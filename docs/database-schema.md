@@ -19,24 +19,26 @@
 
 ## 初始核心表
 
-| 领域 | 表 |
-| --- | --- |
-| 用户与认证 | `users`, `user_roles`, `user_consents`, `auth_sessions` |
+| 领域           | 表                                                                                |
+| -------------- | --------------------------------------------------------------------------------- |
+| 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                           |
 | 课程权益与订单 | `course_memberships`, `course_access_grants`, `orders`, `order_items`, `payments` |
-| 测评 | `assessment_reports` |
-| 咨询 | `counselors`, `counseling_slots`, `counseling_appointments` |
-| 风险与审计 | `risk_events`, `audit_logs` |
+| 测评           | `assessment_reports`                                                              |
+| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`                       |
+| 风险与审计     | `risk_events`, `audit_logs`                                                       |
 
 ## 后续接入顺序
 
 1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
-2. 扩展 PostgreSQL 版 Store：风险事件已经完成第一版，后续补齐课程权益、测评结果、咨询预约。
+2. 扩展 PostgreSQL 版 Store：风险事件和测评结果已经完成第一版，后续补齐课程权益、咨询预约。
 3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
 4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
 5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。
 
-## 风险事件 Store 试点
+## 数据库 Store 试点
 
 `server/modules/risk/postgresRiskEventStore.ts` 已实现 `risk_events` 表的保存、单条读取、按用户读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_RISK_EVENT_STORE=postgres` 时，风险事件会写入 PostgreSQL。
 
-当前实现只切换风险事件持久化，测评报告和咨询预约本身仍走现有 Store。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+`server/modules/assessments/postgresAssessmentResultStore.ts` 已实现 `assessment_reports` 表的保存、最新报告读取、按用户读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_ASSESSMENT_RESULT_STORE=postgres` 时，测评报告会写入 PostgreSQL。
+
+当前实现已覆盖测评报告与风险事件持久化，咨询预约仍走现有 Store。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

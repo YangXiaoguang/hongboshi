@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { quickAssessmentFlow } from "../../../shared/data/assessmentQuestions";
-import { resetAssessmentResultStore, submitQuickAssessmentPayload } from "../assessments/assessmentApi";
+import {
+  resetAssessmentResultStore,
+  submitQuickAssessmentPayload,
+} from "../assessments/assessmentApi";
 import {
   createCounselingAppointmentPayload,
   getCounselingAvailabilityPayload,
@@ -16,23 +19,23 @@ const userId = "u_growth_1";
 const fixedNow = "2026-05-10T00:00:00.000Z";
 
 describe("growth profile api payloads", () => {
-  beforeEach(() => {
-    resetAssessmentResultStore();
+  beforeEach(async () => {
+    await resetAssessmentResultStore();
     resetCourseAccessStore();
     resetCounselingAppointmentStore(new Date(fixedNow));
   });
 
-  it("requires login before reading the growth profile", () => {
-    const payload = getGrowthProfilePayload(undefined, fixedNow);
+  it("requires login before reading the growth profile", async () => {
+    const payload = await getGrowthProfilePayload(undefined, fixedNow);
 
     expect(payload.status).toBe(401);
     expect(payload.body.ok).toBe(false);
   });
 
-  it("aggregates course access, assessment and counseling records", () => {
+  it("aggregates course access, assessment and counseling records", async () => {
     purchaseCoursePayload(16, userId);
 
-    submitQuickAssessmentPayload(
+    await submitQuickAssessmentPayload(
       {
         answers: quickAssessmentFlow.questions.map(question => ({
           questionId: question.id,
@@ -58,7 +61,7 @@ describe("growth profile api payloads", () => {
       fixedNow
     );
 
-    const payload = getGrowthProfilePayload(userId, fixedNow);
+    const payload = await getGrowthProfilePayload(userId, fixedNow);
 
     expect(payload.status).toBe(200);
     expect(payload.body.ok).toBe(true);

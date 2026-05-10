@@ -91,6 +91,7 @@ docs/
 - `DATABASE_URL`
 - `DATABASE_POOL_MAX`
 - `HONGBOSHI_RISK_EVENT_STORE`
+- `HONGBOSHI_ASSESSMENT_RESULT_STORE`
 
 ## 当前业务状态
 
@@ -104,9 +105,9 @@ docs/
 - 登录状态由 `/api/auth/session`、`/api/auth/login/phone`、`/api/auth/login/wechat` 和 `AuthContext` 共同管理
 - 课程目录、课程详情、课程权益、快速测评、咨询预约和成长档案分别由 `/api/courses`、`/api/course-access`、`/api/assessments/quick`、`/api/counseling/availability`、`/api/counseling/appointments` 和 `/api/growth/profile` 提供
 - 课程权益开发期默认写入 `.hongboshi-data/course-access.json`
-- 测评结果、咨询预约和风险事件已抽象为服务端 Store 接口，当前默认使用内存实现，后续可替换为数据库 repository
+- 测评结果、咨询预约和风险事件已抽象为服务端 Store 接口，测评结果与风险事件已有 PostgreSQL 实现，默认仍可使用内存实现
 - 数据库准备层位于 `server/db`，初始 PostgreSQL 迁移草案见 `server/db/migrations/0001_core_tables.sql`
-- 风险事件 Store 已有 PostgreSQL 实现；设置 `DATABASE_URL` 且 `HONGBOSHI_RISK_EVENT_STORE=postgres` 后可切换
+- 风险事件和测评结果 Store 已有 PostgreSQL 实现；设置 `DATABASE_URL` 且分别将 `HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE` 设为 `postgres` 后可切换
 - 课程权益读取优先使用服务端 session cookie 识别用户，`x-hongboshi-user-id` 仅作为开发期读取兜底
 - 课程购买和会员开通必须具备 `member` 权限，登录时会记录 terms/privacy 协议版本
 - 成长档案读取需要登录；当前聚合课程权益、订单、最新测评报告、咨询预约和最近时间线
@@ -117,7 +118,7 @@ docs/
 
 1. 将课程权益 JSON Store 替换为 PostgreSQL/Prisma 或 Drizzle。
 2. 接入真实短信/微信登录服务，并将当前内存 session/协议记录迁移到数据库。
-3. 为课程权益、快速测评、咨询预约和风险事件接入 PostgreSQL/Prisma 或 Drizzle Store 实现。
+3. 为课程权益、咨询预约接入 PostgreSQL/Prisma 或 Drizzle Store 实现，并完善事务与审计。
 4. 接入咨询支付、取消/改期、支付超时释放时段和退款状态机。
 5. 建立咨询师工作台与风险人工复核台，承接高风险测评和咨询前信息。
 6. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
