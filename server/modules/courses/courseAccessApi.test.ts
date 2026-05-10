@@ -7,12 +7,12 @@ import {
 } from "./courseAccessApi";
 
 describe("course access API payloads", () => {
-  beforeEach(() => {
-    resetCourseAccessStore();
+  beforeEach(async () => {
+    await resetCourseAccessStore();
   });
 
-  it("returns the current empty access state", () => {
-    const payload = getCourseAccessPayload();
+  it("returns the current empty access state", async () => {
+    const payload = await getCourseAccessPayload();
 
     expect(payload.ok).toBe(true);
     if (!payload.ok) return;
@@ -20,8 +20,8 @@ describe("course access API payloads", () => {
     expect(payload.data.membership.status).toBe("none");
   });
 
-  it("purchases a paid course and creates a paid order", () => {
-    const payload = purchaseCoursePayload(16);
+  it("purchases a paid course and creates a paid order", async () => {
+    const payload = await purchaseCoursePayload(16);
 
     expect(payload.status).toBe(200);
     expect(payload.body.ok).toBe(true);
@@ -33,8 +33,8 @@ describe("course access API payloads", () => {
     });
   });
 
-  it("activates membership access", () => {
-    const payload = activateMembershipPayload();
+  it("activates membership access", async () => {
+    const payload = await activateMembershipPayload();
 
     expect(payload.status).toBe(200);
     expect(payload.body.ok).toBe(true);
@@ -43,9 +43,9 @@ describe("course access API payloads", () => {
     expect(payload.body.data.membership.expiresAt).toBeTruthy();
   });
 
-  it("keeps course access isolated by user id", () => {
-    const firstUser = purchaseCoursePayload(16, "u_10001");
-    const secondUser = getCourseAccessPayload("u_20001");
+  it("keeps course access isolated by user id", async () => {
+    const firstUser = await purchaseCoursePayload(16, "u_10001");
+    const secondUser = await getCourseAccessPayload("u_20001");
 
     expect(firstUser.status).toBe(200);
     expect(secondUser.ok).toBe(true);

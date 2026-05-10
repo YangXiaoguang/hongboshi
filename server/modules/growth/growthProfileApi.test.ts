@@ -21,7 +21,7 @@ const fixedNow = "2026-05-10T00:00:00.000Z";
 describe("growth profile api payloads", () => {
   beforeEach(async () => {
     await resetAssessmentResultStore();
-    resetCourseAccessStore();
+    await resetCourseAccessStore();
     await resetCounselingAppointmentStore(new Date(fixedNow));
   });
 
@@ -33,7 +33,7 @@ describe("growth profile api payloads", () => {
   });
 
   it("aggregates course access, assessment and counseling records", async () => {
-    purchaseCoursePayload(16, userId);
+    await purchaseCoursePayload(16, userId);
 
     await submitQuickAssessmentPayload(
       {

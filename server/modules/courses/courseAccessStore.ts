@@ -7,6 +7,10 @@ import {
   normalizeCourseAccessState,
   type CourseAccessState,
 } from "../../../shared/domain";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
+import { PostgresCourseAccessStore } from "./postgresCourseAccessStore";
+
+type MaybePromise<T> = T | Promise<T>;
 
 const CourseAccessStoreFileSchema = z.object({
   version: z.literal(1),
@@ -16,10 +20,13 @@ const CourseAccessStoreFileSchema = z.object({
 type CourseAccessStoreFile = z.infer<typeof CourseAccessStoreFileSchema>;
 
 export interface CourseAccessStore {
-  load(userId: string): CourseAccessState;
-  save(userId: string, state: CourseAccessState): CourseAccessState;
-  reset(userId: string, state?: CourseAccessState): void;
-  clear(): void;
+  load(userId: string): MaybePromise<CourseAccessState>;
+  save(
+    userId: string,
+    state: CourseAccessState
+  ): MaybePromise<CourseAccessState>;
+  reset(userId: string, state?: CourseAccessState): MaybePromise<void>;
+  clear(): MaybePromise<void>;
 }
 
 function emptyStoreFile(): CourseAccessStoreFile {
@@ -102,7 +109,9 @@ export class JsonFileCourseAccessStore implements CourseAccessStore {
     if (!fs.existsSync(this.filePath)) return emptyStoreFile();
 
     try {
-      return normalizeStoreFile(JSON.parse(fs.readFileSync(this.filePath, "utf8")));
+      return normalizeStoreFile(
+        JSON.parse(fs.readFileSync(this.filePath, "utf8"))
+      );
     } catch {
       return emptyStoreFile();
     }
@@ -133,6 +142,13 @@ export function createDefaultCourseAccessStore(): CourseAccessStore {
     process.env.HONGBOSHI_COURSE_ACCESS_STORE === "memory"
   ) {
     return new InMemoryCourseAccessStore();
+  }
+
+  if (
+    process.env.HONGBOSHI_COURSE_ACCESS_STORE === "postgres" ||
+    (process.env.HONGBOSHI_COURSE_ACCESS_STORE !== "file" && getDatabaseUrl())
+  ) {
+    return new PostgresCourseAccessStore(getSharedPostgresPool());
   }
 
   return new JsonFileCourseAccessStore();

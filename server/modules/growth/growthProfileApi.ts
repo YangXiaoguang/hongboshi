@@ -59,7 +59,7 @@ async function buildGrowthProfile(
   userId: string,
   now: string
 ): Promise<GrowthProfile> {
-  const courseAccess = loadCourseAccessState(userId);
+  const courseAccess = await loadCourseAccessState(userId);
   const latestAssessment = await getLatestAssessmentResult(userId);
   const appointments = await listCounselingAppointmentRecords(userId);
   const upcomingCounselingCount = appointments.filter(record => {
