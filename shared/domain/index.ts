@@ -1,4 +1,5 @@
 export * from "./assessment";
+export * from "./assessmentEngine";
 export * from "./common";
 export * from "./counseling";
 export * from "./course";

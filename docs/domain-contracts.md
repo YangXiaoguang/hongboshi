@@ -4,17 +4,18 @@
 
 ## 当前模块
 
-| 文件 | 责任 |
-| --- | --- |
-| `common.ts` | ID、日期、分页、金额、API 响应和错误结构 |
-| `course.ts` | 课程、优惠、折扣、学习进度 |
-| `courseCatalog.ts` | 课程目录筛选、搜索、排序、分页 |
-| `courseAccess.ts` | 课程购买权益、会员权益、访问判断 |
-| `user.ts` | 用户资料、角色、权限、登录来源、协议同意、登录请求 |
-| `assessment.ts` | 测评题目、答案、报告、推荐、风险等级 |
-| `counseling.ts` | 咨询师、擅长方向、时段、预约状态 |
-| `order.ts` | 可购买对象、订单、支付 |
-| `risk.ts` | 风险事件、审计日志 |
+| 文件                  | 责任                                               |
+| --------------------- | -------------------------------------------------- |
+| `common.ts`           | ID、日期、分页、金额、API 响应和错误结构           |
+| `course.ts`           | 课程、优惠、折扣、学习进度                         |
+| `courseCatalog.ts`    | 课程目录筛选、搜索、排序、分页                     |
+| `courseAccess.ts`     | 课程购买权益、会员权益、访问判断                   |
+| `user.ts`             | 用户资料、角色、权限、登录来源、协议同意、登录请求 |
+| `assessment.ts`       | 测评题目、答案、报告、推荐、风险等级               |
+| `assessmentEngine.ts` | 测评维度评分、风险分级、推荐路径生成               |
+| `counseling.ts`       | 咨询师、擅长方向、时段、预约状态                   |
+| `order.ts`            | 可购买对象、订单、支付                             |
+| `risk.ts`             | 风险事件、审计日志                                 |
 
 ## 使用约定
 
@@ -49,7 +50,7 @@ server/
     migrations/
 ```
 
-当前课程 seed 位于 `shared/data/mockCourses.ts`，开发环境和生产 Express 都通过 `GET /api/courses` 暴露同一份课程数据。课程目录查询逻辑位于 `shared/domain/courseCatalog.ts`，课程权益逻辑位于 `shared/domain/courseAccess.ts`。登录会话由 `/api/auth/session` 和 `/api/auth/login/*` 提供，服务端优先通过 HttpOnly session cookie 识别用户；课程购买和会员开通通过 `userCan`/`authorizeRequest` 校验 `member` 权限，并在登录会话中记录 terms/privacy 协议版本。课程权益读取仍保留 `x-hongboshi-user-id` 作为开发期兜底，服务端默认使用 JSON 文件持久化。后续接数据库时，API 返回结构应继续通过 `LoginSessionSchema`、`CourseCatalogResultSchema`、`CourseAccessStateSchema` 和 `CourseSchema` 校验。
+当前课程 seed 位于 `shared/data/mockCourses.ts`，开发环境和生产 Express 都通过 `GET /api/courses` 暴露同一份课程数据。快速测评题库位于 `shared/data/assessmentQuestions.ts`，通过 `GET /api/assessments/quick` 暴露，通过 `POST /api/assessments/quick/report` 生成维度分、风险等级、推荐路径和可选风险事件。课程目录查询逻辑位于 `shared/domain/courseCatalog.ts`，课程权益逻辑位于 `shared/domain/courseAccess.ts`，测评评分逻辑位于 `shared/domain/assessmentEngine.ts`。登录会话由 `/api/auth/session` 和 `/api/auth/login/*` 提供，服务端优先通过 HttpOnly session cookie 识别用户；课程购买和会员开通通过 `userCan`/`authorizeRequest` 校验 `member` 权限，并在登录会话中记录 terms/privacy 协议版本。课程权益读取仍保留 `x-hongboshi-user-id` 作为开发期兜底，服务端默认使用 JSON 文件持久化。后续接数据库时，API 返回结构应继续通过 `LoginSessionSchema`、`CourseCatalogResultSchema`、`CourseAccessStateSchema`、`AssessmentFlowSchema`、`AssessmentResultSchema` 和 `CourseSchema` 校验。
 
 ## 前端落地建议
 
@@ -82,5 +83,6 @@ client/src/
 - 风险事件：`open -> reviewing -> resolved / escalated`
 - 课程权益：`requires_purchase / requires_membership -> owned / member_included`
 - 学习进度：`not_started -> in_progress -> completed`
+- 测评风险：`low -> medium -> high -> urgent`
 
 这些流程后续不要依赖零散布尔字段，应集中在 service 或状态机函数中维护。

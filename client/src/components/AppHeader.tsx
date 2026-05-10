@@ -47,12 +47,13 @@ export default function AppHeader() {
   const isNavActive = (label: string) => {
     if (label === "首页") return location === "/";
     if (label === "心理课程") return location.startsWith("/courses");
+    if (label === "成长测评") return location.startsWith("/assessment");
     return false;
   };
 
   const handleNavClick = (item: (typeof navItems)[number]) => {
-    if (item.href === "/") {
-      navigate("/");
+    if (item.href === "/" || item.href === "/assessment") {
+      navigate(item.href);
       return;
     }
 

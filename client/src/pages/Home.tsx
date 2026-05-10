@@ -127,8 +127,10 @@ export default function Home() {
     setVipOnlyFilter,
     setCurrentPage,
   } = useCourseCatalog();
-  const { favoriteCourseIds, favoriteCount, toggleFavorite } = useCourseEngagement();
-  const { getCourseAccess, hasActiveMembership, ownedCourseCount } = useCourseAccess();
+  const { favoriteCourseIds, favoriteCount, toggleFavorite } =
+    useCourseEngagement();
+  const { getCourseAccess, hasActiveMembership, ownedCourseCount } =
+    useCourseAccess();
   const [viewMode, setViewMode] = useState<"pc" | "mobile">("pc");
   const [selectedNeed, setSelectedNeed] = useState(supportNeeds[0]);
 
@@ -174,7 +176,9 @@ export default function Home() {
                   onTypeChange={setType}
                   favorites={favoriteCourseIds}
                   onToggleFavorite={toggleFavorite}
-                  getCourseAccessStatus={(course) => getCourseAccess(course).status}
+                  getCourseAccessStatus={course =>
+                    getCourseAccess(course).status
+                  }
                 />
               </div>
             </div>
@@ -222,7 +226,8 @@ export default function Home() {
                 <button
                   onClick={() =>
                     toast("预约咨询", {
-                      description: "咨询师匹配流程即将上线，可先浏览适合的主题课程。",
+                      description:
+                        "咨询师匹配流程即将上线，可先浏览适合的主题课程。",
                     })
                   }
                   className="inline-flex h-12 items-center justify-center rounded-full bg-[#DDE8D9] px-6 text-sm font-semibold text-[#20362F] transition hover:bg-white"
@@ -231,11 +236,7 @@ export default function Home() {
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </button>
                 <button
-                  onClick={() =>
-                    toast("心理评估", {
-                      description: "评估模块即将上线，当前可先通过困扰类型获得推荐路径。",
-                    })
-                  }
+                  onClick={() => navigate("/assessment")}
                   className="inline-flex h-12 items-center justify-center rounded-full border border-white/35 px-6 text-sm font-semibold text-white transition hover:bg-white/10"
                 >
                   先做心理评估
@@ -249,7 +250,9 @@ export default function Home() {
                   ["私密", "支持体验"],
                 ].map(([value, label]) => (
                   <div key={label} className="px-4 first:pl-0">
-                    <div className="text-2xl font-semibold text-white">{value}</div>
+                    <div className="text-2xl font-semibold text-white">
+                      {value}
+                    </div>
                     <div className="mt-1 text-xs">{label}</div>
                   </div>
                 ))}
@@ -274,7 +277,9 @@ export default function Home() {
               className="grid gap-12 lg:grid-cols-[0.85fr_1.15fr]"
             >
               <div>
-                <p className="text-sm font-semibold text-[#6F8F83]">从真实困扰开始</p>
+                <p className="text-sm font-semibold text-[#6F8F83]">
+                  从真实困扰开始
+                </p>
                 <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35] sm:text-4xl">
                   你最近最需要被照顾的是哪一部分？
                 </h2>
@@ -284,7 +289,7 @@ export default function Home() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                {supportNeeds.map((need) => {
+                {supportNeeds.map(need => {
                   const active = selectedNeed.label === need.label;
                   return (
                     <button
@@ -296,7 +301,9 @@ export default function Home() {
                           : "border-[#E4DCCF] bg-white/45 text-[#55605A] hover:border-[#AFC2AB] hover:bg-white/75"
                       }`}
                     >
-                      <span className="text-sm font-semibold">{need.label}</span>
+                      <span className="text-sm font-semibold">
+                        {need.label}
+                      </span>
                       <span className="mt-3 block text-lg font-semibold leading-snug">
                         {need.title}
                       </span>
@@ -318,7 +325,9 @@ export default function Home() {
             >
               <div className="grid gap-8 lg:grid-cols-[0.7fr_1.3fr]">
                 <div>
-                  <p className="text-sm font-semibold text-[#6F8F83]">推荐路径</p>
+                  <p className="text-sm font-semibold text-[#6F8F83]">
+                    推荐路径
+                  </p>
                   <h3 className="mt-3 text-2xl font-semibold text-[#243B35]">
                     {selectedNeed.title}
                   </h3>
@@ -328,7 +337,7 @@ export default function Home() {
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-3">
-                  {recommendedCourses.map((course) => (
+                  {recommendedCourses.map(course => (
                     <button
                       key={course.id}
                       onClick={() => navigate(`/courses/${course.id}`)}
@@ -363,7 +372,7 @@ export default function Home() {
               </div>
 
               <div className="grid gap-8 md:grid-cols-3">
-                {servicePaths.map((path) => (
+                {servicePaths.map(path => (
                   <motion.div
                     key={path.title}
                     initial={{ opacity: 0, y: 20 }}
@@ -378,7 +387,13 @@ export default function Home() {
                       {path.description}
                     </p>
                     <button
-                      onClick={() => toast(path.action, { description: "功能即将上线" })}
+                      onClick={() => {
+                        if (path.action === "开始评估") {
+                          navigate("/assessment");
+                          return;
+                        }
+                        toast(path.action, { description: "功能即将上线" });
+                      }}
                       className="mt-6 inline-flex items-center text-sm font-semibold text-[#DDE8D9]"
                     >
                       {path.action}
@@ -401,7 +416,9 @@ export default function Home() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#243B35]/72 to-transparent" />
               <div className="absolute bottom-7 left-7 right-7 text-white">
-                <p className="text-sm font-semibold text-[#DDE8D9]">成长不是一次完成</p>
+                <p className="text-sm font-semibold text-[#DDE8D9]">
+                  成长不是一次完成
+                </p>
                 <h2 className="mt-3 text-3xl font-semibold leading-tight">
                   把支持变成可持续的日常节奏
                 </h2>
@@ -419,7 +436,9 @@ export default function Home() {
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#DDE8D9] text-sm font-semibold text-[#243B35]">
                       {index + 1}
                     </span>
-                    <p className="pt-1 text-base font-medium text-[#394A44]">{item}</p>
+                    <p className="pt-1 text-base font-medium text-[#394A44]">
+                      {item}
+                    </p>
                   </div>
                 ))}
               </div>
