@@ -29,8 +29,13 @@ const CounselingAppointmentActionResponseSchema = ApiResponseSchema(
 );
 
 export type CounselingAppointmentUpdateInput =
-  | Exclude<CounselingAppointmentAction, "reschedule">
-  | CounselingAppointmentActionRequest;
+  | Extract<CounselingAppointmentAction, "confirm_payment" | "cancel">
+  | Extract<CounselingAppointmentActionRequest, { action: "reschedule" }>;
+
+export type CounselingAppointmentFulfillmentInput = Extract<
+  CounselingAppointmentActionRequest,
+  { action: "complete_session" | "mark_no_show" }
+>;
 
 const API_BASE = "/api/counseling";
 
@@ -166,6 +171,32 @@ export const httpCounselingRepository = {
     if (!response.ok) {
       throw new Error(
         extractErrorMessage(payload, "咨询预约状态暂时无法更新，请稍后再试")
+      );
+    }
+    return parseCounselingAppointmentActionResponse(payload);
+  },
+
+  async fulfillAppointment(
+    appointmentId: string,
+    action: CounselingAppointmentFulfillmentInput
+  ): Promise<CounselingAppointmentActionResult> {
+    const body = CounselingAppointmentActionRequestSchema.parse(action);
+    const response = await fetch(
+      `${API_BASE}/appointments/${encodeURIComponent(appointmentId)}/fulfillment`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "咨询履约状态暂时无法更新，请稍后再试")
       );
     }
     return parseCounselingAppointmentActionResponse(payload);

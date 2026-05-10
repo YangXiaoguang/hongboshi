@@ -79,6 +79,36 @@ describe("counseling appointment status machine", () => {
     ).toBe(undefined);
   });
 
+  it("tracks counselor fulfillment outcomes", () => {
+    expect(
+      applyCounselingAppointmentAction({
+        appointment: {
+          ...appointment,
+          status: "scheduled",
+        },
+        action: "complete_session",
+        now: "2026-05-10T11:00:00.000Z",
+      })
+    ).toMatchObject({
+      status: "completed",
+      updatedAt: "2026-05-10T11:00:00.000Z",
+    });
+
+    expect(
+      applyCounselingAppointmentAction({
+        appointment: {
+          ...appointment,
+          status: "scheduled",
+        },
+        action: "mark_no_show",
+        now: "2026-05-10T11:00:00.000Z",
+      })
+    ).toMatchObject({
+      status: "no_show",
+      updatedAt: "2026-05-10T11:00:00.000Z",
+    });
+  });
+
   it("expires unpaid appointments after the payment hold window", () => {
     expect(getCounselingPaymentDeadline(appointment)).toBe(
       "2026-05-10T10:30:00.000Z"

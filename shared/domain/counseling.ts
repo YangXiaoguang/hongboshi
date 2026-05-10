@@ -128,6 +128,8 @@ export const CounselingAppointmentActionSchema = z.enum([
   "cancel",
   "reschedule",
   "complete_refund",
+  "complete_session",
+  "mark_no_show",
 ]);
 
 export const CounselingAppointmentActionRequestSchema = z.discriminatedUnion(
@@ -140,6 +142,8 @@ export const CounselingAppointmentActionRequestSchema = z.discriminatedUnion(
       slotId: EntityIdSchema,
     }),
     z.object({ action: z.literal("complete_refund") }),
+    z.object({ action: z.literal("complete_session") }),
+    z.object({ action: z.literal("mark_no_show") }),
   ]
 );
 
@@ -173,6 +177,14 @@ const appointmentActionTransitions: Record<
   complete_refund: {
     from: ["cancelled"],
     to: "refunded",
+  },
+  complete_session: {
+    from: ["scheduled"],
+    to: "completed",
+  },
+  mark_no_show: {
+    from: ["scheduled"],
+    to: "no_show",
   },
 };
 

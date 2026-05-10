@@ -9,6 +9,7 @@ import {
   applyCounselingAppointmentAction,
   applyCounselingAppointmentReschedule,
   applyPaymentSucceededWebhookToOrder,
+  applyRefundSucceededWebhookToOrder,
   closeUnpaidOrder,
   COUNSELING_PAYMENT_HOLD_MINUTES,
   CounselingAppointmentActionRequestSchema,
@@ -21,21 +22,27 @@ import {
   createSimulatedPaymentSucceededEvent,
   expireOverdueCounselingAppointmentPayment,
   findCourseAccessOrder,
+  PaymentSucceededWebhookEventSchema,
   PaymentSchema,
-  PaymentWebhookEventSchema,
+  RefundSchema,
+  RefundSucceededWebhookEventSchema,
   RiskEventSchema,
   markOrderRefunded,
   requestOrderRefund,
   upsertCourseAccessOrder,
+  userCan,
   type CourseAccessState,
   type CounselingAppointment,
   type CounselingAppointmentAction,
   type CounselingAppointmentCreateRequest,
   type CounselingAppointmentRecord,
   type CounselingSlot,
+  type LoginSession,
   type Order,
   type Payment,
-  type PaymentWebhookEvent,
+  type PaymentSucceededWebhookEvent,
+  type Refund,
+  type RefundSucceededWebhookEvent,
   type RiskEvent,
 } from "../../../shared/domain";
 import { getLoginSessionFromRequest } from "../auth/authSessionApi";
@@ -62,8 +69,18 @@ const CounselingAppointmentActionResponseSchema = ApiResponseSchema(
   CounselingAppointmentActionResultSchema
 );
 export const CounselingPaymentWebhookResultSchema = z.object({
-  event: PaymentWebhookEventSchema,
+  event: PaymentSucceededWebhookEventSchema,
   payment: PaymentSchema,
+  appointment: CounselingAppointmentActionResultSchema.shape.appointment,
+  counselor: CounselingAppointmentActionResultSchema.shape.counselor,
+  slot: CounselingAppointmentActionResultSchema.shape.slot,
+  order: CounselingAppointmentActionResultSchema.shape.order,
+  riskEvent: CounselingAppointmentActionResultSchema.shape.riskEvent,
+  nextSteps: z.array(z.string().min(1)).min(1),
+});
+export const CounselingRefundWebhookResultSchema = z.object({
+  event: RefundSucceededWebhookEventSchema,
+  refund: RefundSchema,
   appointment: CounselingAppointmentActionResultSchema.shape.appointment,
   counselor: CounselingAppointmentActionResultSchema.shape.counselor,
   slot: CounselingAppointmentActionResultSchema.shape.slot,
@@ -73,6 +90,9 @@ export const CounselingPaymentWebhookResultSchema = z.object({
 });
 const CounselingPaymentWebhookResponseSchema = ApiResponseSchema(
   CounselingPaymentWebhookResultSchema
+);
+const CounselingRefundWebhookResponseSchema = ApiResponseSchema(
+  CounselingRefundWebhookResultSchema
 );
 
 let counselingAppointmentStore = createDefaultCounselingAppointmentStore();
@@ -110,6 +130,7 @@ function errorPayload(
   code:
     | "BAD_REQUEST"
     | "UNAUTHORIZED"
+    | "FORBIDDEN"
     | "NOT_FOUND"
     | "CONFLICT"
     | "INTERNAL_ERROR",
@@ -121,7 +142,7 @@ function errorPayload(
       code,
       message,
     },
-  };
+  } as const;
 }
 
 function readRequestBody(req: IncomingMessage): Promise<unknown> {
@@ -228,6 +249,20 @@ function buildActionNextSteps(
     ];
   }
 
+  if (action === "complete_session") {
+    return [
+      "本次咨询已完成，建议在咨询后整理 1-2 个可执行的小行动。",
+      "后续可以在成长空间查看咨询记录，并按需继续预约支持。",
+    ];
+  }
+
+  if (action === "mark_no_show") {
+    return [
+      "本次预约已标记为未到访，咨询师工作台会保留履约记录。",
+      "如需继续服务，请根据平台规则重新预约或联系运营支持。",
+    ];
+  }
+
   if (options.orderStatus === "refunding") {
     return [
       "预约已取消，原咨询时段已释放。",
@@ -262,6 +297,16 @@ function transitionConflictMessage(
   if (action === "complete_refund") {
     if (status === "refunded") return "该预约已退款，无需重复处理";
     return "当前预约状态不支持完成退款";
+  }
+
+  if (action === "complete_session") {
+    if (status === "completed") return "该预约已完成，无需重复处理";
+    return "当前预约状态不支持标记完成";
+  }
+
+  if (action === "mark_no_show") {
+    if (status === "no_show") return "该预约已标记未到访，无需重复处理";
+    return "当前预约状态不支持标记未到访";
   }
 
   if (status === "cancelled") return "该预约已取消，无需重复取消";
@@ -340,11 +385,30 @@ function paymentWebhookConflictMessage(err: unknown) {
   return "支付回调暂时无法处理";
 }
 
+function refundWebhookConflictMessage(err: unknown) {
+  if (!(err instanceof Error)) return "退款回调暂时无法处理";
+
+  if (err.message === "REFUND_WEBHOOK_ORDER_MISMATCH") {
+    return "退款回调订单不匹配";
+  }
+  if (err.message === "REFUND_WEBHOOK_AMOUNT_MISMATCH") {
+    return "退款金额与订单应付金额不一致";
+  }
+  if (err.message === "INVALID_ORDER_REFUND_TRANSITION") {
+    return "当前订单状态不支持完成退款";
+  }
+  if (err.message === "INVALID_COUNSELING_APPOINTMENT_TRANSITION") {
+    return "当前预约状态不支持完成退款";
+  }
+
+  return "退款回调暂时无法处理";
+}
+
 export async function processCounselingPaymentWebhookEvent(
-  event: PaymentWebhookEvent,
+  event: PaymentSucceededWebhookEvent,
   expectedUserId?: string
 ) {
-  const paymentEvent = PaymentWebhookEventSchema.parse(event);
+  const paymentEvent = PaymentSucceededWebhookEventSchema.parse(event);
   await expireOverdueCounselingPayments(paymentEvent.occurredAt);
 
   const appointment = await counselingAppointmentStore.getAppointmentByOrderId(
@@ -476,6 +540,134 @@ export async function processCounselingPaymentWebhookEvent(
     return {
       status: 500,
       body: errorPayload("INTERNAL_ERROR", "支付回调处理失败，请稍后重试"),
+    } as const;
+  }
+}
+
+export async function processCounselingRefundWebhookEvent(
+  event: RefundSucceededWebhookEvent
+) {
+  const refundEvent = RefundSucceededWebhookEventSchema.parse(event);
+  const appointment = await counselingAppointmentStore.getAppointmentByOrderId(
+    refundEvent.orderId
+  );
+  if (!appointment) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "退款回调关联的预约不存在"),
+    } as const;
+  }
+
+  const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
+  const counselor = counselorProfiles.find(
+    item => item.id === appointment.counselorId
+  );
+  if (!slot || !counselor) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "退款回调关联资源不存在"),
+    } as const;
+  }
+
+  const previousAccessState = await loadCourseAccessState(appointment.userId);
+  const currentOrder = findCourseAccessOrder(
+    previousAccessState,
+    refundEvent.orderId
+  );
+  if (!currentOrder) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "退款回调关联的订单不存在"),
+    } as const;
+  }
+
+  let webhookResult: { refund: Refund; order: Order };
+  try {
+    webhookResult = applyRefundSucceededWebhookToOrder(
+      currentOrder,
+      refundEvent
+    );
+  } catch (err) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", refundWebhookConflictMessage(err)),
+    } as const;
+  }
+
+  const riskEvent = await counselingAppointmentStore.getRiskEventForAppointment(
+    appointment.id
+  );
+
+  if (appointment.status === "refunded" && currentOrder.status === "refunded") {
+    return {
+      status: 200,
+      body: CounselingRefundWebhookResponseSchema.parse({
+        ok: true,
+        data: {
+          event: refundEvent,
+          refund: webhookResult.refund,
+          appointment,
+          counselor,
+          slot,
+          order: currentOrder,
+          riskEvent,
+          nextSteps: buildActionNextSteps("complete_refund"),
+        },
+      }),
+    } as const;
+  }
+
+  let nextAppointment: CounselingAppointment;
+  try {
+    nextAppointment = applyCounselingAppointmentAction({
+      appointment,
+      action: "complete_refund",
+      now: refundEvent.occurredAt,
+    });
+  } catch (err) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", refundWebhookConflictMessage(err)),
+    } as const;
+  }
+
+  let orderUpdated = false;
+  try {
+    await saveCourseAccessState(
+      appointment.userId,
+      upsertCourseAccessOrder(previousAccessState, webhookResult.order)
+    );
+    orderUpdated = true;
+
+    const savedAppointment = await counselingAppointmentStore.saveAppointment(
+      nextAppointment,
+      riskEvent
+    );
+
+    return {
+      status: 200,
+      body: CounselingRefundWebhookResponseSchema.parse({
+        ok: true,
+        data: {
+          event: refundEvent,
+          refund: webhookResult.refund,
+          appointment: savedAppointment,
+          counselor,
+          slot,
+          order: webhookResult.order,
+          riskEvent,
+          nextSteps: buildActionNextSteps("complete_refund"),
+        },
+      }),
+    } as const;
+  } catch (err) {
+    if (orderUpdated) {
+      await rollbackCourseAccessState(appointment.userId, previousAccessState);
+    }
+    reportStoreError(err);
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "退款回调处理失败，请稍后重试"),
     } as const;
   }
 }
@@ -778,6 +970,122 @@ export async function listCounselingAppointmentsPayload(
   } as const;
 }
 
+type FulfillmentActor = Pick<LoginSession["user"], "id" | "roles">;
+
+export async function fulfillCounselingAppointmentPayload(
+  appointmentId: string,
+  body: unknown,
+  actor?: FulfillmentActor,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后操作咨询履约"),
+    } as const;
+  }
+
+  if (!userCan(actor, "counseling:fulfill")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无咨询履约权限"),
+    } as const;
+  }
+
+  const parsed = CounselingAppointmentActionRequestSchema.safeParse(body);
+  if (
+    !parsed.success ||
+    !["complete_session", "mark_no_show"].includes(parsed.data.action)
+  ) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "咨询履约操作参数不合法"),
+    } as const;
+  }
+
+  await expireOverdueCounselingPayments(now);
+
+  const appointment =
+    await counselingAppointmentStore.getAppointment(appointmentId);
+  if (!appointment) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "预约不存在"),
+    } as const;
+  }
+
+  const canOperateAny = actor.roles.some(role =>
+    ["operator", "admin"].includes(role)
+  );
+  if (!canOperateAny && actor.id !== appointment.counselorId) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "只能处理分配给自己的咨询预约"),
+    } as const;
+  }
+
+  const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
+  const counselor = counselorProfiles.find(
+    item => item.id === appointment.counselorId
+  );
+  if (!slot || !counselor) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "预约关联资源不存在"),
+    } as const;
+  }
+
+  let nextAppointment: CounselingAppointment;
+  try {
+    nextAppointment = applyCounselingAppointmentAction({
+      appointment,
+      action: parsed.data.action,
+      now,
+    });
+  } catch {
+    return {
+      status: 409,
+      body: errorPayload(
+        "CONFLICT",
+        transitionConflictMessage(appointment.status, parsed.data.action)
+      ),
+    } as const;
+  }
+
+  try {
+    const riskEvent =
+      await counselingAppointmentStore.getRiskEventForAppointment(
+        appointment.id
+      );
+    const savedAppointment = await counselingAppointmentStore.saveAppointment(
+      nextAppointment,
+      riskEvent
+    );
+    const order = await getAppointmentOrder(savedAppointment);
+
+    return {
+      status: 200,
+      body: CounselingAppointmentActionResponseSchema.parse({
+        ok: true,
+        data: {
+          appointment: savedAppointment,
+          counselor,
+          slot,
+          order,
+          riskEvent,
+          nextSteps: buildActionNextSteps(parsed.data.action),
+        },
+      }),
+    } as const;
+  } catch (err) {
+    reportStoreError(err);
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "咨询履约状态更新失败，请稍后重试"),
+    } as const;
+  }
+}
+
 export async function updateCounselingAppointmentPayload(
   appointmentId: string,
   body: unknown,
@@ -993,6 +1301,22 @@ export async function updateCounselingAppointmentPayload(
     }
   }
 
+  if (
+    ["complete_refund", "complete_session", "mark_no_show"].includes(
+      parsed.data.action
+    )
+  ) {
+    return {
+      status: 403,
+      body: errorPayload(
+        "FORBIDDEN",
+        parsed.data.action === "complete_refund"
+          ? "退款完成需由支付回调驱动"
+          : "咨询履约需在咨询师工作台操作"
+      ),
+    } as const;
+  }
+
   let nextAppointment: CounselingAppointment;
   try {
     nextAppointment = applyCounselingAppointmentAction({
@@ -1180,6 +1504,19 @@ export function registerCounselingApi(app: Express) {
       sendJson(res, payload.status, payload.body);
     }
   );
+
+  app.post(
+    "/api/counseling/appointments/:appointmentId/fulfillment",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await fulfillCounselingAppointmentPayload(
+        req.params.appointmentId,
+        req.body,
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
 }
 
 export function handleCounselingApiRequest(
@@ -1249,6 +1586,27 @@ export function handleCounselingApiRequest(
       .catch(err => {
         reportStoreError(err);
         sendJson(res, 500, errorPayload("INTERNAL_ERROR", "预约状态更新失败"));
+      });
+    return true;
+  }
+
+  const fulfillmentMatch = url.pathname.match(
+    /^\/api\/counseling\/appointments\/([^/]+)\/fulfillment$/
+  );
+  if (req.method === "POST" && fulfillmentMatch?.[1]) {
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await fulfillCounselingAppointmentPayload(
+          decodeURIComponent(fulfillmentMatch[1]),
+          body,
+          session?.user
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(err => {
+        reportStoreError(err);
+        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询履约更新失败"));
       });
     return true;
   }

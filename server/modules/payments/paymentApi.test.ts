@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createSimulatedPaymentSucceededEvent } from "../../../shared/domain";
+import {
+  createSimulatedPaymentSucceededEvent,
+  createSimulatedRefundSucceededEvent,
+} from "../../../shared/domain";
 import {
   createCounselingAppointmentPayload,
   getCounselingAvailabilityPayload,
   resetCounselingAppointmentStore,
+  updateCounselingAppointmentPayload,
 } from "../counseling/counselingApi";
 import {
   getCourseAccessPayload,
@@ -110,6 +114,56 @@ describe("payment webhook api payloads", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(second.body).toEqual(first.body);
+  });
+
+  it("routes simulated refund success to the counseling refund flow", async () => {
+    const created = await createPendingCounselingOrder();
+    const appointmentId = created.appointment.id;
+    const paymentEvent = createSimulatedPaymentSucceededEvent({
+      order: created.order,
+      now: "2026-05-10T00:10:00.000Z",
+    });
+    const paid = await processPaymentWebhookPayload(paymentEvent);
+    expect(paid.status).toBe(200);
+
+    const cancelled = await updateCounselingAppointmentPayload(
+      appointmentId,
+      { action: "cancel" },
+      "user_1",
+      "2026-05-10T00:20:00.000Z"
+    );
+    if (!cancelled.body.ok || !cancelled.body.data.order) {
+      throw new Error("expected refunding appointment");
+    }
+
+    const refundPayload = await processPaymentWebhookPayload(
+      createSimulatedRefundSucceededEvent({
+        order: cancelled.body.data.order,
+        now: "2026-05-10T00:25:00.000Z",
+      })
+    );
+
+    expect(refundPayload.status).toBe(200);
+    if (refundPayload.body.ok) {
+      expect(refundPayload.body.data).toMatchObject({
+        refund: {
+          orderId: created.order.id,
+          amount: created.order.payableAmount,
+        },
+        appointment: {
+          status: "refunded",
+        },
+        order: {
+          status: "refunded",
+        },
+      });
+    }
+
+    const access = await getCourseAccessPayload("user_1");
+    expect(access.ok).toBe(true);
+    if (access.ok) {
+      expect(access.data.orders[0]?.status).toBe("refunded");
+    }
   });
 
   it("requires valid signatures when signature verification is enabled", async () => {

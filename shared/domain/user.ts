@@ -23,6 +23,7 @@ export const AuthPermissionSchema = z.enum([
   "course_access:read",
   "course:purchase",
   "membership:activate",
+  "counseling:fulfill",
   "admin:manage",
 ]);
 
@@ -69,30 +70,34 @@ export const WechatLoginRequestSchema = z.object({
 const RolePermissionMap = {
   visitor: ["course_access:read"],
   member: ["course_access:read", "course:purchase", "membership:activate"],
-  counselor: ["course_access:read"],
+  counselor: ["course_access:read", "counseling:fulfill"],
   operator: [
     "course_access:read",
     "course:purchase",
     "membership:activate",
+    "counseling:fulfill",
     "admin:manage",
   ],
   admin: [
     "course_access:read",
     "course:purchase",
     "membership:activate",
+    "counseling:fulfill",
     "admin:manage",
   ],
 } satisfies Record<UserRole, AuthPermission[]>;
 
 export function roleCan(role: UserRole, permission: AuthPermission): boolean {
-  return (RolePermissionMap[role] as readonly AuthPermission[]).includes(permission);
+  return (RolePermissionMap[role] as readonly AuthPermission[]).includes(
+    permission
+  );
 }
 
 export function userCan(
   user: Pick<UserProfile, "roles">,
   permission: AuthPermission
 ): boolean {
-  return user.roles.some((role) => roleCan(role, permission));
+  return user.roles.some(role => roleCan(role, permission));
 }
 
 export type UserRole = z.infer<typeof UserRoleSchema>;

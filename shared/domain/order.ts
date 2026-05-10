@@ -52,7 +52,16 @@ export const PaymentSchema = z.object({
   paidAt: DateTimeLikeSchema.optional(),
 });
 
-export const PaymentWebhookEventSchema = z.object({
+export const RefundSchema = z.object({
+  id: EntityIdSchema,
+  orderId: EntityIdSchema,
+  channel: PaymentChannelSchema,
+  amount: MoneyAmountSchema,
+  transactionId: z.string().min(1),
+  refundedAt: DateTimeLikeSchema,
+});
+
+export const PaymentSucceededWebhookEventSchema = z.object({
   id: EntityIdSchema,
   type: z.literal("payment.succeeded"),
   orderId: EntityIdSchema,
@@ -62,9 +71,30 @@ export const PaymentWebhookEventSchema = z.object({
   occurredAt: DateTimeLikeSchema,
 });
 
+export const RefundSucceededWebhookEventSchema = z.object({
+  id: EntityIdSchema,
+  type: z.literal("refund.succeeded"),
+  orderId: EntityIdSchema,
+  channel: PaymentChannelSchema,
+  amount: MoneyAmountSchema,
+  transactionId: z.string().min(1),
+  occurredAt: DateTimeLikeSchema,
+});
+
+export const PaymentWebhookEventSchema = z.discriminatedUnion("type", [
+  PaymentSucceededWebhookEventSchema,
+  RefundSucceededWebhookEventSchema,
+]);
+
 export const PaymentWebhookProcessingResultSchema = z.object({
-  event: PaymentWebhookEventSchema,
+  event: PaymentSucceededWebhookEventSchema,
   payment: PaymentSchema,
+  order: OrderSchema,
+});
+
+export const RefundWebhookProcessingResultSchema = z.object({
+  event: RefundSucceededWebhookEventSchema,
+  refund: RefundSchema,
   order: OrderSchema,
 });
 
@@ -111,10 +141,10 @@ export function createSimulatedPaymentSucceededEvent({
   channel?: PaymentChannel;
   transactionId?: string;
   now?: string;
-}): PaymentWebhookEvent {
+}): PaymentSucceededWebhookEvent {
   const normalized = OrderSchema.parse(order);
 
-  return PaymentWebhookEventSchema.parse({
+  return PaymentSucceededWebhookEventSchema.parse({
     id: `evt_payment_${normalized.id}_${Date.parse(now)}`,
     type: "payment.succeeded",
     orderId: normalized.id,
@@ -122,6 +152,31 @@ export function createSimulatedPaymentSucceededEvent({
     amount: normalized.payableAmount,
     transactionId:
       transactionId ?? `manual_${normalized.id}_${Date.parse(now)}`,
+    occurredAt: now,
+  });
+}
+
+export function createSimulatedRefundSucceededEvent({
+  order,
+  channel = "manual",
+  transactionId,
+  now = new Date().toISOString(),
+}: {
+  order: Order;
+  channel?: PaymentChannel;
+  transactionId?: string;
+  now?: string;
+}): RefundSucceededWebhookEvent {
+  const normalized = OrderSchema.parse(order);
+
+  return RefundSucceededWebhookEventSchema.parse({
+    id: `evt_refund_${normalized.id}_${Date.parse(now)}`,
+    type: "refund.succeeded",
+    orderId: normalized.id,
+    channel,
+    amount: normalized.payableAmount,
+    transactionId:
+      transactionId ?? `refund_${normalized.id}_${Date.parse(now)}`,
     occurredAt: now,
   });
 }
@@ -149,10 +204,10 @@ export function markOrderPaid(
 
 export function applyPaymentSucceededWebhookToOrder(
   order: Order,
-  event: PaymentWebhookEvent
+  event: PaymentSucceededWebhookEvent
 ) {
   const normalizedOrder = OrderSchema.parse(order);
-  const normalizedEvent = PaymentWebhookEventSchema.parse(event);
+  const normalizedEvent = PaymentSucceededWebhookEventSchema.parse(event);
 
   if (normalizedOrder.id !== normalizedEvent.orderId) {
     throw new Error("PAYMENT_WEBHOOK_ORDER_MISMATCH");
@@ -175,6 +230,37 @@ export function applyPaymentSucceededWebhookToOrder(
     event: normalizedEvent,
     payment,
     order: markOrderPaid(normalizedOrder, normalizedEvent.occurredAt),
+  });
+}
+
+export function applyRefundSucceededWebhookToOrder(
+  order: Order,
+  event: RefundSucceededWebhookEvent
+) {
+  const normalizedOrder = OrderSchema.parse(order);
+  const normalizedEvent = RefundSucceededWebhookEventSchema.parse(event);
+
+  if (normalizedOrder.id !== normalizedEvent.orderId) {
+    throw new Error("REFUND_WEBHOOK_ORDER_MISMATCH");
+  }
+
+  if (normalizedOrder.payableAmount !== normalizedEvent.amount) {
+    throw new Error("REFUND_WEBHOOK_AMOUNT_MISMATCH");
+  }
+
+  const refund = RefundSchema.parse({
+    id: `refund_${normalizedEvent.id}`,
+    orderId: normalizedEvent.orderId,
+    channel: normalizedEvent.channel,
+    amount: normalizedEvent.amount,
+    transactionId: normalizedEvent.transactionId,
+    refundedAt: normalizedEvent.occurredAt,
+  });
+
+  return RefundWebhookProcessingResultSchema.parse({
+    event: normalizedEvent,
+    refund,
+    order: markOrderRefunded(normalizedOrder),
   });
 }
 
@@ -235,7 +321,17 @@ export type PaymentChannel = z.infer<typeof PaymentChannelSchema>;
 export type OrderItem = z.infer<typeof OrderItemSchema>;
 export type Order = z.infer<typeof OrderSchema>;
 export type Payment = z.infer<typeof PaymentSchema>;
+export type Refund = z.infer<typeof RefundSchema>;
+export type PaymentSucceededWebhookEvent = z.infer<
+  typeof PaymentSucceededWebhookEventSchema
+>;
+export type RefundSucceededWebhookEvent = z.infer<
+  typeof RefundSucceededWebhookEventSchema
+>;
 export type PaymentWebhookEvent = z.infer<typeof PaymentWebhookEventSchema>;
 export type PaymentWebhookProcessingResult = z.infer<
   typeof PaymentWebhookProcessingResultSchema
+>;
+export type RefundWebhookProcessingResult = z.infer<
+  typeof RefundWebhookProcessingResultSchema
 >;

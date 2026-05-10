@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   createCounselingAppointmentPayload,
   expireOverdueCounselingPayments,
+  fulfillCounselingAppointmentPayload,
   getCounselingAvailabilityPayload,
   listCounselingAppointmentsPayload,
+  processCounselingRefundWebhookEvent,
   resetCounselingAppointmentStore,
   updateCounselingAppointmentPayload,
 } from "./counselingApi";
+import { createSimulatedRefundSucceededEvent } from "../../../shared/domain";
 import {
   getCourseAccessPayload,
   resetCourseAccessStore,
@@ -187,11 +190,22 @@ describe("counseling api payloads", () => {
       expect(cancelled.body.data.order?.status).toBe("refunding");
     }
 
-    const refunded = await updateCounselingAppointmentPayload(
+    const userRefundCompletion = await updateCounselingAppointmentPayload(
       appointmentId,
       { action: "complete_refund" },
       "user_1",
-      "2026-05-10T00:25:00.000Z"
+      "2026-05-10T00:24:00.000Z"
+    );
+    expect(userRefundCompletion.status).toBe(403);
+
+    if (!cancelled.body.ok || !cancelled.body.data.order) {
+      throw new Error("expected refunding order");
+    }
+    const refunded = await processCounselingRefundWebhookEvent(
+      createSimulatedRefundSucceededEvent({
+        order: cancelled.body.data.order,
+        now: "2026-05-10T00:25:00.000Z",
+      })
     );
 
     expect(refunded.status).toBe(200);
@@ -208,6 +222,57 @@ describe("counseling api payloads", () => {
       "2026-05-10T00:30:00.000Z"
     );
     expect(repeated.status).toBe(409);
+  });
+
+  it("lets the assigned counselor complete fulfillment outcomes", async () => {
+    const availability = await getCounselingAvailabilityPayload(
+      fixedNow.toISOString()
+    );
+    if (!availability.ok) throw new Error("expected availability");
+
+    const slot = availability.data.slots[5];
+    const created = await createCounselingAppointmentPayload(
+      {
+        counselorId: slot.counselorId,
+        slotId: slot.id,
+        channel: slot.channel,
+        concernTags: ["emotion"],
+        urgency: "this_week",
+      },
+      "user_1",
+      fixedNow.toISOString()
+    );
+    if (!created.body.ok) throw new Error("expected created appointment");
+
+    const appointmentId = created.body.data.appointment.id;
+    const confirmed = await updateCounselingAppointmentPayload(
+      appointmentId,
+      { action: "confirm_payment" },
+      "user_1",
+      "2026-05-10T00:10:00.000Z"
+    );
+    expect(confirmed.status).toBe(200);
+
+    const forbidden = await updateCounselingAppointmentPayload(
+      appointmentId,
+      { action: "complete_session" },
+      "user_1",
+      "2026-05-10T01:00:00.000Z"
+    );
+    expect(forbidden.status).toBe(403);
+
+    const completed = await fulfillCounselingAppointmentPayload(
+      appointmentId,
+      { action: "complete_session" },
+      { id: slot.counselorId, roles: ["counselor"] },
+      "2026-05-10T01:00:00.000Z"
+    );
+
+    expect(completed.status).toBe(200);
+    if (completed.body.ok) {
+      expect(completed.body.data.appointment.status).toBe("completed");
+      expect(completed.body.data.order?.status).toBe("paid");
+    }
   });
 
   it("expires overdue payment holds and releases the reserved slot", async () => {

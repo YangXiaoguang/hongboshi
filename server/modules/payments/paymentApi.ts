@@ -13,7 +13,9 @@ import {
 } from "../../../shared/domain";
 import {
   CounselingPaymentWebhookResultSchema,
+  CounselingRefundWebhookResultSchema,
   processCounselingPaymentWebhookEvent,
+  processCounselingRefundWebhookEvent,
 } from "../counseling/counselingApi";
 import {
   getPaymentWebhookEventStore,
@@ -27,7 +29,10 @@ import {
 } from "./paymentWebhookSecurity";
 
 const PaymentWebhookResponseSchema = ApiResponseSchema(
-  CounselingPaymentWebhookResultSchema
+  z.union([
+    CounselingPaymentWebhookResultSchema,
+    CounselingRefundWebhookResultSchema,
+  ])
 );
 
 type PaymentWebhookErrorCode =
@@ -76,7 +81,7 @@ function errorPayload(code: PaymentWebhookErrorCode, message: string) {
       code,
       message,
     },
-  };
+  } as const;
 }
 
 function rawBodyFromPayload(body: unknown) {
@@ -133,8 +138,18 @@ function verifyWebhookSignatureIfNeeded(
 async function routePaymentWebhookEvent(
   event: PaymentWebhookEvent
 ): Promise<PaymentWebhookApiPayload> {
-  if (event.orderId.startsWith("order_counseling_")) {
+  if (
+    event.type === "payment.succeeded" &&
+    event.orderId.startsWith("order_counseling_")
+  ) {
     return processCounselingPaymentWebhookEvent(event);
+  }
+
+  if (
+    event.type === "refund.succeeded" &&
+    event.orderId.startsWith("order_counseling_")
+  ) {
+    return processCounselingRefundWebhookEvent(event);
   }
 
   return {
