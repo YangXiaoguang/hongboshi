@@ -3,21 +3,26 @@ import path from "path";
 import { describe, expect, it } from "vitest";
 import { coreDatabaseTables, requiredDatabaseIndexes } from "./schema";
 
-const migrationPath = path.resolve(
-  process.cwd(),
-  "server/db/migrations/0001_core_tables.sql"
-);
-const migrationSql = fs.readFileSync(migrationPath, "utf8");
+const migrationsDir = path.resolve(process.cwd(), "server/db/migrations");
+const migrationSql = fs
+  .readdirSync(migrationsDir)
+  .filter(fileName => fileName.endsWith(".sql"))
+  .sort((a, b) => a.localeCompare(b))
+  .map(fileName => fs.readFileSync(path.join(migrationsDir, fileName), "utf8"))
+  .join("\n");
 
 function tableBlock(tableName: string) {
   const match = migrationSql.match(
-    new RegExp(`CREATE TABLE IF NOT EXISTS ${tableName}\\s*\\(([\\s\\S]*?)\\);`, "i")
+    new RegExp(
+      `CREATE TABLE IF NOT EXISTS ${tableName}\\s*\\(([\\s\\S]*?)\\);`,
+      "i"
+    )
   );
   return match?.[1] ?? "";
 }
 
 describe("database schema contract", () => {
-  it("declares every core table in the initial migration", () => {
+  it("declares every core table in migrations", () => {
     for (const table of coreDatabaseTables) {
       expect(migrationSql).toMatch(
         new RegExp(`CREATE TABLE IF NOT EXISTS ${table.name}\\s*\\(`, "i")

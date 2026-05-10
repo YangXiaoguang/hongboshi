@@ -10,6 +10,12 @@ import {
   resetCourseAccessStore,
 } from "../courses/courseAccessApi";
 import { processPaymentWebhookPayload } from "./paymentApi";
+import { resetPaymentWebhookEventStore } from "./paymentWebhookEventStore";
+import {
+  PAYMENT_WEBHOOK_SIGNATURE_HEADER,
+  PAYMENT_WEBHOOK_TIMESTAMP_HEADER,
+  createPaymentWebhookSignature,
+} from "./paymentWebhookSecurity";
 
 const fixedNow = new Date("2026-05-10T00:00:00.000Z");
 
@@ -40,6 +46,7 @@ describe("payment webhook api payloads", () => {
   beforeEach(async () => {
     await resetCourseAccessStore();
     await resetCounselingAppointmentStore(fixedNow);
+    await resetPaymentWebhookEventStore();
   });
 
   it("routes simulated payment success to the counseling appointment flow", async () => {
@@ -87,6 +94,61 @@ describe("payment webhook api payloads", () => {
     expect(access.ok).toBe(true);
     if (access.ok) {
       expect(access.data.orders[0]?.status).toBe("pending_payment");
+    }
+  });
+
+  it("returns the stored result when the same webhook event is retried", async () => {
+    const created = await createPendingCounselingOrder();
+    const event = createSimulatedPaymentSucceededEvent({
+      order: created.order,
+      now: "2026-05-10T00:10:00.000Z",
+    });
+
+    const first = await processPaymentWebhookPayload(event);
+    const second = await processPaymentWebhookPayload(event);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body).toEqual(first.body);
+  });
+
+  it("requires valid signatures when signature verification is enabled", async () => {
+    const created = await createPendingCounselingOrder();
+    const event = createSimulatedPaymentSucceededEvent({
+      order: created.order,
+      now: "2026-05-10T00:10:00.000Z",
+    });
+    const rawBody = JSON.stringify(event);
+    const timestamp = "2026-05-10T00:10:10.000Z";
+    const secret = "payment_webhook_test_secret";
+
+    const missing = await processPaymentWebhookPayload(event, {
+      rawBody,
+      secret,
+      requireSignature: true,
+      now: new Date(timestamp),
+    });
+
+    expect(missing.status).toBe(401);
+
+    const signed = await processPaymentWebhookPayload(event, {
+      rawBody,
+      secret,
+      requireSignature: true,
+      now: new Date(timestamp),
+      headers: {
+        [PAYMENT_WEBHOOK_TIMESTAMP_HEADER]: timestamp,
+        [PAYMENT_WEBHOOK_SIGNATURE_HEADER]: createPaymentWebhookSignature({
+          rawBody,
+          secret,
+          timestamp,
+        }),
+      },
+    });
+
+    expect(signed.status).toBe(200);
+    if (signed.body.ok) {
+      expect(signed.body.data.order.status).toBe("paid");
     }
   });
 

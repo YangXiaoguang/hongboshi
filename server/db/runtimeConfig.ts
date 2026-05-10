@@ -52,6 +52,13 @@ export const persistenceStoreSpecs = [
     autoPostgresWithDatabaseUrl: true,
     supportedModes: ["memory", "postgres"],
   },
+  {
+    envName: "HONGBOSHI_PAYMENT_WEBHOOK_STORE",
+    label: "支付回调收据",
+    fallbackMode: "memory",
+    autoPostgresWithDatabaseUrl: true,
+    supportedModes: ["memory", "postgres"],
+  },
 ] as const satisfies readonly PersistenceStoreSpec[];
 
 function normalizeRawMode(value: string | undefined) {

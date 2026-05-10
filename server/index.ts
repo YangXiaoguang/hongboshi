@@ -9,7 +9,10 @@ import { registerCounselingApi } from "./modules/counseling/counselingApi";
 import { registerCourseAccessApi } from "./modules/courses/courseAccessApi";
 import { registerCourseApi } from "./modules/courses/courseApi";
 import { registerGrowthProfileApi } from "./modules/growth/growthProfileApi";
-import { registerPaymentApi } from "./modules/payments/paymentApi";
+import {
+  capturePaymentWebhookRawBody,
+  registerPaymentApi,
+} from "./modules/payments/paymentApi";
 import { assertPersistenceConfig } from "./db/runtimeConfig";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,7 +24,7 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
-  app.use(express.json());
+  app.use(express.json({ verify: capturePaymentWebhookRawBody }));
   registerAuthApi(app);
   registerAssessmentApi(app);
   registerCounselingApi(app);
