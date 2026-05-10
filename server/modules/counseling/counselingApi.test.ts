@@ -40,6 +40,7 @@ describe("counseling api payloads", () => {
         channel: slot.channel,
         concernTags: ["emotion", "sleep"],
         urgency: "this_week",
+        assessmentReportId: "report_quick_state_check_1",
         noteForCounselor: "最近睡眠和情绪波动比较明显。",
       },
       "user_1",
@@ -50,6 +51,9 @@ describe("counseling api payloads", () => {
     if (payload.body.ok) {
       expect(payload.body.data.appointment.userId).toBe("user_1");
       expect(payload.body.data.appointment.status).toBe("pending_payment");
+      expect(payload.body.data.appointment.assessmentReportId).toBe(
+        "report_quick_state_check_1"
+      );
       expect(payload.body.data.slot.available).toBe(false);
     }
 

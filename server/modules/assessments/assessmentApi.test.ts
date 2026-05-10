@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   getLatestAssessmentResult,
+  getLatestAssessmentResultPayload,
   getQuickAssessmentFlowPayload,
   resetAssessmentResultStore,
   submitQuickAssessmentPayload,
@@ -49,6 +50,14 @@ describe("assessment api payloads", () => {
           id: payload.body.data.report.id,
         },
       });
+
+      const latestPayload = await getLatestAssessmentResultPayload("user_1");
+      expect(latestPayload.status).toBe(200);
+      if (latestPayload.body.ok) {
+        expect(latestPayload.body.data?.report.id).toBe(
+          payload.body.data.report.id
+        );
+      }
     }
   });
 
@@ -56,6 +65,13 @@ describe("assessment api payloads", () => {
     const payload = await submitQuickAssessmentPayload({ answers: [] });
 
     expect(payload.status).toBe(400);
+    expect(payload.body.ok).toBe(false);
+  });
+
+  it("requires login before reading the latest report", async () => {
+    const payload = await getLatestAssessmentResultPayload();
+
+    expect(payload.status).toBe(401);
     expect(payload.body.ok).toBe(false);
   });
 });

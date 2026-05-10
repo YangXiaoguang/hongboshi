@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseAssessmentFlowResponse,
   parseAssessmentResultResponse,
+  parseLatestAssessmentResultResponse,
 } from "./httpAssessmentRepository";
 
 describe("http assessment repository parsing", () => {
@@ -61,6 +62,15 @@ describe("http assessment repository parsing", () => {
     });
 
     expect(result.report.recommendations[0].targetId).toBe("5");
+  });
+
+  it("parses an empty latest assessment response", () => {
+    expect(
+      parseLatestAssessmentResultResponse({
+        ok: true,
+        data: null,
+      })
+    ).toBeNull();
   });
 
   it("throws on API error payloads", () => {

@@ -252,6 +252,7 @@ export async function createCounselingAppointmentPayload(
     status: "pending_payment",
     concernTags: request.concernTags,
     noteForCounselor: request.noteForCounselor,
+    assessmentReportId: request.assessmentReportId,
     createdAt: now,
     updatedAt: now,
   };

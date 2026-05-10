@@ -30,6 +30,7 @@ type CounselingAppointmentRow = {
   status: CounselingAppointment["status"];
   concern_tags: string[];
   note_for_counselor: string | null;
+  assessment_report_id: string | null;
   risk_event_id: string | null;
   created_at: string | Date;
   updated_at: string | Date;
@@ -64,6 +65,7 @@ export function counselingAppointmentRowToDomain(
     status: row.status,
     concernTags: row.concern_tags,
     noteForCounselor: row.note_for_counselor ?? undefined,
+    assessmentReportId: row.assessment_report_id ?? undefined,
     createdAt: toDateTimeLike(row.created_at),
     updatedAt: toDateTimeLike(row.updated_at),
   });
@@ -228,11 +230,12 @@ export class PostgresCounselingAppointmentStore {
           status,
           concern_tags,
           note_for_counselor,
+          assessment_report_id,
           risk_event_id,
           created_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (id) DO UPDATE SET
           user_id = EXCLUDED.user_id,
           counselor_id = EXCLUDED.counselor_id,
@@ -241,6 +244,7 @@ export class PostgresCounselingAppointmentStore {
           status = EXCLUDED.status,
           concern_tags = EXCLUDED.concern_tags,
           note_for_counselor = EXCLUDED.note_for_counselor,
+          assessment_report_id = EXCLUDED.assessment_report_id,
           risk_event_id = EXCLUDED.risk_event_id,
           updated_at = EXCLUDED.updated_at
         RETURNING
@@ -252,6 +256,7 @@ export class PostgresCounselingAppointmentStore {
           status,
           concern_tags,
           note_for_counselor,
+          assessment_report_id,
           risk_event_id,
           created_at,
           updated_at
@@ -265,6 +270,7 @@ export class PostgresCounselingAppointmentStore {
         normalized.status,
         normalized.concernTags,
         normalized.noteForCounselor ?? null,
+        normalized.assessmentReportId ?? null,
         riskEvent?.id ?? null,
         normalized.createdAt,
         normalized.updatedAt,
@@ -292,6 +298,7 @@ export class PostgresCounselingAppointmentStore {
           status,
           concern_tags,
           note_for_counselor,
+          assessment_report_id,
           risk_event_id,
           created_at,
           updated_at

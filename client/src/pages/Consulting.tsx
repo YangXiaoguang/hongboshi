@@ -18,7 +18,7 @@ import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   getTopAssessmentDimensions,
-  loadLatestAssessmentResult,
+  useLatestAssessmentResult,
   type AssessmentDimension,
   type AssessmentResult,
 } from "@/features/assessments";
@@ -152,14 +152,14 @@ function counselorScore(counselor: Counselor, tags: CounselingConcernTag[]) {
 }
 
 export default function Consulting() {
-  const { isLoggedIn, openLoginModal } = useAuth();
+  const { isLoggedIn, isAuthSyncing, openLoginModal } = useAuth();
   const {
     availability,
     draft,
     selectedCounselor,
     selectedSlot,
     slotsForSelectedCounselor,
-    result,
+    result: appointmentResult,
     isLoading,
     isSubmitting,
     error,
@@ -167,8 +167,11 @@ export default function Consulting() {
     toggleConcernTag,
     submit,
   } = useCounselingIntake();
-
-  const latestAssessment = useMemo(() => loadLatestAssessmentResult(), []);
+  const {
+    result: latestAssessment,
+    source: latestAssessmentSource,
+    isLoading: isLatestAssessmentLoading,
+  } = useLatestAssessmentResult(isLoggedIn && !isAuthSyncing);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -285,14 +288,20 @@ export default function Consulting() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-semibold text-[#243B35]">
-                  已读取最近一次测评
+                  {latestAssessmentSource === "server"
+                    ? "已读取成长档案最近一次测评"
+                    : "已读取本机最近一次测评"}
                 </p>
                 <p className="mt-1 text-xs leading-5 text-[#6D746F]">
                   风险等级：{latestAssessment.report.riskLevel}
-                  ，预约信息会带上报告 ID，后续可在服务端形成成长档案。
+                  ，预约信息会带上报告 ID，方便咨询师提前理解当前状态。
                 </p>
               </div>
-              <CheckCircle2 className="h-5 w-5 text-[#6F8F83]" />
+              {isLatestAssessmentLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin text-[#6F8F83]" />
+              ) : (
+                <CheckCircle2 className="h-5 w-5 text-[#6F8F83]" />
+              )}
             </div>
           </section>
         )}
@@ -516,7 +525,7 @@ export default function Consulting() {
                 onClick={handleSubmit}
                 disabled={
                   isSubmitting ||
-                  Boolean(result) ||
+                  Boolean(appointmentResult) ||
                   !selectedCounselor ||
                   !selectedSlot
                 }
@@ -525,7 +534,7 @@ export default function Consulting() {
                 {isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                {result ? "预约单已生成" : "提交预约意向"}
+                {appointmentResult ? "预约单已生成" : "提交预约意向"}
               </button>
             </div>
 
@@ -541,7 +550,7 @@ export default function Consulting() {
               </div>
             ) : null}
 
-            {result && (
+            {appointmentResult && (
               <motion.div
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -552,10 +561,11 @@ export default function Consulting() {
                   预约单已生成
                 </p>
                 <h3 className="mt-2 text-xl font-semibold text-[#243B35]">
-                  {result.counselor.name} · {formatSlot(result.slot)}
+                  {appointmentResult.counselor.name} ·{" "}
+                  {formatSlot(appointmentResult.slot)}
                 </h3>
                 <div className="mt-5 space-y-3">
-                  {result.nextSteps.map(step => (
+                  {appointmentResult.nextSteps.map(step => (
                     <div
                       key={step}
                       className="flex gap-3 text-sm text-[#4F5B54]"

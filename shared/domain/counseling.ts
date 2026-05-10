@@ -77,6 +77,7 @@ export const CounselingAppointmentSchema = z.object({
   status: AppointmentStatusSchema,
   concernTags: z.array(CounselingConcernTagSchema).default([]),
   noteForCounselor: z.string().max(500).optional(),
+  assessmentReportId: EntityIdSchema.optional(),
   createdAt: DateTimeLikeSchema,
   updatedAt: DateTimeLikeSchema,
 });

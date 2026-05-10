@@ -336,6 +336,12 @@ function AppointmentRow({
         </p>
       )}
 
+      {record.appointment.assessmentReportId && (
+        <p className="mt-3 rounded-[16px] bg-[#F5EFE5] px-3 py-2 text-xs leading-5 text-[#6D746F]">
+          已关联测评报告：{record.appointment.assessmentReportId}
+        </p>
+      )}
+
       <button
         onClick={onOpen}
         className="mt-4 inline-flex h-9 items-center justify-center rounded-full border border-[#D8CEC0] px-3 text-xs font-semibold text-[#4F5B54] transition hover:bg-[#F4EFE6]"

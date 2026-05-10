@@ -49,9 +49,10 @@ class FakeCounselingExecutor implements DatabaseQueryExecutor {
             status: values?.[5],
             concern_tags: values?.[6],
             note_for_counselor: values?.[7],
-            risk_event_id: values?.[8],
-            created_at: values?.[9],
-            updated_at: values?.[10],
+            assessment_report_id: values?.[8],
+            risk_event_id: values?.[9],
+            created_at: values?.[10],
+            updated_at: values?.[11],
           } as Row,
         ],
         rowCount: 1,
@@ -105,6 +106,7 @@ describe("postgres counseling appointment store", () => {
         status: "pending_payment",
         concernTags: ["emotion", "sleep"],
         noteForCounselor: "最近睡眠波动明显。",
+        assessmentReportId: "report_1",
         createdAt: "2026-05-10T08:00:00.000Z",
         updatedAt: "2026-05-10T08:00:00.000Z",
       },
@@ -123,6 +125,7 @@ describe("postgres counseling appointment store", () => {
       id: "appointment_1",
       concernTags: ["emotion", "sleep"],
       noteForCounselor: "最近睡眠波动明显。",
+      assessmentReportId: "report_1",
     });
     expect(db.queries[0]?.text).toContain(
       "INSERT INTO counseling_appointments"
@@ -136,6 +139,7 @@ describe("postgres counseling appointment store", () => {
       "pending_payment",
       ["emotion", "sleep"],
       "最近睡眠波动明显。",
+      "report_1",
       "risk_1",
       "2026-05-10T08:00:00.000Z",
       "2026-05-10T08:00:00.000Z",
@@ -164,6 +168,7 @@ describe("postgres counseling appointment store", () => {
           status: "pending_payment",
           concern_tags: ["emotion"],
           note_for_counselor: null,
+          assessment_report_id: "report_1",
           risk_event_id: null,
           created_at: new Date("2026-05-10T08:00:00.000Z"),
           updated_at: new Date("2026-05-10T08:10:00.000Z"),
@@ -182,6 +187,7 @@ describe("postgres counseling appointment store", () => {
     });
     expect(appointments[0]).toMatchObject({
       id: "appointment_1",
+      assessmentReportId: "report_1",
       updatedAt: "2026-05-10T08:10:00.000Z",
     });
     expect(db.queries[1]?.text).toContain("ORDER BY created_at DESC");

@@ -12,8 +12,8 @@ import { courses } from "../../client/src/lib/mockData";
 
 describe("domain contracts", () => {
   it("validates the current course mock data against the shared course schema", () => {
-    const results = courses.map((course) => CourseSchema.safeParse(course));
-    expect(results.every((result) => result.success)).toBe(true);
+    const results = courses.map(course => CourseSchema.safeParse(course));
+    expect(results.every(result => result.success)).toBe(true);
   });
 
   it("normalizes course list query defaults", () => {
@@ -77,6 +77,7 @@ describe("domain contracts", () => {
         channel: "video",
         status: "scheduled",
         concernTags: ["emotion", "sleep"],
+        assessmentReportId: "report_1",
         createdAt: "2026-05-09T10:00:00+08:00",
         updatedAt: "2026-05-09T10:00:00+08:00",
       }).success

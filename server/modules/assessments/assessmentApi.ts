@@ -20,6 +20,9 @@ const AssessmentFlowResponseSchema = ApiResponseSchema(AssessmentFlowSchema);
 const AssessmentResultResponseSchema = ApiResponseSchema(
   AssessmentResultSchema
 );
+const LatestAssessmentResultResponseSchema = ApiResponseSchema(
+  AssessmentResultSchema.nullable()
+);
 let assessmentResultStore = createDefaultAssessmentResultStore();
 
 function reportStoreError(err: unknown) {
@@ -37,7 +40,7 @@ function sendJson(
 }
 
 function errorPayload(
-  code: "BAD_REQUEST" | "NOT_FOUND" | "INTERNAL_ERROR",
+  code: "BAD_REQUEST" | "UNAUTHORIZED" | "NOT_FOUND" | "INTERNAL_ERROR",
   message: string
 ) {
   return {
@@ -93,6 +96,23 @@ export function getLatestAssessmentResult(userId?: string) {
   return Promise.resolve(assessmentResultStore.latest(userId));
 }
 
+export async function getLatestAssessmentResultPayload(userId?: string) {
+  if (!userId) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后查看测评报告"),
+    } as const;
+  }
+
+  return {
+    status: 200,
+    body: LatestAssessmentResultResponseSchema.parse({
+      ok: true,
+      data: (await getLatestAssessmentResult(userId)) ?? null,
+    }),
+  } as const;
+}
+
 export async function submitQuickAssessmentPayload(
   body: unknown,
   userId?: string
@@ -138,6 +158,12 @@ export async function submitQuickAssessmentPayload(
 }
 
 export function registerAssessmentApi(app: Express) {
+  app.get("/api/assessments/latest", async (req: Request, res: Response) => {
+    const session = await getLoginSessionFromRequest(req);
+    const payload = await getLatestAssessmentResultPayload(session?.user.id);
+    sendJson(res, payload.status, payload.body);
+  });
+
   app.get("/api/assessments/quick", (_req: Request, res: Response) => {
     sendJson(res, 200, getQuickAssessmentFlowPayload());
   });
@@ -162,6 +188,18 @@ export function handleAssessmentApiRequest(
   if (!req.url || !req.url.startsWith("/api/assessments")) return false;
 
   const url = new URL(req.url, "http://localhost");
+
+  if (req.method === "GET" && url.pathname === "/api/assessments/latest") {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getLatestAssessmentResultPayload(session?.user.id);
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      reportStoreError(err);
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "测评报告读取失败"));
+    });
+    return true;
+  }
 
   if (req.method === "GET" && url.pathname === "/api/assessments/quick") {
     sendJson(res, 200, getQuickAssessmentFlowPayload());

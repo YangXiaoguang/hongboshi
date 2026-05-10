@@ -4,6 +4,7 @@ export {
   loadLatestAssessmentResult,
   saveLatestAssessmentResult,
 } from "./api/localAssessmentSnapshot";
+export { useLatestAssessmentResult } from "./hooks/useLatestAssessmentResult";
 export { useQuickAssessment } from "./hooks/useQuickAssessment";
 export type {
   AssessmentAnswer,

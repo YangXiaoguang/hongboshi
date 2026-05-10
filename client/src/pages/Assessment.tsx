@@ -1,6 +1,7 @@
-import { useMemo, useState, type ElementType } from "react";
+import { useEffect, useMemo, useState, type ElementType } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   saveLatestAssessmentResult,
   useQuickAssessment,
@@ -189,7 +191,10 @@ function QuestionPanel({
 
 export default function Assessment() {
   const [, navigate] = useLocation();
+  const { isLoggedIn, isAuthSyncing, openLoginModal } = useAuth();
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [syncPendingAfterLogin, setSyncPendingAfterLogin] = useState(false);
+  const [isSavingToProfile, setIsSavingToProfile] = useState(false);
   const {
     flow,
     answersByQuestionId,
@@ -215,6 +220,48 @@ export default function Assessment() {
     >;
   }, [result]);
 
+  useEffect(() => {
+    if (
+      !syncPendingAfterLogin ||
+      !isLoggedIn ||
+      isAuthSyncing ||
+      isSavingToProfile ||
+      !result ||
+      result.report.userId
+    ) {
+      return;
+    }
+
+    setIsSavingToProfile(true);
+    void submit()
+      .then(nextResult => {
+        if (!nextResult) return;
+
+        saveLatestAssessmentResult(nextResult);
+        if (nextResult.report.userId) {
+          setSyncPendingAfterLogin(false);
+          toast("测评报告已保存", {
+            description: "现在可以在成长空间继续查看和预约咨询。",
+          });
+        } else {
+          setSyncPendingAfterLogin(false);
+          toast("报告已保存在本机", {
+            description: "服务端会话暂不可用，稍后可重新登录后再生成报告。",
+          });
+        }
+      })
+      .finally(() => {
+        setIsSavingToProfile(false);
+      });
+  }, [
+    isAuthSyncing,
+    isLoggedIn,
+    isSavingToProfile,
+    result,
+    submit,
+    syncPendingAfterLogin,
+  ]);
+
   const handleAnswer = (value: number) => {
     if (!currentQuestion || !flow) return;
     setAnswer(currentQuestion.id, value);
@@ -225,13 +272,35 @@ export default function Assessment() {
 
   const handleSubmit = () => {
     void submit().then(nextResult => {
-      if (nextResult) saveLatestAssessmentResult(nextResult);
+      if (!nextResult) return;
+
+      saveLatestAssessmentResult(nextResult);
+      if (nextResult.report.userId) {
+        setSyncPendingAfterLogin(false);
+        toast("测评报告已生成", {
+          description: "报告已同步到你的成长档案。",
+        });
+        return;
+      }
+
+      setSyncPendingAfterLogin(true);
+      if (!isLoggedIn) {
+        openLoginModal();
+        toast("登录后保存测评报告", {
+          description: "登录完成后，本次报告会自动同步到成长档案。",
+        });
+      } else {
+        toast("测评报告已生成", {
+          description: "当前报告暂未写入成长档案，系统会尝试重新同步。",
+        });
+      }
     });
   };
 
   const handleReset = () => {
     reset();
     setCurrentIndex(0);
+    setSyncPendingAfterLogin(false);
   };
 
   return (
@@ -437,6 +506,30 @@ export default function Assessment() {
                   <p className="mt-5 text-sm leading-7 text-[#5F6B64]">
                     {result.report.summary}
                   </p>
+
+                  <div className="mt-5 rounded-[18px] border border-[#E4DCCF] bg-[#FFFCF7] px-4 py-3 text-xs leading-5 text-[#667069]">
+                    {result.report.userId ? (
+                      <span className="font-semibold text-[#41675A]">
+                        已保存到成长档案
+                      </span>
+                    ) : (
+                      <span>
+                        当前报告仅保存在本机。
+                        <button
+                          onClick={() => {
+                            setSyncPendingAfterLogin(true);
+                            openLoginModal();
+                          }}
+                          className="ml-1 font-semibold text-[#243B35] underline underline-offset-4"
+                        >
+                          登录后同步
+                        </button>
+                      </span>
+                    )}
+                    {isSavingToProfile && (
+                      <span className="ml-2 text-[#6F8F83]">正在保存...</span>
+                    )}
+                  </div>
 
                   <div className="mt-6 space-y-3">
                     {dimensionEntries.map(([dimension, score]) => (

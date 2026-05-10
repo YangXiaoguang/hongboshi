@@ -52,6 +52,7 @@ describe("http counseling repository parsing", () => {
       channel: "video",
       status: "pending_payment",
       concernTags: ["emotion"],
+      assessmentReportId: "report_1",
       createdAt: "2026-05-10T00:00:00.000Z",
       updatedAt: "2026-05-10T00:00:00.000Z",
     };
@@ -81,6 +82,7 @@ describe("http counseling repository parsing", () => {
       channel: "video",
       status: "pending_payment",
       concernTags: ["emotion"],
+      assessmentReportId: "report_1",
       createdAt: "2026-05-10T00:00:00.000Z",
       updatedAt: "2026-05-10T00:00:00.000Z",
     };
