@@ -195,6 +195,40 @@ export function closeUnpaidOrder(order: Order): Order {
   });
 }
 
+export function requestOrderRefund(order: Order): Order {
+  const normalized = OrderSchema.parse(order);
+
+  if (normalized.status === "refunding") {
+    return normalized;
+  }
+
+  if (normalized.status !== "paid") {
+    throw new Error("INVALID_ORDER_REFUND_REQUEST_TRANSITION");
+  }
+
+  return OrderSchema.parse({
+    ...normalized,
+    status: "refunding",
+  });
+}
+
+export function markOrderRefunded(order: Order): Order {
+  const normalized = OrderSchema.parse(order);
+
+  if (normalized.status === "refunded") {
+    return normalized;
+  }
+
+  if (!["paid", "refunding"].includes(normalized.status)) {
+    throw new Error("INVALID_ORDER_REFUND_TRANSITION");
+  }
+
+  return OrderSchema.parse({
+    ...normalized,
+    status: "refunded",
+  });
+}
+
 export type PurchasableType = z.infer<typeof PurchasableTypeSchema>;
 export type OrderStatus = z.infer<typeof OrderStatusSchema>;
 export type PaymentChannel = z.infer<typeof PaymentChannelSchema>;

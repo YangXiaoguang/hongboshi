@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import type {
-  CounselingAppointmentAction,
-  CounselingAppointmentRecord,
-} from "@shared/domain";
-import { httpCounselingRepository } from "../api/httpCounselingRepository";
+import type { CounselingAppointmentRecord } from "@shared/domain";
+import {
+  httpCounselingRepository,
+  type CounselingAppointmentUpdateInput,
+} from "../api/httpCounselingRepository";
 
 export function useCounselingAppointments(enabled = true) {
   const [appointments, setAppointments] = useState<
@@ -48,7 +48,7 @@ export function useCounselingAppointments(enabled = true) {
 
   const updateAppointment = async (
     appointmentId: string,
-    action: CounselingAppointmentAction
+    action: CounselingAppointmentUpdateInput
   ) => {
     setUpdatingAppointmentId(appointmentId);
     try {

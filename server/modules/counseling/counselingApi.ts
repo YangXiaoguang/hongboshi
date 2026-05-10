@@ -7,6 +7,7 @@ import { counselorProfiles } from "../../../shared/data/counselingSeed";
 import {
   ApiResponseSchema,
   applyCounselingAppointmentAction,
+  applyCounselingAppointmentReschedule,
   applyPaymentSucceededWebhookToOrder,
   closeUnpaidOrder,
   COUNSELING_PAYMENT_HOLD_MINUTES,
@@ -23,6 +24,8 @@ import {
   PaymentSchema,
   PaymentWebhookEventSchema,
   RiskEventSchema,
+  markOrderRefunded,
+  requestOrderRefund,
   upsertCourseAccessOrder,
   type CourseAccessState,
   type CounselingAppointment,
@@ -198,12 +201,38 @@ function buildNextSteps(riskEvent: RiskEvent | undefined) {
   ];
 }
 
-function buildActionNextSteps(action: CounselingAppointmentAction) {
+function buildActionNextSteps(
+  action: CounselingAppointmentAction,
+  options: { orderStatus?: Order["status"] } = {}
+) {
   if (action === "confirm_payment") {
     return [
       "预约已确认，咨询师会在服务前查看你的咨询前信息。",
       "请提前 10 分钟进入对应咨询渠道，给自己留出安静空间。",
       "如果时间需要调整，可以在服务开始前申请取消或改期。",
+    ];
+  }
+
+  if (action === "reschedule") {
+    return [
+      "预约时间已更新，原咨询时段已释放。",
+      "请按新的时间提前 10 分钟进入对应咨询渠道。",
+      "如果状态出现明显波动，请及时补充说明或联系平台支持。",
+    ];
+  }
+
+  if (action === "complete_refund") {
+    return [
+      "退款已完成，预约记录已归档为已退款。",
+      "如果仍需要支持，可以重新选择合适的咨询时段。",
+    ];
+  }
+
+  if (options.orderStatus === "refunding") {
+    return [
+      "预约已取消，原咨询时段已释放。",
+      "退款申请已进入处理流程，完成后订单会更新为已退款。",
+      "如果当前状态仍需要支持，建议尽快重新预约或联系现实中的可信任支持。",
     ];
   }
 
@@ -223,7 +252,20 @@ function transitionConflictMessage(
     return "当前预约状态不支持确认支付";
   }
 
+  if (action === "reschedule") {
+    if (status === "pending_payment") return "待支付预约需要先确认支付后再改期";
+    if (status === "cancelled") return "已取消预约不能改期";
+    if (status === "refunded") return "已退款预约不能改期";
+    return "当前预约状态不支持改期";
+  }
+
+  if (action === "complete_refund") {
+    if (status === "refunded") return "该预约已退款，无需重复处理";
+    return "当前预约状态不支持完成退款";
+  }
+
   if (status === "cancelled") return "该预约已取消，无需重复取消";
+  if (status === "refunded") return "该预约已退款，无需取消";
   return "当前预约状态不支持取消";
 }
 
@@ -818,6 +860,139 @@ export async function updateCounselingAppointmentPayload(
     } as const;
   }
 
+  if (parsed.data.action === "reschedule") {
+    const nextSlot = await counselingAppointmentStore.getSlot(
+      parsed.data.slotId
+    );
+    if (!nextSlot) {
+      return {
+        status: 404,
+        body: errorPayload("NOT_FOUND", "目标咨询时段不存在"),
+      } as const;
+    }
+
+    if (nextSlot.id === appointment.slotId) {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "请选择不同的可用咨询时段"),
+      } as const;
+    }
+
+    const nextCounselor = counselorProfiles.find(
+      item => item.id === nextSlot.counselorId
+    );
+    if (!nextCounselor) {
+      return {
+        status: 404,
+        body: errorPayload("NOT_FOUND", "目标咨询师不存在"),
+      } as const;
+    }
+
+    let nextAppointment: CounselingAppointment;
+    try {
+      nextAppointment = applyCounselingAppointmentReschedule({
+        appointment,
+        nextSlot,
+        now,
+      });
+    } catch (err) {
+      return {
+        status: 409,
+        body: errorPayload(
+          "CONFLICT",
+          err instanceof Error &&
+            err.message === "COUNSELING_RESCHEDULE_SLOT_UNAVAILABLE"
+            ? "目标咨询时段已被占用，请选择其他时间"
+            : transitionConflictMessage(appointment.status, "reschedule")
+        ),
+      } as const;
+    }
+
+    const reservedNextSlot: CounselingSlot = {
+      ...nextSlot,
+      available: false,
+    };
+    const releasedPreviousSlot: CounselingSlot = {
+      ...slot,
+      available: true,
+    };
+
+    const riskEvent =
+      await counselingAppointmentStore.getRiskEventForAppointment(
+        appointment.id
+      );
+    let appointmentSaved = false;
+    let previousSlotReleased = false;
+    let nextSlotReserved = false;
+    try {
+      const savedAppointment = await counselingAppointmentStore.saveAppointment(
+        nextAppointment,
+        riskEvent
+      );
+      appointmentSaved = true;
+      await counselingAppointmentStore.saveSlot(releasedPreviousSlot);
+      previousSlotReleased = true;
+      const savedNextSlot =
+        await counselingAppointmentStore.saveSlot(reservedNextSlot);
+      nextSlotReserved = true;
+      const order = await getAppointmentOrder(savedAppointment);
+
+      return {
+        status: 200,
+        body: CounselingAppointmentActionResponseSchema.parse({
+          ok: true,
+          data: {
+            appointment: savedAppointment,
+            counselor: nextCounselor,
+            slot: savedNextSlot,
+            order,
+            riskEvent,
+            nextSteps: buildActionNextSteps("reschedule"),
+          },
+        }),
+      } as const;
+    } catch (err) {
+      if (isActiveSlotConflict(err)) {
+        return {
+          status: 409,
+          body: errorPayload(
+            "CONFLICT",
+            "目标咨询时段已被占用，请选择其他时间"
+          ),
+        } as const;
+      }
+      if (appointmentSaved) {
+        try {
+          await counselingAppointmentStore.saveAppointment(
+            appointment,
+            riskEvent
+          );
+        } catch (rollbackErr) {
+          reportStoreError(rollbackErr);
+        }
+      }
+      if (previousSlotReleased) {
+        try {
+          await counselingAppointmentStore.saveSlot(slot);
+        } catch (rollbackErr) {
+          reportStoreError(rollbackErr);
+        }
+      }
+      if (nextSlotReserved) {
+        try {
+          await counselingAppointmentStore.saveSlot(nextSlot);
+        } catch (rollbackErr) {
+          reportStoreError(rollbackErr);
+        }
+      }
+      reportStoreError(err);
+      return {
+        status: 500,
+        body: errorPayload("INTERNAL_ERROR", "预约改期失败，请稍后重试"),
+      } as const;
+    }
+  }
+
   let nextAppointment: CounselingAppointment;
   try {
     nextAppointment = applyCounselingAppointmentAction({
@@ -841,23 +1016,38 @@ export async function updateCounselingAppointmentPayload(
           ...slot,
           available: true,
         }
-      : {
-          ...slot,
-          available: false,
-        };
+      : slot;
 
   let previousAccessState: CourseAccessState | undefined;
   let orderUpdated = false;
   try {
     let order: Order | undefined;
-    if (
-      parsed.data.action === "cancel" &&
-      appointment.status === "pending_payment" &&
-      appointment.orderId
-    ) {
+    if (parsed.data.action === "cancel" && appointment.orderId) {
+      if (appointment.status === "pending_payment") {
+        const orderUpdate = await saveAppointmentOrderUpdate({
+          appointment,
+          updateOrder: closeUnpaidOrder,
+        });
+        previousAccessState = orderUpdate.previousState;
+        orderUpdated = true;
+        order = orderUpdate.order;
+      }
+
+      if (appointment.status === "scheduled") {
+        const orderUpdate = await saveAppointmentOrderUpdate({
+          appointment,
+          updateOrder: requestOrderRefund,
+        });
+        previousAccessState = orderUpdate.previousState;
+        orderUpdated = true;
+        order = orderUpdate.order;
+      }
+    }
+
+    if (parsed.data.action === "complete_refund") {
       const orderUpdate = await saveAppointmentOrderUpdate({
         appointment,
-        updateOrder: closeUnpaidOrder,
+        updateOrder: markOrderRefunded,
       });
       previousAccessState = orderUpdate.previousState;
       orderUpdated = true;
@@ -885,7 +1075,9 @@ export async function updateCounselingAppointmentPayload(
           slot: savedSlot,
           order: savedOrder,
           riskEvent,
-          nextSteps: buildActionNextSteps(parsed.data.action),
+          nextSteps: buildActionNextSteps(parsed.data.action, {
+            orderStatus: savedOrder?.status,
+          }),
         },
       }),
     } as const;
@@ -919,6 +1111,24 @@ export async function updateCounselingAppointmentPayload(
       return {
         status: 409,
         body: errorPayload("CONFLICT", "当前订单状态不支持取消"),
+      } as const;
+    }
+    if (
+      err instanceof Error &&
+      err.message === "INVALID_ORDER_REFUND_REQUEST_TRANSITION"
+    ) {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "当前订单状态不支持申请退款"),
+      } as const;
+    }
+    if (
+      err instanceof Error &&
+      err.message === "INVALID_ORDER_REFUND_TRANSITION"
+    ) {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "当前订单状态不支持完成退款"),
       } as const;
     }
     reportStoreError(err);

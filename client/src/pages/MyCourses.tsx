@@ -497,18 +497,32 @@ export default function MyCourses() {
 
   const handleAppointmentAction = async (
     appointmentId: string,
-    action: CounselingAppointmentAction
+    action: Extract<CounselingAppointmentAction, "confirm_payment" | "cancel">
   ) => {
     setUpdatingAppointmentId(appointmentId);
     try {
-      await httpCounselingRepository.updateAppointment(appointmentId, action);
+      const result = await httpCounselingRepository.updateAppointment(
+        appointmentId,
+        action
+      );
       await reloadGrowthProfile();
-      toast(action === "confirm_payment" ? "预约已确认" : "预约已取消", {
-        description:
-          action === "confirm_payment"
-            ? "咨询师会在服务前查看你的咨询前信息。"
-            : "原咨询时段已释放，可以重新选择合适时间。",
-      });
+      if (action === "confirm_payment") {
+        toast("预约已确认", {
+          description: "咨询师会在服务前查看你的咨询前信息。",
+        });
+      } else {
+        toast(
+          result.order?.status === "refunding"
+            ? "预约已取消，退款处理中"
+            : "预约已取消",
+          {
+            description:
+              result.order?.status === "refunding"
+                ? "原咨询时段已释放，退款完成后订单会更新为已退款。"
+                : "原咨询时段已释放，可以重新选择合适时间。",
+          }
+        );
+      }
     } catch (err) {
       toast("预约状态更新失败", {
         description:

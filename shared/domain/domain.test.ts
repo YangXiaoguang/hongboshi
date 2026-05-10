@@ -12,6 +12,8 @@ import {
   findCourseAccessOrder,
   LoginSessionSchema,
   markOrderPaid,
+  markOrderRefunded,
+  requestOrderRefund,
   upsertCourseAccessOrder,
   UserProfileSchema,
   userCan,
@@ -148,6 +150,16 @@ describe("domain contracts", () => {
     expect(closeUnpaidOrder(order)).toMatchObject({
       status: "closed",
     });
+
+    const paidOrder = markOrderPaid(order, "2026-05-10T08:10:00.000Z");
+    const refundingOrder = requestOrderRefund(paidOrder);
+    expect(refundingOrder).toMatchObject({ status: "refunding" });
+    expect(markOrderRefunded(refundingOrder)).toMatchObject({
+      status: "refunded",
+    });
+    expect(() => requestOrderRefund(closeUnpaidOrder(order))).toThrow(
+      "INVALID_ORDER_REFUND_REQUEST_TRANSITION"
+    );
   });
 
   it("applies a payment succeeded webhook to an order", () => {

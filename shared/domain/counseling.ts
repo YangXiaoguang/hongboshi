@@ -126,11 +126,22 @@ export const CounselingAppointmentListSchema = z.object({
 export const CounselingAppointmentActionSchema = z.enum([
   "confirm_payment",
   "cancel",
+  "reschedule",
+  "complete_refund",
 ]);
 
-export const CounselingAppointmentActionRequestSchema = z.object({
-  action: CounselingAppointmentActionSchema,
-});
+export const CounselingAppointmentActionRequestSchema = z.discriminatedUnion(
+  "action",
+  [
+    z.object({ action: z.literal("confirm_payment") }),
+    z.object({ action: z.literal("cancel") }),
+    z.object({
+      action: z.literal("reschedule"),
+      slotId: EntityIdSchema,
+    }),
+    z.object({ action: z.literal("complete_refund") }),
+  ]
+);
 
 export const CounselingAppointmentActionResultSchema = z.object({
   appointment: CounselingAppointmentSchema,
@@ -154,6 +165,14 @@ const appointmentActionTransitions: Record<
   cancel: {
     from: ["pending_payment", "scheduled"],
     to: "cancelled",
+  },
+  reschedule: {
+    from: ["scheduled"],
+    to: "scheduled",
+  },
+  complete_refund: {
+    from: ["cancelled"],
+    to: "refunded",
   },
 };
 
@@ -243,6 +262,44 @@ export function expireOverdueCounselingAppointmentPayment({
   return CounselingAppointmentSchema.parse({
     ...normalized,
     status: "cancelled",
+    updatedAt: now,
+  });
+}
+
+export function applyCounselingAppointmentReschedule({
+  appointment,
+  nextSlot,
+  now = new Date().toISOString(),
+}: {
+  appointment: CounselingAppointment;
+  nextSlot: CounselingSlot;
+  now?: string;
+}): CounselingAppointment {
+  const normalized = CounselingAppointmentSchema.parse(appointment);
+  const normalizedSlot = CounselingSlotSchema.parse(nextSlot);
+  const nextStatus = getNextCounselingAppointmentStatus(
+    normalized.status,
+    "reschedule"
+  );
+
+  if (!nextStatus) {
+    throw new Error("INVALID_COUNSELING_APPOINTMENT_TRANSITION");
+  }
+
+  if (normalized.slotId === normalizedSlot.id) {
+    throw new Error("INVALID_COUNSELING_RESCHEDULE_SLOT");
+  }
+
+  if (!normalizedSlot.available) {
+    throw new Error("COUNSELING_RESCHEDULE_SLOT_UNAVAILABLE");
+  }
+
+  return CounselingAppointmentSchema.parse({
+    ...normalized,
+    counselorId: normalizedSlot.counselorId,
+    slotId: normalizedSlot.id,
+    channel: normalizedSlot.channel,
+    status: nextStatus,
     updatedAt: now,
   });
 }

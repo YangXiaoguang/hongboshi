@@ -103,7 +103,7 @@ describe("counseling api payloads", () => {
     }
   });
 
-  it("confirms payment and cancels appointments through the status machine", async () => {
+  it("confirms payment, reschedules and refunds appointments through the status machine", async () => {
     const availability = await getCounselingAvailabilityPayload(
       fixedNow.toISOString()
     );
@@ -141,6 +141,38 @@ describe("counseling api payloads", () => {
       );
     }
 
+    const newSlot = availability.data.slots[4];
+    const rescheduled = await updateCounselingAppointmentPayload(
+      appointmentId,
+      { action: "reschedule", slotId: newSlot.id },
+      "user_1",
+      "2026-05-10T00:15:00.000Z"
+    );
+
+    expect(rescheduled.status).toBe(200);
+    if (rescheduled.body.ok) {
+      expect(rescheduled.body.data.appointment.status).toBe("scheduled");
+      expect(rescheduled.body.data.appointment.slotId).toBe(newSlot.id);
+      expect(rescheduled.body.data.slot.available).toBe(false);
+      expect(rescheduled.body.data.order?.status).toBe("paid");
+    }
+
+    const availabilityAfterReschedule = await getCounselingAvailabilityPayload(
+      "2026-05-10T00:16:00.000Z"
+    );
+    if (!availabilityAfterReschedule.ok) {
+      throw new Error("expected availability after reschedule");
+    }
+    expect(
+      availabilityAfterReschedule.data.slots.find(item => item.id === slot.id)
+        ?.available
+    ).toBe(true);
+    expect(
+      availabilityAfterReschedule.data.slots.find(
+        item => item.id === newSlot.id
+      )?.available
+    ).toBe(false);
+
     const cancelled = await updateCounselingAppointmentPayload(
       appointmentId,
       { action: "cancel" },
@@ -152,7 +184,21 @@ describe("counseling api payloads", () => {
     if (cancelled.body.ok) {
       expect(cancelled.body.data.appointment.status).toBe("cancelled");
       expect(cancelled.body.data.slot.available).toBe(true);
-      expect(cancelled.body.data.order?.status).toBe("paid");
+      expect(cancelled.body.data.order?.status).toBe("refunding");
+    }
+
+    const refunded = await updateCounselingAppointmentPayload(
+      appointmentId,
+      { action: "complete_refund" },
+      "user_1",
+      "2026-05-10T00:25:00.000Z"
+    );
+
+    expect(refunded.status).toBe(200);
+    if (refunded.body.ok) {
+      expect(refunded.body.data.appointment.status).toBe("refunded");
+      expect(refunded.body.data.slot.available).toBe(true);
+      expect(refunded.body.data.order?.status).toBe("refunded");
     }
 
     const repeated = await updateCounselingAppointmentPayload(

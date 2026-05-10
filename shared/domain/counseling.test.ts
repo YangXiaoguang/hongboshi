@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyCounselingAppointmentAction,
+  applyCounselingAppointmentReschedule,
   expireOverdueCounselingAppointmentPayment,
   getCounselingPaymentDeadline,
   getNextCounselingAppointmentStatus,
@@ -41,6 +42,41 @@ describe("counseling appointment status machine", () => {
     expect(getNextCounselingAppointmentStatus("completed", "cancel")).toBe(
       undefined
     );
+  });
+
+  it("reschedules confirmed appointments to an available slot", () => {
+    const next = applyCounselingAppointmentReschedule({
+      appointment: {
+        ...appointment,
+        status: "scheduled",
+      },
+      nextSlot: {
+        id: "slot_2",
+        counselorId: "counselor_2",
+        startsAt: "2026-05-11T10:00:00.000Z",
+        endsAt: "2026-05-11T11:00:00.000Z",
+        channel: "voice",
+        available: true,
+      },
+      now: "2026-05-10T10:20:00.000Z",
+    });
+
+    expect(next).toMatchObject({
+      status: "scheduled",
+      counselorId: "counselor_2",
+      slotId: "slot_2",
+      channel: "voice",
+      updatedAt: "2026-05-10T10:20:00.000Z",
+    });
+  });
+
+  it("marks cancelled appointments as refunded", () => {
+    expect(
+      getNextCounselingAppointmentStatus("cancelled", "complete_refund")
+    ).toBe("refunded");
+    expect(
+      getNextCounselingAppointmentStatus("scheduled", "complete_refund")
+    ).toBe(undefined);
   });
 
   it("expires unpaid appointments after the payment hold window", () => {

@@ -7,6 +7,7 @@ import {
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
   type CounselingAppointmentAction,
+  type CounselingAppointmentActionRequest,
   type CounselingAppointmentActionResult,
   type CounselingAppointmentCreateRequest,
   type CounselingAppointmentCreateResult,
@@ -26,6 +27,10 @@ const CounselingAppointmentListResponseSchema = ApiResponseSchema(
 const CounselingAppointmentActionResponseSchema = ApiResponseSchema(
   CounselingAppointmentActionResultSchema
 );
+
+export type CounselingAppointmentUpdateInput =
+  | Exclude<CounselingAppointmentAction, "reschedule">
+  | CounselingAppointmentActionRequest;
 
 const API_BASE = "/api/counseling";
 
@@ -140,9 +145,11 @@ export const httpCounselingRepository = {
 
   async updateAppointment(
     appointmentId: string,
-    action: CounselingAppointmentAction
+    action: CounselingAppointmentUpdateInput
   ): Promise<CounselingAppointmentActionResult> {
-    const body = CounselingAppointmentActionRequestSchema.parse({ action });
+    const body = CounselingAppointmentActionRequestSchema.parse(
+      typeof action === "string" ? { action } : action
+    );
     const response = await fetch(
       `${API_BASE}/appointments/${encodeURIComponent(appointmentId)}/actions`,
       {
