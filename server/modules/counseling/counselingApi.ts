@@ -18,9 +18,15 @@ import {
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
+  CounselingCancellationPolicySchema,
+  CounselingCancellationPolicyUpdateRequestSchema,
+  CounselingCancellationPolicyUpdateResultSchema,
+  CounselingOperationAuditEventSchema,
+  CounselingOperationsConsoleSchema,
   CounselingWorkbenchSchema,
   createCounselingSessionOrder,
   createSimulatedPaymentSucceededEvent,
+  DEFAULT_COUNSELING_CANCELLATION_POLICY,
   evaluateCounselingCancellation,
   expireOverdueCounselingAppointmentPayment,
   findCourseAccessOrder,
@@ -39,6 +45,9 @@ import {
   type CounselingAppointmentCreateRequest,
   type CounselingAppointmentRecord,
   type CounselingCancellationDecision,
+  type CounselingCancellationPolicy,
+  type CounselingOperationAuditAction,
+  type CounselingOperationAuditEvent,
   type CounselingSlot,
   type CounselingWorkbenchSummary,
   type LoginSession,
@@ -72,6 +81,12 @@ const CounselingAppointmentListResponseSchema = ApiResponseSchema(
 const CounselingWorkbenchResponseSchema = ApiResponseSchema(
   CounselingWorkbenchSchema
 );
+const CounselingOperationsConsoleResponseSchema = ApiResponseSchema(
+  CounselingOperationsConsoleSchema
+);
+const CounselingCancellationPolicyUpdateResponseSchema = ApiResponseSchema(
+  CounselingCancellationPolicyUpdateResultSchema
+);
 const CounselingAppointmentActionResponseSchema = ApiResponseSchema(
   CounselingAppointmentActionResultSchema
 );
@@ -103,6 +118,9 @@ const CounselingRefundWebhookResponseSchema = ApiResponseSchema(
 );
 
 let counselingAppointmentStore = createDefaultCounselingAppointmentStore();
+let counselingCancellationPolicy: CounselingCancellationPolicy =
+  DEFAULT_COUNSELING_CANCELLATION_POLICY;
+let counselingOperationAuditEvents: CounselingOperationAuditEvent[] = [];
 
 function reportStoreError(err: unknown) {
   console.error(err instanceof Error ? err.message : "咨询预约持久化失败");
@@ -756,7 +774,10 @@ export function resetCounselingAppointmentStore(now = new Date()) {
   return Promise.all([
     Promise.resolve(counselingAppointmentStore.reset(now)),
     resetRiskEventStore(),
-  ]).then(() => undefined);
+  ]).then(() => {
+    counselingCancellationPolicy = DEFAULT_COUNSELING_CANCELLATION_POLICY;
+    counselingOperationAuditEvents = [];
+  });
 }
 
 export function setCounselingAppointmentStore(
@@ -979,6 +1000,162 @@ export async function listCounselingAppointmentsPayload(
 
 type FulfillmentActor = Pick<LoginSession["user"], "id" | "roles">;
 
+const COUNSELING_OPERATION_AUDIT_LIMIT = 100;
+
+function cloneCancellationPolicy(
+  policy: CounselingCancellationPolicy
+): CounselingCancellationPolicy {
+  return CounselingCancellationPolicySchema.parse(
+    JSON.parse(JSON.stringify(policy))
+  );
+}
+
+function listCounselingOperationAuditEvents(limit = 50) {
+  return counselingOperationAuditEvents
+    .slice(0, limit)
+    .map(event =>
+      CounselingOperationAuditEventSchema.parse(
+        JSON.parse(JSON.stringify(event))
+      )
+    );
+}
+
+function saveCounselingOperationAuditEvent({
+  action,
+  actor,
+  now,
+  appointment,
+  nextAppointment,
+  previousOrder,
+  nextOrder,
+  policyBefore,
+  policyAfter,
+  note,
+}: {
+  action: CounselingOperationAuditAction;
+  actor: FulfillmentActor;
+  now: string;
+  appointment?: CounselingAppointment;
+  nextAppointment?: CounselingAppointment;
+  previousOrder?: Order;
+  nextOrder?: Order;
+  policyBefore?: CounselingCancellationPolicy;
+  policyAfter?: CounselingCancellationPolicy;
+  note?: string;
+}) {
+  const event = CounselingOperationAuditEventSchema.parse({
+    id: `audit_counseling_${Date.parse(now)}_${randomUUID().slice(0, 8)}`,
+    action,
+    actorId: actor.id,
+    actorRoles: actor.roles,
+    appointmentId: appointment?.id ?? nextAppointment?.id,
+    userId: appointment?.userId ?? nextAppointment?.userId,
+    counselorId: appointment?.counselorId ?? nextAppointment?.counselorId,
+    previousAppointmentStatus: appointment?.status,
+    nextAppointmentStatus: nextAppointment?.status,
+    previousOrderStatus: previousOrder?.status,
+    nextOrderStatus: nextOrder?.status,
+    policyBefore,
+    policyAfter,
+    note,
+    createdAt: now,
+  });
+
+  counselingOperationAuditEvents = [
+    event,
+    ...counselingOperationAuditEvents,
+  ].slice(0, COUNSELING_OPERATION_AUDIT_LIMIT);
+
+  return event;
+}
+
+export async function getCounselingOperationsConsolePayload(
+  actor?: FulfillmentActor,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后查看运营配置"),
+    } as const;
+  }
+
+  if (!userCan(actor, "admin:manage")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无运营配置权限"),
+    } as const;
+  }
+
+  return {
+    status: 200,
+    body: CounselingOperationsConsoleResponseSchema.parse({
+      ok: true,
+      data: {
+        cancellationPolicy: cloneCancellationPolicy(
+          counselingCancellationPolicy
+        ),
+        auditEvents: listCounselingOperationAuditEvents(),
+        serverTime: now,
+      },
+    }),
+  } as const;
+}
+
+export async function updateCounselingCancellationPolicyPayload(
+  body: unknown,
+  actor?: FulfillmentActor,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后更新取消规则"),
+    } as const;
+  }
+
+  if (!userCan(actor, "admin:manage")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无运营配置权限"),
+    } as const;
+  }
+
+  const parsed =
+    CounselingCancellationPolicyUpdateRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "取消规则参数不合法"),
+    } as const;
+  }
+
+  const previousPolicy = cloneCancellationPolicy(counselingCancellationPolicy);
+  counselingCancellationPolicy = cloneCancellationPolicy(parsed.data.policy);
+  const auditEvent = saveCounselingOperationAuditEvent({
+    action: "cancellation_policy_updated",
+    actor,
+    now,
+    policyBefore: previousPolicy,
+    policyAfter: counselingCancellationPolicy,
+    note: parsed.data.reason,
+  });
+
+  return {
+    status: 200,
+    body: CounselingCancellationPolicyUpdateResponseSchema.parse({
+      ok: true,
+      data: {
+        cancellationPolicy: cloneCancellationPolicy(
+          counselingCancellationPolicy
+        ),
+        auditEvent,
+        serverTime: now,
+      },
+    }),
+  } as const;
+}
+
 function buildCounselingWorkbenchSummary(
   records: CounselingAppointmentRecord[]
 ): CounselingWorkbenchSummary {
@@ -1145,6 +1322,7 @@ export async function fulfillCounselingAppointmentPayload(
   }
 
   try {
+    const previousOrder = await getAppointmentOrder(appointment);
     const riskEvent =
       await counselingAppointmentStore.getRiskEventForAppointment(
         appointment.id
@@ -1154,6 +1332,15 @@ export async function fulfillCounselingAppointmentPayload(
       riskEvent
     );
     const order = await getAppointmentOrder(savedAppointment);
+    saveCounselingOperationAuditEvent({
+      action: parsed.data.action as CounselingOperationAuditAction,
+      actor,
+      now,
+      appointment,
+      nextAppointment: savedAppointment,
+      previousOrder,
+      nextOrder: order,
+    });
 
     return {
       status: 200,
@@ -1411,7 +1598,12 @@ export async function updateCounselingAppointmentPayload(
 
   const cancellationDecision: CounselingCancellationDecision | undefined =
     parsed.data.action === "cancel"
-      ? evaluateCounselingCancellation({ appointment, slot, now })
+      ? evaluateCounselingCancellation({
+          appointment,
+          slot,
+          now,
+          policy: counselingCancellationPolicy,
+        })
       : undefined;
   if (cancellationDecision && !cancellationDecision.canCancel) {
     return {
@@ -1596,6 +1788,29 @@ export function registerCounselingApi(app: Express) {
     }
   );
 
+  app.get(
+    "/api/counseling/admin/operations",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getCounselingOperationsConsolePayload(
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.put(
+    "/api/counseling/admin/cancellation-policy",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await updateCounselingCancellationPolicyPayload(
+        req.body,
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
   app.post(
     "/api/counseling/appointments",
     async (req: Request, res: Response) => {
@@ -1681,6 +1896,43 @@ export function handleCounselingApiRequest(
         errorPayload("INTERNAL_ERROR", "咨询师工作台读取失败")
       );
     });
+    return true;
+  }
+
+  if (
+    req.method === "GET" &&
+    url.pathname === "/api/counseling/admin/operations"
+  ) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getCounselingOperationsConsolePayload(
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      reportStoreError(err);
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "运营配置读取失败"));
+    });
+    return true;
+  }
+
+  if (
+    req.method === "PUT" &&
+    url.pathname === "/api/counseling/admin/cancellation-policy"
+  ) {
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await updateCounselingCancellationPolicyPayload(
+          body,
+          session?.user
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(err => {
+        reportStoreError(err);
+        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "取消规则保存失败"));
+      });
     return true;
   }
 

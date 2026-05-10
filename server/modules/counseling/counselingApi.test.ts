@@ -3,11 +3,13 @@ import {
   createCounselingAppointmentPayload,
   expireOverdueCounselingPayments,
   fulfillCounselingAppointmentPayload,
+  getCounselingOperationsConsolePayload,
   getCounselingAvailabilityPayload,
   listCounselingAppointmentsPayload,
   listCounselingWorkbenchPayload,
   processCounselingRefundWebhookEvent,
   resetCounselingAppointmentStore,
+  updateCounselingCancellationPolicyPayload,
   updateCounselingAppointmentPayload,
 } from "./counselingApi";
 import { createSimulatedRefundSucceededEvent } from "../../../shared/domain";
@@ -274,6 +276,21 @@ describe("counseling api payloads", () => {
       expect(completed.body.data.appointment.status).toBe("completed");
       expect(completed.body.data.order?.status).toBe("paid");
     }
+
+    const operations = await getCounselingOperationsConsolePayload(
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T01:01:00.000Z"
+    );
+    expect(operations.status).toBe(200);
+    if (operations.body.ok) {
+      expect(operations.body.data.auditEvents[0]).toMatchObject({
+        action: "complete_session",
+        actorId: slot.counselorId,
+        appointmentId,
+        previousAppointmentStatus: "scheduled",
+        nextAppointmentStatus: "completed",
+      });
+    }
   });
 
   it("lists counselor workbench appointments with status summary", async () => {
@@ -324,6 +341,84 @@ describe("counseling api payloads", () => {
       expect(workbench.body.data.summary).toMatchObject({
         scheduledCount: 1,
         pendingPaymentCount: 0,
+      });
+    }
+  });
+
+  it("lets operators configure cancellation policy and records policy audit", async () => {
+    const forbidden = await updateCounselingCancellationPolicyPayload(
+      {
+        policy: {
+          scheduledRefundCutoffMinutesBeforeStart: 120,
+          allowPendingPaymentCancellation: false,
+        },
+      },
+      { id: "counselor_lin", roles: ["counselor"] },
+      "2026-05-10T00:05:00.000Z"
+    );
+    expect(forbidden.status).toBe(403);
+
+    const updated = await updateCounselingCancellationPolicyPayload(
+      {
+        policy: {
+          scheduledRefundCutoffMinutesBeforeStart: 120,
+          allowPendingPaymentCancellation: false,
+        },
+        reason: "测试取消规则配置",
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:05:00.000Z"
+    );
+
+    expect(updated.status).toBe(200);
+    if (updated.body.ok) {
+      expect(
+        updated.body.data.cancellationPolicy
+          .scheduledRefundCutoffMinutesBeforeStart
+      ).toBe(120);
+      expect(updated.body.data.auditEvent).toMatchObject({
+        action: "cancellation_policy_updated",
+        actorId: "operator_1",
+        note: "测试取消规则配置",
+      });
+    }
+
+    const availability = await getCounselingAvailabilityPayload(
+      fixedNow.toISOString()
+    );
+    if (!availability.ok) throw new Error("expected availability");
+    const slot = availability.data.slots[0];
+    const created = await createCounselingAppointmentPayload(
+      {
+        counselorId: slot.counselorId,
+        slotId: slot.id,
+        channel: slot.channel,
+        concernTags: ["emotion"],
+        urgency: "this_week",
+      },
+      "user_1",
+      fixedNow.toISOString()
+    );
+    if (!created.body.ok) throw new Error("expected created appointment");
+
+    const cancelled = await updateCounselingAppointmentPayload(
+      created.body.data.appointment.id,
+      { action: "cancel" },
+      "user_1",
+      "2026-05-10T00:06:00.000Z"
+    );
+    expect(cancelled.status).toBe(409);
+
+    const operations = await getCounselingOperationsConsolePayload(
+      { id: "admin_1", roles: ["admin"] },
+      "2026-05-10T00:07:00.000Z"
+    );
+    expect(operations.status).toBe(200);
+    if (operations.body.ok) {
+      expect(operations.body.data.auditEvents).toHaveLength(1);
+      expect(operations.body.data.cancellationPolicy).toMatchObject({
+        scheduledRefundCutoffMinutesBeforeStart: 120,
+        allowPendingPaymentCancellation: false,
       });
     }
   });

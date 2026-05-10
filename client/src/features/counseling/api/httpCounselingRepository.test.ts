@@ -4,6 +4,8 @@ import {
   parseCounselingAppointmentCreateResponse,
   parseCounselingAppointmentListResponse,
   parseCounselingAvailabilityResponse,
+  parseCounselingCancellationPolicyUpdateResponse,
+  parseCounselingOperationsConsoleResponse,
   parseCounselingWorkbenchResponse,
 } from "./httpCounselingRepository";
 
@@ -194,6 +196,52 @@ describe("http counseling repository parsing", () => {
         },
       }).summary.scheduledCount
     ).toBe(1);
+  });
+
+  it("parses operations console and policy update responses", () => {
+    const auditEvent = {
+      id: "audit_1",
+      action: "cancellation_policy_updated",
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      policyBefore: {
+        scheduledRefundCutoffMinutesBeforeStart: 0,
+        allowPendingPaymentCancellation: true,
+      },
+      policyAfter: {
+        scheduledRefundCutoffMinutesBeforeStart: 120,
+        allowPendingPaymentCancellation: false,
+      },
+      note: "节假日前调整",
+      createdAt: "2026-05-10T00:00:00.000Z",
+    };
+
+    const cancellationPolicy = {
+      scheduledRefundCutoffMinutesBeforeStart: 120,
+      allowPendingPaymentCancellation: false,
+    };
+
+    expect(
+      parseCounselingOperationsConsoleResponse({
+        ok: true,
+        data: {
+          cancellationPolicy,
+          auditEvents: [auditEvent],
+          serverTime: "2026-05-10T00:00:00.000Z",
+        },
+      }).auditEvents
+    ).toHaveLength(1);
+
+    expect(
+      parseCounselingCancellationPolicyUpdateResponse({
+        ok: true,
+        data: {
+          cancellationPolicy,
+          auditEvent,
+          serverTime: "2026-05-10T00:01:00.000Z",
+        },
+      }).cancellationPolicy.allowPendingPaymentCancellation
+    ).toBe(false);
   });
 
   it("throws on error response", () => {

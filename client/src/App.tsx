@@ -8,6 +8,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import LoginModal from "./components/LoginModal";
 import Assessment from "./pages/Assessment";
 import Consulting from "./pages/Consulting";
+import CounselingOperations from "./pages/CounselingOperations";
 import CounselorWorkbench from "./pages/CounselorWorkbench";
 import CourseDetail from "./pages/CourseDetail";
 import Home from "./pages/Home";
@@ -20,6 +21,7 @@ function Router() {
       <Route path={"/courses/:courseId"} component={CourseDetail} />
       <Route path={"/consulting"} component={Consulting} />
       <Route path={"/counselor/workbench"} component={CounselorWorkbench} />
+      <Route path={"/admin/counseling"} component={CounselingOperations} />
       <Route path={"/assessment"} component={Assessment} />
       <Route path={"/me/courses"} component={MyCourses} />
       <Route path={"/404"} component={NotFound} />

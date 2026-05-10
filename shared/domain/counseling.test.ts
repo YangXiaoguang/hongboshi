@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   applyCounselingAppointmentAction,
   applyCounselingAppointmentReschedule,
+  CounselingCancellationPolicyUpdateRequestSchema,
+  CounselingOperationAuditEventSchema,
   evaluateCounselingCancellation,
   expireOverdueCounselingAppointmentPayment,
   getCounselingPaymentDeadline,
@@ -95,6 +97,35 @@ describe("counseling appointment status machine", () => {
       canCancel: true,
       orderTransition: "request_refund",
     });
+  });
+
+  it("validates operation policy updates and audit events", () => {
+    expect(
+      CounselingCancellationPolicyUpdateRequestSchema.parse({
+        policy: {
+          scheduledRefundCutoffMinutesBeforeStart: 120,
+          allowPendingPaymentCancellation: false,
+        },
+        reason: "节假日前临时收紧取消规则",
+      }).policy.scheduledRefundCutoffMinutesBeforeStart
+    ).toBe(120);
+
+    expect(
+      CounselingOperationAuditEventSchema.parse({
+        id: "audit_1",
+        action: "complete_session",
+        actorId: "counselor_1",
+        actorRoles: ["counselor"],
+        appointmentId: "appointment_1",
+        userId: "user_1",
+        counselorId: "counselor_1",
+        previousAppointmentStatus: "scheduled",
+        nextAppointmentStatus: "completed",
+        previousOrderStatus: "paid",
+        nextOrderStatus: "paid",
+        createdAt: "2026-05-10T11:00:00.000Z",
+      }).nextAppointmentStatus
+    ).toBe("completed");
   });
 
   it("reschedules confirmed appointments to an available slot", () => {

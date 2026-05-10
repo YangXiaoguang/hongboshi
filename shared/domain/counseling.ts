@@ -196,6 +196,47 @@ export const DEFAULT_COUNSELING_CANCELLATION_POLICY =
     allowPendingPaymentCancellation: true,
   });
 
+export const CounselingCancellationPolicyUpdateRequestSchema = z.object({
+  policy: CounselingCancellationPolicySchema,
+  reason: z.string().max(200).optional(),
+});
+
+export const CounselingOperationAuditActionSchema = z.enum([
+  "cancellation_policy_updated",
+  "complete_session",
+  "mark_no_show",
+]);
+
+export const CounselingOperationAuditEventSchema = z.object({
+  id: EntityIdSchema,
+  action: CounselingOperationAuditActionSchema,
+  actorId: EntityIdSchema,
+  actorRoles: z.array(z.string().min(1)).min(1),
+  appointmentId: EntityIdSchema.optional(),
+  userId: EntityIdSchema.optional(),
+  counselorId: EntityIdSchema.optional(),
+  previousAppointmentStatus: AppointmentStatusSchema.optional(),
+  nextAppointmentStatus: AppointmentStatusSchema.optional(),
+  previousOrderStatus: OrderSchema.shape.status.optional(),
+  nextOrderStatus: OrderSchema.shape.status.optional(),
+  policyBefore: CounselingCancellationPolicySchema.optional(),
+  policyAfter: CounselingCancellationPolicySchema.optional(),
+  note: z.string().max(500).optional(),
+  createdAt: DateTimeLikeSchema,
+});
+
+export const CounselingOperationsConsoleSchema = z.object({
+  cancellationPolicy: CounselingCancellationPolicySchema,
+  auditEvents: z.array(CounselingOperationAuditEventSchema),
+  serverTime: DateTimeLikeSchema,
+});
+
+export const CounselingCancellationPolicyUpdateResultSchema = z.object({
+  cancellationPolicy: CounselingCancellationPolicySchema,
+  auditEvent: CounselingOperationAuditEventSchema,
+  serverTime: DateTimeLikeSchema,
+});
+
 const appointmentActionTransitions: Record<
   CounselingAppointmentAction,
   { from: AppointmentStatus[]; to: AppointmentStatus }
@@ -454,9 +495,24 @@ export type CounselingAppointmentActionResult = z.infer<
 export type CounselingCancellationPolicy = z.infer<
   typeof CounselingCancellationPolicySchema
 >;
+export type CounselingCancellationPolicyUpdateRequest = z.infer<
+  typeof CounselingCancellationPolicyUpdateRequestSchema
+>;
 export type CounselingCancellationOrderTransition = z.infer<
   typeof CounselingCancellationOrderTransitionSchema
 >;
 export type CounselingCancellationDecision = z.infer<
   typeof CounselingCancellationDecisionSchema
+>;
+export type CounselingOperationAuditAction = z.infer<
+  typeof CounselingOperationAuditActionSchema
+>;
+export type CounselingOperationAuditEvent = z.infer<
+  typeof CounselingOperationAuditEventSchema
+>;
+export type CounselingOperationsConsole = z.infer<
+  typeof CounselingOperationsConsoleSchema
+>;
+export type CounselingCancellationPolicyUpdateResult = z.infer<
+  typeof CounselingCancellationPolicyUpdateResultSchema
 >;

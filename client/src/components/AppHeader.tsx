@@ -8,6 +8,7 @@ import {
   LogOut,
   Menu,
   Settings,
+  SlidersHorizontal,
   User,
   X,
 } from "lucide-react";
@@ -75,6 +76,9 @@ export default function AppHeader() {
   const canUseCounselorWorkbench = Boolean(
     user?.roles.some(role => ["counselor", "operator", "admin"].includes(role))
   );
+  const canManageCounselingOperations = Boolean(
+    user?.roles.some(role => ["operator", "admin"].includes(role))
+  );
 
   const userMenuItems = [
     {
@@ -88,6 +92,15 @@ export default function AppHeader() {
             icon: ClipboardList,
             label: "咨询师工作台",
             onClick: () => navigate("/counselor/workbench"),
+          },
+        ]
+      : []),
+    ...(canManageCounselingOperations
+      ? [
+          {
+            icon: SlidersHorizontal,
+            label: "咨询运营配置",
+            onClick: () => navigate("/admin/counseling"),
           },
         ]
       : []),

@@ -6,6 +6,9 @@ import {
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
+  CounselingCancellationPolicyUpdateRequestSchema,
+  CounselingCancellationPolicyUpdateResultSchema,
+  CounselingOperationsConsoleSchema,
   CounselingWorkbenchSchema,
   type CounselingAppointmentAction,
   type CounselingAppointmentActionRequest,
@@ -14,6 +17,9 @@ import {
   type CounselingAppointmentCreateResult,
   type CounselingAppointmentList,
   type CounselingAvailability,
+  type CounselingCancellationPolicyUpdateRequest,
+  type CounselingCancellationPolicyUpdateResult,
+  type CounselingOperationsConsole,
   type CounselingWorkbench,
 } from "@shared/domain";
 
@@ -28,6 +34,12 @@ const CounselingAppointmentListResponseSchema = ApiResponseSchema(
 );
 const CounselingWorkbenchResponseSchema = ApiResponseSchema(
   CounselingWorkbenchSchema
+);
+const CounselingOperationsConsoleResponseSchema = ApiResponseSchema(
+  CounselingOperationsConsoleSchema
+);
+const CounselingCancellationPolicyUpdateResponseSchema = ApiResponseSchema(
+  CounselingCancellationPolicyUpdateResultSchema
 );
 const CounselingAppointmentActionResponseSchema = ApiResponseSchema(
   CounselingAppointmentActionResultSchema
@@ -84,6 +96,23 @@ export function parseCounselingWorkbenchResponse(
   return parsed.data;
 }
 
+export function parseCounselingOperationsConsoleResponse(
+  payload: unknown
+): CounselingOperationsConsole {
+  const parsed = CounselingOperationsConsoleResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCounselingCancellationPolicyUpdateResponse(
+  payload: unknown
+): CounselingCancellationPolicyUpdateResult {
+  const parsed =
+    CounselingCancellationPolicyUpdateResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 export function parseCounselingAppointmentActionResponse(
   payload: unknown
 ): CounselingAppointmentActionResult {
@@ -110,6 +139,18 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   const workbenchParsed = CounselingWorkbenchResponseSchema.safeParse(payload);
   if (workbenchParsed.success && !workbenchParsed.data.ok) {
     return workbenchParsed.data.error.message;
+  }
+
+  const operationsParsed =
+    CounselingOperationsConsoleResponseSchema.safeParse(payload);
+  if (operationsParsed.success && !operationsParsed.data.ok) {
+    return operationsParsed.data.error.message;
+  }
+
+  const policyParsed =
+    CounselingCancellationPolicyUpdateResponseSchema.safeParse(payload);
+  if (policyParsed.success && !policyParsed.data.ok) {
+    return policyParsed.data.error.message;
   }
 
   return fallback;
@@ -157,6 +198,41 @@ export const httpCounselingRepository = {
       throw new Error(extractErrorMessage(payload, "咨询师工作台暂时不可用"));
     }
     return parseCounselingWorkbenchResponse(payload);
+  },
+
+  async loadOperationsConsole(): Promise<CounselingOperationsConsole> {
+    const response = await fetch(`${API_BASE}/admin/operations`, {
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "咨询运营配置暂时不可用"));
+    }
+    return parseCounselingOperationsConsoleResponse(payload);
+  },
+
+  async updateCancellationPolicy(
+    request: CounselingCancellationPolicyUpdateRequest
+  ): Promise<CounselingCancellationPolicyUpdateResult> {
+    const body = CounselingCancellationPolicyUpdateRequestSchema.parse(request);
+    const response = await fetch(`${API_BASE}/admin/cancellation-policy`, {
+      method: "PUT",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "取消规则暂时无法保存"));
+    }
+    return parseCounselingCancellationPolicyUpdateResponse(payload);
   },
 
   async createAppointment(
