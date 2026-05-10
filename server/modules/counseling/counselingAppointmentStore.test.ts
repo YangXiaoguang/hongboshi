@@ -59,6 +59,9 @@ describe("counseling appointment store", () => {
     expect(store.getRiskEventForAppointment("appointment_1")?.riskLevel).toBe(
       "medium"
     );
+    expect(
+      store.listAppointmentsByCounselor(reservedSlot.counselorId)[0]?.id
+    ).toBe("appointment_1");
     expect(store.listAppointmentsByUser("user_2")).toEqual([]);
   });
 });

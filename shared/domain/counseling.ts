@@ -123,6 +123,20 @@ export const CounselingAppointmentListSchema = z.object({
   serverTime: DateTimeLikeSchema,
 });
 
+export const CounselingWorkbenchSummarySchema = z.object({
+  scheduledCount: z.number().int().nonnegative(),
+  pendingPaymentCount: z.number().int().nonnegative(),
+  refundingCount: z.number().int().nonnegative(),
+  completedCount: z.number().int().nonnegative(),
+  noShowCount: z.number().int().nonnegative(),
+});
+
+export const CounselingWorkbenchSchema = z.object({
+  appointments: z.array(CounselingAppointmentRecordSchema),
+  summary: CounselingWorkbenchSummarySchema,
+  serverTime: DateTimeLikeSchema,
+});
+
 export const CounselingAppointmentActionSchema = z.enum([
   "confirm_payment",
   "cancel",
@@ -157,6 +171,30 @@ export const CounselingAppointmentActionResultSchema = z.object({
 });
 
 export const COUNSELING_PAYMENT_HOLD_MINUTES = 30;
+
+export const CounselingCancellationPolicySchema = z.object({
+  scheduledRefundCutoffMinutesBeforeStart: z.number().int().nonnegative(),
+  allowPendingPaymentCancellation: z.boolean(),
+});
+
+export const CounselingCancellationOrderTransitionSchema = z.enum([
+  "none",
+  "close_unpaid",
+  "request_refund",
+]);
+
+export const CounselingCancellationDecisionSchema = z.object({
+  canCancel: z.boolean(),
+  releaseSlot: z.boolean(),
+  orderTransition: CounselingCancellationOrderTransitionSchema,
+  reason: z.string().optional(),
+});
+
+export const DEFAULT_COUNSELING_CANCELLATION_POLICY =
+  CounselingCancellationPolicySchema.parse({
+    scheduledRefundCutoffMinutesBeforeStart: 0,
+    allowPendingPaymentCancellation: true,
+  });
 
 const appointmentActionTransitions: Record<
   CounselingAppointmentAction,
@@ -278,6 +316,67 @@ export function expireOverdueCounselingAppointmentPayment({
   });
 }
 
+export function evaluateCounselingCancellation({
+  appointment,
+  slot,
+  now = new Date().toISOString(),
+  policy = DEFAULT_COUNSELING_CANCELLATION_POLICY,
+}: {
+  appointment: CounselingAppointment;
+  slot: CounselingSlot;
+  now?: string;
+  policy?: CounselingCancellationPolicy;
+}): CounselingCancellationDecision {
+  const normalized = CounselingAppointmentSchema.parse(appointment);
+  const normalizedSlot = CounselingSlotSchema.parse(slot);
+  const normalizedPolicy = CounselingCancellationPolicySchema.parse(policy);
+
+  if (normalized.status === "pending_payment") {
+    if (!normalizedPolicy.allowPendingPaymentCancellation) {
+      return CounselingCancellationDecisionSchema.parse({
+        canCancel: false,
+        releaseSlot: false,
+        orderTransition: "none",
+        reason: "待支付预约暂不支持取消",
+      });
+    }
+
+    return CounselingCancellationDecisionSchema.parse({
+      canCancel: true,
+      releaseSlot: true,
+      orderTransition: "close_unpaid",
+    });
+  }
+
+  if (normalized.status === "scheduled") {
+    const cutoffAt =
+      Date.parse(normalizedSlot.startsAt) -
+      normalizedPolicy.scheduledRefundCutoffMinutesBeforeStart * 60 * 1000;
+
+    if (Date.parse(now) > cutoffAt) {
+      return CounselingCancellationDecisionSchema.parse({
+        canCancel: false,
+        releaseSlot: false,
+        orderTransition: "none",
+        reason: "已超过可取消时间，请联系平台支持",
+      });
+    }
+
+    return CounselingCancellationDecisionSchema.parse({
+      canCancel: true,
+      releaseSlot: true,
+      orderTransition: "request_refund",
+    });
+  }
+
+  return CounselingCancellationDecisionSchema.parse({
+    canCancel: false,
+    releaseSlot: false,
+    orderTransition: "none",
+    reason: "当前预约状态不支持取消",
+  });
+}
+
 export function applyCounselingAppointmentReschedule({
   appointment,
   nextSlot,
@@ -339,6 +438,10 @@ export type CounselingAppointmentRecord = z.infer<
 export type CounselingAppointmentList = z.infer<
   typeof CounselingAppointmentListSchema
 >;
+export type CounselingWorkbenchSummary = z.infer<
+  typeof CounselingWorkbenchSummarySchema
+>;
+export type CounselingWorkbench = z.infer<typeof CounselingWorkbenchSchema>;
 export type CounselingAppointmentAction = z.infer<
   typeof CounselingAppointmentActionSchema
 >;
@@ -347,4 +450,13 @@ export type CounselingAppointmentActionRequest = z.infer<
 >;
 export type CounselingAppointmentActionResult = z.infer<
   typeof CounselingAppointmentActionResultSchema
+>;
+export type CounselingCancellationPolicy = z.infer<
+  typeof CounselingCancellationPolicySchema
+>;
+export type CounselingCancellationOrderTransition = z.infer<
+  typeof CounselingCancellationOrderTransitionSchema
+>;
+export type CounselingCancellationDecision = z.infer<
+  typeof CounselingCancellationDecisionSchema
 >;

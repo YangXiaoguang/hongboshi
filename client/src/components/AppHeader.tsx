@@ -3,6 +3,7 @@ import {
   Bell,
   BookOpen,
   ChevronDown,
+  ClipboardList,
   Heart,
   LogOut,
   Menu,
@@ -71,12 +72,25 @@ export default function AppHeader() {
     toast("已退出登录", { description: "期待您再次光临" });
   };
 
+  const canUseCounselorWorkbench = Boolean(
+    user?.roles.some(role => ["counselor", "operator", "admin"].includes(role))
+  );
+
   const userMenuItems = [
     {
       icon: BookOpen,
       label: "成长空间",
       onClick: () => navigate("/me/courses"),
     },
+    ...(canUseCounselorWorkbench
+      ? [
+          {
+            icon: ClipboardList,
+            label: "咨询师工作台",
+            onClick: () => navigate("/counselor/workbench"),
+          },
+        ]
+      : []),
     {
       icon: Heart,
       label: "我的收藏",

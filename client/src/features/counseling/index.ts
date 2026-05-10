@@ -19,4 +19,5 @@ export type {
   CounselingConcernTag,
   CounselingSlot,
   CounselingUrgency,
+  CounselingWorkbench,
 } from "@shared/domain";

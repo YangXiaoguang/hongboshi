@@ -227,6 +227,40 @@ describe("postgres counseling appointment store", () => {
     expect(db.queries[0]?.values).toEqual(["appointment_1"]);
   });
 
+  it("reads appointments by counselor id", async () => {
+    const db = new FakeCounselingExecutor({
+      appointments: [
+        {
+          id: "appointment_1",
+          user_id: "user_1",
+          counselor_id: "counselor_lin",
+          slot_id: "slot_1",
+          order_id: "order_counseling_appointment_1",
+          channel: "video",
+          status: "scheduled",
+          concern_tags: ["emotion"],
+          note_for_counselor: null,
+          assessment_report_id: null,
+          risk_event_id: null,
+          created_at: new Date("2026-05-10T08:00:00.000Z"),
+          updated_at: new Date("2026-05-10T08:10:00.000Z"),
+        },
+      ],
+    });
+    const store = new PostgresCounselingAppointmentStore(db);
+
+    const appointments =
+      await store.listAppointmentsByCounselor("counselor_lin");
+
+    expect(appointments[0]).toMatchObject({
+      id: "appointment_1",
+      counselorId: "counselor_lin",
+      status: "scheduled",
+    });
+    expect(db.queries[0]?.text).toContain("WHERE counselor_id = $1");
+    expect(db.queries[0]?.values).toEqual(["counselor_lin"]);
+  });
+
   it("reads a single appointment by order id", async () => {
     const db = new FakeCounselingExecutor({
       appointments: [

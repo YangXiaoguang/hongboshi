@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyCounselingAppointmentAction,
   applyCounselingAppointmentReschedule,
+  evaluateCounselingCancellation,
   expireOverdueCounselingAppointmentPayment,
   getCounselingPaymentDeadline,
   getNextCounselingAppointmentStatus,
@@ -42,6 +43,58 @@ describe("counseling appointment status machine", () => {
     expect(getNextCounselingAppointmentStatus("completed", "cancel")).toBe(
       undefined
     );
+  });
+
+  it("evaluates cancellation policy for unpaid and confirmed appointments", () => {
+    const slot = {
+      id: "slot_1",
+      counselorId: "counselor_1",
+      startsAt: "2026-05-11T10:00:00.000Z",
+      endsAt: "2026-05-11T11:00:00.000Z",
+      channel: "video" as const,
+      available: false,
+    };
+
+    expect(
+      evaluateCounselingCancellation({
+        appointment,
+        slot,
+        now: "2026-05-10T10:00:00.000Z",
+      })
+    ).toMatchObject({
+      canCancel: true,
+      orderTransition: "close_unpaid",
+    });
+
+    expect(
+      evaluateCounselingCancellation({
+        appointment: { ...appointment, status: "scheduled" },
+        slot,
+        now: "2026-05-11T09:30:00.000Z",
+        policy: {
+          scheduledRefundCutoffMinutesBeforeStart: 60,
+          allowPendingPaymentCancellation: true,
+        },
+      })
+    ).toMatchObject({
+      canCancel: false,
+      orderTransition: "none",
+    });
+
+    expect(
+      evaluateCounselingCancellation({
+        appointment: { ...appointment, status: "scheduled" },
+        slot,
+        now: "2026-05-11T08:30:00.000Z",
+        policy: {
+          scheduledRefundCutoffMinutesBeforeStart: 60,
+          allowPendingPaymentCancellation: true,
+        },
+      })
+    ).toMatchObject({
+      canCancel: true,
+      orderTransition: "request_refund",
+    });
   });
 
   it("reschedules confirmed appointments to an available slot", () => {

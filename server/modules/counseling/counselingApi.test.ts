@@ -5,6 +5,7 @@ import {
   fulfillCounselingAppointmentPayload,
   getCounselingAvailabilityPayload,
   listCounselingAppointmentsPayload,
+  listCounselingWorkbenchPayload,
   processCounselingRefundWebhookEvent,
   resetCounselingAppointmentStore,
   updateCounselingAppointmentPayload,
@@ -272,6 +273,58 @@ describe("counseling api payloads", () => {
     if (completed.body.ok) {
       expect(completed.body.data.appointment.status).toBe("completed");
       expect(completed.body.data.order?.status).toBe("paid");
+    }
+  });
+
+  it("lists counselor workbench appointments with status summary", async () => {
+    const availability = await getCounselingAvailabilityPayload(
+      fixedNow.toISOString()
+    );
+    if (!availability.ok) throw new Error("expected availability");
+
+    const slot = availability.data.slots[6];
+    const created = await createCounselingAppointmentPayload(
+      {
+        counselorId: slot.counselorId,
+        slotId: slot.id,
+        channel: slot.channel,
+        concernTags: ["emotion"],
+        urgency: "this_week",
+      },
+      "user_1",
+      fixedNow.toISOString()
+    );
+    if (!created.body.ok) throw new Error("expected created appointment");
+
+    const confirmed = await updateCounselingAppointmentPayload(
+      created.body.data.appointment.id,
+      { action: "confirm_payment" },
+      "user_1",
+      "2026-05-10T00:10:00.000Z"
+    );
+    expect(confirmed.status).toBe(200);
+
+    const forbidden = await listCounselingWorkbenchPayload(
+      { id: "user_1", roles: ["member"] },
+      "2026-05-10T00:11:00.000Z"
+    );
+    expect(forbidden.status).toBe(403);
+
+    const workbench = await listCounselingWorkbenchPayload(
+      { id: slot.counselorId, roles: ["counselor"] },
+      "2026-05-10T00:11:00.000Z"
+    );
+
+    expect(workbench.status).toBe(200);
+    if (workbench.body.ok) {
+      expect(workbench.body.data.appointments).toHaveLength(1);
+      expect(workbench.body.data.appointments[0]?.appointment.status).toBe(
+        "scheduled"
+      );
+      expect(workbench.body.data.summary).toMatchObject({
+        scheduledCount: 1,
+        pendingPaymentCount: 0,
+      });
     }
   });
 

@@ -6,6 +6,7 @@ import {
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
+  CounselingWorkbenchSchema,
   type CounselingAppointmentAction,
   type CounselingAppointmentActionRequest,
   type CounselingAppointmentActionResult,
@@ -13,6 +14,7 @@ import {
   type CounselingAppointmentCreateResult,
   type CounselingAppointmentList,
   type CounselingAvailability,
+  type CounselingWorkbench,
 } from "@shared/domain";
 
 const CounselingAvailabilityResponseSchema = ApiResponseSchema(
@@ -23,6 +25,9 @@ const CounselingAppointmentCreateResponseSchema = ApiResponseSchema(
 );
 const CounselingAppointmentListResponseSchema = ApiResponseSchema(
   CounselingAppointmentListSchema
+);
+const CounselingWorkbenchResponseSchema = ApiResponseSchema(
+  CounselingWorkbenchSchema
 );
 const CounselingAppointmentActionResponseSchema = ApiResponseSchema(
   CounselingAppointmentActionResultSchema
@@ -71,6 +76,14 @@ export function parseCounselingAppointmentListResponse(
   return parsed.data;
 }
 
+export function parseCounselingWorkbenchResponse(
+  payload: unknown
+): CounselingWorkbench {
+  const parsed = CounselingWorkbenchResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 export function parseCounselingAppointmentActionResponse(
   payload: unknown
 ): CounselingAppointmentActionResult {
@@ -92,6 +105,11 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = CounselingAppointmentListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
     return listParsed.data.error.message;
+  }
+
+  const workbenchParsed = CounselingWorkbenchResponseSchema.safeParse(payload);
+  if (workbenchParsed.success && !workbenchParsed.data.ok) {
+    return workbenchParsed.data.error.message;
   }
 
   return fallback;
@@ -124,6 +142,21 @@ export const httpCounselingRepository = {
       throw new Error(extractErrorMessage(payload, "咨询预约暂时不可用"));
     }
     return parseCounselingAppointmentListResponse(payload);
+  },
+
+  async loadWorkbenchAppointments(): Promise<CounselingWorkbench> {
+    const response = await fetch(`${API_BASE}/workbench/appointments`, {
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "咨询师工作台暂时不可用"));
+    }
+    return parseCounselingWorkbenchResponse(payload);
   },
 
   async createAppointment(

@@ -4,6 +4,7 @@ import {
   parseCounselingAppointmentCreateResponse,
   parseCounselingAppointmentListResponse,
   parseCounselingAvailabilityResponse,
+  parseCounselingWorkbenchResponse,
 } from "./httpCounselingRepository";
 
 const counselor = {
@@ -147,6 +148,52 @@ describe("http counseling repository parsing", () => {
         },
       }).appointment.status
     ).toBe("scheduled");
+  });
+
+  it("parses counselor workbench response", () => {
+    const appointment = {
+      id: "appointment_1",
+      userId: "user_1",
+      counselorId: counselor.id,
+      slotId: slot.id,
+      orderId: order.id,
+      channel: "video",
+      status: "scheduled",
+      concernTags: ["emotion"],
+      createdAt: "2026-05-10T00:00:00.000Z",
+      updatedAt: "2026-05-10T00:10:00.000Z",
+    };
+
+    expect(
+      parseCounselingWorkbenchResponse({
+        ok: true,
+        data: {
+          appointments: [
+            {
+              appointment,
+              counselor,
+              slot: {
+                ...slot,
+                available: false,
+              },
+              order: {
+                ...order,
+                status: "paid",
+                paidAt: "2026-05-10T00:10:00.000Z",
+              },
+            },
+          ],
+          summary: {
+            scheduledCount: 1,
+            pendingPaymentCount: 0,
+            refundingCount: 0,
+            completedCount: 0,
+            noShowCount: 0,
+          },
+          serverTime: "2026-05-10T00:10:00.000Z",
+        },
+      }).summary.scheduledCount
+    ).toBe(1);
   });
 
   it("throws on error response", () => {

@@ -28,6 +28,9 @@ export interface CounselingAppointmentStore {
   ): MaybePromise<CounselingAppointment>;
   listPendingPaymentAppointments(): MaybePromise<CounselingAppointment[]>;
   listAppointmentsByUser(userId: string): MaybePromise<CounselingAppointment[]>;
+  listAppointmentsByCounselor(
+    counselorId: string
+  ): MaybePromise<CounselingAppointment[]>;
   getRiskEventForAppointment(
     appointmentId: string
   ): MaybePromise<RiskEvent | undefined>;
@@ -110,6 +113,13 @@ export class InMemoryCounselingAppointmentStore implements CounselingAppointment
   listAppointmentsByUser(userId: string): CounselingAppointment[] {
     return Array.from(this.appointments.values())
       .filter(appointment => appointment.userId === userId)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .map(cloneAppointment);
+  }
+
+  listAppointmentsByCounselor(counselorId: string): CounselingAppointment[] {
+    return Array.from(this.appointments.values())
+      .filter(appointment => appointment.counselorId === counselorId)
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .map(cloneAppointment);
   }

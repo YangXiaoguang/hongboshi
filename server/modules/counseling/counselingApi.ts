@@ -18,8 +18,10 @@ import {
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
+  CounselingWorkbenchSchema,
   createCounselingSessionOrder,
   createSimulatedPaymentSucceededEvent,
+  evaluateCounselingCancellation,
   expireOverdueCounselingAppointmentPayment,
   findCourseAccessOrder,
   PaymentSucceededWebhookEventSchema,
@@ -36,7 +38,9 @@ import {
   type CounselingAppointmentAction,
   type CounselingAppointmentCreateRequest,
   type CounselingAppointmentRecord,
+  type CounselingCancellationDecision,
   type CounselingSlot,
+  type CounselingWorkbenchSummary,
   type LoginSession,
   type Order,
   type Payment,
@@ -64,6 +68,9 @@ const CounselingAppointmentCreateResponseSchema = ApiResponseSchema(
 );
 const CounselingAppointmentListResponseSchema = ApiResponseSchema(
   CounselingAppointmentListSchema
+);
+const CounselingWorkbenchResponseSchema = ApiResponseSchema(
+  CounselingWorkbenchSchema
 );
 const CounselingAppointmentActionResponseSchema = ApiResponseSchema(
   CounselingAppointmentActionResultSchema
@@ -972,6 +979,91 @@ export async function listCounselingAppointmentsPayload(
 
 type FulfillmentActor = Pick<LoginSession["user"], "id" | "roles">;
 
+function buildCounselingWorkbenchSummary(
+  records: CounselingAppointmentRecord[]
+): CounselingWorkbenchSummary {
+  return {
+    scheduledCount: records.filter(
+      record => record.appointment.status === "scheduled"
+    ).length,
+    pendingPaymentCount: records.filter(
+      record => record.appointment.status === "pending_payment"
+    ).length,
+    refundingCount: records.filter(
+      record => record.order?.status === "refunding"
+    ).length,
+    completedCount: records.filter(
+      record => record.appointment.status === "completed"
+    ).length,
+    noShowCount: records.filter(
+      record => record.appointment.status === "no_show"
+    ).length,
+  };
+}
+
+async function listWorkbenchAppointmentsForActor(actor: FulfillmentActor) {
+  const canOperateAny = actor.roles.some(role =>
+    ["operator", "admin"].includes(role)
+  );
+
+  if (!canOperateAny) {
+    return counselingAppointmentStore.listAppointmentsByCounselor(actor.id);
+  }
+
+  const appointmentGroups = await Promise.all(
+    counselorProfiles.map(counselor =>
+      counselingAppointmentStore.listAppointmentsByCounselor(counselor.id)
+    )
+  );
+  const appointmentsById = new Map<string, CounselingAppointment>();
+  appointmentGroups.flat().forEach(appointment => {
+    appointmentsById.set(appointment.id, appointment);
+  });
+
+  return Array.from(appointmentsById.values()).sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+  );
+}
+
+export async function listCounselingWorkbenchPayload(
+  actor?: FulfillmentActor,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后查看咨询师工作台"),
+    } as const;
+  }
+
+  if (!userCan(actor, "counseling:fulfill")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无咨询师工作台权限"),
+    } as const;
+  }
+
+  await expireOverdueCounselingPayments(now);
+
+  const appointments = await listWorkbenchAppointmentsForActor(actor);
+  const records = await Promise.all(appointments.map(appointmentToRecord));
+  const validRecords = records.filter(
+    (record): record is CounselingAppointmentRecord => Boolean(record)
+  );
+
+  return {
+    status: 200,
+    body: CounselingWorkbenchResponseSchema.parse({
+      ok: true,
+      data: {
+        appointments: validRecords,
+        summary: buildCounselingWorkbenchSummary(validRecords),
+        serverTime: now,
+      },
+    }),
+  } as const;
+}
+
 export async function fulfillCounselingAppointmentPayload(
   appointmentId: string,
   body: unknown,
@@ -1317,6 +1409,21 @@ export async function updateCounselingAppointmentPayload(
     } as const;
   }
 
+  const cancellationDecision: CounselingCancellationDecision | undefined =
+    parsed.data.action === "cancel"
+      ? evaluateCounselingCancellation({ appointment, slot, now })
+      : undefined;
+  if (cancellationDecision && !cancellationDecision.canCancel) {
+    return {
+      status: 409,
+      body: errorPayload(
+        "CONFLICT",
+        cancellationDecision.reason ??
+          transitionConflictMessage(appointment.status, parsed.data.action)
+      ),
+    } as const;
+  }
+
   let nextAppointment: CounselingAppointment;
   try {
     nextAppointment = applyCounselingAppointmentAction({
@@ -1335,7 +1442,7 @@ export async function updateCounselingAppointmentPayload(
   }
 
   const nextSlot: CounselingSlot =
-    parsed.data.action === "cancel"
+    parsed.data.action === "cancel" && cancellationDecision?.releaseSlot
       ? {
           ...slot,
           available: true,
@@ -1347,7 +1454,7 @@ export async function updateCounselingAppointmentPayload(
   try {
     let order: Order | undefined;
     if (parsed.data.action === "cancel" && appointment.orderId) {
-      if (appointment.status === "pending_payment") {
+      if (cancellationDecision?.orderTransition === "close_unpaid") {
         const orderUpdate = await saveAppointmentOrderUpdate({
           appointment,
           updateOrder: closeUnpaidOrder,
@@ -1357,7 +1464,7 @@ export async function updateCounselingAppointmentPayload(
         order = orderUpdate.order;
       }
 
-      if (appointment.status === "scheduled") {
+      if (cancellationDecision?.orderTransition === "request_refund") {
         const orderUpdate = await saveAppointmentOrderUpdate({
           appointment,
           updateOrder: requestOrderRefund,
@@ -1480,6 +1587,15 @@ export function registerCounselingApi(app: Express) {
     }
   );
 
+  app.get(
+    "/api/counseling/workbench/appointments",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await listCounselingWorkbenchPayload(session?.user);
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
   app.post(
     "/api/counseling/appointments",
     async (req: Request, res: Response) => {
@@ -1545,6 +1661,25 @@ export function handleCounselingApiRequest(
     })().catch(err => {
       reportStoreError(err);
       sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询预约读取失败"));
+    });
+    return true;
+  }
+
+  if (
+    req.method === "GET" &&
+    url.pathname === "/api/counseling/workbench/appointments"
+  ) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await listCounselingWorkbenchPayload(session?.user);
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      reportStoreError(err);
+      sendJson(
+        res,
+        500,
+        errorPayload("INTERNAL_ERROR", "咨询师工作台读取失败")
+      );
     });
     return true;
   }
