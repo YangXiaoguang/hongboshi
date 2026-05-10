@@ -135,13 +135,39 @@ export function grantPurchasedCourseAccess(
   });
 }
 
+export function findCourseAccessOrder(
+  state: CourseAccessState,
+  orderId: string
+): Order | undefined {
+  const normalized = normalizeCourseAccessState(state);
+  return normalized.orders.find(order => order.id === orderId);
+}
+
+export function upsertCourseAccessOrder(
+  state: CourseAccessState,
+  order: Order
+): CourseAccessState {
+  const normalized = normalizeCourseAccessState(state);
+  const parsedOrder = OrderSchema.parse(order);
+
+  return normalizeCourseAccessState({
+    ...normalized,
+    orders: [
+      parsedOrder,
+      ...normalized.orders.filter(item => item.id !== parsedOrder.id),
+    ],
+  });
+}
+
 export function activateCourseMembership(
   state: CourseAccessState,
   now = new Date().toISOString(),
   planName = "成长会员"
 ): CourseAccessState {
   const startedAt = Date.parse(now);
-  const expiresAt = new Date(startedAt + 365 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(
+    startedAt + 365 * 24 * 60 * 60 * 1000
+  ).toISOString();
 
   return normalizeCourseAccessState({
     ...state,

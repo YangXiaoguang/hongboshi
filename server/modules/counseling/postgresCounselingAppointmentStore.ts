@@ -26,6 +26,7 @@ type CounselingAppointmentRow = {
   user_id: string;
   counselor_id: string;
   slot_id: string;
+  order_id: string | null;
   channel: CounselingAppointment["channel"];
   status: CounselingAppointment["status"];
   concern_tags: string[];
@@ -61,6 +62,7 @@ export function counselingAppointmentRowToDomain(
     userId: row.user_id,
     counselorId: row.counselor_id,
     slotId: row.slot_id,
+    orderId: row.order_id ?? undefined,
     channel: row.channel,
     status: row.status,
     concernTags: row.concern_tags,
@@ -224,6 +226,7 @@ export class PostgresCounselingAppointmentStore {
           user_id,
           counselor_id,
           slot_id,
+          order_id,
           channel,
           status,
           concern_tags,
@@ -255,6 +258,7 @@ export class PostgresCounselingAppointmentStore {
           user_id,
           counselor_id,
           slot_id,
+          order_id,
           channel,
           status,
           concern_tags,
@@ -264,11 +268,12 @@ export class PostgresCounselingAppointmentStore {
           created_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (id) DO UPDATE SET
           user_id = EXCLUDED.user_id,
           counselor_id = EXCLUDED.counselor_id,
           slot_id = EXCLUDED.slot_id,
+          order_id = EXCLUDED.order_id,
           channel = EXCLUDED.channel,
           status = EXCLUDED.status,
           concern_tags = EXCLUDED.concern_tags,
@@ -281,6 +286,7 @@ export class PostgresCounselingAppointmentStore {
           user_id,
           counselor_id,
           slot_id,
+          order_id,
           channel,
           status,
           concern_tags,
@@ -295,6 +301,7 @@ export class PostgresCounselingAppointmentStore {
         normalized.userId,
         normalized.counselorId,
         normalized.slotId,
+        normalized.orderId ?? null,
         normalized.channel,
         normalized.status,
         normalized.concernTags,
@@ -323,6 +330,7 @@ export class PostgresCounselingAppointmentStore {
           user_id,
           counselor_id,
           slot_id,
+          order_id,
           channel,
           status,
           concern_tags,
@@ -349,6 +357,7 @@ export class PostgresCounselingAppointmentStore {
           user_id,
           counselor_id,
           slot_id,
+          order_id,
           channel,
           status,
           concern_tags,

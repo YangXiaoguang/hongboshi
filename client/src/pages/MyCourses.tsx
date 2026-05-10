@@ -361,6 +361,13 @@ function AppointmentRow({
         </p>
       )}
 
+      {record.order && (
+        <p className="mt-3 rounded-[16px] bg-[#F5EFE5] px-3 py-2 text-xs leading-5 text-[#6D746F]">
+          关联订单：{orderStatusCopy[record.order.status]} ·{" "}
+          {formatCurrency(record.order.payableAmount)}
+        </p>
+      )}
+
       {paymentDeadline && (
         <p className="mt-3 flex items-start gap-2 rounded-[16px] bg-[#F4E5DE] px-3 py-2 text-xs leading-5 text-[#8C5947]">
           <CalendarClock className="mt-0.5 h-3.5 w-3.5 shrink-0" />

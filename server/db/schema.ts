@@ -184,6 +184,7 @@ export const coreDatabaseTables = [
       "user_id",
       "counselor_id",
       "slot_id",
+      "order_id",
       "channel",
       "status",
       "concern_tags",
@@ -197,7 +198,8 @@ export const coreDatabaseTables = [
   {
     name: "risk_events",
     domain: "risk",
-    purpose: "Open, reviewed and resolved risk events from assessment or intake.",
+    purpose:
+      "Open, reviewed and resolved risk events from assessment or intake.",
     requiredColumns: [
       "id",
       "user_id",
@@ -234,6 +236,7 @@ export const requiredDatabaseIndexes = [
   "idx_assessment_reports_user_id_created_at",
   "idx_counseling_slots_counselor_starts_at",
   "idx_counseling_appointments_user_id_created_at",
+  "idx_counseling_appointments_order_id",
   "idx_risk_events_user_status",
   "idx_audit_logs_resource",
 ] as const;

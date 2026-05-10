@@ -7,11 +7,16 @@ import {
   resetCounselingAppointmentStore,
   updateCounselingAppointmentPayload,
 } from "./counselingApi";
+import {
+  getCourseAccessPayload,
+  resetCourseAccessStore,
+} from "../courses/courseAccessApi";
 
 const fixedNow = new Date("2026-05-10T00:00:00.000Z");
 
 describe("counseling api payloads", () => {
   beforeEach(async () => {
+    await resetCourseAccessStore();
     await resetCounselingAppointmentStore(fixedNow);
   });
 
@@ -53,6 +58,18 @@ describe("counseling api payloads", () => {
     if (payload.body.ok) {
       expect(payload.body.data.appointment.userId).toBe("user_1");
       expect(payload.body.data.appointment.status).toBe("pending_payment");
+      expect(payload.body.data.appointment.orderId).toBe(
+        payload.body.data.order.id
+      );
+      expect(payload.body.data.order).toMatchObject({
+        status: "pending_payment",
+        items: [
+          {
+            type: "counseling_session",
+            targetId: payload.body.data.appointment.id,
+          },
+        ],
+      });
       expect(payload.body.data.appointment.assessmentReportId).toBe(
         "report_quick_state_check_1"
       );
@@ -80,6 +97,9 @@ describe("counseling api payloads", () => {
     if (listPayload.body.ok) {
       expect(listPayload.body.data.appointments).toHaveLength(1);
       expect(listPayload.body.data.appointments[0].slot.available).toBe(false);
+      expect(listPayload.body.data.appointments[0].order?.status).toBe(
+        "pending_payment"
+      );
     }
   });
 
@@ -115,6 +135,10 @@ describe("counseling api payloads", () => {
     if (confirmed.body.ok) {
       expect(confirmed.body.data.appointment.status).toBe("scheduled");
       expect(confirmed.body.data.slot.available).toBe(false);
+      expect(confirmed.body.data.order?.status).toBe("paid");
+      expect(confirmed.body.data.order?.paidAt).toBe(
+        "2026-05-10T00:10:00.000Z"
+      );
     }
 
     const cancelled = await updateCounselingAppointmentPayload(
@@ -128,6 +152,7 @@ describe("counseling api payloads", () => {
     if (cancelled.body.ok) {
       expect(cancelled.body.data.appointment.status).toBe("cancelled");
       expect(cancelled.body.data.slot.available).toBe(true);
+      expect(cancelled.body.data.order?.status).toBe("paid");
     }
 
     const repeated = await updateCounselingAppointmentPayload(
@@ -173,6 +198,7 @@ describe("counseling api payloads", () => {
       "cancelled"
     );
     expect(expired.expiredAppointments[0]?.slot.available).toBe(true);
+    expect(expired.expiredAppointments[0]?.order?.status).toBe("closed");
 
     const listPayload = await listCounselingAppointmentsPayload(
       "user_1",
@@ -184,6 +210,9 @@ describe("counseling api payloads", () => {
         "cancelled"
       );
       expect(listPayload.body.data.appointments[0]?.slot.available).toBe(true);
+      expect(listPayload.body.data.appointments[0]?.order?.status).toBe(
+        "closed"
+      );
     }
 
     const confirmAfterExpiry = await updateCounselingAppointmentPayload(
@@ -193,6 +222,12 @@ describe("counseling api payloads", () => {
       "2026-05-10T08:32:00.000Z"
     );
     expect(confirmAfterExpiry.status).toBe(409);
+
+    const accessPayload = await getCourseAccessPayload("user_1");
+    expect(accessPayload.ok).toBe(true);
+    if (accessPayload.ok) {
+      expect(accessPayload.data.orders[0]?.status).toBe("closed");
+    }
   });
 
   it("creates a risk event for urgent intake", async () => {

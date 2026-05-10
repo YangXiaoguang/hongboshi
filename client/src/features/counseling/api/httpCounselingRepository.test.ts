@@ -27,6 +27,25 @@ const slot = {
   available: true,
 };
 
+const order = {
+  id: "order_counseling_appointment_1",
+  userId: "user_1",
+  status: "pending_payment",
+  items: [
+    {
+      type: "counseling_session",
+      targetId: "appointment_1",
+      title: "林若安 咨询服务",
+      unitPrice: 399,
+      quantity: 1,
+    },
+  ],
+  subtotal: 399,
+  discountAmount: 0,
+  payableAmount: 399,
+  createdAt: "2026-05-10T00:00:00.000Z",
+};
+
 describe("http counseling repository parsing", () => {
   it("parses availability response", () => {
     expect(
@@ -50,6 +69,7 @@ describe("http counseling repository parsing", () => {
       userId: "user_1",
       counselorId: counselor.id,
       slotId: slot.id,
+      orderId: order.id,
       channel: "video",
       status: "pending_payment",
       concernTags: ["emotion"],
@@ -65,6 +85,7 @@ describe("http counseling repository parsing", () => {
           appointment,
           counselor,
           slot,
+          order,
           nextSteps: ["请在 30 分钟内完成支付以保留时段。"],
         },
       })

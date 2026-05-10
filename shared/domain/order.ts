@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { DateTimeLikeSchema, EntityIdSchema, MoneyAmountSchema } from "./common";
+import {
+  DateTimeLikeSchema,
+  EntityIdSchema,
+  MoneyAmountSchema,
+} from "./common";
 
 export const PurchasableTypeSchema = z.enum([
   "course",
@@ -47,6 +51,77 @@ export const PaymentSchema = z.object({
   transactionId: z.string().min(1).optional(),
   paidAt: DateTimeLikeSchema.optional(),
 });
+
+export function createCounselingSessionOrder({
+  appointmentId,
+  userId,
+  counselorName,
+  sessionPrice,
+  now = new Date().toISOString(),
+}: {
+  appointmentId: string;
+  userId: string;
+  counselorName: string;
+  sessionPrice: number;
+  now?: string;
+}): Order {
+  return OrderSchema.parse({
+    id: `order_counseling_${appointmentId}`,
+    userId,
+    status: "pending_payment",
+    items: [
+      {
+        type: "counseling_session",
+        targetId: appointmentId,
+        title: `${counselorName} 咨询服务`,
+        unitPrice: sessionPrice,
+        quantity: 1,
+      },
+    ],
+    subtotal: sessionPrice,
+    discountAmount: 0,
+    payableAmount: sessionPrice,
+    createdAt: now,
+  });
+}
+
+export function markOrderPaid(
+  order: Order,
+  now = new Date().toISOString()
+): Order {
+  const normalized = OrderSchema.parse(order);
+
+  if (normalized.status === "paid") {
+    return normalized;
+  }
+
+  if (!["created", "pending_payment"].includes(normalized.status)) {
+    throw new Error("INVALID_ORDER_PAYMENT_TRANSITION");
+  }
+
+  return OrderSchema.parse({
+    ...normalized,
+    status: "paid",
+    paidAt: now,
+  });
+}
+
+export function closeUnpaidOrder(order: Order): Order {
+  const normalized = OrderSchema.parse(order);
+
+  if (normalized.status === "closed") {
+    return normalized;
+  }
+
+  if (!["created", "pending_payment"].includes(normalized.status)) {
+    throw new Error("INVALID_ORDER_CLOSE_TRANSITION");
+  }
+
+  return OrderSchema.parse({
+    ...normalized,
+    status: "closed",
+  });
+}
 
 export type PurchasableType = z.infer<typeof PurchasableTypeSchema>;
 export type OrderStatus = z.infer<typeof OrderStatusSchema>;

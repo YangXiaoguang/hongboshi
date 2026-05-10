@@ -6,6 +6,7 @@ import {
 } from "./common";
 import { AssessmentRiskLevelSchema } from "./assessment";
 import { RiskEventSchema } from "./risk";
+import { OrderSchema } from "./order";
 
 export const CounselorSpecialtySchema = z.enum([
   "emotion",
@@ -73,6 +74,7 @@ export const CounselingAppointmentSchema = z.object({
   userId: EntityIdSchema,
   counselorId: EntityIdSchema,
   slotId: EntityIdSchema,
+  orderId: EntityIdSchema.optional(),
   channel: CounselingChannelSchema,
   status: AppointmentStatusSchema,
   concernTags: z.array(CounselingConcernTagSchema).default([]),
@@ -103,6 +105,7 @@ export const CounselingAppointmentCreateResultSchema = z.object({
   appointment: CounselingAppointmentSchema,
   counselor: CounselorSchema,
   slot: CounselingSlotSchema,
+  order: OrderSchema,
   riskEvent: RiskEventSchema.optional(),
   nextSteps: z.array(z.string().min(1)).min(1),
 });
@@ -111,6 +114,7 @@ export const CounselingAppointmentRecordSchema = z.object({
   appointment: CounselingAppointmentSchema,
   counselor: CounselorSchema,
   slot: CounselingSlotSchema,
+  order: OrderSchema.optional(),
   riskEvent: RiskEventSchema.optional(),
 });
 
@@ -132,6 +136,7 @@ export const CounselingAppointmentActionResultSchema = z.object({
   appointment: CounselingAppointmentSchema,
   counselor: CounselorSchema,
   slot: CounselingSlotSchema,
+  order: OrderSchema.optional(),
   riskEvent: RiskEventSchema.optional(),
   nextSteps: z.array(z.string().min(1)).min(1),
 });

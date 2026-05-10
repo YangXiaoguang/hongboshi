@@ -6,6 +6,7 @@ import { counselorProfiles } from "../../../shared/data/counselingSeed";
 import {
   ApiResponseSchema,
   applyCounselingAppointmentAction,
+  closeUnpaidOrder,
   COUNSELING_PAYMENT_HOLD_MINUTES,
   CounselingAppointmentActionRequestSchema,
   CounselingAppointmentActionResultSchema,
@@ -13,13 +14,19 @@ import {
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
+  createCounselingSessionOrder,
   expireOverdueCounselingAppointmentPayment,
+  findCourseAccessOrder,
+  markOrderPaid,
   RiskEventSchema,
+  upsertCourseAccessOrder,
+  type CourseAccessState,
   type CounselingAppointment,
   type CounselingAppointmentAction,
   type CounselingAppointmentCreateRequest,
   type CounselingAppointmentRecord,
   type CounselingSlot,
+  type Order,
   type RiskEvent,
 } from "../../../shared/domain";
 import { getLoginSessionFromRequest } from "../auth/authSessionApi";
@@ -27,6 +34,10 @@ import {
   createDefaultCounselingAppointmentStore,
   type CounselingAppointmentStore,
 } from "./counselingAppointmentStore";
+import {
+  loadCourseAccessState,
+  saveCourseAccessState,
+} from "../courses/courseAccessApi";
 import { resetRiskEventStore, saveRiskEvent } from "../risk/riskEventStore";
 
 const CounselingAvailabilityResponseSchema = ApiResponseSchema(
@@ -197,6 +208,58 @@ function transitionConflictMessage(
   return "当前预约状态不支持取消";
 }
 
+async function rollbackCourseAccessState(
+  userId: string,
+  previousState: CourseAccessState | undefined
+) {
+  if (!previousState) return;
+
+  try {
+    await saveCourseAccessState(userId, previousState);
+  } catch (err) {
+    reportStoreError(err);
+  }
+}
+
+async function getAppointmentOrder(appointment: CounselingAppointment) {
+  if (!appointment.orderId) return undefined;
+
+  const accessState = await loadCourseAccessState(appointment.userId);
+  return findCourseAccessOrder(accessState, appointment.orderId);
+}
+
+async function saveAppointmentOrderUpdate({
+  appointment,
+  updateOrder,
+}: {
+  appointment: CounselingAppointment;
+  updateOrder: (order: Order) => Order;
+}) {
+  if (!appointment.orderId) {
+    throw new Error("COUNSELING_APPOINTMENT_ORDER_MISSING");
+  }
+
+  const previousState = await loadCourseAccessState(appointment.userId);
+  const currentOrder = findCourseAccessOrder(
+    previousState,
+    appointment.orderId
+  );
+  if (!currentOrder) {
+    throw new Error("COUNSELING_APPOINTMENT_ORDER_NOT_FOUND");
+  }
+
+  const nextOrder = updateOrder(currentOrder);
+  await saveCourseAccessState(
+    appointment.userId,
+    upsertCourseAccessOrder(previousState, nextOrder)
+  );
+
+  return {
+    previousState,
+    order: nextOrder,
+  };
+}
+
 export async function expireOverdueCounselingPayments(
   now = new Date().toISOString()
 ) {
@@ -226,20 +289,39 @@ export async function expireOverdueCounselingPayments(
       available: true,
     };
 
+    let previousAccessState: CourseAccessState | undefined;
+    let orderUpdated = false;
     try {
+      if (appointment.orderId) {
+        const orderUpdate = await saveAppointmentOrderUpdate({
+          appointment,
+          updateOrder: closeUnpaidOrder,
+        });
+        previousAccessState = orderUpdate.previousState;
+        orderUpdated = true;
+      }
+
       const savedAppointment = await counselingAppointmentStore.saveAppointment(
         expiredAppointment,
         riskEvent
       );
       const savedSlot = await counselingAppointmentStore.saveSlot(releasedSlot);
+      const order = await getAppointmentOrder(savedAppointment);
 
       expiredRecords.push({
         appointment: savedAppointment,
         counselor,
         slot: savedSlot,
+        order,
         riskEvent,
       });
     } catch (err) {
+      if (orderUpdated) {
+        await rollbackCourseAccessState(
+          appointment.userId,
+          previousAccessState
+        );
+      }
       reportStoreError(err);
     }
   }
@@ -339,11 +421,20 @@ export async function createCounselingAppointmentPayload(
     available: false,
   };
 
+  const appointmentId = `appointment_${randomUUID()}`;
+  const order = createCounselingSessionOrder({
+    appointmentId,
+    userId,
+    counselorName: counselor.name,
+    sessionPrice: counselor.sessionPrice,
+    now,
+  });
   const appointment: CounselingAppointment = {
-    id: `appointment_${randomUUID()}`,
+    id: appointmentId,
     userId,
     counselorId: counselor.id,
     slotId: slot.id,
+    orderId: order.id,
     channel: request.channel,
     status: "pending_payment",
     concernTags: request.concernTags,
@@ -354,19 +445,20 @@ export async function createCounselingAppointmentPayload(
   };
   const riskEvent = resolveRiskEvent({ request, userId, now });
   let slotReserved = false;
+  let orderCreated = false;
+  let previousAccessState: CourseAccessState | undefined;
   try {
     if (riskEvent) await saveRiskEvent(riskEvent);
     await counselingAppointmentStore.saveSlot(reservedSlot);
     slotReserved = true;
+    previousAccessState = await loadCourseAccessState(userId);
+    await saveCourseAccessState(
+      userId,
+      upsertCourseAccessOrder(previousAccessState, order)
+    );
+    orderCreated = true;
     await counselingAppointmentStore.saveAppointment(appointment, riskEvent);
   } catch (err) {
-    if (isActiveSlotConflict(err)) {
-      return {
-        status: 409,
-        body: errorPayload("CONFLICT", "该咨询时段已被占用，请选择其他时间"),
-      } as const;
-    }
-
     if (slotReserved) {
       try {
         await counselingAppointmentStore.saveSlot(slot);
@@ -374,6 +466,16 @@ export async function createCounselingAppointmentPayload(
         reportStoreError(releaseErr);
       }
     }
+    if (orderCreated) {
+      await rollbackCourseAccessState(userId, previousAccessState);
+    }
+    if (isActiveSlotConflict(err)) {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "该咨询时段已被占用，请选择其他时间"),
+      } as const;
+    }
+
     reportStoreError(err);
     return {
       status: 500,
@@ -389,6 +491,7 @@ export async function createCounselingAppointmentPayload(
         appointment,
         counselor,
         slot: reservedSlot,
+        order,
         riskEvent,
         nextSteps: buildNextSteps(riskEvent),
       },
@@ -409,6 +512,7 @@ async function appointmentToRecord(
     appointment,
     counselor,
     slot,
+    order: await getAppointmentOrder(appointment),
     riskEvent: await counselingAppointmentStore.getRiskEventForAppointment(
       appointment.id
     ),
@@ -525,7 +629,32 @@ export async function updateCounselingAppointmentPayload(
           available: false,
         };
 
+  let previousAccessState: CourseAccessState | undefined;
+  let orderUpdated = false;
   try {
+    let order: Order | undefined;
+    if (parsed.data.action === "confirm_payment") {
+      const orderUpdate = await saveAppointmentOrderUpdate({
+        appointment,
+        updateOrder: currentOrder => markOrderPaid(currentOrder, now),
+      });
+      previousAccessState = orderUpdate.previousState;
+      orderUpdated = true;
+      order = orderUpdate.order;
+    } else if (
+      parsed.data.action === "cancel" &&
+      appointment.status === "pending_payment" &&
+      appointment.orderId
+    ) {
+      const orderUpdate = await saveAppointmentOrderUpdate({
+        appointment,
+        updateOrder: closeUnpaidOrder,
+      });
+      previousAccessState = orderUpdate.previousState;
+      orderUpdated = true;
+      order = orderUpdate.order;
+    }
+
     const riskEvent =
       await counselingAppointmentStore.getRiskEventForAppointment(
         appointment.id
@@ -535,6 +664,7 @@ export async function updateCounselingAppointmentPayload(
       riskEvent
     );
     const savedSlot = await counselingAppointmentStore.saveSlot(nextSlot);
+    const savedOrder = order ?? (await getAppointmentOrder(savedAppointment));
 
     return {
       status: 200,
@@ -544,12 +674,44 @@ export async function updateCounselingAppointmentPayload(
           appointment: savedAppointment,
           counselor,
           slot: savedSlot,
+          order: savedOrder,
           riskEvent,
           nextSteps: buildActionNextSteps(parsed.data.action),
         },
       }),
     } as const;
   } catch (err) {
+    if (orderUpdated) {
+      await rollbackCourseAccessState(appointment.userId, previousAccessState);
+    }
+    if (
+      err instanceof Error &&
+      (err.message === "COUNSELING_APPOINTMENT_ORDER_MISSING" ||
+        err.message === "COUNSELING_APPOINTMENT_ORDER_NOT_FOUND")
+    ) {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "预约缺少可支付订单，请重新预约"),
+      } as const;
+    }
+    if (
+      err instanceof Error &&
+      err.message === "INVALID_ORDER_PAYMENT_TRANSITION"
+    ) {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "当前订单状态不支持确认支付"),
+      } as const;
+    }
+    if (
+      err instanceof Error &&
+      err.message === "INVALID_ORDER_CLOSE_TRANSITION"
+    ) {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "当前订单状态不支持取消"),
+      } as const;
+    }
     reportStoreError(err);
     return {
       status: 500,

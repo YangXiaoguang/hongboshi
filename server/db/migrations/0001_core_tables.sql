@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS counseling_appointments (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   counselor_id TEXT NOT NULL REFERENCES counselors(id) ON DELETE RESTRICT,
   slot_id TEXT NOT NULL REFERENCES counseling_slots(id) ON DELETE RESTRICT,
+  order_id TEXT REFERENCES orders(id) ON DELETE SET NULL,
   channel TEXT NOT NULL CHECK (channel IN ('video', 'voice', 'offline')),
   status TEXT NOT NULL CHECK (
     status IN (
@@ -223,6 +224,9 @@ CREATE INDEX IF NOT EXISTS idx_counseling_slots_counselor_starts_at
 
 CREATE INDEX IF NOT EXISTS idx_counseling_appointments_user_id_created_at
   ON counseling_appointments(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_counseling_appointments_order_id
+  ON counseling_appointments(order_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_active_counseling_slot
   ON counseling_appointments(slot_id)

@@ -566,6 +566,10 @@ export default function Consulting() {
                   {appointmentResult.counselor.name} ·{" "}
                   {formatSlot(appointmentResult.slot)}
                 </h3>
+                <p className="mt-2 text-sm text-[#4F5B54]">
+                  订单金额 ¥{appointmentResult.order.payableAmount}
+                  ，当前状态为待支付。
+                </p>
                 <div className="mt-5 space-y-3">
                   {appointmentResult.nextSteps.map(step => (
                     <div

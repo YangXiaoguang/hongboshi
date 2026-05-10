@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   AssessmentReportSchema,
+  closeUnpaidOrder,
   CounselingAppointmentSchema,
   CourseListQuerySchema,
   CourseSchema,
+  createCounselingSessionOrder,
+  createEmptyCourseAccessState,
+  findCourseAccessOrder,
   LoginSessionSchema,
+  markOrderPaid,
+  upsertCourseAccessOrder,
   UserProfileSchema,
   userCan,
 } from "./index";
@@ -114,5 +120,31 @@ describe("domain contracts", () => {
     });
 
     expect(session.consents[0].type).toBe("terms");
+  });
+
+  it("creates and updates counseling session orders", () => {
+    const order = createCounselingSessionOrder({
+      appointmentId: "appointment_1",
+      userId: "user_1",
+      counselorName: "林若安",
+      sessionPrice: 399,
+      now: "2026-05-10T08:00:00.000Z",
+    });
+    const state = upsertCourseAccessOrder(
+      createEmptyCourseAccessState(),
+      order
+    );
+
+    expect(findCourseAccessOrder(state, order.id)).toMatchObject({
+      status: "pending_payment",
+      items: [{ type: "counseling_session", targetId: "appointment_1" }],
+    });
+    expect(markOrderPaid(order, "2026-05-10T08:10:00.000Z")).toMatchObject({
+      status: "paid",
+      paidAt: "2026-05-10T08:10:00.000Z",
+    });
+    expect(closeUnpaidOrder(order)).toMatchObject({
+      status: "closed",
+    });
   });
 });

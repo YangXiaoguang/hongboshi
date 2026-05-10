@@ -118,6 +118,13 @@ export function loadCourseAccessState(userId = LOCAL_COURSE_ACCESS_USER_ID) {
   return Promise.resolve(courseAccessStore.load(userId));
 }
 
+export function saveCourseAccessState(
+  userId: string,
+  state: CourseAccessState
+) {
+  return Promise.resolve(courseAccessStore.save(userId, state));
+}
+
 export async function purchaseCoursePayload(
   courseId: number,
   userId = LOCAL_COURSE_ACCESS_USER_ID

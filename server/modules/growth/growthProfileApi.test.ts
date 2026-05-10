@@ -69,11 +69,14 @@ describe("growth profile api payloads", () => {
 
     expect(payload.body.data.summary).toMatchObject({
       ownedCourseCount: 1,
-      orderCount: 1,
+      orderCount: 2,
       counselingAppointmentCount: 1,
       upcomingCounselingCount: 1,
       latestAssessmentRiskLevel: "high",
     });
+    expect(payload.body.data.courseAccess.orders[0]?.items[0]?.type).toBe(
+      "counseling_session"
+    );
     expect(payload.body.data.courseAccess.ownedCourseIds).toContain(16);
     expect(payload.body.data.latestAssessment?.report.userId).toBe(userId);
     expect(payload.body.data.counseling.appointments).toHaveLength(1);

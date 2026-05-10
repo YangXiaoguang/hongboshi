@@ -26,7 +26,7 @@
 - 领域契约仍以 `shared/domain` 为准，数据库字段不能绕过 Zod schema 暴露给前端。
 - 金额统一以 `*_cents` 整数存储，避免浮点金额误差；API 层再转换为领域模型里的金额数值。
 - 测评分数、推荐结果这类强业务结构先用 `JSONB` 存储，保持与报告生成引擎同步；当运营查询变复杂后再拆维度表。
-- 咨询时段和预约单分表，`uniq_active_counseling_slot` 防止同一时段被多个有效预约占用。
+- 咨询时段和预约单分表，`uniq_active_counseling_slot` 防止同一时段被多个有效预约占用；咨询预约通过 `order_id` 关联 `orders`，用于支付确认、超时关闭和后续退款流转。
 - 风险事件独立建表，测评报告和咨询预约通过 `risk_event_id` 关联，咨询预约同时保留 `assessment_report_id`，方便咨询师在服务前回看用户授权带入的测评上下文。
 - 审计日志只追加，不作为业务状态来源。
 
@@ -54,7 +54,7 @@
 
 `server/modules/assessments/postgresAssessmentResultStore.ts` 已实现 `assessment_reports` 表的保存、最新报告读取、按用户读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_ASSESSMENT_RESULT_STORE=postgres` 时，测评报告会写入 PostgreSQL。
 
-`server/modules/counseling/postgresCounselingAppointmentStore.ts` 已实现咨询师 seed、咨询时段 seed、预约保存、按用户读取和风险事件关联读取能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COUNSELING_APPOINTMENT_STORE=postgres` 时，咨询预约会写入 PostgreSQL。
+`server/modules/counseling/postgresCounselingAppointmentStore.ts` 已实现咨询师 seed、咨询时段 seed、预约保存、按用户读取、订单关联和风险事件关联读取能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COUNSELING_APPOINTMENT_STORE=postgres` 时，咨询预约会写入 PostgreSQL。
 
 `server/modules/courses/postgresCourseAccessStore.ts` 已实现课程会员、课程授权、订单和订单明细的保存与读取能力。开发期默认仍可使用 JSON Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 时，课程权益会写入 PostgreSQL。
 
