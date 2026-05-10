@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   AssessmentReportSchema,
+  applyPaymentSucceededWebhookToOrder,
   closeUnpaidOrder,
   CounselingAppointmentSchema,
   CourseListQuerySchema,
   CourseSchema,
   createCounselingSessionOrder,
   createEmptyCourseAccessState,
+  createSimulatedPaymentSucceededEvent,
   findCourseAccessOrder,
   LoginSessionSchema,
   markOrderPaid,
@@ -145,6 +147,32 @@ describe("domain contracts", () => {
     });
     expect(closeUnpaidOrder(order)).toMatchObject({
       status: "closed",
+    });
+  });
+
+  it("applies a payment succeeded webhook to an order", () => {
+    const order = createCounselingSessionOrder({
+      appointmentId: "appointment_1",
+      userId: "user_1",
+      counselorName: "林若安",
+      sessionPrice: 399,
+      now: "2026-05-10T08:00:00.000Z",
+    });
+    const event = createSimulatedPaymentSucceededEvent({
+      order,
+      now: "2026-05-10T08:10:00.000Z",
+    });
+
+    expect(applyPaymentSucceededWebhookToOrder(order, event)).toMatchObject({
+      payment: {
+        orderId: order.id,
+        amount: 399,
+        paidAt: "2026-05-10T08:10:00.000Z",
+      },
+      order: {
+        status: "paid",
+        paidAt: "2026-05-10T08:10:00.000Z",
+      },
     });
   });
 });

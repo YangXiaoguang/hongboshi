@@ -19,6 +19,9 @@ export interface CounselingAppointmentStore {
   getAppointment(
     appointmentId: string
   ): MaybePromise<CounselingAppointment | undefined>;
+  getAppointmentByOrderId(
+    orderId: string
+  ): MaybePromise<CounselingAppointment | undefined>;
   saveAppointment(
     appointment: CounselingAppointment,
     riskEvent?: RiskEvent
@@ -73,6 +76,13 @@ export class InMemoryCounselingAppointmentStore implements CounselingAppointment
 
   getAppointment(appointmentId: string): CounselingAppointment | undefined {
     const appointment = this.appointments.get(appointmentId);
+    return appointment ? cloneAppointment(appointment) : undefined;
+  }
+
+  getAppointmentByOrderId(orderId: string): CounselingAppointment | undefined {
+    const appointment = Array.from(this.appointments.values()).find(
+      item => item.orderId === orderId
+    );
     return appointment ? cloneAppointment(appointment) : undefined;
   }
 

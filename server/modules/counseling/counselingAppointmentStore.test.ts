@@ -23,6 +23,7 @@ describe("counseling appointment store", () => {
         userId: "user_1",
         counselorId: reservedSlot.counselorId,
         slotId: reservedSlot.id,
+        orderId: "order_counseling_appointment_1",
         channel: reservedSlot.channel,
         status: "pending_payment",
         concernTags: ["emotion"],
@@ -49,6 +50,11 @@ describe("counseling appointment store", () => {
     expect(store.getAppointment("appointment_1")?.status).toBe(
       "pending_payment"
     );
+    expect(
+      store.getAppointmentByOrderId("order_counseling_appointment_1")
+    ).toMatchObject({
+      id: "appointment_1",
+    });
     expect(store.listPendingPaymentAppointments()).toHaveLength(1);
     expect(store.getRiskEventForAppointment("appointment_1")?.riskLevel).toBe(
       "medium"

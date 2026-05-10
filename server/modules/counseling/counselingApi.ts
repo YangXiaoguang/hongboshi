@@ -2,10 +2,12 @@ import { randomUUID } from "crypto";
 import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
+import { z } from "zod";
 import { counselorProfiles } from "../../../shared/data/counselingSeed";
 import {
   ApiResponseSchema,
   applyCounselingAppointmentAction,
+  applyPaymentSucceededWebhookToOrder,
   closeUnpaidOrder,
   COUNSELING_PAYMENT_HOLD_MINUTES,
   CounselingAppointmentActionRequestSchema,
@@ -15,9 +17,11 @@ import {
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
   createCounselingSessionOrder,
+  createSimulatedPaymentSucceededEvent,
   expireOverdueCounselingAppointmentPayment,
   findCourseAccessOrder,
-  markOrderPaid,
+  PaymentSchema,
+  PaymentWebhookEventSchema,
   RiskEventSchema,
   upsertCourseAccessOrder,
   type CourseAccessState,
@@ -27,6 +31,8 @@ import {
   type CounselingAppointmentRecord,
   type CounselingSlot,
   type Order,
+  type Payment,
+  type PaymentWebhookEvent,
   type RiskEvent,
 } from "../../../shared/domain";
 import { getLoginSessionFromRequest } from "../auth/authSessionApi";
@@ -51,6 +57,19 @@ const CounselingAppointmentListResponseSchema = ApiResponseSchema(
 );
 const CounselingAppointmentActionResponseSchema = ApiResponseSchema(
   CounselingAppointmentActionResultSchema
+);
+export const CounselingPaymentWebhookResultSchema = z.object({
+  event: PaymentWebhookEventSchema,
+  payment: PaymentSchema,
+  appointment: CounselingAppointmentActionResultSchema.shape.appointment,
+  counselor: CounselingAppointmentActionResultSchema.shape.counselor,
+  slot: CounselingAppointmentActionResultSchema.shape.slot,
+  order: CounselingAppointmentActionResultSchema.shape.order,
+  riskEvent: CounselingAppointmentActionResultSchema.shape.riskEvent,
+  nextSteps: z.array(z.string().min(1)).min(1),
+});
+const CounselingPaymentWebhookResponseSchema = ApiResponseSchema(
+  CounselingPaymentWebhookResultSchema
 );
 
 let counselingAppointmentStore = createDefaultCounselingAppointmentStore();
@@ -258,6 +277,165 @@ async function saveAppointmentOrderUpdate({
     previousState,
     order: nextOrder,
   };
+}
+
+function paymentWebhookConflictMessage(err: unknown) {
+  if (!(err instanceof Error)) return "支付回调暂时无法处理";
+
+  if (err.message === "PAYMENT_WEBHOOK_ORDER_MISMATCH") {
+    return "支付回调订单不匹配";
+  }
+  if (err.message === "PAYMENT_WEBHOOK_AMOUNT_MISMATCH") {
+    return "支付金额与订单应付金额不一致";
+  }
+  if (err.message === "INVALID_ORDER_PAYMENT_TRANSITION") {
+    return "当前订单状态不支持确认支付";
+  }
+  if (err.message === "INVALID_COUNSELING_APPOINTMENT_TRANSITION") {
+    return "当前预约状态不支持确认支付";
+  }
+
+  return "支付回调暂时无法处理";
+}
+
+export async function processCounselingPaymentWebhookEvent(
+  event: PaymentWebhookEvent,
+  expectedUserId?: string
+) {
+  const paymentEvent = PaymentWebhookEventSchema.parse(event);
+  await expireOverdueCounselingPayments(paymentEvent.occurredAt);
+
+  const appointment = await counselingAppointmentStore.getAppointmentByOrderId(
+    paymentEvent.orderId
+  );
+  if (
+    !appointment ||
+    (expectedUserId && appointment.userId !== expectedUserId)
+  ) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "支付回调关联的预约不存在"),
+    } as const;
+  }
+
+  const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
+  const counselor = counselorProfiles.find(
+    item => item.id === appointment.counselorId
+  );
+  if (!slot || !counselor) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "支付回调关联资源不存在"),
+    } as const;
+  }
+
+  const previousAccessState = await loadCourseAccessState(appointment.userId);
+  const currentOrder = findCourseAccessOrder(
+    previousAccessState,
+    paymentEvent.orderId
+  );
+  if (!currentOrder) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "支付回调关联的订单不存在"),
+    } as const;
+  }
+
+  let webhookResult: { payment: Payment; order: Order };
+  try {
+    webhookResult = applyPaymentSucceededWebhookToOrder(
+      currentOrder,
+      paymentEvent
+    );
+  } catch (err) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", paymentWebhookConflictMessage(err)),
+    } as const;
+  }
+
+  const riskEvent = await counselingAppointmentStore.getRiskEventForAppointment(
+    appointment.id
+  );
+
+  if (appointment.status === "scheduled" && currentOrder.status === "paid") {
+    return {
+      status: 200,
+      body: CounselingPaymentWebhookResponseSchema.parse({
+        ok: true,
+        data: {
+          event: paymentEvent,
+          payment: webhookResult.payment,
+          appointment,
+          counselor,
+          slot,
+          order: currentOrder,
+          riskEvent,
+          nextSteps: buildActionNextSteps("confirm_payment"),
+        },
+      }),
+    } as const;
+  }
+
+  let nextAppointment: CounselingAppointment;
+  try {
+    nextAppointment = applyCounselingAppointmentAction({
+      appointment,
+      action: "confirm_payment",
+      now: paymentEvent.occurredAt,
+    });
+  } catch (err) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", paymentWebhookConflictMessage(err)),
+    } as const;
+  }
+
+  const nextSlot: CounselingSlot = {
+    ...slot,
+    available: false,
+  };
+
+  let orderUpdated = false;
+  try {
+    await saveCourseAccessState(
+      appointment.userId,
+      upsertCourseAccessOrder(previousAccessState, webhookResult.order)
+    );
+    orderUpdated = true;
+
+    const savedAppointment = await counselingAppointmentStore.saveAppointment(
+      nextAppointment,
+      riskEvent
+    );
+    const savedSlot = await counselingAppointmentStore.saveSlot(nextSlot);
+
+    return {
+      status: 200,
+      body: CounselingPaymentWebhookResponseSchema.parse({
+        ok: true,
+        data: {
+          event: paymentEvent,
+          payment: webhookResult.payment,
+          appointment: savedAppointment,
+          counselor,
+          slot: savedSlot,
+          order: webhookResult.order,
+          riskEvent,
+          nextSteps: buildActionNextSteps("confirm_payment"),
+        },
+      }),
+    } as const;
+  } catch (err) {
+    if (orderUpdated) {
+      await rollbackCourseAccessState(appointment.userId, previousAccessState);
+    }
+    reportStoreError(err);
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "支付回调处理失败，请稍后重试"),
+    } as const;
+  }
 }
 
 export async function expireOverdueCounselingPayments(
@@ -601,6 +779,45 @@ export async function updateCounselingAppointmentPayload(
     } as const;
   }
 
+  if (parsed.data.action === "confirm_payment") {
+    const order = await getAppointmentOrder(appointment);
+    if (!order) {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "预约缺少可支付订单，请重新预约"),
+      } as const;
+    }
+
+    const webhookPayload = await processCounselingPaymentWebhookEvent(
+      createSimulatedPaymentSucceededEvent({
+        order,
+        now,
+        transactionId: `manual_${appointment.id}_${Date.parse(now)}`,
+      }),
+      userId
+    );
+
+    if (!("data" in webhookPayload.body)) {
+      return webhookPayload;
+    }
+    const webhookData = webhookPayload.body.data;
+
+    return {
+      status: webhookPayload.status,
+      body: CounselingAppointmentActionResponseSchema.parse({
+        ok: true,
+        data: {
+          appointment: webhookData.appointment,
+          counselor: webhookData.counselor,
+          slot: webhookData.slot,
+          order: webhookData.order,
+          riskEvent: webhookData.riskEvent,
+          nextSteps: webhookData.nextSteps,
+        },
+      }),
+    } as const;
+  }
+
   let nextAppointment: CounselingAppointment;
   try {
     nextAppointment = applyCounselingAppointmentAction({
@@ -633,15 +850,7 @@ export async function updateCounselingAppointmentPayload(
   let orderUpdated = false;
   try {
     let order: Order | undefined;
-    if (parsed.data.action === "confirm_payment") {
-      const orderUpdate = await saveAppointmentOrderUpdate({
-        appointment,
-        updateOrder: currentOrder => markOrderPaid(currentOrder, now),
-      });
-      previousAccessState = orderUpdate.previousState;
-      orderUpdated = true;
-      order = orderUpdate.order;
-    } else if (
+    if (
       parsed.data.action === "cancel" &&
       appointment.status === "pending_payment" &&
       appointment.orderId

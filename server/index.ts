@@ -9,6 +9,7 @@ import { registerCounselingApi } from "./modules/counseling/counselingApi";
 import { registerCourseAccessApi } from "./modules/courses/courseAccessApi";
 import { registerCourseApi } from "./modules/courses/courseApi";
 import { registerGrowthProfileApi } from "./modules/growth/growthProfileApi";
+import { registerPaymentApi } from "./modules/payments/paymentApi";
 import { assertPersistenceConfig } from "./db/runtimeConfig";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,6 +28,7 @@ async function startServer() {
   registerCourseAccessApi(app);
   registerCourseApi(app);
   registerGrowthProfileApi(app);
+  registerPaymentApi(app);
 
   // Serve static files from dist/public in production
   const staticPath =

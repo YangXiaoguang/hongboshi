@@ -52,6 +52,22 @@ export const PaymentSchema = z.object({
   paidAt: DateTimeLikeSchema.optional(),
 });
 
+export const PaymentWebhookEventSchema = z.object({
+  id: EntityIdSchema,
+  type: z.literal("payment.succeeded"),
+  orderId: EntityIdSchema,
+  channel: PaymentChannelSchema,
+  amount: MoneyAmountSchema,
+  transactionId: z.string().min(1),
+  occurredAt: DateTimeLikeSchema,
+});
+
+export const PaymentWebhookProcessingResultSchema = z.object({
+  event: PaymentWebhookEventSchema,
+  payment: PaymentSchema,
+  order: OrderSchema,
+});
+
 export function createCounselingSessionOrder({
   appointmentId,
   userId,
@@ -85,6 +101,31 @@ export function createCounselingSessionOrder({
   });
 }
 
+export function createSimulatedPaymentSucceededEvent({
+  order,
+  channel = "manual",
+  transactionId,
+  now = new Date().toISOString(),
+}: {
+  order: Order;
+  channel?: PaymentChannel;
+  transactionId?: string;
+  now?: string;
+}): PaymentWebhookEvent {
+  const normalized = OrderSchema.parse(order);
+
+  return PaymentWebhookEventSchema.parse({
+    id: `evt_payment_${normalized.id}_${Date.parse(now)}`,
+    type: "payment.succeeded",
+    orderId: normalized.id,
+    channel,
+    amount: normalized.payableAmount,
+    transactionId:
+      transactionId ?? `manual_${normalized.id}_${Date.parse(now)}`,
+    occurredAt: now,
+  });
+}
+
 export function markOrderPaid(
   order: Order,
   now = new Date().toISOString()
@@ -103,6 +144,37 @@ export function markOrderPaid(
     ...normalized,
     status: "paid",
     paidAt: now,
+  });
+}
+
+export function applyPaymentSucceededWebhookToOrder(
+  order: Order,
+  event: PaymentWebhookEvent
+) {
+  const normalizedOrder = OrderSchema.parse(order);
+  const normalizedEvent = PaymentWebhookEventSchema.parse(event);
+
+  if (normalizedOrder.id !== normalizedEvent.orderId) {
+    throw new Error("PAYMENT_WEBHOOK_ORDER_MISMATCH");
+  }
+
+  if (normalizedOrder.payableAmount !== normalizedEvent.amount) {
+    throw new Error("PAYMENT_WEBHOOK_AMOUNT_MISMATCH");
+  }
+
+  const payment = PaymentSchema.parse({
+    id: `payment_${normalizedEvent.id}`,
+    orderId: normalizedEvent.orderId,
+    channel: normalizedEvent.channel,
+    amount: normalizedEvent.amount,
+    transactionId: normalizedEvent.transactionId,
+    paidAt: normalizedEvent.occurredAt,
+  });
+
+  return PaymentWebhookProcessingResultSchema.parse({
+    event: normalizedEvent,
+    payment,
+    order: markOrderPaid(normalizedOrder, normalizedEvent.occurredAt),
   });
 }
 
@@ -129,3 +201,7 @@ export type PaymentChannel = z.infer<typeof PaymentChannelSchema>;
 export type OrderItem = z.infer<typeof OrderItemSchema>;
 export type Order = z.infer<typeof OrderSchema>;
 export type Payment = z.infer<typeof PaymentSchema>;
+export type PaymentWebhookEvent = z.infer<typeof PaymentWebhookEventSchema>;
+export type PaymentWebhookProcessingResult = z.infer<
+  typeof PaymentWebhookProcessingResultSchema
+>;
