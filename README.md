@@ -46,6 +46,8 @@ pnpm build    # 构建前端与生产 server
 pnpm start    # 运行生产构建产物
 pnpm preview  # 预览前端构建产物
 pnpm run ci   # CI 本地等价校验
+pnpm db:doctor   # 检查持久化配置与 PostgreSQL 连接
+pnpm db:migrate  # 执行 server/db/migrations 下的 SQL 迁移
 ```
 
 ## 目录结构
@@ -74,6 +76,7 @@ docs/
 
 - [产品工程路线](./docs/product-engineering-roadmap.md)
 - [领域契约说明](./docs/domain-contracts.md)
+- [数据库 Schema 准备说明](./docs/database-schema.md)
 - [课程中心 Feature 架构](./docs/course-feature-architecture.md)
 
 ## 环境变量
@@ -94,6 +97,17 @@ docs/
 - `HONGBOSHI_RISK_EVENT_STORE`
 - `HONGBOSHI_ASSESSMENT_RESULT_STORE`
 - `HONGBOSHI_COUNSELING_APPOINTMENT_STORE`
+
+切换 PostgreSQL 时，先配置 `DATABASE_URL`，再按需将对应 Store 变量设置为 `postgres`。运行：
+
+```bash
+pnpm db:doctor
+pnpm db:migrate
+```
+
+`db:doctor` 会检查 Store 配置是否合法，并在配置了 `DATABASE_URL` 时执行一次 PostgreSQL 连通性检查；`db:migrate` 会记录已执行的 SQL 迁移，重复运行会跳过已应用项。
+
+服务端启动和数据库脚本会优先读取 `.env.local`，再读取 `.env`；已存在的系统环境变量不会被文件覆盖。
 
 ## 当前业务状态
 

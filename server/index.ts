@@ -1,3 +1,4 @@
+import "./db/loadEnv";
 import express from "express";
 import { createServer } from "http";
 import path from "path";
@@ -8,11 +9,14 @@ import { registerCounselingApi } from "./modules/counseling/counselingApi";
 import { registerCourseAccessApi } from "./modules/courses/courseAccessApi";
 import { registerCourseApi } from "./modules/courses/courseApi";
 import { registerGrowthProfileApi } from "./modules/growth/growthProfileApi";
+import { assertPersistenceConfig } from "./db/runtimeConfig";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
+  assertPersistenceConfig();
+
   const app = express();
   const server = createServer(app);
 

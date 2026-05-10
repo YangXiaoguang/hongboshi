@@ -11,6 +11,8 @@
     "check": "tsc --noEmit",
     "test": "vitest run --root . --passWithNoTests",
     "ci": "pnpm check && pnpm test && pnpm build",
+    "db:migrate": "tsx server/db/migrate.ts",
+    "db:doctor": "tsx server/db/doctor.ts",
     "format": "prettier --write ."
   },
   "dependencies": {

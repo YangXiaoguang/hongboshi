@@ -6,7 +6,20 @@
 
 - `server/db/schema.ts`：核心表契约，供测试和后续 Store 实现引用。
 - `server/db/migrations/0001_core_tables.sql`：PostgreSQL 初始迁移草案。
+- `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
+- `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
+
+## 初始化命令
+
+1. 配置 `DATABASE_URL`。
+2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE` 设置为 `postgres`。
+3. 运行 `pnpm db:doctor` 检查 Store 配置与数据库连接。
+4. 运行 `pnpm db:migrate` 应用 `server/db/migrations/*.sql`。
+
+迁移记录保存在 `hongboshi_schema_migrations`，因此 `pnpm db:migrate` 可以重复执行。当前 migration 文件本身也使用 `CREATE TABLE IF NOT EXISTS` 与 `CREATE INDEX IF NOT EXISTS`，方便开发期反复初始化。
+
+服务端启动、`db:doctor` 和 `db:migrate` 都会先加载 `.env.local`，再加载 `.env`；如果同名系统环境变量已经存在，文件值不会覆盖它。
 
 ## 设计原则
 
