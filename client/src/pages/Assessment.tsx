@@ -17,6 +17,7 @@ import {
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
 import {
+  saveLatestAssessmentResult,
   useQuickAssessment,
   type AssessmentDimension,
   type AssessmentQuestion,
@@ -106,9 +107,11 @@ function StatusPill({ icon, label }: { icon: ElementType; label: string }) {
 function RecommendationAction({
   recommendation,
   onCourseOpen,
+  onCounselingOpen,
 }: {
   recommendation: Recommendation;
   onCourseOpen: (courseId: string) => void;
+  onCounselingOpen: () => void;
 }) {
   if (recommendation.target === "course" && recommendation.targetId) {
     return (
@@ -124,8 +127,12 @@ function RecommendationAction({
 
   if (recommendation.target === "counseling") {
     return (
-      <button className="mt-4 inline-flex h-10 items-center justify-center rounded-full border border-[#D8CEC0] px-4 text-xs font-semibold text-[#4F5B54] transition hover:bg-[#F4EFE6]">
-        咨询入口筹备中
+      <button
+        onClick={onCounselingOpen}
+        className="mt-4 inline-flex h-10 items-center justify-center rounded-full bg-[#243B35] px-4 text-xs font-semibold text-white transition hover:bg-[#315047]"
+      >
+        预约咨询
+        <ArrowRight className="ml-2 h-3.5 w-3.5" />
       </button>
     );
   }
@@ -217,7 +224,9 @@ export default function Assessment() {
   };
 
   const handleSubmit = () => {
-    void submit();
+    void submit().then(nextResult => {
+      if (nextResult) saveLatestAssessmentResult(nextResult);
+    });
   };
 
   const handleReset = () => {
@@ -462,6 +471,9 @@ export default function Assessment() {
                           recommendation={recommendation}
                           onCourseOpen={courseId =>
                             navigate(`/courses/${courseId}`)
+                          }
+                          onCounselingOpen={() =>
+                            navigate("/consulting?source=assessment")
                           }
                         />
                       </div>

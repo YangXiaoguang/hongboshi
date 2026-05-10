@@ -46,13 +46,18 @@ export default function AppHeader() {
 
   const isNavActive = (label: string) => {
     if (label === "首页") return location === "/";
+    if (label === "咨询服务") return location.startsWith("/consulting");
     if (label === "心理课程") return location.startsWith("/courses");
     if (label === "成长测评") return location.startsWith("/assessment");
     return false;
   };
 
   const handleNavClick = (item: (typeof navItems)[number]) => {
-    if (item.href === "/" || item.href === "/assessment") {
+    if (
+      item.href === "/" ||
+      item.href === "/assessment" ||
+      item.href === "/consulting"
+    ) {
       navigate(item.href);
       return;
     }

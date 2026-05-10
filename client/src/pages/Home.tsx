@@ -224,12 +224,7 @@ export default function Home() {
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
                 <button
-                  onClick={() =>
-                    toast("预约咨询", {
-                      description:
-                        "咨询师匹配流程即将上线，可先浏览适合的主题课程。",
-                    })
-                  }
+                  onClick={() => navigate("/consulting")}
                   className="inline-flex h-12 items-center justify-center rounded-full bg-[#DDE8D9] px-6 text-sm font-semibold text-[#20362F] transition hover:bg-white"
                 >
                   预约咨询
@@ -388,6 +383,10 @@ export default function Home() {
                     </p>
                     <button
                       onClick={() => {
+                        if (path.action === "预约咨询") {
+                          navigate("/consulting");
+                          return;
+                        }
                         if (path.action === "开始评估") {
                           navigate("/assessment");
                           return;

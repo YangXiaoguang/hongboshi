@@ -76,7 +76,7 @@ describe("domain contracts", () => {
         slotId: "slot_1",
         channel: "video",
         status: "scheduled",
-        concernTags: ["情绪低落", "睡眠焦虑"],
+        concernTags: ["emotion", "sleep"],
         createdAt: "2026-05-09T10:00:00+08:00",
         updatedAt: "2026-05-09T10:00:00+08:00",
       }).success

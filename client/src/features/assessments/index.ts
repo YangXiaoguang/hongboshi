@@ -1,4 +1,9 @@
 export { httpAssessmentRepository } from "./api/httpAssessmentRepository";
+export {
+  getTopAssessmentDimensions,
+  loadLatestAssessmentResult,
+  saveLatestAssessmentResult,
+} from "./api/localAssessmentSnapshot";
 export { useQuickAssessment } from "./hooks/useQuickAssessment";
 export type {
   AssessmentAnswer,

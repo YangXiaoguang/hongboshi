@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import LoginModal from "./components/LoginModal";
 import Assessment from "./pages/Assessment";
+import Consulting from "./pages/Consulting";
 import CourseDetail from "./pages/CourseDetail";
 import Home from "./pages/Home";
 import MyCourses from "./pages/MyCourses";
@@ -16,6 +17,7 @@ function Router() {
     <Switch>
       <Route path={"/"} component={Home} />
       <Route path={"/courses/:courseId"} component={CourseDetail} />
+      <Route path={"/consulting"} component={Consulting} />
       <Route path={"/assessment"} component={Assessment} />
       <Route path={"/me/courses"} component={MyCourses} />
       <Route path={"/404"} component={NotFound} />

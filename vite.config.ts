@@ -6,6 +6,7 @@ import path from "node:path";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import { handleAssessmentApiRequest } from "./server/modules/assessments/assessmentApi";
 import { handleAuthApiRequest } from "./server/modules/auth/authSessionApi";
+import { handleCounselingApiRequest } from "./server/modules/counseling/counselingApi";
 import { handleCourseAccessApiRequest } from "./server/modules/courses/courseAccessApi";
 import { handleCourseApiRequest } from "./server/modules/courses/courseApi";
 //import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
@@ -105,6 +106,7 @@ function vitePluginManusDebugCollector(): Plugin {
       server.middlewares.use((req, res, next) => {
         if (handleAuthApiRequest(req, res)) return;
         if (handleAssessmentApiRequest(req, res)) return;
+        if (handleCounselingApiRequest(req, res)) return;
         if (handleCourseAccessApiRequest(req, res)) return;
         if (handleCourseApiRequest(req, res)) return;
         next();

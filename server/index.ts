@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { registerAssessmentApi } from "./modules/assessments/assessmentApi";
 import { registerAuthApi } from "./modules/auth/authSessionApi";
+import { registerCounselingApi } from "./modules/counseling/counselingApi";
 import { registerCourseAccessApi } from "./modules/courses/courseAccessApi";
 import { registerCourseApi } from "./modules/courses/courseApi";
 
@@ -17,6 +18,7 @@ async function startServer() {
   app.use(express.json());
   registerAuthApi(app);
   registerAssessmentApi(app);
+  registerCounselingApi(app);
   registerCourseAccessApi(app);
   registerCourseApi(app);
 
