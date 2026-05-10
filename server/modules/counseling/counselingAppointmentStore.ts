@@ -16,6 +16,9 @@ export interface CounselingAppointmentStore {
   listSlots(now?: Date): MaybePromise<CounselingSlot[]>;
   getSlot(slotId: string): MaybePromise<CounselingSlot | undefined>;
   saveSlot(slot: CounselingSlot): MaybePromise<CounselingSlot>;
+  getAppointment(
+    appointmentId: string
+  ): MaybePromise<CounselingAppointment | undefined>;
   saveAppointment(
     appointment: CounselingAppointment,
     riskEvent?: RiskEvent
@@ -65,6 +68,11 @@ export class InMemoryCounselingAppointmentStore implements CounselingAppointment
     const normalized = CounselingSlotSchema.parse(slot);
     this.slots.set(normalized.id, cloneSlot(normalized));
     return cloneSlot(normalized);
+  }
+
+  getAppointment(appointmentId: string): CounselingAppointment | undefined {
+    const appointment = this.appointments.get(appointmentId);
+    return appointment ? cloneAppointment(appointment) : undefined;
   }
 
   saveAppointment(

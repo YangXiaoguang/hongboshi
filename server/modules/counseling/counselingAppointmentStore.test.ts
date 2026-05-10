@@ -46,6 +46,9 @@ describe("counseling appointment store", () => {
     expect(store.listAppointmentsByUser("user_1")[0]?.concernTags).toEqual([
       "emotion",
     ]);
+    expect(store.getAppointment("appointment_1")?.status).toBe(
+      "pending_payment"
+    );
     expect(store.getRiskEventForAppointment("appointment_1")?.riskLevel).toBe(
       "medium"
     );

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseCounselingAppointmentActionResponse,
   parseCounselingAppointmentCreateResponse,
   parseCounselingAppointmentListResponse,
   parseCounselingAvailabilityResponse,
@@ -96,6 +97,35 @@ describe("http counseling repository parsing", () => {
         },
       }).appointments
     ).toHaveLength(1);
+  });
+
+  it("parses appointment action response", () => {
+    const appointment = {
+      id: "appointment_1",
+      userId: "user_1",
+      counselorId: counselor.id,
+      slotId: slot.id,
+      channel: "video",
+      status: "scheduled",
+      concernTags: ["emotion"],
+      createdAt: "2026-05-10T00:00:00.000Z",
+      updatedAt: "2026-05-10T00:10:00.000Z",
+    };
+
+    expect(
+      parseCounselingAppointmentActionResponse({
+        ok: true,
+        data: {
+          appointment,
+          counselor,
+          slot: {
+            ...slot,
+            available: false,
+          },
+          nextSteps: ["预约已确认。"],
+        },
+      }).appointment.status
+    ).toBe("scheduled");
   });
 
   it("throws on error response", () => {

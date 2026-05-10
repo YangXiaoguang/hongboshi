@@ -214,6 +214,35 @@ export class PostgresCounselingAppointmentStore {
     return counselingSlotRowToDomain(row);
   }
 
+  async getAppointment(
+    appointmentId: string
+  ): Promise<CounselingAppointment | undefined> {
+    const result = await this.db.query<CounselingAppointmentRow>(
+      `
+        SELECT
+          id,
+          user_id,
+          counselor_id,
+          slot_id,
+          channel,
+          status,
+          concern_tags,
+          note_for_counselor,
+          assessment_report_id,
+          risk_event_id,
+          created_at,
+          updated_at
+        FROM counseling_appointments
+        WHERE id = $1
+        LIMIT 1
+      `,
+      [appointmentId]
+    );
+
+    const row = result.rows[0];
+    return row ? counselingAppointmentRowToDomain(row) : undefined;
+  }
+
   async saveAppointment(
     appointment: CounselingAppointment,
     riskEvent?: RiskEvent

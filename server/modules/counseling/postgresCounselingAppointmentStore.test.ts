@@ -193,6 +193,36 @@ describe("postgres counseling appointment store", () => {
     expect(db.queries[1]?.text).toContain("ORDER BY created_at DESC");
   });
 
+  it("reads a single appointment by id", async () => {
+    const db = new FakeCounselingExecutor({
+      appointments: [
+        {
+          id: "appointment_1",
+          user_id: "user_1",
+          counselor_id: "counselor_lin",
+          slot_id: "slot_1",
+          channel: "video",
+          status: "scheduled",
+          concern_tags: ["emotion"],
+          note_for_counselor: null,
+          assessment_report_id: null,
+          risk_event_id: null,
+          created_at: new Date("2026-05-10T08:00:00.000Z"),
+          updated_at: new Date("2026-05-10T08:10:00.000Z"),
+        },
+      ],
+    });
+    const store = new PostgresCounselingAppointmentStore(db);
+
+    const appointment = await store.getAppointment("appointment_1");
+
+    expect(appointment).toMatchObject({
+      id: "appointment_1",
+      status: "scheduled",
+    });
+    expect(db.queries[0]?.values).toEqual(["appointment_1"]);
+  });
+
   it("reads risk events linked to counseling appointments", async () => {
     const db = new FakeCounselingExecutor({
       risk: [

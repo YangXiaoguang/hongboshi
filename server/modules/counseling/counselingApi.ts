@@ -5,12 +5,16 @@ import { URL } from "url";
 import { counselorProfiles } from "../../../shared/data/counselingSeed";
 import {
   ApiResponseSchema,
+  applyCounselingAppointmentAction,
+  CounselingAppointmentActionRequestSchema,
+  CounselingAppointmentActionResultSchema,
   CounselingAppointmentCreateRequestSchema,
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
   RiskEventSchema,
   type CounselingAppointment,
+  type CounselingAppointmentAction,
   type CounselingAppointmentCreateRequest,
   type CounselingAppointmentRecord,
   type CounselingSlot,
@@ -31,6 +35,9 @@ const CounselingAppointmentCreateResponseSchema = ApiResponseSchema(
 );
 const CounselingAppointmentListResponseSchema = ApiResponseSchema(
   CounselingAppointmentListSchema
+);
+const CounselingAppointmentActionResponseSchema = ApiResponseSchema(
+  CounselingAppointmentActionResultSchema
 );
 
 let counselingAppointmentStore = createDefaultCounselingAppointmentStore();
@@ -157,6 +164,34 @@ function buildNextSteps(riskEvent: RiskEvent | undefined) {
     "咨询师会在服务前查看你填写的困扰重点和补充说明。",
     "预约确认后，可在个人中心查看咨询记录和后续跟进建议。",
   ];
+}
+
+function buildActionNextSteps(action: CounselingAppointmentAction) {
+  if (action === "confirm_payment") {
+    return [
+      "预约已确认，咨询师会在服务前查看你的咨询前信息。",
+      "请提前 10 分钟进入对应咨询渠道，给自己留出安静空间。",
+      "如果时间需要调整，可以在服务开始前申请取消或改期。",
+    ];
+  }
+
+  return [
+    "预约已取消，原咨询时段已释放，可以重新选择更合适的时间。",
+    "如果当前状态仍需要支持，建议尽快重新预约或联系现实中的可信任支持。",
+  ];
+}
+
+function transitionConflictMessage(
+  status: CounselingAppointment["status"],
+  action: CounselingAppointmentAction
+) {
+  if (action === "confirm_payment") {
+    return status === "scheduled"
+      ? "该预约已确认，无需重复支付"
+      : "当前预约状态不支持确认支付";
+  }
+
+  return "当前预约状态不支持取消";
 }
 
 export function resetCounselingAppointmentStore(now = new Date()) {
@@ -353,6 +388,108 @@ export async function listCounselingAppointmentsPayload(
   } as const;
 }
 
+export async function updateCounselingAppointmentPayload(
+  appointmentId: string,
+  body: unknown,
+  userId?: string,
+  now = new Date().toISOString()
+) {
+  if (!userId) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后操作咨询预约"),
+    } as const;
+  }
+
+  const parsed = CounselingAppointmentActionRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "预约操作参数不合法"),
+    } as const;
+  }
+
+  const appointment =
+    await counselingAppointmentStore.getAppointment(appointmentId);
+  if (!appointment || appointment.userId !== userId) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "预约不存在"),
+    } as const;
+  }
+
+  const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
+  const counselor = counselorProfiles.find(
+    item => item.id === appointment.counselorId
+  );
+  if (!slot || !counselor) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "预约关联资源不存在"),
+    } as const;
+  }
+
+  let nextAppointment: CounselingAppointment;
+  try {
+    nextAppointment = applyCounselingAppointmentAction({
+      appointment,
+      action: parsed.data.action,
+      now,
+    });
+  } catch {
+    return {
+      status: 409,
+      body: errorPayload(
+        "CONFLICT",
+        transitionConflictMessage(appointment.status, parsed.data.action)
+      ),
+    } as const;
+  }
+
+  const nextSlot: CounselingSlot =
+    parsed.data.action === "cancel"
+      ? {
+          ...slot,
+          available: true,
+        }
+      : {
+          ...slot,
+          available: false,
+        };
+
+  try {
+    const riskEvent =
+      await counselingAppointmentStore.getRiskEventForAppointment(
+        appointment.id
+      );
+    const savedAppointment = await counselingAppointmentStore.saveAppointment(
+      nextAppointment,
+      riskEvent
+    );
+    const savedSlot = await counselingAppointmentStore.saveSlot(nextSlot);
+
+    return {
+      status: 200,
+      body: CounselingAppointmentActionResponseSchema.parse({
+        ok: true,
+        data: {
+          appointment: savedAppointment,
+          counselor,
+          slot: savedSlot,
+          riskEvent,
+          nextSteps: buildActionNextSteps(parsed.data.action),
+        },
+      }),
+    } as const;
+  } catch (err) {
+    reportStoreError(err);
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "预约状态更新失败，请稍后重试"),
+    } as const;
+  }
+}
+
 export function registerCounselingApi(app: Express) {
   app.get(
     "/api/counseling/availability",
@@ -375,6 +512,19 @@ export function registerCounselingApi(app: Express) {
     async (req: Request, res: Response) => {
       const session = await getLoginSessionFromRequest(req);
       const payload = await createCounselingAppointmentPayload(
+        req.body,
+        session?.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.post(
+    "/api/counseling/appointments/:appointmentId/actions",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await updateCounselingAppointmentPayload(
+        req.params.appointmentId,
         req.body,
         session?.user.id
       );
@@ -429,6 +579,27 @@ export function handleCounselingApiRequest(
       .catch(err => {
         reportStoreError(err);
         sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询预约创建失败"));
+      });
+    return true;
+  }
+
+  const actionMatch = url.pathname.match(
+    /^\/api\/counseling\/appointments\/([^/]+)\/actions$/
+  );
+  if (req.method === "POST" && actionMatch?.[1]) {
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await updateCounselingAppointmentPayload(
+          decodeURIComponent(actionMatch[1]),
+          body,
+          session?.user.id
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(err => {
+        reportStoreError(err);
+        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "预约状态更新失败"));
       });
     return true;
   }

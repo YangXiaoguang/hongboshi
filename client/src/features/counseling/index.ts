@@ -4,6 +4,8 @@ export * from "./hooks/useCounselingIntake";
 export type {
   Counselor,
   CounselorSpecialty,
+  CounselingAppointmentAction,
+  CounselingAppointmentActionResult,
   CounselingAppointmentRecord,
   CounselingAppointmentCreateRequest,
   CounselingAppointmentCreateResult,

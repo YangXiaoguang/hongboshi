@@ -1,6 +1,7 @@
-import { useMemo, type ElementType, type ReactNode } from "react";
+import { useMemo, useState, type ElementType, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 import {
   ArrowRight,
   BarChart3,
@@ -16,6 +17,7 @@ import {
   ShieldCheck,
   Sparkles,
   UserRound,
+  XCircle,
 } from "lucide-react";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
@@ -36,7 +38,9 @@ import {
   type AssessmentDimension,
 } from "@/features/assessments";
 import {
+  httpCounselingRepository,
   type CounselingAppointmentRecord,
+  type CounselingAppointmentAction,
   type CounselingConcernTag,
 } from "@/features/counseling";
 import { useGrowthProfile } from "@/features/growth";
@@ -297,11 +301,21 @@ function CourseRow({ row, onOpen }: { row: LearningRow; onOpen: () => void }) {
 function AppointmentRow({
   record,
   onOpen,
+  onConfirmPayment,
+  onCancel,
+  isUpdating,
 }: {
   record: CounselingAppointmentRecord;
   onOpen: () => void;
+  onConfirmPayment: () => void;
+  onCancel: () => void;
+  isUpdating: boolean;
 }) {
   const status = appointmentStatusCopy[record.appointment.status];
+  const canConfirmPayment = record.appointment.status === "pending_payment";
+  const canCancel = ["pending_payment", "scheduled"].includes(
+    record.appointment.status
+  );
 
   return (
     <div className="rounded-[20px] border border-[#E7DED0] bg-[#FFFCF7] p-4">
@@ -349,12 +363,44 @@ function AppointmentRow({
         查看预约入口
         <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
       </button>
+
+      {(canConfirmPayment || canCancel) && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {canConfirmPayment && (
+            <button
+              onClick={onConfirmPayment}
+              disabled={isUpdating}
+              className="inline-flex h-9 items-center justify-center rounded-full bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:bg-[#9AA19B]"
+            >
+              {isUpdating ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              确认支付
+            </button>
+          )}
+          {canCancel && (
+            <button
+              onClick={onCancel}
+              disabled={isUpdating}
+              className="inline-flex h-9 items-center justify-center rounded-full border border-[#D8CEC0] px-3 text-xs font-semibold text-[#6D746F] transition hover:bg-[#F4EFE6] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <XCircle className="mr-1.5 h-3.5 w-3.5" />
+              取消预约
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 export default function MyCourses() {
   const [, navigate] = useLocation();
+  const [updatingAppointmentId, setUpdatingAppointmentId] = useState<
+    string | undefined
+  >();
   const { user, isLoggedIn, isAuthSyncing, openLoginModal } = useAuth();
   const { allCourses, isLoading: isCatalogLoading } = useCourseCatalog();
   const {
@@ -372,6 +418,7 @@ export default function MyCourses() {
     profile: growthProfile,
     isLoading: isGrowthProfileLoading,
     error: growthProfileError,
+    reload: reloadGrowthProfile,
   } = useGrowthProfile(isLoggedIn);
   const localAssessment = useMemo(() => loadLatestAssessmentResult(), []);
   const latestAssessment = growthProfile?.latestAssessment ?? localAssessment;
@@ -425,6 +472,30 @@ export default function MyCourses() {
     isCatalogLoading ||
     isAccessSyncing ||
     isGrowthProfileLoading;
+
+  const handleAppointmentAction = async (
+    appointmentId: string,
+    action: CounselingAppointmentAction
+  ) => {
+    setUpdatingAppointmentId(appointmentId);
+    try {
+      await httpCounselingRepository.updateAppointment(appointmentId, action);
+      await reloadGrowthProfile();
+      toast(action === "confirm_payment" ? "预约已确认" : "预约已取消", {
+        description:
+          action === "confirm_payment"
+            ? "咨询师会在服务前查看你的咨询前信息。"
+            : "原咨询时段已释放，可以重新选择合适时间。",
+      });
+    } catch (err) {
+      toast("预约状态更新失败", {
+        description:
+          err instanceof Error ? err.message : "请稍后再试或联系平台支持。",
+      });
+    } finally {
+      setUpdatingAppointmentId(undefined);
+    }
+  };
 
   if (!isLoggedIn && !isAuthSyncing) {
     return (
@@ -749,6 +820,21 @@ export default function MyCourses() {
                       key={record.appointment.id}
                       record={record}
                       onOpen={() => navigate("/consulting")}
+                      onConfirmPayment={() =>
+                        void handleAppointmentAction(
+                          record.appointment.id,
+                          "confirm_payment"
+                        )
+                      }
+                      onCancel={() =>
+                        void handleAppointmentAction(
+                          record.appointment.id,
+                          "cancel"
+                        )
+                      }
+                      isUpdating={
+                        updatingAppointmentId === record.appointment.id
+                      }
                     />
                   ))}
                 </div>

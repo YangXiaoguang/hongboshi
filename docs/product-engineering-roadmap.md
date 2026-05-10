@@ -116,7 +116,8 @@ flowchart LR
 - `GET /api/counseling/availability` 和 `POST /api/counseling/appointments`，同时支持 Vite 开发中间件和生产 Express 服务。
 - 用户预约生成待支付预约单，并锁定咨询时段；高风险/危机诉求生成风险事件。
 - `GET /api/counseling/appointments` 在成长空间展示当前用户的最近预约记录。
-- 后续接入支付、取消、改期、支付超时释放时段和预约状态流转。
+- 接入预约状态机：确认支付后进入已预约，取消预约后释放时段。
+- 后续接入真实支付、改期、支付超时释放时段和退款状态流转。
 - 后续建立咨询师工作台、咨询记录和运营端风险复核。
 
 验收标准：

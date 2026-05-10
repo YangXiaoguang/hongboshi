@@ -1,9 +1,13 @@
 import {
   ApiResponseSchema,
+  CounselingAppointmentActionRequestSchema,
+  CounselingAppointmentActionResultSchema,
   CounselingAppointmentCreateRequestSchema,
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
+  type CounselingAppointmentAction,
+  type CounselingAppointmentActionResult,
   type CounselingAppointmentCreateRequest,
   type CounselingAppointmentCreateResult,
   type CounselingAppointmentList,
@@ -18,6 +22,9 @@ const CounselingAppointmentCreateResponseSchema = ApiResponseSchema(
 );
 const CounselingAppointmentListResponseSchema = ApiResponseSchema(
   CounselingAppointmentListSchema
+);
+const CounselingAppointmentActionResponseSchema = ApiResponseSchema(
+  CounselingAppointmentActionResultSchema
 );
 
 const API_BASE = "/api/counseling";
@@ -54,9 +61,23 @@ export function parseCounselingAppointmentListResponse(
   return parsed.data;
 }
 
+export function parseCounselingAppointmentActionResponse(
+  payload: unknown
+): CounselingAppointmentActionResult {
+  const parsed = CounselingAppointmentActionResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const parsed = CounselingAppointmentCreateResponseSchema.safeParse(payload);
   if (parsed.success && !parsed.data.ok) return parsed.data.error.message;
+
+  const actionParsed =
+    CounselingAppointmentActionResponseSchema.safeParse(payload);
+  if (actionParsed.success && !actionParsed.data.ok) {
+    return actionParsed.data.error.message;
+  }
 
   const listParsed = CounselingAppointmentListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -73,6 +94,7 @@ export const httpCounselingRepository = {
         Accept: "application/json",
       },
       cache: "no-store",
+      credentials: "same-origin",
     });
     const payload = await readJson(response);
     if (!response.ok) throw new Error("咨询服务暂时不可用");
@@ -85,6 +107,7 @@ export const httpCounselingRepository = {
         Accept: "application/json",
       },
       cache: "no-store",
+      credentials: "same-origin",
     });
     const payload = await readJson(response);
     if (!response.ok) {
@@ -104,6 +127,7 @@ export const httpCounselingRepository = {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
+      credentials: "same-origin",
     });
     const payload = await readJson(response);
     if (!response.ok) {
@@ -112,5 +136,31 @@ export const httpCounselingRepository = {
       );
     }
     return parseCounselingAppointmentCreateResponse(payload);
+  },
+
+  async updateAppointment(
+    appointmentId: string,
+    action: CounselingAppointmentAction
+  ): Promise<CounselingAppointmentActionResult> {
+    const body = CounselingAppointmentActionRequestSchema.parse({ action });
+    const response = await fetch(
+      `${API_BASE}/appointments/${encodeURIComponent(appointmentId)}/actions`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "咨询预约状态暂时无法更新，请稍后再试")
+      );
+    }
+    return parseCounselingAppointmentActionResponse(payload);
   },
 };

@@ -119,6 +119,71 @@ export const CounselingAppointmentListSchema = z.object({
   serverTime: DateTimeLikeSchema,
 });
 
+export const CounselingAppointmentActionSchema = z.enum([
+  "confirm_payment",
+  "cancel",
+]);
+
+export const CounselingAppointmentActionRequestSchema = z.object({
+  action: CounselingAppointmentActionSchema,
+});
+
+export const CounselingAppointmentActionResultSchema = z.object({
+  appointment: CounselingAppointmentSchema,
+  counselor: CounselorSchema,
+  slot: CounselingSlotSchema,
+  riskEvent: RiskEventSchema.optional(),
+  nextSteps: z.array(z.string().min(1)).min(1),
+});
+
+const appointmentActionTransitions: Record<
+  CounselingAppointmentAction,
+  { from: AppointmentStatus[]; to: AppointmentStatus }
+> = {
+  confirm_payment: {
+    from: ["pending_payment"],
+    to: "scheduled",
+  },
+  cancel: {
+    from: ["pending_payment", "scheduled"],
+    to: "cancelled",
+  },
+};
+
+export function getNextCounselingAppointmentStatus(
+  status: AppointmentStatus,
+  action: CounselingAppointmentAction
+): AppointmentStatus | undefined {
+  const transition = appointmentActionTransitions[action];
+  return transition.from.includes(status) ? transition.to : undefined;
+}
+
+export function applyCounselingAppointmentAction({
+  appointment,
+  action,
+  now = new Date().toISOString(),
+}: {
+  appointment: CounselingAppointment;
+  action: CounselingAppointmentAction;
+  now?: string;
+}): CounselingAppointment {
+  const normalized = CounselingAppointmentSchema.parse(appointment);
+  const nextStatus = getNextCounselingAppointmentStatus(
+    normalized.status,
+    action
+  );
+
+  if (!nextStatus) {
+    throw new Error("INVALID_COUNSELING_APPOINTMENT_TRANSITION");
+  }
+
+  return CounselingAppointmentSchema.parse({
+    ...normalized,
+    status: nextStatus,
+    updatedAt: now,
+  });
+}
+
 export type CounselorSpecialty = z.infer<typeof CounselorSpecialtySchema>;
 export type CounselingConcernTag = z.infer<typeof CounselingConcernTagSchema>;
 export type Counselor = z.infer<typeof CounselorSchema>;
@@ -141,4 +206,13 @@ export type CounselingAppointmentRecord = z.infer<
 >;
 export type CounselingAppointmentList = z.infer<
   typeof CounselingAppointmentListSchema
+>;
+export type CounselingAppointmentAction = z.infer<
+  typeof CounselingAppointmentActionSchema
+>;
+export type CounselingAppointmentActionRequest = z.infer<
+  typeof CounselingAppointmentActionRequestSchema
+>;
+export type CounselingAppointmentActionResult = z.infer<
+  typeof CounselingAppointmentActionResultSchema
 >;
