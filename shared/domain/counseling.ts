@@ -106,6 +106,18 @@ export const CounselingAppointmentCreateResultSchema = z.object({
   nextSteps: z.array(z.string().min(1)).min(1),
 });
 
+export const CounselingAppointmentRecordSchema = z.object({
+  appointment: CounselingAppointmentSchema,
+  counselor: CounselorSchema,
+  slot: CounselingSlotSchema,
+  riskEvent: RiskEventSchema.optional(),
+});
+
+export const CounselingAppointmentListSchema = z.object({
+  appointments: z.array(CounselingAppointmentRecordSchema),
+  serverTime: DateTimeLikeSchema,
+});
+
 export type CounselorSpecialty = z.infer<typeof CounselorSpecialtySchema>;
 export type CounselingConcernTag = z.infer<typeof CounselingConcernTagSchema>;
 export type Counselor = z.infer<typeof CounselorSchema>;
@@ -122,4 +134,10 @@ export type CounselingAppointmentCreateRequest = z.infer<
 >;
 export type CounselingAppointmentCreateResult = z.infer<
   typeof CounselingAppointmentCreateResultSchema
+>;
+export type CounselingAppointmentRecord = z.infer<
+  typeof CounselingAppointmentRecordSchema
+>;
+export type CounselingAppointmentList = z.infer<
+  typeof CounselingAppointmentListSchema
 >;

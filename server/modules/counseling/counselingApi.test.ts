@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   createCounselingAppointmentPayload,
   getCounselingAvailabilityPayload,
+  listCounselingAppointmentsPayload,
   resetCounselingAppointmentStore,
 } from "./counselingApi";
 
@@ -62,6 +63,16 @@ describe("counseling api payloads", () => {
       fixedNow.toISOString()
     );
     expect(duplicate.status).toBe(409);
+
+    const listPayload = listCounselingAppointmentsPayload(
+      "user_1",
+      fixedNow.toISOString()
+    );
+    expect(listPayload.status).toBe(200);
+    if (listPayload.body.ok) {
+      expect(listPayload.body.data.appointments).toHaveLength(1);
+      expect(listPayload.body.data.appointments[0].slot.available).toBe(false);
+    }
   });
 
   it("creates a risk event for urgent intake", () => {
@@ -102,5 +113,9 @@ describe("counseling api payloads", () => {
 
     expect(payload.status).toBe(401);
     expect(payload.body.ok).toBe(false);
+
+    const listPayload = listCounselingAppointmentsPayload();
+    expect(listPayload.status).toBe(401);
+    expect(listPayload.body.ok).toBe(false);
   });
 });

@@ -84,6 +84,7 @@ flowchart LR
 - 建立 RBAC：visitor、member、counselor、operator、admin。
 - 补充会员权益、订单关联和内容访问控制。
 - 建立 `/me/courses` 个人学习工作台，聚合课程权益、学习进度、收藏、会员状态和订单记录。
+- 将 `/me/courses` 扩展为个人成长空间，接入最近测评报告和咨询预约记录。
 - 课程购买和会员开通接入 `member` 权限守卫；后续扩展 operator/admin 后台权限。
 - 将当前开发期登录实现替换为真实会话鉴权中间件，并逐步移除读取场景里的 `x-hongboshi-user-id` 兜底。
 
@@ -113,6 +114,7 @@ flowchart LR
 - `/consulting` 咨询预约入口，支持选择咨询师、时段、困扰标签、紧急程度和咨询前说明。
 - `GET /api/counseling/availability` 和 `POST /api/counseling/appointments`，同时支持 Vite 开发中间件和生产 Express 服务。
 - 用户预约生成待支付预约单，并锁定咨询时段；高风险/危机诉求生成风险事件。
+- `GET /api/counseling/appointments` 在成长空间展示当前用户的最近预约记录。
 - 后续接入支付、取消、改期、支付超时释放时段和预约状态流转。
 - 后续建立咨询师工作台、咨询记录和运营端风险复核。
 

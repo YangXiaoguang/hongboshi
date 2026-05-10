@@ -3,7 +3,9 @@ import { motion } from "framer-motion";
 import { useLocation } from "wouter";
 import {
   ArrowRight,
+  BarChart3,
   BookOpenCheck,
+  CalendarCheck,
   CalendarClock,
   CheckCircle2,
   Crown,
@@ -28,6 +30,16 @@ import {
   type CourseAccessStatus,
   type CourseProgress,
 } from "@/features/courses";
+import {
+  getTopAssessmentDimensions,
+  loadLatestAssessmentResult,
+  type AssessmentDimension,
+} from "@/features/assessments";
+import {
+  useCounselingAppointments,
+  type CounselingAppointmentRecord,
+  type CounselingConcernTag,
+} from "@/features/counseling";
 
 type LearningRow = {
   course: Course;
@@ -69,6 +81,36 @@ const orderStatusCopy = {
   refunding: "退款中",
   refunded: "已退款",
 } satisfies Record<OrderStatus, string>;
+
+const appointmentStatusCopy = {
+  pending_payment: "待支付",
+  scheduled: "已预约",
+  completed: "已完成",
+  cancelled: "已取消",
+  no_show: "未到访",
+  refunded: "已退款",
+} as const;
+
+const concernTagCopy = {
+  emotion: "情绪",
+  sleep: "睡眠",
+  relationship: "关系",
+  family: "家庭",
+  adolescent: "青少年",
+  workplace: "职场",
+  self_growth: "成长",
+  crisis: "危机",
+} satisfies Record<CounselingConcernTag, string>;
+
+const assessmentDimensionCopy = {
+  emotion: "情绪",
+  sleep: "睡眠",
+  relationship: "关系",
+  parent_child: "亲子",
+  workplace: "职场",
+  self_growth: "成长",
+  risk: "风险",
+} satisfies Record<AssessmentDimension, string>;
 
 function formatCurrency(amount: number): string {
   return `¥${amount.toFixed(amount % 1 === 0 ? 0 : 1)}`;
@@ -252,6 +294,59 @@ function CourseRow({ row, onOpen }: { row: LearningRow; onOpen: () => void }) {
   );
 }
 
+function AppointmentRow({
+  record,
+  onOpen,
+}: {
+  record: CounselingAppointmentRecord;
+  onOpen: () => void;
+}) {
+  const status = appointmentStatusCopy[record.appointment.status];
+
+  return (
+    <div className="rounded-[20px] border border-[#E7DED0] bg-[#FFFCF7] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[#243B35]">
+            {record.counselor.name} · {formatDate(record.slot.startsAt)}
+          </p>
+          <p className="mt-1 text-xs text-[#8A918B]">
+            {record.counselor.title} · {record.appointment.channel}
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-[#E6EDDF] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
+          {status}
+        </span>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {record.appointment.concernTags.slice(0, 4).map(tag => (
+          <span
+            key={tag}
+            className="rounded-full bg-[#F5EFE5] px-2.5 py-1 text-xs font-semibold text-[#6D746F]"
+          >
+            {concernTagCopy[tag]}
+          </span>
+        ))}
+      </div>
+
+      {record.riskEvent && (
+        <p className="mt-3 rounded-[16px] bg-[#FFF5EF] px-3 py-2 text-xs leading-5 text-[#A65F48]">
+          已进入风险关注队列：{record.riskEvent.riskLevel}
+        </p>
+      )}
+
+      <button
+        onClick={onOpen}
+        className="mt-4 inline-flex h-9 items-center justify-center rounded-full border border-[#D8CEC0] px-3 text-xs font-semibold text-[#4F5B54] transition hover:bg-[#F4EFE6]"
+      >
+        查看预约入口
+        <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 export default function MyCourses() {
   const [, navigate] = useLocation();
   const { user, isLoggedIn, isAuthSyncing, openLoginModal } = useAuth();
@@ -266,8 +361,14 @@ export default function MyCourses() {
     accessError,
     getCourseAccess,
   } = useCourseAccess();
-  const { favoriteCourseIds, favoriteCount, getProgress } =
-    useCourseEngagement();
+  const { favoriteCourseIds, getProgress } = useCourseEngagement();
+  const {
+    appointments,
+    upcomingCount,
+    isLoading: isCounselingLoading,
+    error: counselingError,
+  } = useCounselingAppointments(isLoggedIn);
+  const latestAssessment = useMemo(() => loadLatestAssessmentResult(), []);
 
   const learningRows = useMemo(() => {
     return allCourses
@@ -299,11 +400,20 @@ export default function MyCourses() {
   const recentOrders = useMemo(() => {
     return accessState.orders.slice(0, 4);
   }, [accessState.orders]);
+  const recentAppointments = useMemo(
+    () => appointments.slice(0, 3),
+    [appointments]
+  );
+  const topAssessmentDimensions = useMemo(
+    () => getTopAssessmentDimensions(latestAssessment, 3),
+    [latestAssessment]
+  );
 
   const membershipLabel = hasActiveMembership
     ? (membership.planName ?? "成长会员")
     : "未开通";
-  const isBusy = isAuthSyncing || isCatalogLoading || isAccessSyncing;
+  const isBusy =
+    isAuthSyncing || isCatalogLoading || isAccessSyncing || isCounselingLoading;
 
   if (!isLoggedIn && !isAuthSyncing) {
     return (
@@ -324,7 +434,7 @@ export default function MyCourses() {
                 登录后查看你的成长空间
               </h1>
               <p className="mt-4 max-w-[560px] text-sm leading-7 text-[#6D746F]">
-                课程权益、学习进度、收藏和订单会在这里集中管理，方便你随时回到自己的成长节奏。
+                课程权益、学习进度、测评报告、咨询预约和订单会在这里集中管理，方便你随时回到自己的成长节奏。
               </p>
               <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                 <button
@@ -347,7 +457,7 @@ export default function MyCourses() {
               <div className="rounded-[22px] bg-[#243B35] p-5 text-white">
                 <p className="text-sm font-semibold text-[#DDE8D9]">个人空间</p>
                 <div className="mt-8 space-y-4">
-                  {["课程权益", "学习记录", "订单明细"].map(label => (
+                  {["课程权益", "测评记录", "咨询预约"].map(label => (
                     <div
                       key={label}
                       className="flex items-center justify-between border-b border-white/12 pb-4 last:border-b-0 last:pb-0"
@@ -395,7 +505,7 @@ export default function MyCourses() {
                 {user?.nickname ?? "成长空间"}
               </h1>
               <p className="mt-4 max-w-[660px] text-sm leading-7 text-white/72">
-                这里沉淀课程学习、会员权益和购买记录，让每一次开始和继续都更清楚。
+                这里沉淀课程学习、测评报告、咨询预约和购买记录，让每一次开始和继续都更清楚。
               </p>
 
               <div className="mt-7 flex flex-wrap gap-2">
@@ -445,7 +555,13 @@ export default function MyCourses() {
           </div>
         )}
 
-        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {counselingError && (
+          <div className="mt-5 rounded-[20px] border border-[#F0D6C9] bg-[#FFF5EF] px-5 py-4 text-sm text-[#A65F48]">
+            {counselingError}
+          </div>
+        )}
+
+        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <Metric
             icon={BookOpenCheck}
             label="已拥有课程"
@@ -459,10 +575,16 @@ export default function MyCourses() {
             accent="gold"
           />
           <Metric
-            icon={Heart}
-            label="收藏课程"
-            value={favoriteCount}
+            icon={CalendarCheck}
+            label="咨询预约"
+            value={upcomingCount}
             accent="clay"
+          />
+          <Metric
+            icon={BarChart3}
+            label="最近测评"
+            value={latestAssessment ? "已生成" : "待开始"}
+            accent="sage"
           />
           <Metric
             icon={ReceiptText}
@@ -522,6 +644,122 @@ export default function MyCourses() {
           </div>
 
           <aside className="space-y-6">
+            <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-6 shadow-sm shadow-[#243B35]/5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-[#6F8F83]">
+                    最近测评
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                    当前支持路径
+                  </h2>
+                </div>
+                <BarChart3 className="h-5 w-5 text-[#A65F48]" />
+              </div>
+
+              {latestAssessment ? (
+                <div className="mt-6">
+                  <div className="rounded-[20px] bg-[#F5EFE5] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#243B35]">
+                          {latestAssessment.report.riskLevel === "low"
+                            ? "低风险"
+                            : latestAssessment.report.riskLevel === "medium"
+                              ? "需要关注"
+                              : latestAssessment.report.riskLevel === "high"
+                                ? "建议咨询"
+                                : "优先求助"}
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-[#6D746F]">
+                          {latestAssessment.report.summary}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-[#E6EDDF] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
+                        {formatDate(latestAssessment.report.createdAt)}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {topAssessmentDimensions.map(dimension => (
+                        <span
+                          key={dimension}
+                          className="rounded-full bg-[#FFFDF8] px-2.5 py-1 text-xs font-semibold text-[#6D746F]"
+                        >
+                          {assessmentDimensionCopy[dimension]}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => navigate("/assessment")}
+                    className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-full border border-[#D8CEC0] text-xs font-semibold text-[#4F5B54] transition hover:bg-[#F4EFE6]"
+                  >
+                    重新测评
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-6">
+                  <EmptyState
+                    icon={BarChart3}
+                    title="暂无测评报告"
+                    description="完成一次快速评估后，这里会显示风险等级、主要维度和推荐路径。"
+                    action={
+                      <button
+                        onClick={() => navigate("/assessment")}
+                        className="inline-flex h-10 items-center justify-center rounded-full bg-[#243B35] px-4 text-xs font-semibold text-white transition hover:bg-[#315047]"
+                      >
+                        开始测评
+                      </button>
+                    }
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-6 shadow-sm shadow-[#243B35]/5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-[#6F8F83]">
+                    咨询预约
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                    最近支持安排
+                  </h2>
+                </div>
+                <CalendarCheck className="h-5 w-5 text-[#A65F48]" />
+              </div>
+
+              {recentAppointments.length ? (
+                <div className="mt-6 space-y-4">
+                  {recentAppointments.map(record => (
+                    <AppointmentRow
+                      key={record.appointment.id}
+                      record={record}
+                      onOpen={() => navigate("/consulting")}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-6">
+                  <EmptyState
+                    icon={CalendarCheck}
+                    title="暂无咨询预约"
+                    description="当测评或生活状态提示需要专业支持时，可以从这里预约咨询师。"
+                    action={
+                      <button
+                        onClick={() => navigate("/consulting")}
+                        className="inline-flex h-10 items-center justify-center rounded-full bg-[#243B35] px-4 text-xs font-semibold text-white transition hover:bg-[#315047]"
+                      >
+                        预约咨询
+                      </button>
+                    }
+                  />
+                </div>
+              )}
+            </div>
+
             <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-6 shadow-sm shadow-[#243B35]/5">
               <div className="flex items-center justify-between gap-4">
                 <div>

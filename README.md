@@ -1,6 +1,6 @@
 # 红博士心理小讲堂
 
-心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、用户学习工作台、心理状态快速评估与咨询预约入口。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、“我的课程”入口、测评推荐基础链路和咨询预约雏形。
+心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估与咨询预约入口。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、成长空间、测评推荐基础链路和咨询预约雏形。
 
 ## 技术栈
 
@@ -94,7 +94,7 @@ docs/
 - 课程 seed 来自 `shared/data/mockCourses.ts`，开发和生产 API 共用同一份数据
 - 共享业务类型位于 `shared/domain`
 - PC 端主页面位于 `client/src/pages/Home.tsx`
-- 用户学习工作台位于 `client/src/pages/MyCourses.tsx`，通过 `/me/courses` 聚合课程权益、学习进度、收藏、会员和订单
+- 个人成长空间位于 `client/src/pages/MyCourses.tsx`，通过 `/me/courses` 聚合课程权益、学习进度、测评报告、咨询预约、会员和订单
 - 心理状态快速评估位于 `client/src/pages/Assessment.tsx`，通过 `/assessment` 生成维度分、风险等级和推荐路径
 - 咨询预约入口位于 `client/src/pages/Consulting.tsx`，通过 `/consulting` 选择咨询师、时段和咨询前信息
 - 小程序端预览位于 `client/src/components/MobileView.tsx`
@@ -103,14 +103,14 @@ docs/
 - 课程权益开发期默认写入 `.hongboshi-data/course-access.json`
 - 课程权益读取优先使用服务端 session cookie 识别用户，`x-hongboshi-user-id` 仅作为开发期读取兜底
 - 课程购买和会员开通必须具备 `member` 权限，登录时会记录 terms/privacy 协议版本
-- 咨询预约提交需要登录；当前会生成待支付预约单、锁定时段，并对高风险/危机诉求生成风险事件
+- 咨询预约提交和预约记录读取需要登录；当前会生成待支付预约单、锁定时段，并对高风险/危机诉求生成风险事件
 - 生产构建后由 `server/index.ts` 托管 `dist/public`
 
 ## 后续二开建议
 
 1. 将课程权益 JSON Store 替换为 PostgreSQL/Prisma 或 Drizzle。
 2. 接入真实短信/微信登录服务，并将当前内存 session/协议记录迁移到数据库。
-3. 将快速测评报告和咨询预约单持久化到数据库，并在个人中心形成成长档案。
+3. 将快速测评报告和咨询预约单持久化到数据库，并让成长空间读取服务端成长档案。
 4. 接入咨询支付、取消/改期、支付超时释放时段和退款状态机。
 5. 建立咨询师工作台与风险人工复核台，承接高风险测评和咨询前信息。
 6. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。

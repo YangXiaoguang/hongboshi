@@ -74,7 +74,7 @@ export default function AppHeader() {
   const userMenuItems = [
     {
       icon: BookOpen,
-      label: "我的课程",
+      label: "成长空间",
       onClick: () => navigate("/me/courses"),
     },
     {

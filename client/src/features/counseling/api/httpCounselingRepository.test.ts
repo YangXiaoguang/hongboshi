@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseCounselingAppointmentCreateResponse,
+  parseCounselingAppointmentListResponse,
   parseCounselingAvailabilityResponse,
 } from "./httpCounselingRepository";
 
@@ -69,6 +70,30 @@ describe("http counseling repository parsing", () => {
       appointment,
       counselor,
     });
+  });
+
+  it("parses appointment list response", () => {
+    const appointment = {
+      id: "appointment_1",
+      userId: "user_1",
+      counselorId: counselor.id,
+      slotId: slot.id,
+      channel: "video",
+      status: "pending_payment",
+      concernTags: ["emotion"],
+      createdAt: "2026-05-10T00:00:00.000Z",
+      updatedAt: "2026-05-10T00:00:00.000Z",
+    };
+
+    expect(
+      parseCounselingAppointmentListResponse({
+        ok: true,
+        data: {
+          appointments: [{ appointment, counselor, slot }],
+          serverTime: "2026-05-10T00:00:00.000Z",
+        },
+      }).appointments
+    ).toHaveLength(1);
   });
 
   it("throws on error response", () => {

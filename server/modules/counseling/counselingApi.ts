@@ -10,10 +10,12 @@ import {
   ApiResponseSchema,
   CounselingAppointmentCreateRequestSchema,
   CounselingAppointmentCreateResultSchema,
+  CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
   RiskEventSchema,
   type CounselingAppointment,
   type CounselingAppointmentCreateRequest,
+  type CounselingAppointmentRecord,
   type CounselingSlot,
   type RiskEvent,
 } from "../../../shared/domain";
@@ -25,8 +27,12 @@ const CounselingAvailabilityResponseSchema = ApiResponseSchema(
 const CounselingAppointmentCreateResponseSchema = ApiResponseSchema(
   CounselingAppointmentCreateResultSchema
 );
+const CounselingAppointmentListResponseSchema = ApiResponseSchema(
+  CounselingAppointmentListSchema
+);
 
 const appointmentStore = new Map<string, CounselingAppointment>();
+const appointmentRiskEventStore = new Map<string, RiskEvent>();
 let slotStore = new Map(
   generateUpcomingCounselingSlots().map(slot => [slot.id, slot])
 );
@@ -138,6 +144,7 @@ function buildNextSteps(riskEvent: RiskEvent | undefined) {
 
 export function resetCounselingAppointmentStore(now = new Date()) {
   appointmentStore.clear();
+  appointmentRiskEventStore.clear();
   slotStore = new Map(
     generateUpcomingCounselingSlots({ now }).map(slot => [slot.id, slot])
   );
@@ -230,6 +237,7 @@ export function createCounselingAppointmentPayload(
   appointmentStore.set(appointment.id, appointment);
 
   const riskEvent = resolveRiskEvent({ request, userId, now });
+  if (riskEvent) appointmentRiskEventStore.set(appointment.id, riskEvent);
 
   return {
     status: 200,
@@ -246,9 +254,61 @@ export function createCounselingAppointmentPayload(
   } as const;
 }
 
+function appointmentToRecord(
+  appointment: CounselingAppointment
+): CounselingAppointmentRecord | undefined {
+  const counselor = counselorProfiles.find(
+    item => item.id === appointment.counselorId
+  );
+  const slot = slotStore.get(appointment.slotId);
+  if (!counselor || !slot) return undefined;
+
+  return {
+    appointment,
+    counselor,
+    slot,
+    riskEvent: appointmentRiskEventStore.get(appointment.id),
+  };
+}
+
+export function listCounselingAppointmentsPayload(
+  userId?: string,
+  now = new Date().toISOString()
+) {
+  if (!userId) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后查看咨询预约"),
+    } as const;
+  }
+
+  const appointments = Array.from(appointmentStore.values())
+    .filter(appointment => appointment.userId === userId)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .map(appointmentToRecord)
+    .filter((record): record is CounselingAppointmentRecord => Boolean(record));
+
+  return {
+    status: 200,
+    body: CounselingAppointmentListResponseSchema.parse({
+      ok: true,
+      data: {
+        appointments,
+        serverTime: now,
+      },
+    }),
+  } as const;
+}
+
 export function registerCounselingApi(app: Express) {
   app.get("/api/counseling/availability", (_req: Request, res: Response) => {
     sendJson(res, 200, getCounselingAvailabilityPayload());
+  });
+
+  app.get("/api/counseling/appointments", (req: Request, res: Response) => {
+    const session = getLoginSessionFromRequest(req);
+    const payload = listCounselingAppointmentsPayload(session?.user.id);
+    sendJson(res, payload.status, payload.body);
   });
 
   app.post("/api/counseling/appointments", (req: Request, res: Response) => {
@@ -271,6 +331,13 @@ export function handleCounselingApiRequest(
 
   if (req.method === "GET" && url.pathname === "/api/counseling/availability") {
     sendJson(res, 200, getCounselingAvailabilityPayload());
+    return true;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/counseling/appointments") {
+    const session = getLoginSessionFromRequest(req);
+    const payload = listCounselingAppointmentsPayload(session?.user.id);
+    sendJson(res, payload.status, payload.body);
     return true;
   }
 
