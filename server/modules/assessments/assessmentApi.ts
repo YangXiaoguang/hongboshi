@@ -145,7 +145,7 @@ export function registerAssessmentApi(app: Express) {
   app.post(
     "/api/assessments/quick/report",
     async (req: Request, res: Response) => {
-      const session = getLoginSessionFromRequest(req);
+      const session = await getLoginSessionFromRequest(req);
       const payload = await submitQuickAssessmentPayload(
         req.body,
         session?.user.id
@@ -174,7 +174,7 @@ export function handleAssessmentApiRequest(
   ) {
     void readRequestBody(req)
       .then(async body => {
-        const session = getLoginSessionFromRequest(req);
+        const session = await getLoginSessionFromRequest(req);
         const payload = await submitQuickAssessmentPayload(
           body,
           session?.user.id

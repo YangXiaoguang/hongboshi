@@ -158,7 +158,7 @@ export async function getGrowthProfilePayload(
 
 export function registerGrowthProfileApi(app: Express) {
   app.get("/api/growth/profile", async (req: Request, res: Response) => {
-    const session = getLoginSessionFromRequest(req);
+    const session = await getLoginSessionFromRequest(req);
     const payload = await getGrowthProfilePayload(session?.user.id);
     sendJson(res, payload.status, payload.body);
   });
@@ -174,7 +174,7 @@ export function handleGrowthProfileApiRequest(
 
   if (req.method === "GET" && url.pathname === "/api/growth/profile") {
     void (async () => {
-      const session = getLoginSessionFromRequest(req);
+      const session = await getLoginSessionFromRequest(req);
       const payload = await getGrowthProfilePayload(session?.user.id);
       sendJson(res, payload.status, payload.body);
     })().catch(err => {

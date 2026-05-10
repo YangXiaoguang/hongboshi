@@ -14,12 +14,15 @@ function requestWithCookie(token?: string): IncomingMessage {
 }
 
 describe("authorization guard", () => {
-  beforeEach(() => {
-    resetAuthSessionStore();
+  beforeEach(async () => {
+    await resetAuthSessionStore();
   });
 
-  it("rejects anonymous requests", () => {
-    const result = authorizeRequest(requestWithCookie(), "course:purchase");
+  it("rejects anonymous requests", async () => {
+    const result = await authorizeRequest(
+      requestWithCookie(),
+      "course:purchase"
+    );
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -27,8 +30,8 @@ describe("authorization guard", () => {
     expect(result.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("allows a member to purchase courses", () => {
-    const payload = loginWithPhonePayload({
+  it("allows a member to purchase courses", async () => {
+    const payload = await loginWithPhonePayload({
       phone: "13800138000",
       code: "123456",
       acceptedConsent: true,
@@ -36,7 +39,7 @@ describe("authorization guard", () => {
     expect("token" in payload).toBe(true);
     if (!("token" in payload)) return;
 
-    const result = authorizeRequest(
+    const result = await authorizeRequest(
       requestWithCookie(payload.token),
       "course:purchase"
     );
@@ -46,8 +49,8 @@ describe("authorization guard", () => {
     expect(result.session.user.id).toBe("u_phone_8000");
   });
 
-  it("rejects member-only sessions from admin actions", () => {
-    const payload = loginWithPhonePayload({
+  it("rejects member-only sessions from admin actions", async () => {
+    const payload = await loginWithPhonePayload({
       phone: "13800138000",
       code: "123456",
       acceptedConsent: true,
@@ -55,7 +58,10 @@ describe("authorization guard", () => {
     expect("token" in payload).toBe(true);
     if (!("token" in payload)) return;
 
-    const result = authorizeRequest(requestWithCookie(payload.token), "admin:manage");
+    const result = await authorizeRequest(
+      requestWithCookie(payload.token),
+      "admin:manage"
+    );
 
     expect(result.ok).toBe(false);
     if (result.ok) return;

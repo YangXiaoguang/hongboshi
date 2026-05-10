@@ -30,7 +30,7 @@
 ## 后续接入顺序
 
 1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
-2. 扩展 PostgreSQL 版 Store：课程权益、风险事件、测评结果和咨询预约已经完成第一版，后续接入 ORM/迁移工具统一管理。
+2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、风险事件、测评结果和咨询预约已经完成第一版，后续接入 ORM/迁移工具统一管理。
 3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
 4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
 5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。
@@ -45,4 +45,6 @@
 
 `server/modules/courses/postgresCourseAccessStore.ts` 已实现课程会员、课程授权、订单和订单明细的保存与读取能力。开发期默认仍可使用 JSON Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 时，课程权益会写入 PostgreSQL。
 
-当前实现已覆盖课程权益、测评报告、咨询预约与风险事件持久化。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+`server/modules/auth/postgresAuthSessionStore.ts` 已实现用户、角色、协议同意和登录会话的保存、读取与注销能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_AUTH_SESSION_STORE=postgres` 时，登录会话会写入 PostgreSQL，并只保存 session token 的哈希值。
+
+当前实现已覆盖登录会话、课程权益、测评报告、咨询预约与风险事件持久化。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

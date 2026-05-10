@@ -363,7 +363,7 @@ export function registerCounselingApi(app: Express) {
   app.get(
     "/api/counseling/appointments",
     async (req: Request, res: Response) => {
-      const session = getLoginSessionFromRequest(req);
+      const session = await getLoginSessionFromRequest(req);
       const payload = await listCounselingAppointmentsPayload(session?.user.id);
       sendJson(res, payload.status, payload.body);
     }
@@ -372,7 +372,7 @@ export function registerCounselingApi(app: Express) {
   app.post(
     "/api/counseling/appointments",
     async (req: Request, res: Response) => {
-      const session = getLoginSessionFromRequest(req);
+      const session = await getLoginSessionFromRequest(req);
       const payload = await createCounselingAppointmentPayload(
         req.body,
         session?.user.id
@@ -402,7 +402,7 @@ export function handleCounselingApiRequest(
 
   if (req.method === "GET" && url.pathname === "/api/counseling/appointments") {
     void (async () => {
-      const session = getLoginSessionFromRequest(req);
+      const session = await getLoginSessionFromRequest(req);
       const payload = await listCounselingAppointmentsPayload(session?.user.id);
       sendJson(res, payload.status, payload.body);
     })().catch(err => {
@@ -418,7 +418,7 @@ export function handleCounselingApiRequest(
   ) {
     void readRequestBody(req)
       .then(async body => {
-        const session = getLoginSessionFromRequest(req);
+        const session = await getLoginSessionFromRequest(req);
         const payload = await createCounselingAppointmentPayload(
           body,
           session?.user.id

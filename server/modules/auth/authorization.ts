@@ -44,11 +44,11 @@ function authFailure(
   };
 }
 
-export function authorizeRequest(
+export async function authorizeRequest(
   req: Request | IncomingMessage,
   permission: AuthPermission
-): AuthorizationResult {
-  const session = getLoginSessionFromRequest(req);
+): Promise<AuthorizationResult> {
+  const session = await getLoginSessionFromRequest(req);
   if (!session) {
     return authFailure(401, "UNAUTHORIZED", "请先登录后继续操作");
   }

@@ -160,13 +160,17 @@ export async function activateMembershipPayload(
 
 export function registerCourseAccessApi(app: Express) {
   app.get("/api/course-access", async (req: Request, res: Response) => {
-    sendJson(res, 200, await getCourseAccessPayload(resolveRequestUserId(req)));
+    sendJson(
+      res,
+      200,
+      await getCourseAccessPayload(await resolveRequestUserId(req))
+    );
   });
 
   app.post(
     "/api/course-access/purchases",
     async (req: Request, res: Response) => {
-      const auth = authorizeRequest(req, "course:purchase");
+      const auth = await authorizeRequest(req, "course:purchase");
       if (!auth.ok) {
         sendJson(res, auth.status, auth.body);
         return;
@@ -189,7 +193,7 @@ export function registerCourseAccessApi(app: Express) {
   app.post(
     "/api/course-access/membership",
     async (req: Request, res: Response) => {
-      const auth = authorizeRequest(req, "membership:activate");
+      const auth = await authorizeRequest(req, "membership:activate");
       if (!auth.ok) {
         sendJson(res, auth.status, auth.body);
         return;
@@ -208,10 +212,9 @@ export function handleCourseAccessApiRequest(
   if (!req.url || !req.url.startsWith("/api/course-access")) return false;
 
   const url = new URL(req.url, "http://localhost");
-  const userId = resolveRequestUserId(req);
-
   if (req.method === "GET" && url.pathname === "/api/course-access") {
-    void getCourseAccessPayload(userId)
+    void resolveRequestUserId(req)
+      .then(userId => getCourseAccessPayload(userId))
       .then(payload => sendJson(res, 200, payload))
       .catch(err => {
         console.error(err instanceof Error ? err.message : "课程权益读取失败");
@@ -224,18 +227,19 @@ export function handleCourseAccessApiRequest(
     req.method === "POST" &&
     url.pathname === "/api/course-access/membership"
   ) {
-    const auth = authorizeRequest(req, "membership:activate");
-    if (!auth.ok) {
-      sendJson(res, auth.status, auth.body);
-      return true;
-    }
+    void (async () => {
+      const auth = await authorizeRequest(req, "membership:activate");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
 
-    void activateMembershipPayload(auth.session.user.id)
-      .then(payload => sendJson(res, payload.status, payload.body))
-      .catch(err => {
-        console.error(err instanceof Error ? err.message : "会员权益开通失败");
-        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "会员权益开通失败"));
-      });
+      const payload = await activateMembershipPayload(auth.session.user.id);
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "会员权益开通失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "会员权益开通失败"));
+    });
     return true;
   }
 
@@ -243,30 +247,29 @@ export function handleCourseAccessApiRequest(
     req.method === "POST" &&
     url.pathname === "/api/course-access/purchases"
   ) {
-    const auth = authorizeRequest(req, "course:purchase");
-    if (!auth.ok) {
-      sendJson(res, auth.status, auth.body);
-      return true;
-    }
+    void (async () => {
+      const auth = await authorizeRequest(req, "course:purchase");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
 
-    void readRequestBody(req)
-      .then(async body => {
-        const parsed = PurchaseCourseRequestSchema.safeParse(body);
-        if (!parsed.success) {
-          sendJson(res, 400, errorPayload("BAD_REQUEST", "课程购买参数不合法"));
-          return;
-        }
+      const body = await readRequestBody(req);
+      const parsed = PurchaseCourseRequestSchema.safeParse(body);
+      if (!parsed.success) {
+        sendJson(res, 400, errorPayload("BAD_REQUEST", "课程购买参数不合法"));
+        return;
+      }
 
-        const payload = await purchaseCoursePayload(
-          parsed.data.courseId,
-          auth.session.user.id
-        );
-        sendJson(res, payload.status, payload.body);
-      })
-      .catch(err => {
-        console.error(err instanceof Error ? err.message : "课程购买失败");
-        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程购买失败"));
-      });
+      const payload = await purchaseCoursePayload(
+        parsed.data.courseId,
+        auth.session.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "课程购买失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程购买失败"));
+    });
     return true;
   }
 

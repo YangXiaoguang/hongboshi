@@ -14,13 +14,17 @@ const RequestUserIdSchema = z
   .max(80)
   .regex(/^[A-Za-z0-9_-]+$/);
 
-function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+function firstHeaderValue(
+  value: string | string[] | undefined
+): string | undefined {
   if (Array.isArray(value)) return value[0];
   return value;
 }
 
-export function resolveRequestUserId(req: Request | IncomingMessage): string {
-  const session = getLoginSessionFromRequest(req);
+export async function resolveRequestUserId(
+  req: Request | IncomingMessage
+): Promise<string> {
+  const session = await getLoginSessionFromRequest(req);
   if (session) return session.user.id;
 
   const rawUserId = firstHeaderValue(req.headers[COURSE_ACCESS_USER_ID_HEADER]);

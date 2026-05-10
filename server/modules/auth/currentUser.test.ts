@@ -15,12 +15,12 @@ function requestWithUserId(userId?: string): IncomingMessage {
 }
 
 describe("current user resolver", () => {
-  beforeEach(() => {
-    resetAuthSessionStore();
+  beforeEach(async () => {
+    await resetAuthSessionStore();
   });
 
-  it("prefers the server login session cookie", () => {
-    const payload = loginWithPhonePayload({
+  it("prefers the server login session cookie", async () => {
+    const payload = await loginWithPhonePayload({
       phone: "13800138000",
       code: "123456",
       acceptedConsent: true,
@@ -30,7 +30,7 @@ describe("current user resolver", () => {
     if (!("token" in payload)) return;
 
     expect(
-      resolveRequestUserId({
+      await resolveRequestUserId({
         headers: {
           cookie: `${AUTH_SESSION_COOKIE}=${payload.token}`,
           "x-hongboshi-user-id": "u_header",
@@ -39,14 +39,18 @@ describe("current user resolver", () => {
     ).toBe("u_phone_8000");
   });
 
-  it("reads the development user id header", () => {
-    expect(resolveRequestUserId(requestWithUserId("u_10001"))).toBe("u_10001");
+  it("reads the development user id header", async () => {
+    await expect(
+      resolveRequestUserId(requestWithUserId("u_10001"))
+    ).resolves.toBe("u_10001");
   });
 
-  it("falls back to the local user for missing or invalid headers", () => {
-    expect(resolveRequestUserId(requestWithUserId())).toBe(LOCAL_COURSE_ACCESS_USER_ID);
-    expect(resolveRequestUserId(requestWithUserId("../unsafe"))).toBe(
+  it("falls back to the local user for missing or invalid headers", async () => {
+    await expect(resolveRequestUserId(requestWithUserId())).resolves.toBe(
       LOCAL_COURSE_ACCESS_USER_ID
     );
+    await expect(
+      resolveRequestUserId(requestWithUserId("../unsafe"))
+    ).resolves.toBe(LOCAL_COURSE_ACCESS_USER_ID);
   });
 });

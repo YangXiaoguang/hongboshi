@@ -11,12 +11,12 @@ import {
 } from "./authSessionApi";
 
 describe("auth session API payloads", () => {
-  beforeEach(() => {
-    resetAuthSessionStore();
+  beforeEach(async () => {
+    await resetAuthSessionStore();
   });
 
-  it("creates a phone login session", () => {
-    const payload = loginWithPhonePayload({
+  it("creates a phone login session", async () => {
+    const payload = await loginWithPhonePayload({
       phone: "13800138000",
       code: "123456",
       acceptedConsent: true,
@@ -31,12 +31,14 @@ describe("auth session API payloads", () => {
       expect.objectContaining({ type: "terms", version: "2026.05" }),
       expect.objectContaining({ type: "privacy", version: "2026.05" }),
     ]);
-    expect(getLoginSession(payload.token)?.user.id).toBe("u_phone_8000");
-    expect(getUserConsents("u_phone_8000")).toHaveLength(2);
+    await expect(getLoginSession(payload.token)).resolves.toMatchObject({
+      user: { id: "u_phone_8000" },
+    });
+    await expect(getUserConsents("u_phone_8000")).resolves.toHaveLength(2);
   });
 
-  it("rejects login without consent", () => {
-    const payload = loginWithWechatPayload({ acceptedConsent: false });
+  it("rejects login without consent", async () => {
+    const payload = await loginWithWechatPayload({ acceptedConsent: false });
 
     expect(payload.status).toBe(400);
     expect(payload.body.ok).toBe(false);
@@ -49,8 +51,8 @@ describe("auth session API payloads", () => {
     expect(cookies.get("theme")).toBe("light");
   });
 
-  it("destroys sessions on logout", () => {
-    const payload = loginWithPhonePayload({
+  it("destroys sessions on logout", async () => {
+    const payload = await loginWithPhonePayload({
       phone: "13800138000",
       code: "123456",
       acceptedConsent: true,
@@ -58,8 +60,8 @@ describe("auth session API payloads", () => {
     expect("token" in payload).toBe(true);
     if (!("token" in payload)) return;
 
-    destroyLoginSession(payload.token);
+    await destroyLoginSession(payload.token);
 
-    expect(getLoginSession(payload.token)).toBeNull();
+    await expect(getLoginSession(payload.token)).resolves.toBeNull();
   });
 });
