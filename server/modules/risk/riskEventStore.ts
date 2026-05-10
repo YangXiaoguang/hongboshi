@@ -1,10 +1,14 @@
 import { RiskEventSchema, type RiskEvent } from "../../../shared/domain";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
+import { PostgresRiskEventStore } from "./postgresRiskEventStore";
+
+type MaybePromise<T> = T | Promise<T>;
 
 export interface RiskEventStore {
-  save(event: RiskEvent): RiskEvent;
-  get(eventId: string): RiskEvent | undefined;
-  listByUser(userId: string): RiskEvent[];
-  clear(): void;
+  save(event: RiskEvent): MaybePromise<RiskEvent>;
+  get(eventId: string): MaybePromise<RiskEvent | undefined>;
+  listByUser(userId: string): MaybePromise<RiskEvent[]>;
+  clear(): MaybePromise<void>;
 }
 
 function cloneRiskEvent(event: RiskEvent): RiskEvent {
@@ -37,24 +41,35 @@ export class InMemoryRiskEventStore implements RiskEventStore {
   }
 }
 
-let riskEventStore: RiskEventStore = new InMemoryRiskEventStore();
+export function createDefaultRiskEventStore(): RiskEventStore {
+  if (
+    process.env.HONGBOSHI_RISK_EVENT_STORE === "postgres" ||
+    (process.env.HONGBOSHI_RISK_EVENT_STORE !== "memory" && getDatabaseUrl())
+  ) {
+    return new PostgresRiskEventStore(getSharedPostgresPool());
+  }
+
+  return new InMemoryRiskEventStore();
+}
+
+let riskEventStore: RiskEventStore = createDefaultRiskEventStore();
 
 export function setRiskEventStore(store: RiskEventStore) {
   riskEventStore = store;
 }
 
 export function resetRiskEventStore() {
-  riskEventStore.clear();
+  return Promise.resolve(riskEventStore.clear());
 }
 
 export function saveRiskEvent(event: RiskEvent) {
-  return riskEventStore.save(event);
+  return Promise.resolve(riskEventStore.save(event));
 }
 
 export function listRiskEventsByUser(userId: string) {
-  return riskEventStore.listByUser(userId);
+  return Promise.resolve(riskEventStore.listByUser(userId));
 }
 
 export function getRiskEvent(eventId: string) {
-  return riskEventStore.get(eventId);
+  return Promise.resolve(riskEventStore.get(eventId));
 }

@@ -58,7 +58,7 @@ server/
 - 课程权益：`server/modules/courses/courseAccessStore.ts` 已支持 JSON 文件和内存实现。
 - 测评结果：`server/modules/assessments/assessmentResultStore.ts` 负责按用户保存与读取最新报告。
 - 咨询预约：`server/modules/counseling/counselingAppointmentStore.ts` 负责时段、预约单和预约关联风险事件。
-- 风险事件：`server/modules/risk/riskEventStore.ts` 负责统一保存测评和咨询前信息触发的风险事件。
+- 风险事件：`server/modules/risk/riskEventStore.ts` 负责统一保存测评和咨询前信息触发的风险事件，`server/modules/risk/postgresRiskEventStore.ts` 提供 PostgreSQL 实现。
 - 后续数据库实现应优先替换 Store，而不是改 API payload 或页面组件。
 
 ## 数据库准备层

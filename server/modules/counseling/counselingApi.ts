@@ -35,6 +35,12 @@ const CounselingAppointmentListResponseSchema = ApiResponseSchema(
 
 let counselingAppointmentStore = createDefaultCounselingAppointmentStore();
 
+function reportRiskEventStoreError(err: unknown) {
+  console.error(
+    err instanceof Error ? err.message : "风险事件持久化失败"
+  );
+}
+
 function sendJson(
   res: Response | ServerResponse,
   status: number,
@@ -142,7 +148,7 @@ function buildNextSteps(riskEvent: RiskEvent | undefined) {
 
 export function resetCounselingAppointmentStore(now = new Date()) {
   counselingAppointmentStore.reset(now);
-  resetRiskEventStore();
+  void resetRiskEventStore().catch(reportRiskEventStoreError);
 }
 
 export function setCounselingAppointmentStore(store: CounselingAppointmentStore) {
@@ -235,7 +241,7 @@ export function createCounselingAppointmentPayload(
   };
   const riskEvent = resolveRiskEvent({ request, userId, now });
   counselingAppointmentStore.saveAppointment(appointment, riskEvent);
-  if (riskEvent) saveRiskEvent(riskEvent);
+  if (riskEvent) void saveRiskEvent(riskEvent).catch(reportRiskEventStoreError);
 
   return {
     status: 200,

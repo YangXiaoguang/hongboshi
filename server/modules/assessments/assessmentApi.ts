@@ -22,6 +22,12 @@ const AssessmentResultResponseSchema = ApiResponseSchema(
 );
 let assessmentResultStore = createDefaultAssessmentResultStore();
 
+function reportRiskEventStoreError(err: unknown) {
+  console.error(
+    err instanceof Error ? err.message : "风险事件持久化失败"
+  );
+}
+
 function sendJson(
   res: Response | ServerResponse,
   status: number,
@@ -79,7 +85,7 @@ export function setAssessmentResultStore(store: AssessmentResultStore) {
 
 export function resetAssessmentResultStore() {
   assessmentResultStore.clear();
-  resetRiskEventStore();
+  void resetRiskEventStore().catch(reportRiskEventStoreError);
 }
 
 export function getLatestAssessmentResult(userId?: string) {
@@ -105,7 +111,9 @@ export function submitQuickAssessmentPayload(body: unknown, userId?: string) {
 
     if (userId) {
       assessmentResultStore.save(userId, result);
-      if (result.riskEvent) saveRiskEvent(result.riskEvent);
+      if (result.riskEvent) {
+        void saveRiskEvent(result.riskEvent).catch(reportRiskEventStoreError);
+      }
     }
 
     return {
