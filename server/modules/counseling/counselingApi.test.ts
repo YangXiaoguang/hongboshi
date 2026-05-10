@@ -9,12 +9,14 @@ import {
 const fixedNow = new Date("2026-05-10T00:00:00.000Z");
 
 describe("counseling api payloads", () => {
-  beforeEach(() => {
-    resetCounselingAppointmentStore(fixedNow);
+  beforeEach(async () => {
+    await resetCounselingAppointmentStore(fixedNow);
   });
 
-  it("returns counselors and available slots", () => {
-    const payload = getCounselingAvailabilityPayload(fixedNow.toISOString());
+  it("returns counselors and available slots", async () => {
+    const payload = await getCounselingAvailabilityPayload(
+      fixedNow.toISOString()
+    );
 
     expect(payload.ok).toBe(true);
     if (!payload.ok) return;
@@ -24,14 +26,14 @@ describe("counseling api payloads", () => {
     expect(payload.data.slots.every(slot => slot.available)).toBe(true);
   });
 
-  it("creates a pending payment appointment and reserves the slot", () => {
-    const availability = getCounselingAvailabilityPayload(
+  it("creates a pending payment appointment and reserves the slot", async () => {
+    const availability = await getCounselingAvailabilityPayload(
       fixedNow.toISOString()
     );
     if (!availability.ok) throw new Error("expected availability");
 
     const slot = availability.data.slots[0];
-    const payload = createCounselingAppointmentPayload(
+    const payload = await createCounselingAppointmentPayload(
       {
         counselorId: slot.counselorId,
         slotId: slot.id,
@@ -51,7 +53,7 @@ describe("counseling api payloads", () => {
       expect(payload.body.data.slot.available).toBe(false);
     }
 
-    const duplicate = createCounselingAppointmentPayload(
+    const duplicate = await createCounselingAppointmentPayload(
       {
         counselorId: slot.counselorId,
         slotId: slot.id,
@@ -64,7 +66,7 @@ describe("counseling api payloads", () => {
     );
     expect(duplicate.status).toBe(409);
 
-    const listPayload = listCounselingAppointmentsPayload(
+    const listPayload = await listCounselingAppointmentsPayload(
       "user_1",
       fixedNow.toISOString()
     );
@@ -75,14 +77,14 @@ describe("counseling api payloads", () => {
     }
   });
 
-  it("creates a risk event for urgent intake", () => {
-    const availability = getCounselingAvailabilityPayload(
+  it("creates a risk event for urgent intake", async () => {
+    const availability = await getCounselingAvailabilityPayload(
       fixedNow.toISOString()
     );
     if (!availability.ok) throw new Error("expected availability");
 
     const slot = availability.data.slots[1];
-    const payload = createCounselingAppointmentPayload(
+    const payload = await createCounselingAppointmentPayload(
       {
         counselorId: slot.counselorId,
         slotId: slot.id,
@@ -102,8 +104,8 @@ describe("counseling api payloads", () => {
     }
   });
 
-  it("requires login before creating an appointment", () => {
-    const payload = createCounselingAppointmentPayload({
+  it("requires login before creating an appointment", async () => {
+    const payload = await createCounselingAppointmentPayload({
       counselorId: "counselor_lin",
       slotId: "slot_missing",
       channel: "video",
@@ -114,7 +116,7 @@ describe("counseling api payloads", () => {
     expect(payload.status).toBe(401);
     expect(payload.body.ok).toBe(false);
 
-    const listPayload = listCounselingAppointmentsPayload();
+    const listPayload = await listCounselingAppointmentsPayload();
     expect(listPayload.status).toBe(401);
     expect(listPayload.body.ok).toBe(false);
   });

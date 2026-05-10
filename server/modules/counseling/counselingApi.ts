@@ -35,9 +35,22 @@ const CounselingAppointmentListResponseSchema = ApiResponseSchema(
 
 let counselingAppointmentStore = createDefaultCounselingAppointmentStore();
 
-function reportRiskEventStoreError(err: unknown) {
-  console.error(
-    err instanceof Error ? err.message : "风险事件持久化失败"
+function reportStoreError(err: unknown) {
+  console.error(err instanceof Error ? err.message : "咨询预约持久化失败");
+}
+
+function isActiveSlotConflict(err: unknown) {
+  if (!err || typeof err !== "object") return false;
+  const error = err as {
+    code?: unknown;
+    constraint?: unknown;
+    message?: unknown;
+  };
+  return (
+    error.code === "23505" ||
+    error.constraint === "uniq_active_counseling_slot" ||
+    (typeof error.message === "string" &&
+      error.message.includes("uniq_active_counseling_slot"))
   );
 }
 
@@ -147,28 +160,32 @@ function buildNextSteps(riskEvent: RiskEvent | undefined) {
 }
 
 export function resetCounselingAppointmentStore(now = new Date()) {
-  counselingAppointmentStore.reset(now);
-  void resetRiskEventStore().catch(reportRiskEventStoreError);
+  return Promise.all([
+    Promise.resolve(counselingAppointmentStore.reset(now)),
+    resetRiskEventStore(),
+  ]).then(() => undefined);
 }
 
-export function setCounselingAppointmentStore(store: CounselingAppointmentStore) {
+export function setCounselingAppointmentStore(
+  store: CounselingAppointmentStore
+) {
   counselingAppointmentStore = store;
 }
 
-export function getCounselingAvailabilityPayload(
+export async function getCounselingAvailabilityPayload(
   now = new Date().toISOString()
 ) {
   return CounselingAvailabilityResponseSchema.parse({
     ok: true,
     data: {
       counselors: counselorProfiles,
-      slots: counselingAppointmentStore.listSlots(),
+      slots: await counselingAppointmentStore.listSlots(new Date(now)),
       serverTime: now,
     },
   });
 }
 
-export function createCounselingAppointmentPayload(
+export async function createCounselingAppointmentPayload(
   body: unknown,
   userId?: string,
   now = new Date().toISOString()
@@ -199,7 +216,7 @@ export function createCounselingAppointmentPayload(
     } as const;
   }
 
-  const slot = counselingAppointmentStore.getSlot(request.slotId);
+  const slot = await counselingAppointmentStore.getSlot(request.slotId);
   if (!slot || slot.counselorId !== request.counselorId) {
     return {
       status: 404,
@@ -225,7 +242,6 @@ export function createCounselingAppointmentPayload(
     ...slot,
     available: false,
   };
-  counselingAppointmentStore.saveSlot(reservedSlot);
 
   const appointment: CounselingAppointment = {
     id: `appointment_${randomUUID()}`,
@@ -240,8 +256,33 @@ export function createCounselingAppointmentPayload(
     updatedAt: now,
   };
   const riskEvent = resolveRiskEvent({ request, userId, now });
-  counselingAppointmentStore.saveAppointment(appointment, riskEvent);
-  if (riskEvent) void saveRiskEvent(riskEvent).catch(reportRiskEventStoreError);
+  let slotReserved = false;
+  try {
+    if (riskEvent) await saveRiskEvent(riskEvent);
+    await counselingAppointmentStore.saveSlot(reservedSlot);
+    slotReserved = true;
+    await counselingAppointmentStore.saveAppointment(appointment, riskEvent);
+  } catch (err) {
+    if (isActiveSlotConflict(err)) {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "该咨询时段已被占用，请选择其他时间"),
+      } as const;
+    }
+
+    if (slotReserved) {
+      try {
+        await counselingAppointmentStore.saveSlot(slot);
+      } catch (releaseErr) {
+        reportStoreError(releaseErr);
+      }
+    }
+    reportStoreError(err);
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "咨询预约创建失败，请稍后重试"),
+    } as const;
+  }
 
   return {
     status: 200,
@@ -258,33 +299,35 @@ export function createCounselingAppointmentPayload(
   } as const;
 }
 
-function appointmentToRecord(
+async function appointmentToRecord(
   appointment: CounselingAppointment
-): CounselingAppointmentRecord | undefined {
+): Promise<CounselingAppointmentRecord | undefined> {
   const counselor = counselorProfiles.find(
     item => item.id === appointment.counselorId
   );
-  const slot = counselingAppointmentStore.getSlot(appointment.slotId);
+  const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
   if (!counselor || !slot) return undefined;
 
   return {
     appointment,
     counselor,
     slot,
-    riskEvent: counselingAppointmentStore.getRiskEventForAppointment(
+    riskEvent: await counselingAppointmentStore.getRiskEventForAppointment(
       appointment.id
     ),
   };
 }
 
-export function listCounselingAppointmentRecords(userId: string) {
-  return counselingAppointmentStore
-    .listAppointmentsByUser(userId)
-    .map(appointmentToRecord)
-    .filter((record): record is CounselingAppointmentRecord => Boolean(record));
+export async function listCounselingAppointmentRecords(userId: string) {
+  const appointments =
+    await counselingAppointmentStore.listAppointmentsByUser(userId);
+  const records = await Promise.all(appointments.map(appointmentToRecord));
+  return records.filter((record): record is CounselingAppointmentRecord =>
+    Boolean(record)
+  );
 }
 
-export function listCounselingAppointmentsPayload(
+export async function listCounselingAppointmentsPayload(
   userId?: string,
   now = new Date().toISOString()
 ) {
@@ -295,7 +338,7 @@ export function listCounselingAppointmentsPayload(
     } as const;
   }
 
-  const appointments = listCounselingAppointmentRecords(userId);
+  const appointments = await listCounselingAppointmentRecords(userId);
 
   return {
     status: 200,
@@ -310,24 +353,33 @@ export function listCounselingAppointmentsPayload(
 }
 
 export function registerCounselingApi(app: Express) {
-  app.get("/api/counseling/availability", (_req: Request, res: Response) => {
-    sendJson(res, 200, getCounselingAvailabilityPayload());
-  });
+  app.get(
+    "/api/counseling/availability",
+    async (_req: Request, res: Response) => {
+      sendJson(res, 200, await getCounselingAvailabilityPayload());
+    }
+  );
 
-  app.get("/api/counseling/appointments", (req: Request, res: Response) => {
-    const session = getLoginSessionFromRequest(req);
-    const payload = listCounselingAppointmentsPayload(session?.user.id);
-    sendJson(res, payload.status, payload.body);
-  });
+  app.get(
+    "/api/counseling/appointments",
+    async (req: Request, res: Response) => {
+      const session = getLoginSessionFromRequest(req);
+      const payload = await listCounselingAppointmentsPayload(session?.user.id);
+      sendJson(res, payload.status, payload.body);
+    }
+  );
 
-  app.post("/api/counseling/appointments", (req: Request, res: Response) => {
-    const session = getLoginSessionFromRequest(req);
-    const payload = createCounselingAppointmentPayload(
-      req.body,
-      session?.user.id
-    );
-    sendJson(res, payload.status, payload.body);
-  });
+  app.post(
+    "/api/counseling/appointments",
+    async (req: Request, res: Response) => {
+      const session = getLoginSessionFromRequest(req);
+      const payload = await createCounselingAppointmentPayload(
+        req.body,
+        session?.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
 }
 
 export function handleCounselingApiRequest(
@@ -339,14 +391,24 @@ export function handleCounselingApiRequest(
   const url = new URL(req.url, "http://localhost");
 
   if (req.method === "GET" && url.pathname === "/api/counseling/availability") {
-    sendJson(res, 200, getCounselingAvailabilityPayload());
+    void getCounselingAvailabilityPayload()
+      .then(payload => sendJson(res, 200, payload))
+      .catch(err => {
+        reportStoreError(err);
+        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询时段读取失败"));
+      });
     return true;
   }
 
   if (req.method === "GET" && url.pathname === "/api/counseling/appointments") {
-    const session = getLoginSessionFromRequest(req);
-    const payload = listCounselingAppointmentsPayload(session?.user.id);
-    sendJson(res, payload.status, payload.body);
+    void (async () => {
+      const session = getLoginSessionFromRequest(req);
+      const payload = await listCounselingAppointmentsPayload(session?.user.id);
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      reportStoreError(err);
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询预约读取失败"));
+    });
     return true;
   }
 
@@ -354,14 +416,19 @@ export function handleCounselingApiRequest(
     req.method === "POST" &&
     url.pathname === "/api/counseling/appointments"
   ) {
-    void readRequestBody(req).then(body => {
-      const session = getLoginSessionFromRequest(req);
-      const payload = createCounselingAppointmentPayload(
-        body,
-        session?.user.id
-      );
-      sendJson(res, payload.status, payload.body);
-    });
+    void readRequestBody(req)
+      .then(async body => {
+        const session = getLoginSessionFromRequest(req);
+        const payload = await createCounselingAppointmentPayload(
+          body,
+          session?.user.id
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(err => {
+        reportStoreError(err);
+        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询预约创建失败"));
+      });
     return true;
   }
 

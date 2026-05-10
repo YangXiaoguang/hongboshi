@@ -22,7 +22,7 @@ describe("growth profile api payloads", () => {
   beforeEach(async () => {
     await resetAssessmentResultStore();
     resetCourseAccessStore();
-    resetCounselingAppointmentStore(new Date(fixedNow));
+    await resetCounselingAppointmentStore(new Date(fixedNow));
   });
 
   it("requires login before reading the growth profile", async () => {
@@ -45,11 +45,11 @@ describe("growth profile api payloads", () => {
       userId
     );
 
-    const availability = getCounselingAvailabilityPayload(fixedNow);
+    const availability = await getCounselingAvailabilityPayload(fixedNow);
     if (!availability.ok) throw new Error("expected availability");
     const slot = availability.data.slots[0];
 
-    createCounselingAppointmentPayload(
+    await createCounselingAppointmentPayload(
       {
         counselorId: slot.counselorId,
         slotId: slot.id,

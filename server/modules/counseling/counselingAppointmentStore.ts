@@ -7,18 +7,24 @@ import {
   type CounselingSlot,
   type RiskEvent,
 } from "../../../shared/domain";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
+import { PostgresCounselingAppointmentStore } from "./postgresCounselingAppointmentStore";
+
+type MaybePromise<T> = T | Promise<T>;
 
 export interface CounselingAppointmentStore {
-  listSlots(): CounselingSlot[];
-  getSlot(slotId: string): CounselingSlot | undefined;
-  saveSlot(slot: CounselingSlot): CounselingSlot;
+  listSlots(now?: Date): MaybePromise<CounselingSlot[]>;
+  getSlot(slotId: string): MaybePromise<CounselingSlot | undefined>;
+  saveSlot(slot: CounselingSlot): MaybePromise<CounselingSlot>;
   saveAppointment(
     appointment: CounselingAppointment,
     riskEvent?: RiskEvent
-  ): CounselingAppointment;
-  listAppointmentsByUser(userId: string): CounselingAppointment[];
-  getRiskEventForAppointment(appointmentId: string): RiskEvent | undefined;
-  reset(now?: Date): void;
+  ): MaybePromise<CounselingAppointment>;
+  listAppointmentsByUser(userId: string): MaybePromise<CounselingAppointment[]>;
+  getRiskEventForAppointment(
+    appointmentId: string
+  ): MaybePromise<RiskEvent | undefined>;
+  reset(now?: Date): MaybePromise<void>;
 }
 
 function cloneSlot(slot: CounselingSlot): CounselingSlot {
@@ -37,9 +43,7 @@ function cloneRiskEvent(event: RiskEvent): RiskEvent {
   return RiskEventSchema.parse(JSON.parse(JSON.stringify(event)));
 }
 
-export class InMemoryCounselingAppointmentStore
-  implements CounselingAppointmentStore
-{
+export class InMemoryCounselingAppointmentStore implements CounselingAppointmentStore {
   private appointments = new Map<string, CounselingAppointment>();
   private appointmentRiskEvents = new Map<string, RiskEvent>();
   private slots = new Map<string, CounselingSlot>();
@@ -99,5 +103,13 @@ export class InMemoryCounselingAppointmentStore
 }
 
 export function createDefaultCounselingAppointmentStore(): CounselingAppointmentStore {
+  if (
+    process.env.HONGBOSHI_COUNSELING_APPOINTMENT_STORE === "postgres" ||
+    (process.env.HONGBOSHI_COUNSELING_APPOINTMENT_STORE !== "memory" &&
+      getDatabaseUrl())
+  ) {
+    return new PostgresCounselingAppointmentStore(getSharedPostgresPool());
+  }
+
   return new InMemoryCounselingAppointmentStore();
 }
