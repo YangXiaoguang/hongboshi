@@ -49,6 +49,7 @@ describe("counseling appointment store", () => {
     expect(store.getAppointment("appointment_1")?.status).toBe(
       "pending_payment"
     );
+    expect(store.listPendingPaymentAppointments()).toHaveLength(1);
     expect(store.getRiskEventForAppointment("appointment_1")?.riskLevel).toBe(
       "medium"
     );

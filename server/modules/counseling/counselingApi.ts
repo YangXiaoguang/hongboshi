@@ -6,12 +6,14 @@ import { counselorProfiles } from "../../../shared/data/counselingSeed";
 import {
   ApiResponseSchema,
   applyCounselingAppointmentAction,
+  COUNSELING_PAYMENT_HOLD_MINUTES,
   CounselingAppointmentActionRequestSchema,
   CounselingAppointmentActionResultSchema,
   CounselingAppointmentCreateRequestSchema,
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
+  expireOverdueCounselingAppointmentPayment,
   RiskEventSchema,
   type CounselingAppointment,
   type CounselingAppointmentAction,
@@ -154,13 +156,13 @@ function buildNextSteps(riskEvent: RiskEvent | undefined) {
   if (riskEvent) {
     return [
       "本次预约已进入重点关注队列，咨询师会在服务前查看你的重点信息。",
-      "请在 30 分钟内完成支付以保留时段，后续可继续接入改期与取消流程。",
+      `请在 ${COUNSELING_PAYMENT_HOLD_MINUTES} 分钟内完成支付以保留时段，后续可继续接入改期与取消流程。`,
       "若状态突然恶化，请优先获得现实中的即时帮助。",
     ];
   }
 
   return [
-    "请在 30 分钟内完成支付以保留时段，支付能力会在后续迭代接入。",
+    `请在 ${COUNSELING_PAYMENT_HOLD_MINUTES} 分钟内完成支付以保留时段，支付能力会在后续迭代接入。`,
     "咨询师会在服务前查看你填写的困扰重点和补充说明。",
     "预约确认后，可在个人中心查看咨询记录和后续跟进建议。",
   ];
@@ -186,12 +188,67 @@ function transitionConflictMessage(
   action: CounselingAppointmentAction
 ) {
   if (action === "confirm_payment") {
-    return status === "scheduled"
-      ? "该预约已确认，无需重复支付"
-      : "当前预约状态不支持确认支付";
+    if (status === "scheduled") return "该预约已确认，无需重复支付";
+    if (status === "cancelled") return "该预约已取消，如需咨询请重新选择时段";
+    return "当前预约状态不支持确认支付";
   }
 
+  if (status === "cancelled") return "该预约已取消，无需重复取消";
   return "当前预约状态不支持取消";
+}
+
+export async function expireOverdueCounselingPayments(
+  now = new Date().toISOString()
+) {
+  const pendingAppointments =
+    await counselingAppointmentStore.listPendingPaymentAppointments();
+  const expiredRecords: CounselingAppointmentRecord[] = [];
+
+  for (const appointment of pendingAppointments) {
+    const expiredAppointment = expireOverdueCounselingAppointmentPayment({
+      appointment,
+      now,
+    });
+    if (!expiredAppointment) continue;
+
+    const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
+    const counselor = counselorProfiles.find(
+      item => item.id === appointment.counselorId
+    );
+    if (!slot || !counselor) continue;
+
+    const riskEvent =
+      await counselingAppointmentStore.getRiskEventForAppointment(
+        appointment.id
+      );
+    const releasedSlot: CounselingSlot = {
+      ...slot,
+      available: true,
+    };
+
+    try {
+      const savedAppointment = await counselingAppointmentStore.saveAppointment(
+        expiredAppointment,
+        riskEvent
+      );
+      const savedSlot = await counselingAppointmentStore.saveSlot(releasedSlot);
+
+      expiredRecords.push({
+        appointment: savedAppointment,
+        counselor,
+        slot: savedSlot,
+        riskEvent,
+      });
+    } catch (err) {
+      reportStoreError(err);
+    }
+  }
+
+  return {
+    expiredAppointments: expiredRecords,
+    releasedSlotIds: expiredRecords.map(record => record.slot.id),
+    serverTime: now,
+  };
 }
 
 export function resetCounselingAppointmentStore(now = new Date()) {
@@ -210,6 +267,8 @@ export function setCounselingAppointmentStore(
 export async function getCounselingAvailabilityPayload(
   now = new Date().toISOString()
 ) {
+  await expireOverdueCounselingPayments(now);
+
   return CounselingAvailabilityResponseSchema.parse({
     ok: true,
     data: {
@@ -241,6 +300,8 @@ export async function createCounselingAppointmentPayload(
   }
 
   const request = parsed.data;
+  await expireOverdueCounselingPayments(now);
+
   const counselor = counselorProfiles.find(
     item => item.id === request.counselorId
   );
@@ -354,7 +415,12 @@ async function appointmentToRecord(
   };
 }
 
-export async function listCounselingAppointmentRecords(userId: string) {
+export async function listCounselingAppointmentRecords(
+  userId: string,
+  now = new Date().toISOString()
+) {
+  await expireOverdueCounselingPayments(now);
+
   const appointments =
     await counselingAppointmentStore.listAppointmentsByUser(userId);
   const records = await Promise.all(appointments.map(appointmentToRecord));
@@ -374,7 +440,7 @@ export async function listCounselingAppointmentsPayload(
     } as const;
   }
 
-  const appointments = await listCounselingAppointmentRecords(userId);
+  const appointments = await listCounselingAppointmentRecords(userId, now);
 
   return {
     status: 200,
@@ -408,6 +474,8 @@ export async function updateCounselingAppointmentPayload(
       body: errorPayload("BAD_REQUEST", "预约操作参数不合法"),
     } as const;
   }
+
+  await expireOverdueCounselingPayments(now);
 
   const appointment =
     await counselingAppointmentStore.getAppointment(appointmentId);

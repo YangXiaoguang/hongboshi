@@ -223,6 +223,38 @@ describe("postgres counseling appointment store", () => {
     expect(db.queries[0]?.values).toEqual(["appointment_1"]);
   });
 
+  it("reads pending payment appointments for expiration jobs", async () => {
+    const db = new FakeCounselingExecutor({
+      appointments: [
+        {
+          id: "appointment_1",
+          user_id: "user_1",
+          counselor_id: "counselor_lin",
+          slot_id: "slot_1",
+          channel: "video",
+          status: "pending_payment",
+          concern_tags: ["emotion"],
+          note_for_counselor: null,
+          assessment_report_id: null,
+          risk_event_id: null,
+          created_at: new Date("2026-05-10T08:00:00.000Z"),
+          updated_at: new Date("2026-05-10T08:00:00.000Z"),
+        },
+      ],
+    });
+    const store = new PostgresCounselingAppointmentStore(db);
+
+    const appointments = await store.listPendingPaymentAppointments();
+
+    expect(appointments).toHaveLength(1);
+    expect(appointments[0]).toMatchObject({
+      id: "appointment_1",
+      status: "pending_payment",
+    });
+    expect(db.queries[0]?.text).toContain("WHERE status = $1");
+    expect(db.queries[0]?.values).toEqual(["pending_payment"]);
+  });
+
   it("reads risk events linked to counseling appointments", async () => {
     const db = new FakeCounselingExecutor({
       risk: [

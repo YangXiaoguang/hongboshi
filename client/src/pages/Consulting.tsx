@@ -23,6 +23,7 @@ import {
   type AssessmentResult,
 } from "@/features/assessments";
 import {
+  COUNSELING_PAYMENT_HOLD_MINUTES,
   useCounselingIntake,
   type Counselor,
   type CounselorSpecialty,
@@ -514,7 +515,8 @@ export default function Consulting() {
                       </p>
                       <p className="mt-1 text-xs leading-5 text-[#6D746F]">
                         {channelCopy[selectedSlot.channel].label}，
-                        {slotDuration(selectedSlot)}，当前状态为待支付锁定。
+                        {slotDuration(selectedSlot)}，提交后会保留{" "}
+                        {COUNSELING_PAYMENT_HOLD_MINUTES} 分钟待支付。
                       </p>
                     </div>
                   </div>

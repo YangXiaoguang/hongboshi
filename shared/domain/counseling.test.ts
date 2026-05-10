@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyCounselingAppointmentAction,
+  expireOverdueCounselingAppointmentPayment,
+  getCounselingPaymentDeadline,
   getNextCounselingAppointmentStatus,
+  isCounselingPaymentExpired,
   type CounselingAppointment,
 } from "./counseling";
 
@@ -38,5 +41,45 @@ describe("counseling appointment status machine", () => {
     expect(getNextCounselingAppointmentStatus("completed", "cancel")).toBe(
       undefined
     );
+  });
+
+  it("expires unpaid appointments after the payment hold window", () => {
+    expect(getCounselingPaymentDeadline(appointment)).toBe(
+      "2026-05-10T10:30:00.000Z"
+    );
+    expect(
+      isCounselingPaymentExpired({
+        appointment,
+        now: "2026-05-10T10:29:59.000Z",
+      })
+    ).toBe(false);
+    expect(
+      isCounselingPaymentExpired({
+        appointment,
+        now: "2026-05-10T10:30:00.000Z",
+      })
+    ).toBe(true);
+
+    expect(
+      expireOverdueCounselingAppointmentPayment({
+        appointment,
+        now: "2026-05-10T10:31:00.000Z",
+      })
+    ).toMatchObject({
+      status: "cancelled",
+      updatedAt: "2026-05-10T10:31:00.000Z",
+    });
+  });
+
+  it("does not expire confirmed appointments", () => {
+    expect(
+      expireOverdueCounselingAppointmentPayment({
+        appointment: {
+          ...appointment,
+          status: "scheduled",
+        },
+        now: "2026-05-10T09:00:00.000Z",
+      })
+    ).toBeUndefined();
   });
 });

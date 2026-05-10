@@ -23,6 +23,7 @@ export interface CounselingAppointmentStore {
     appointment: CounselingAppointment,
     riskEvent?: RiskEvent
   ): MaybePromise<CounselingAppointment>;
+  listPendingPaymentAppointments(): MaybePromise<CounselingAppointment[]>;
   listAppointmentsByUser(userId: string): MaybePromise<CounselingAppointment[]>;
   getRiskEventForAppointment(
     appointmentId: string
@@ -87,6 +88,13 @@ export class InMemoryCounselingAppointmentStore implements CounselingAppointment
     }
 
     return cloneAppointment(normalized);
+  }
+
+  listPendingPaymentAppointments(): CounselingAppointment[] {
+    return Array.from(this.appointments.values())
+      .filter(appointment => appointment.status === "pending_payment")
+      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+      .map(cloneAppointment);
   }
 
   listAppointmentsByUser(userId: string): CounselingAppointment[] {

@@ -136,6 +136,8 @@ export const CounselingAppointmentActionResultSchema = z.object({
   nextSteps: z.array(z.string().min(1)).min(1),
 });
 
+export const COUNSELING_PAYMENT_HOLD_MINUTES = 30;
+
 const appointmentActionTransitions: Record<
   CounselingAppointmentAction,
   { from: AppointmentStatus[]; to: AppointmentStatus }
@@ -180,6 +182,62 @@ export function applyCounselingAppointmentAction({
   return CounselingAppointmentSchema.parse({
     ...normalized,
     status: nextStatus,
+    updatedAt: now,
+  });
+}
+
+export function getCounselingPaymentDeadline(
+  appointment: CounselingAppointment,
+  holdMinutes = COUNSELING_PAYMENT_HOLD_MINUTES
+): string {
+  const normalized = CounselingAppointmentSchema.parse(appointment);
+  return new Date(
+    Date.parse(normalized.createdAt) + holdMinutes * 60 * 1000
+  ).toISOString();
+}
+
+export function isCounselingPaymentExpired({
+  appointment,
+  now = new Date().toISOString(),
+  holdMinutes = COUNSELING_PAYMENT_HOLD_MINUTES,
+}: {
+  appointment: CounselingAppointment;
+  now?: string;
+  holdMinutes?: number;
+}): boolean {
+  const normalized = CounselingAppointmentSchema.parse(appointment);
+  if (normalized.status !== "pending_payment") return false;
+
+  return (
+    Date.parse(now) >=
+    Date.parse(getCounselingPaymentDeadline(normalized, holdMinutes))
+  );
+}
+
+export function expireOverdueCounselingAppointmentPayment({
+  appointment,
+  now = new Date().toISOString(),
+  holdMinutes = COUNSELING_PAYMENT_HOLD_MINUTES,
+}: {
+  appointment: CounselingAppointment;
+  now?: string;
+  holdMinutes?: number;
+}): CounselingAppointment | undefined {
+  const normalized = CounselingAppointmentSchema.parse(appointment);
+
+  if (
+    !isCounselingPaymentExpired({
+      appointment: normalized,
+      now,
+      holdMinutes,
+    })
+  ) {
+    return undefined;
+  }
+
+  return CounselingAppointmentSchema.parse({
+    ...normalized,
+    status: "cancelled",
     updatedAt: now,
   });
 }

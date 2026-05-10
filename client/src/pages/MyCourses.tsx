@@ -38,6 +38,8 @@ import {
   type AssessmentDimension,
 } from "@/features/assessments";
 import {
+  COUNSELING_PAYMENT_HOLD_MINUTES,
+  getCounselingPaymentDeadline,
   httpCounselingRepository,
   type CounselingAppointmentRecord,
   type CounselingAppointmentAction,
@@ -316,6 +318,9 @@ function AppointmentRow({
   const canCancel = ["pending_payment", "scheduled"].includes(
     record.appointment.status
   );
+  const paymentDeadline = canConfirmPayment
+    ? getCounselingPaymentDeadline(record.appointment)
+    : undefined;
 
   return (
     <div className="rounded-[20px] border border-[#E7DED0] bg-[#FFFCF7] p-4">
@@ -353,6 +358,16 @@ function AppointmentRow({
       {record.appointment.assessmentReportId && (
         <p className="mt-3 rounded-[16px] bg-[#F5EFE5] px-3 py-2 text-xs leading-5 text-[#6D746F]">
           已关联测评报告：{record.appointment.assessmentReportId}
+        </p>
+      )}
+
+      {paymentDeadline && (
+        <p className="mt-3 flex items-start gap-2 rounded-[16px] bg-[#F4E5DE] px-3 py-2 text-xs leading-5 text-[#8C5947]">
+          <CalendarClock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            支付保留至 {formatDate(paymentDeadline)}，超过{" "}
+            {COUNSELING_PAYMENT_HOLD_MINUTES} 分钟将自动取消并释放时段。
+          </span>
         </p>
       )}
 

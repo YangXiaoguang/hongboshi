@@ -61,7 +61,7 @@ async function buildGrowthProfile(
 ): Promise<GrowthProfile> {
   const courseAccess = await loadCourseAccessState(userId);
   const latestAssessment = await getLatestAssessmentResult(userId);
-  const appointments = await listCounselingAppointmentRecords(userId);
+  const appointments = await listCounselingAppointmentRecords(userId, now);
   const upcomingCounselingCount = appointments.filter(record => {
     return (
       activeAppointmentStatuses.has(record.appointment.status) &&

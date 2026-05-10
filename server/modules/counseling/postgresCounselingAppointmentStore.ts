@@ -341,6 +341,32 @@ export class PostgresCounselingAppointmentStore {
     return result.rows.map(counselingAppointmentRowToDomain);
   }
 
+  async listPendingPaymentAppointments(): Promise<CounselingAppointment[]> {
+    const result = await this.db.query<CounselingAppointmentRow>(
+      `
+        SELECT
+          id,
+          user_id,
+          counselor_id,
+          slot_id,
+          channel,
+          status,
+          concern_tags,
+          note_for_counselor,
+          assessment_report_id,
+          risk_event_id,
+          created_at,
+          updated_at
+        FROM counseling_appointments
+        WHERE status = $1
+        ORDER BY created_at ASC
+      `,
+      ["pending_payment"]
+    );
+
+    return result.rows.map(counselingAppointmentRowToDomain);
+  }
+
   async getRiskEventForAppointment(
     appointmentId: string
   ): Promise<RiskEvent | undefined> {

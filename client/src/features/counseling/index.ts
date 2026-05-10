@@ -1,6 +1,10 @@
 export * from "./api/httpCounselingRepository";
 export * from "./hooks/useCounselingAppointments";
 export * from "./hooks/useCounselingIntake";
+export {
+  COUNSELING_PAYMENT_HOLD_MINUTES,
+  getCounselingPaymentDeadline,
+} from "@shared/domain";
 export type {
   Counselor,
   CounselorSpecialty,

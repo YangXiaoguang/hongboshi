@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   createCounselingAppointmentPayload,
+  expireOverdueCounselingPayments,
   getCounselingAvailabilityPayload,
   listCounselingAppointmentsPayload,
   resetCounselingAppointmentStore,
@@ -136,6 +137,62 @@ describe("counseling api payloads", () => {
       "2026-05-10T00:30:00.000Z"
     );
     expect(repeated.status).toBe(409);
+  });
+
+  it("expires overdue payment holds and releases the reserved slot", async () => {
+    const availability = await getCounselingAvailabilityPayload(
+      fixedNow.toISOString()
+    );
+    if (!availability.ok) throw new Error("expected availability");
+
+    const slot = availability.data.slots[3];
+    const created = await createCounselingAppointmentPayload(
+      {
+        counselorId: slot.counselorId,
+        slotId: slot.id,
+        channel: slot.channel,
+        concernTags: ["sleep"],
+        urgency: "this_week",
+      },
+      "user_1",
+      "2026-05-10T08:00:00.000Z"
+    );
+    if (!created.body.ok) throw new Error("expected created appointment");
+
+    const beforeDeadline = await expireOverdueCounselingPayments(
+      "2026-05-10T08:29:00.000Z"
+    );
+    expect(beforeDeadline.expiredAppointments).toHaveLength(0);
+
+    const expired = await expireOverdueCounselingPayments(
+      "2026-05-10T08:31:00.000Z"
+    );
+
+    expect(expired.releasedSlotIds).toEqual([slot.id]);
+    expect(expired.expiredAppointments[0]?.appointment.status).toBe(
+      "cancelled"
+    );
+    expect(expired.expiredAppointments[0]?.slot.available).toBe(true);
+
+    const listPayload = await listCounselingAppointmentsPayload(
+      "user_1",
+      "2026-05-10T08:31:00.000Z"
+    );
+    expect(listPayload.status).toBe(200);
+    if (listPayload.body.ok) {
+      expect(listPayload.body.data.appointments[0]?.appointment.status).toBe(
+        "cancelled"
+      );
+      expect(listPayload.body.data.appointments[0]?.slot.available).toBe(true);
+    }
+
+    const confirmAfterExpiry = await updateCounselingAppointmentPayload(
+      created.body.data.appointment.id,
+      { action: "confirm_payment" },
+      "user_1",
+      "2026-05-10T08:32:00.000Z"
+    );
+    expect(confirmAfterExpiry.status).toBe(409);
   });
 
   it("creates a risk event for urgent intake", async () => {
