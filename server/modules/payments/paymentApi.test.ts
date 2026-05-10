@@ -13,7 +13,10 @@ import {
   getCourseAccessPayload,
   resetCourseAccessStore,
 } from "../courses/courseAccessApi";
-import { processPaymentWebhookPayload } from "./paymentApi";
+import {
+  getPaymentReconciliationConsolePayload,
+  processPaymentWebhookPayload,
+} from "./paymentApi";
 import { resetPaymentWebhookEventStore } from "./paymentWebhookEventStore";
 import {
   PAYMENT_WEBHOOK_SIGNATURE_HEADER,
@@ -114,6 +117,49 @@ describe("payment webhook api payloads", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(second.body).toEqual(first.body);
+  });
+
+  it("builds an operator reconciliation view from webhook receipts and business state", async () => {
+    const created = await createPendingCounselingOrder();
+    const event = createSimulatedPaymentSucceededEvent({
+      order: created.order,
+      now: "2026-05-10T00:10:00.000Z",
+    });
+    await processPaymentWebhookPayload(event);
+
+    const forbidden = await getPaymentReconciliationConsolePayload(
+      { id: "user_1", roles: ["member"] },
+      "2026-05-10T00:11:00.000Z"
+    );
+    expect(forbidden.status).toBe(403);
+
+    const consolePayload = await getPaymentReconciliationConsolePayload(
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:11:00.000Z"
+    );
+
+    expect(consolePayload.status).toBe(200);
+    if (consolePayload.body.ok) {
+      expect(consolePayload.body.data.summary).toMatchObject({
+        receiptCount: 1,
+        processedCount: 1,
+        okCount: 1,
+        criticalCount: 0,
+      });
+      expect(consolePayload.body.data.entries[0]).toMatchObject({
+        severity: "ok",
+        webhook: {
+          id: event.id,
+          orderId: created.order.id,
+          status: "processed",
+        },
+        business: {
+          domain: "counseling",
+          orderStatus: "paid",
+          appointmentStatus: "scheduled",
+        },
+      });
+    }
   });
 
   it("routes simulated refund success to the counseling refund flow", async () => {

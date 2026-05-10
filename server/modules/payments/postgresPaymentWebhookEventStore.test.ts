@@ -148,4 +148,40 @@ describe("postgres payment webhook event store", () => {
       "2026-05-10T00:01:02.000Z",
     ]);
   });
+
+  it("lists recent webhook receipts for reconciliation", async () => {
+    const event = createSimulatedPaymentSucceededEvent({
+      order,
+      now: "2026-05-10T00:01:00.000Z",
+    });
+    const db = new FakePaymentWebhookExecutor({
+      existing: [
+        {
+          id: event.id,
+          event_type: event.type,
+          order_id: event.orderId,
+          channel: event.channel,
+          status: "processed",
+          event_payload: event,
+          response_status: 200,
+          response_body: { ok: true },
+          error_message: null,
+          received_at: new Date("2026-05-10T00:01:01.000Z"),
+          processed_at: new Date("2026-05-10T00:01:02.000Z"),
+        },
+      ],
+    });
+    const store = new PostgresPaymentWebhookEventStore(db);
+
+    const recent = await store.listRecent(20);
+
+    expect(recent).toHaveLength(1);
+    expect(recent[0]).toMatchObject({
+      id: event.id,
+      status: "processed",
+      receivedAt: "2026-05-10T00:01:01.000Z",
+    });
+    expect(db.queries[0]?.text).toContain("ORDER BY received_at DESC");
+    expect(db.queries[0]?.values).toEqual([20]);
+  });
 });

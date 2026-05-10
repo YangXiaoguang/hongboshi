@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  PaymentWebhookReceiptStatusSchema,
   PaymentWebhookEventSchema,
   type PaymentWebhookEvent,
 } from "../../../shared/domain";
@@ -7,12 +8,6 @@ import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
 import { PostgresPaymentWebhookEventStore } from "./postgresPaymentWebhookEventStore";
 
 type MaybePromise<T> = T | Promise<T>;
-
-export const PaymentWebhookReceiptStatusSchema = z.enum([
-  "processing",
-  "processed",
-  "failed",
-]);
 
 export const PaymentWebhookReceiptSchema = z.object({
   id: z.string().min(1),
@@ -59,6 +54,7 @@ export interface PaymentWebhookEventStore {
     errorMessage: string,
     processedAt: string
   ): MaybePromise<PaymentWebhookReceipt>;
+  listRecent(limit?: number): MaybePromise<PaymentWebhookReceipt[]>;
   clear(): MaybePromise<void>;
 }
 
@@ -90,6 +86,10 @@ function updateReceipt(
     ...receipt,
     ...patch,
   });
+}
+
+function normalizeLimit(limit = 50) {
+  return Math.max(1, Math.min(100, Math.floor(limit)));
 }
 
 export class InMemoryPaymentWebhookEventStore implements PaymentWebhookEventStore {
@@ -158,6 +158,13 @@ export class InMemoryPaymentWebhookEventStore implements PaymentWebhookEventStor
     });
     this.receipts.set(eventId, cloneReceipt(receipt));
     return receipt;
+  }
+
+  listRecent(limit = 50) {
+    return Array.from(this.receipts.values())
+      .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt))
+      .slice(0, normalizeLimit(limit))
+      .map(cloneReceipt);
   }
 
   clear() {

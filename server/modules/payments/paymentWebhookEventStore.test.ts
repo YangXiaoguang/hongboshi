@@ -50,5 +50,18 @@ describe("payment webhook event store", () => {
       responseStatus: 200,
       responseBody: { ok: true, data: { orderId: order.id } },
     });
+
+    await store.begin(
+      {
+        ...event,
+        id: "evt_payment_newer",
+        occurredAt: "2026-05-10T00:02:00.000Z",
+      },
+      "2026-05-10T00:02:01.000Z"
+    );
+
+    const recent = await store.listRecent(1);
+    expect(recent).toHaveLength(1);
+    expect(recent[0]?.id).toBe("evt_payment_newer");
   });
 });

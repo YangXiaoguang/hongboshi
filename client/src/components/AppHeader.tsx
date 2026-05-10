@@ -7,6 +7,7 @@ import {
   Heart,
   LogOut,
   Menu,
+  ReceiptText,
   Settings,
   SlidersHorizontal,
   User,
@@ -101,6 +102,11 @@ export default function AppHeader() {
             icon: SlidersHorizontal,
             label: "咨询运营配置",
             onClick: () => navigate("/admin/counseling"),
+          },
+          {
+            icon: ReceiptText,
+            label: "支付对账",
+            onClick: () => navigate("/admin/payments"),
           },
         ]
       : []),

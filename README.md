@@ -121,6 +121,7 @@ pnpm db:migrate
 - 咨询预约入口位于 `client/src/pages/Consulting.tsx`，通过 `/consulting` 选择咨询师、时段和咨询前信息
 - 咨询师工作台位于 `client/src/pages/CounselorWorkbench.tsx`，通过 `/counselor/workbench` 处理分配预约、履约状态和退款中订单
 - 咨询运营配置位于 `client/src/pages/CounselingOperations.tsx`，通过 `/admin/counseling` 配置取消规则并查看履约审计
+- 支付对账位于 `client/src/pages/PaymentReconciliation.tsx`，通过 `/admin/payments` 对比支付回调收据、业务订单和咨询预约状态
 - 小程序端预览位于 `client/src/components/MobileView.tsx`
 - 登录状态由 `/api/auth/session`、`/api/auth/login/phone`、`/api/auth/login/wechat` 和 `AuthContext` 共同管理，服务端会话可切换到 PostgreSQL
 - 课程目录、课程详情、课程权益、快速测评、咨询预约和成长档案分别由 `/api/courses`、`/api/course-access`、`/api/assessments/quick`、`/api/counseling/availability`、`/api/counseling/appointments` 和 `/api/growth/profile` 提供
@@ -134,6 +135,7 @@ pnpm db:migrate
 - 咨询预约提交和预约记录读取需要登录；当前会生成待支付预约单、锁定时段，并对高风险/危机诉求生成风险事件
 - 咨询师工作台需要 `counselor`、`operator` 或 `admin` 角色；服务端通过 `counseling:fulfill` 权限控制读取和履约操作
 - 咨询运营配置需要 `operator` 或 `admin` 角色；服务端通过 `admin:manage` 权限控制取消规则更新和审计读取
+- 支付对账需要 `operator` 或 `admin` 角色；服务端通过 `admin:manage` 权限控制回调收据和业务状态读取
 - 生产构建后由 `server/index.ts` 托管 `dist/public`
 
 ## 后续二开建议
@@ -141,7 +143,7 @@ pnpm db:migrate
 1. 接入真实短信/微信登录服务，并替换当前 mock 登录凭证校验。
 2. 引入 Prisma 或 Drizzle 管理迁移、事务和类型安全查询。
 3. 建立订单支付状态机，区分待支付、已支付、退款、支付超时关闭。
-4. 接入真实支付渠道、退款通道和订单对账。
+4. 接入真实支付渠道、退款通道和支付对账异常处理动作。
 5. 建立风险人工复核台，承接高风险测评和咨询前信息。
 6. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
 7. 引入 ESLint 或统一的代码质量检查规则。

@@ -169,6 +169,32 @@ export class PostgresPaymentWebhookEventStore implements PaymentWebhookEventStor
     await this.db.query("DELETE FROM payment_webhook_events");
   }
 
+  async listRecent(limit = 50) {
+    const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const result = await this.db.query<PaymentWebhookEventRow>(
+      `
+        SELECT
+          id,
+          event_type,
+          order_id,
+          channel,
+          status,
+          event_payload,
+          response_status,
+          response_body,
+          error_message,
+          received_at,
+          processed_at
+        FROM payment_webhook_events
+        ORDER BY received_at DESC
+        LIMIT $1
+      `,
+      [safeLimit]
+    );
+
+    return result.rows.map(rowToReceipt);
+  }
+
   private async updateStatus(
     eventId: string,
     status: PaymentWebhookReceipt["status"],

@@ -29,6 +29,7 @@ import {
   expireOverdueCounselingAppointmentPayment,
   findCourseAccessOrder,
   PaymentSucceededWebhookEventSchema,
+  PaymentBusinessOrderSnapshotSchema,
   PaymentSchema,
   RefundSchema,
   RefundSucceededWebhookEventSchema,
@@ -51,6 +52,7 @@ import {
   type LoginSession,
   type Order,
   type Payment,
+  type PaymentBusinessOrderSnapshot,
   type PaymentSucceededWebhookEvent,
   type Refund,
   type RefundSucceededWebhookEvent,
@@ -357,6 +359,27 @@ async function getAppointmentOrder(appointment: CounselingAppointment) {
 
   const accessState = await loadCourseAccessState(appointment.userId);
   return findCourseAccessOrder(accessState, appointment.orderId);
+}
+
+export async function getCounselingPaymentOrderSnapshot(
+  orderId: string
+): Promise<PaymentBusinessOrderSnapshot | undefined> {
+  const appointment =
+    await counselingAppointmentStore.getAppointmentByOrderId(orderId);
+  if (!appointment) return undefined;
+
+  const order = await getAppointmentOrder(appointment);
+  return PaymentBusinessOrderSnapshotSchema.parse({
+    domain: "counseling",
+    orderId,
+    userId: appointment.userId,
+    orderStatus: order?.status,
+    appointmentId: appointment.id,
+    appointmentStatus: appointment.status,
+    counselorId: appointment.counselorId,
+    payableAmount: order?.payableAmount,
+    paidAt: order?.paidAt,
+  });
 }
 
 async function saveAppointmentOrderUpdate({

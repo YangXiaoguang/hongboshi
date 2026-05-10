@@ -86,6 +86,88 @@ export const PaymentWebhookEventSchema = z.discriminatedUnion("type", [
   RefundSucceededWebhookEventSchema,
 ]);
 
+export const PaymentWebhookReceiptStatusSchema = z.enum([
+  "processing",
+  "processed",
+  "failed",
+]);
+
+export const PaymentBusinessDomainSchema = z.enum(["counseling"]);
+
+export const PaymentReconciliationSeveritySchema = z.enum([
+  "ok",
+  "warning",
+  "critical",
+]);
+
+export const PaymentReconciliationIssueCodeSchema = z.enum([
+  "webhook_processing",
+  "webhook_failed",
+  "business_order_missing",
+  "order_amount_mismatch",
+  "payment_order_not_settled",
+  "refund_order_not_completed",
+  "refund_appointment_not_completed",
+]);
+
+export const PaymentReconciliationIssueSchema = z.object({
+  code: PaymentReconciliationIssueCodeSchema,
+  severity: PaymentReconciliationSeveritySchema.exclude(["ok"]),
+  message: z.string().min(1),
+});
+
+export const PaymentWebhookReceiptSnapshotSchema = z.object({
+  id: EntityIdSchema,
+  type: z.enum(["payment.succeeded", "refund.succeeded"]),
+  orderId: EntityIdSchema,
+  channel: PaymentChannelSchema,
+  status: PaymentWebhookReceiptStatusSchema,
+  amount: MoneyAmountSchema,
+  transactionId: z.string().min(1),
+  occurredAt: DateTimeLikeSchema,
+  receivedAt: DateTimeLikeSchema,
+  processedAt: DateTimeLikeSchema.optional(),
+  responseStatus: z.number().int().positive().optional(),
+  errorMessage: z.string().min(1).optional(),
+});
+
+export const PaymentBusinessOrderSnapshotSchema = z.object({
+  domain: PaymentBusinessDomainSchema,
+  orderId: EntityIdSchema,
+  userId: EntityIdSchema,
+  orderStatus: OrderStatusSchema.optional(),
+  appointmentId: EntityIdSchema.optional(),
+  appointmentStatus: z.string().min(1).optional(),
+  counselorId: EntityIdSchema.optional(),
+  payableAmount: MoneyAmountSchema.optional(),
+  paidAt: DateTimeLikeSchema.optional(),
+});
+
+export const PaymentReconciliationEntrySchema = z.object({
+  id: EntityIdSchema,
+  webhook: PaymentWebhookReceiptSnapshotSchema,
+  business: PaymentBusinessOrderSnapshotSchema.optional(),
+  severity: PaymentReconciliationSeveritySchema,
+  issues: z.array(PaymentReconciliationIssueSchema),
+  checkedAt: DateTimeLikeSchema,
+});
+
+export const PaymentReconciliationSummarySchema = z.object({
+  receiptCount: z.number().int().nonnegative(),
+  processedCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  processingCount: z.number().int().nonnegative(),
+  okCount: z.number().int().nonnegative(),
+  warningCount: z.number().int().nonnegative(),
+  criticalCount: z.number().int().nonnegative(),
+});
+
+export const PaymentReconciliationConsoleSchema = z.object({
+  entries: z.array(PaymentReconciliationEntrySchema),
+  summary: PaymentReconciliationSummarySchema,
+  serverTime: DateTimeLikeSchema,
+});
+
 export const PaymentWebhookProcessingResultSchema = z.object({
   event: PaymentSucceededWebhookEventSchema,
   payment: PaymentSchema,
@@ -329,6 +411,34 @@ export type RefundSucceededWebhookEvent = z.infer<
   typeof RefundSucceededWebhookEventSchema
 >;
 export type PaymentWebhookEvent = z.infer<typeof PaymentWebhookEventSchema>;
+export type PaymentWebhookReceiptStatus = z.infer<
+  typeof PaymentWebhookReceiptStatusSchema
+>;
+export type PaymentBusinessDomain = z.infer<typeof PaymentBusinessDomainSchema>;
+export type PaymentReconciliationSeverity = z.infer<
+  typeof PaymentReconciliationSeveritySchema
+>;
+export type PaymentReconciliationIssueCode = z.infer<
+  typeof PaymentReconciliationIssueCodeSchema
+>;
+export type PaymentReconciliationIssue = z.infer<
+  typeof PaymentReconciliationIssueSchema
+>;
+export type PaymentWebhookReceiptSnapshot = z.infer<
+  typeof PaymentWebhookReceiptSnapshotSchema
+>;
+export type PaymentBusinessOrderSnapshot = z.infer<
+  typeof PaymentBusinessOrderSnapshotSchema
+>;
+export type PaymentReconciliationEntry = z.infer<
+  typeof PaymentReconciliationEntrySchema
+>;
+export type PaymentReconciliationSummary = z.infer<
+  typeof PaymentReconciliationSummarySchema
+>;
+export type PaymentReconciliationConsole = z.infer<
+  typeof PaymentReconciliationConsoleSchema
+>;
 export type PaymentWebhookProcessingResult = z.infer<
   typeof PaymentWebhookProcessingResultSchema
 >;

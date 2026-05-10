@@ -13,6 +13,7 @@ import CounselorWorkbench from "./pages/CounselorWorkbench";
 import CourseDetail from "./pages/CourseDetail";
 import Home from "./pages/Home";
 import MyCourses from "./pages/MyCourses";
+import PaymentReconciliation from "./pages/PaymentReconciliation";
 
 function Router() {
   return (
@@ -22,6 +23,7 @@ function Router() {
       <Route path={"/consulting"} component={Consulting} />
       <Route path={"/counselor/workbench"} component={CounselorWorkbench} />
       <Route path={"/admin/counseling"} component={CounselingOperations} />
+      <Route path={"/admin/payments"} component={PaymentReconciliation} />
       <Route path={"/assessment"} component={Assessment} />
       <Route path={"/me/courses"} component={MyCourses} />
       <Route path={"/404"} component={NotFound} />

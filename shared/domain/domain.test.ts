@@ -15,6 +15,7 @@ import {
   LoginSessionSchema,
   markOrderPaid,
   markOrderRefunded,
+  PaymentReconciliationConsoleSchema,
   requestOrderRefund,
   upsertCourseAccessOrder,
   UserProfileSchema,
@@ -218,5 +219,52 @@ describe("domain contracts", () => {
         status: "refunded",
       },
     });
+  });
+
+  it("validates payment reconciliation console snapshots", () => {
+    expect(
+      PaymentReconciliationConsoleSchema.safeParse({
+        entries: [
+          {
+            id: "evt_payment_1",
+            webhook: {
+              id: "evt_payment_1",
+              type: "payment.succeeded",
+              orderId: "order_counseling_appointment_1",
+              channel: "manual",
+              status: "processed",
+              amount: 399,
+              transactionId: "tx_1",
+              occurredAt: "2026-05-10T08:10:00.000Z",
+              receivedAt: "2026-05-10T08:10:01.000Z",
+              processedAt: "2026-05-10T08:10:02.000Z",
+              responseStatus: 200,
+            },
+            business: {
+              domain: "counseling",
+              orderId: "order_counseling_appointment_1",
+              userId: "user_1",
+              orderStatus: "paid",
+              appointmentId: "appointment_1",
+              appointmentStatus: "scheduled",
+              payableAmount: 399,
+            },
+            severity: "ok",
+            issues: [],
+            checkedAt: "2026-05-10T08:11:00.000Z",
+          },
+        ],
+        summary: {
+          receiptCount: 1,
+          processedCount: 1,
+          failedCount: 0,
+          processingCount: 0,
+          okCount: 1,
+          warningCount: 0,
+          criticalCount: 0,
+        },
+        serverTime: "2026-05-10T08:11:00.000Z",
+      }).success
+    ).toBe(true);
   });
 });
