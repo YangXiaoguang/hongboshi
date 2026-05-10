@@ -1,0 +1,36 @@
+# 数据库 Schema 准备说明
+
+本项目下一阶段目标是把开发期 JSON/内存 Store 替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表。
+
+## 文件位置
+
+- `server/db/schema.ts`：核心表契约，供测试和后续 Store 实现引用。
+- `server/db/migrations/0001_core_tables.sql`：PostgreSQL 初始迁移草案。
+- `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
+
+## 设计原则
+
+- 领域契约仍以 `shared/domain` 为准，数据库字段不能绕过 Zod schema 暴露给前端。
+- 金额统一以 `*_cents` 整数存储，避免浮点金额误差；API 层再转换为领域模型里的金额数值。
+- 测评分数、推荐结果这类强业务结构先用 `JSONB` 存储，保持与报告生成引擎同步；当运营查询变复杂后再拆维度表。
+- 咨询时段和预约单分表，`uniq_active_counseling_slot` 防止同一时段被多个有效预约占用。
+- 风险事件独立建表，测评报告和咨询预约只通过 `risk_event_id` 关联，方便后续人工复核台统一处理。
+- 审计日志只追加，不作为业务状态来源。
+
+## 初始核心表
+
+| 领域 | 表 |
+| --- | --- |
+| 用户与认证 | `users`, `user_roles`, `user_consents`, `auth_sessions` |
+| 课程权益与订单 | `course_memberships`, `course_access_grants`, `orders`, `order_items`, `payments` |
+| 测评 | `assessment_reports` |
+| 咨询 | `counselors`, `counseling_slots`, `counseling_appointments` |
+| 风险与审计 | `risk_events`, `audit_logs` |
+
+## 后续接入顺序
+
+1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
+2. 新增 PostgreSQL 版 Store：课程权益、测评结果、咨询预约、风险事件。
+3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
+4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
+5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。

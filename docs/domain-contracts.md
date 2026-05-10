@@ -47,7 +47,7 @@ server/
     request-id.ts
     rate-limit.ts
   db/
-    schema/
+    schema.ts
     migrations/
 ```
 
@@ -60,6 +60,13 @@ server/
 - 咨询预约：`server/modules/counseling/counselingAppointmentStore.ts` 负责时段、预约单和预约关联风险事件。
 - 风险事件：`server/modules/risk/riskEventStore.ts` 负责统一保存测评和咨询前信息触发的风险事件。
 - 后续数据库实现应优先替换 Store，而不是改 API payload 或页面组件。
+
+## 数据库准备层
+
+- 初始 PostgreSQL 表结构草案见 `server/db/migrations/0001_core_tables.sql`。
+- 表契约见 `server/db/schema.ts`，测试会校验迁移里包含核心表、关键列和索引。
+- 详细说明见 `docs/database-schema.md`。
+- 当前迁移文件是下一阶段接入 Prisma/Drizzle 前的基准，不会在启动时自动执行。
 
 ## 前端落地建议
 
