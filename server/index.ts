@@ -7,6 +7,7 @@ import { registerAuthApi } from "./modules/auth/authSessionApi";
 import { registerCounselingApi } from "./modules/counseling/counselingApi";
 import { registerCourseAccessApi } from "./modules/courses/courseAccessApi";
 import { registerCourseApi } from "./modules/courses/courseApi";
+import { registerGrowthProfileApi } from "./modules/growth/growthProfileApi";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,6 +22,7 @@ async function startServer() {
   registerCounselingApi(app);
   registerCourseAccessApi(app);
   registerCourseApi(app);
+  registerGrowthProfileApi(app);
 
   // Serve static files from dist/public in production
   const staticPath =

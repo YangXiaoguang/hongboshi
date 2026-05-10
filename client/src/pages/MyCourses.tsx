@@ -36,10 +36,10 @@ import {
   type AssessmentDimension,
 } from "@/features/assessments";
 import {
-  useCounselingAppointments,
   type CounselingAppointmentRecord,
   type CounselingConcernTag,
 } from "@/features/counseling";
+import { useGrowthProfile } from "@/features/growth";
 
 type LearningRow = {
   course: Course;
@@ -363,12 +363,14 @@ export default function MyCourses() {
   } = useCourseAccess();
   const { favoriteCourseIds, getProgress } = useCourseEngagement();
   const {
-    appointments,
-    upcomingCount,
-    isLoading: isCounselingLoading,
-    error: counselingError,
-  } = useCounselingAppointments(isLoggedIn);
-  const latestAssessment = useMemo(() => loadLatestAssessmentResult(), []);
+    profile: growthProfile,
+    isLoading: isGrowthProfileLoading,
+    error: growthProfileError,
+  } = useGrowthProfile(isLoggedIn);
+  const localAssessment = useMemo(() => loadLatestAssessmentResult(), []);
+  const latestAssessment = growthProfile?.latestAssessment ?? localAssessment;
+  const profileSummary = growthProfile?.summary;
+  const profileCourseAccess = growthProfile?.courseAccess;
 
   const learningRows = useMemo(() => {
     return allCourses
@@ -398,11 +400,11 @@ export default function MyCourses() {
   }, [allCourses, favoriteCourseIds, getCourseAccess, getProgress]);
 
   const recentOrders = useMemo(() => {
-    return accessState.orders.slice(0, 4);
-  }, [accessState.orders]);
+    return (profileCourseAccess?.orders ?? accessState.orders).slice(0, 4);
+  }, [accessState.orders, profileCourseAccess]);
   const recentAppointments = useMemo(
-    () => appointments.slice(0, 3),
-    [appointments]
+    () => (growthProfile?.counseling.appointments ?? []).slice(0, 3),
+    [growthProfile]
   );
   const topAssessmentDimensions = useMemo(
     () => getTopAssessmentDimensions(latestAssessment, 3),
@@ -413,7 +415,10 @@ export default function MyCourses() {
     ? (membership.planName ?? "成长会员")
     : "未开通";
   const isBusy =
-    isAuthSyncing || isCatalogLoading || isAccessSyncing || isCounselingLoading;
+    isAuthSyncing ||
+    isCatalogLoading ||
+    isAccessSyncing ||
+    isGrowthProfileLoading;
 
   if (!isLoggedIn && !isAuthSyncing) {
     return (
@@ -555,9 +560,9 @@ export default function MyCourses() {
           </div>
         )}
 
-        {counselingError && (
+        {growthProfileError && (
           <div className="mt-5 rounded-[20px] border border-[#F0D6C9] bg-[#FFF5EF] px-5 py-4 text-sm text-[#A65F48]">
-            {counselingError}
+            {growthProfileError}
           </div>
         )}
 
@@ -565,7 +570,7 @@ export default function MyCourses() {
           <Metric
             icon={BookOpenCheck}
             label="已拥有课程"
-            value={ownedCourseCount}
+            value={profileSummary?.ownedCourseCount ?? ownedCourseCount}
             accent="sage"
           />
           <Metric
@@ -577,7 +582,7 @@ export default function MyCourses() {
           <Metric
             icon={CalendarCheck}
             label="咨询预约"
-            value={upcomingCount}
+            value={profileSummary?.upcomingCounselingCount ?? 0}
             accent="clay"
           />
           <Metric
@@ -589,7 +594,7 @@ export default function MyCourses() {
           <Metric
             icon={ReceiptText}
             label="订单记录"
-            value={orderCount}
+            value={profileSummary?.orderCount ?? orderCount}
             accent="ink"
           />
         </section>
@@ -827,7 +832,7 @@ export default function MyCourses() {
               </p>
               <div className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#41675A]">
                 <CheckCircle2 className="h-4 w-4" />
-                课程、权益、订单已同步
+                成长档案聚合已同步
               </div>
             </div>
           </aside>

@@ -5,6 +5,7 @@ import { quickAssessmentFlow } from "../../../shared/data/assessmentQuestions";
 import {
   ApiResponseSchema,
   AssessmentFlowSchema,
+  type AssessmentResult,
   AssessmentResultSchema,
   AssessmentSubmitRequestSchema,
   generateAssessmentResult,
@@ -15,6 +16,7 @@ const AssessmentFlowResponseSchema = ApiResponseSchema(AssessmentFlowSchema);
 const AssessmentResultResponseSchema = ApiResponseSchema(
   AssessmentResultSchema
 );
+const assessmentResultStore = new Map<string, AssessmentResult[]>();
 
 function sendJson(
   res: Response | ServerResponse,
@@ -67,6 +69,15 @@ export function getQuickAssessmentFlowPayload() {
   });
 }
 
+export function resetAssessmentResultStore() {
+  assessmentResultStore.clear();
+}
+
+export function getLatestAssessmentResult(userId?: string) {
+  if (!userId) return undefined;
+  return assessmentResultStore.get(userId)?.[0];
+}
+
 export function submitQuickAssessmentPayload(body: unknown, userId?: string) {
   const parsed = AssessmentSubmitRequestSchema.safeParse(body);
   if (!parsed.success) {
@@ -82,6 +93,13 @@ export function submitQuickAssessmentPayload(body: unknown, userId?: string) {
       answers: parsed.data.answers,
       userId,
     });
+
+    if (userId) {
+      assessmentResultStore.set(userId, [
+        result,
+        ...(assessmentResultStore.get(userId) ?? []),
+      ]);
+    }
 
     return {
       status: 200,

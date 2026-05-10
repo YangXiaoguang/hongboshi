@@ -1,10 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
+  getLatestAssessmentResult,
   getQuickAssessmentFlowPayload,
+  resetAssessmentResultStore,
   submitQuickAssessmentPayload,
 } from "./assessmentApi";
 
 describe("assessment api payloads", () => {
+  beforeEach(() => {
+    resetAssessmentResultStore();
+  });
+
   it("returns the quick assessment flow", () => {
     const payload = getQuickAssessmentFlowPayload();
 
@@ -37,6 +43,9 @@ describe("assessment api payloads", () => {
       expect(payload.body.data.report.dimensions.workplace).toBe(100);
       expect(payload.body.data.report.recommendations[0].target).toBe(
         "counseling"
+      );
+      expect(getLatestAssessmentResult("user_1")?.report.id).toBe(
+        payload.body.data.report.id
       );
     }
   });

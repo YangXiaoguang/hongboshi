@@ -271,6 +271,14 @@ function appointmentToRecord(
   };
 }
 
+export function listCounselingAppointmentRecords(userId: string) {
+  return Array.from(appointmentStore.values())
+    .filter(appointment => appointment.userId === userId)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .map(appointmentToRecord)
+    .filter((record): record is CounselingAppointmentRecord => Boolean(record));
+}
+
 export function listCounselingAppointmentsPayload(
   userId?: string,
   now = new Date().toISOString()
@@ -282,11 +290,7 @@ export function listCounselingAppointmentsPayload(
     } as const;
   }
 
-  const appointments = Array.from(appointmentStore.values())
-    .filter(appointment => appointment.userId === userId)
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .map(appointmentToRecord)
-    .filter((record): record is CounselingAppointmentRecord => Boolean(record));
+  const appointments = listCounselingAppointmentRecords(userId);
 
   return {
     status: 200,

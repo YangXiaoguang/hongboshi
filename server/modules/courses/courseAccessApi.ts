@@ -99,7 +99,11 @@ export function resetCourseAccessStore(
 }
 
 export function getCourseAccessPayload(userId = LOCAL_COURSE_ACCESS_USER_ID) {
-  return statePayload(courseAccessStore.load(userId));
+  return statePayload(loadCourseAccessState(userId));
+}
+
+export function loadCourseAccessState(userId = LOCAL_COURSE_ACCESS_USER_ID) {
+  return courseAccessStore.load(userId);
 }
 
 export function purchaseCoursePayload(
