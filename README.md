@@ -97,6 +97,8 @@ docs/
 - `HONGBOSHI_RISK_EVENT_STORE`
 - `HONGBOSHI_ASSESSMENT_RESULT_STORE`
 - `HONGBOSHI_COUNSELING_APPOINTMENT_STORE`
+- `HONGBOSHI_COUNSELING_OPERATION_STORE`
+- `HONGBOSHI_PAYMENT_WEBHOOK_STORE`
 
 切换 PostgreSQL 时，先配置 `DATABASE_URL`，再按需将对应 Store 变量设置为 `postgres`。运行：
 
@@ -123,9 +125,9 @@ pnpm db:migrate
 - 登录状态由 `/api/auth/session`、`/api/auth/login/phone`、`/api/auth/login/wechat` 和 `AuthContext` 共同管理，服务端会话可切换到 PostgreSQL
 - 课程目录、课程详情、课程权益、快速测评、咨询预约和成长档案分别由 `/api/courses`、`/api/course-access`、`/api/assessments/quick`、`/api/counseling/availability`、`/api/counseling/appointments` 和 `/api/growth/profile` 提供
 - 课程权益开发期默认写入 `.hongboshi-data/course-access.json`，也可通过 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 切到 PostgreSQL
-- 测评结果、咨询预约和风险事件已抽象为服务端 Store 接口，均已有 PostgreSQL 实现，默认仍可使用内存实现
+- 测评结果、咨询预约、咨询运营配置、咨询审计、风险事件和支付回调收据已抽象为服务端 Store 接口，均已有 PostgreSQL 实现，默认仍可使用内存实现
 - 数据库准备层位于 `server/db`，初始 PostgreSQL 迁移草案见 `server/db/migrations/0001_core_tables.sql`
-- 登录会话、课程权益、风险事件、测评结果和咨询预约 Store 已有 PostgreSQL 实现；设置 `DATABASE_URL` 且分别将对应 `HONGBOSHI_*_STORE` 设为 `postgres` 后可切换
+- 登录会话、课程权益、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调 Store 已有 PostgreSQL 实现；设置 `DATABASE_URL` 且分别将对应 `HONGBOSHI_*_STORE` 设为 `postgres` 后可切换
 - 课程权益读取优先使用服务端 session cookie 识别用户，`x-hongboshi-user-id` 仅作为开发期读取兜底
 - 课程购买和会员开通必须具备 `member` 权限，登录时会记录 terms/privacy 协议版本
 - 成长档案读取需要登录；当前聚合课程权益、订单、最新测评报告、咨询预约和最近时间线

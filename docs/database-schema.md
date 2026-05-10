@@ -7,6 +7,7 @@
 - `server/db/schema.ts`：核心表契约，供测试和后续 Store 实现引用。
 - `server/db/migrations/0001_core_tables.sql`：PostgreSQL 初始迁移草案。
 - `server/db/migrations/0002_payment_webhook_events.sql`：支付回调收据表，用于签名后的事件幂等和处理结果追踪。
+- `server/db/migrations/0003_counseling_operations.sql`：咨询运营配置与履约审计表。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
@@ -14,7 +15,7 @@
 ## 初始化命令
 
 1. 配置 `DATABASE_URL`。
-2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE` 设置为 `postgres`。
+2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE` 设置为 `postgres`。
 3. 运行 `pnpm db:doctor` 检查 Store 配置与数据库连接。
 4. 运行 `pnpm db:migrate` 应用 `server/db/migrations/*.sql`。
 
@@ -29,7 +30,7 @@
 - 测评分数、推荐结果这类强业务结构先用 `JSONB` 存储，保持与报告生成引擎同步；当运营查询变复杂后再拆维度表。
 - 咨询时段和预约单分表，`uniq_active_counseling_slot` 防止同一时段被多个有效预约占用；咨询预约通过 `order_id` 关联 `orders`，用于支付确认、超时关闭和后续退款流转。
 - 风险事件独立建表，测评报告和咨询预约通过 `risk_event_id` 关联，咨询预约同时保留 `assessment_report_id`，方便咨询师在服务前回看用户授权带入的测评上下文。
-- 审计日志只追加，不作为业务状态来源。
+- 审计日志只追加，不作为业务状态来源；咨询运营审计单独保留规则快照、履约状态前后值和操作者角色，便于后台追溯。
 
 ## 初始核心表
 
@@ -38,13 +39,13 @@
 | 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                                                     |
 | 课程权益与订单 | `course_memberships`, `course_access_grants`, `orders`, `order_items`, `payments`, `payment_webhook_events` |
 | 测评           | `assessment_reports`                                                                                        |
-| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`                                                 |
-| 风险与审计     | `risk_events`, `audit_logs`                                                                                 |
+| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`, `counseling_operation_settings`                |
+| 风险与审计     | `risk_events`, `audit_logs`, `counseling_operation_audit_events`                                            |
 
 ## 后续接入顺序
 
 1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
-2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、风险事件、测评结果、咨询预约和支付回调收据已经完成第一版，后续接入 ORM/迁移工具统一管理。
+2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，后续接入 ORM/迁移工具统一管理。
 3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
 4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
 5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。
@@ -57,10 +58,12 @@
 
 `server/modules/counseling/postgresCounselingAppointmentStore.ts` 已实现咨询师 seed、咨询时段 seed、预约保存、按用户读取、订单关联和风险事件关联读取能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COUNSELING_APPOINTMENT_STORE=postgres` 时，咨询预约会写入 PostgreSQL。
 
+`server/modules/counseling/postgresCounselingOperationStore.ts` 已实现取消规则配置、规则变更审计、履约审计读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COUNSELING_OPERATION_STORE=postgres` 时，咨询运营配置与审计会写入 PostgreSQL。
+
 `server/modules/courses/postgresCourseAccessStore.ts` 已实现课程会员、课程授权、订单和订单明细的保存与读取能力。开发期默认仍可使用 JSON Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 时，课程权益会写入 PostgreSQL。
 
 `server/modules/auth/postgresAuthSessionStore.ts` 已实现用户、角色、协议同意和登录会话的保存、读取与注销能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_AUTH_SESSION_STORE=postgres` 时，登录会话会写入 PostgreSQL，并只保存 session token 的哈希值。
 
 `server/modules/payments/postgresPaymentWebhookEventStore.ts` 已实现支付回调事件的登记、重复事件读取、处理结果保存和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_PAYMENT_WEBHOOK_STORE=postgres` 时，支付回调收据会写入 PostgreSQL，避免服务重启后重复处理同一支付事件。
 
-当前实现已覆盖登录会话、课程权益、测评报告、咨询预约、风险事件与支付回调收据持久化。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+当前实现已覆盖登录会话、课程权益、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

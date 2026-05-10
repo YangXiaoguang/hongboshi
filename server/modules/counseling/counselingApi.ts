@@ -18,7 +18,6 @@ import {
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
   CounselingAvailabilitySchema,
-  CounselingCancellationPolicySchema,
   CounselingCancellationPolicyUpdateRequestSchema,
   CounselingCancellationPolicyUpdateResultSchema,
   CounselingOperationAuditEventSchema,
@@ -26,7 +25,6 @@ import {
   CounselingWorkbenchSchema,
   createCounselingSessionOrder,
   createSimulatedPaymentSucceededEvent,
-  DEFAULT_COUNSELING_CANCELLATION_POLICY,
   evaluateCounselingCancellation,
   expireOverdueCounselingAppointmentPayment,
   findCourseAccessOrder,
@@ -63,6 +61,10 @@ import {
   createDefaultCounselingAppointmentStore,
   type CounselingAppointmentStore,
 } from "./counselingAppointmentStore";
+import {
+  createDefaultCounselingOperationStore,
+  type CounselingOperationStore,
+} from "./counselingOperationStore";
 import {
   loadCourseAccessState,
   saveCourseAccessState,
@@ -118,9 +120,7 @@ const CounselingRefundWebhookResponseSchema = ApiResponseSchema(
 );
 
 let counselingAppointmentStore = createDefaultCounselingAppointmentStore();
-let counselingCancellationPolicy: CounselingCancellationPolicy =
-  DEFAULT_COUNSELING_CANCELLATION_POLICY;
-let counselingOperationAuditEvents: CounselingOperationAuditEvent[] = [];
+let counselingOperationStore = createDefaultCounselingOperationStore();
 
 function reportStoreError(err: unknown) {
   console.error(err instanceof Error ? err.message : "咨询预约持久化失败");
@@ -773,17 +773,19 @@ export async function expireOverdueCounselingPayments(
 export function resetCounselingAppointmentStore(now = new Date()) {
   return Promise.all([
     Promise.resolve(counselingAppointmentStore.reset(now)),
+    Promise.resolve(counselingOperationStore.clear()),
     resetRiskEventStore(),
-  ]).then(() => {
-    counselingCancellationPolicy = DEFAULT_COUNSELING_CANCELLATION_POLICY;
-    counselingOperationAuditEvents = [];
-  });
+  ]).then(() => undefined);
 }
 
 export function setCounselingAppointmentStore(
   store: CounselingAppointmentStore
 ) {
   counselingAppointmentStore = store;
+}
+
+export function setCounselingOperationStore(store: CounselingOperationStore) {
+  counselingOperationStore = store;
 }
 
 export async function getCounselingAvailabilityPayload(
@@ -1000,26 +1002,6 @@ export async function listCounselingAppointmentsPayload(
 
 type FulfillmentActor = Pick<LoginSession["user"], "id" | "roles">;
 
-const COUNSELING_OPERATION_AUDIT_LIMIT = 100;
-
-function cloneCancellationPolicy(
-  policy: CounselingCancellationPolicy
-): CounselingCancellationPolicy {
-  return CounselingCancellationPolicySchema.parse(
-    JSON.parse(JSON.stringify(policy))
-  );
-}
-
-function listCounselingOperationAuditEvents(limit = 50) {
-  return counselingOperationAuditEvents
-    .slice(0, limit)
-    .map(event =>
-      CounselingOperationAuditEventSchema.parse(
-        JSON.parse(JSON.stringify(event))
-      )
-    );
-}
-
 function saveCounselingOperationAuditEvent({
   action,
   actor,
@@ -1042,7 +1024,7 @@ function saveCounselingOperationAuditEvent({
   policyBefore?: CounselingCancellationPolicy;
   policyAfter?: CounselingCancellationPolicy;
   note?: string;
-}) {
+}): Promise<CounselingOperationAuditEvent> {
   const event = CounselingOperationAuditEventSchema.parse({
     id: `audit_counseling_${Date.parse(now)}_${randomUUID().slice(0, 8)}`,
     action,
@@ -1061,12 +1043,7 @@ function saveCounselingOperationAuditEvent({
     createdAt: now,
   });
 
-  counselingOperationAuditEvents = [
-    event,
-    ...counselingOperationAuditEvents,
-  ].slice(0, COUNSELING_OPERATION_AUDIT_LIMIT);
-
-  return event;
+  return Promise.resolve(counselingOperationStore.saveAuditEvent(event));
 }
 
 export async function getCounselingOperationsConsolePayload(
@@ -1092,10 +1069,9 @@ export async function getCounselingOperationsConsolePayload(
     body: CounselingOperationsConsoleResponseSchema.parse({
       ok: true,
       data: {
-        cancellationPolicy: cloneCancellationPolicy(
-          counselingCancellationPolicy
-        ),
-        auditEvents: listCounselingOperationAuditEvents(),
+        cancellationPolicy:
+          await counselingOperationStore.getCancellationPolicy(),
+        auditEvents: await counselingOperationStore.listAuditEvents(),
         serverTime: now,
       },
     }),
@@ -1130,14 +1106,20 @@ export async function updateCounselingCancellationPolicyPayload(
     } as const;
   }
 
-  const previousPolicy = cloneCancellationPolicy(counselingCancellationPolicy);
-  counselingCancellationPolicy = cloneCancellationPolicy(parsed.data.policy);
-  const auditEvent = saveCounselingOperationAuditEvent({
+  const previousPolicy = await counselingOperationStore.getCancellationPolicy();
+  const nextPolicy = await counselingOperationStore.saveCancellationPolicy(
+    parsed.data.policy,
+    {
+      actorId: actor.id,
+      updatedAt: now,
+    }
+  );
+  const auditEvent = await saveCounselingOperationAuditEvent({
     action: "cancellation_policy_updated",
     actor,
     now,
     policyBefore: previousPolicy,
-    policyAfter: counselingCancellationPolicy,
+    policyAfter: nextPolicy,
     note: parsed.data.reason,
   });
 
@@ -1146,9 +1128,7 @@ export async function updateCounselingCancellationPolicyPayload(
     body: CounselingCancellationPolicyUpdateResponseSchema.parse({
       ok: true,
       data: {
-        cancellationPolicy: cloneCancellationPolicy(
-          counselingCancellationPolicy
-        ),
+        cancellationPolicy: nextPolicy,
         auditEvent,
         serverTime: now,
       },
@@ -1332,7 +1312,7 @@ export async function fulfillCounselingAppointmentPayload(
       riskEvent
     );
     const order = await getAppointmentOrder(savedAppointment);
-    saveCounselingOperationAuditEvent({
+    await saveCounselingOperationAuditEvent({
       action: parsed.data.action as CounselingOperationAuditAction,
       actor,
       now,
@@ -1602,7 +1582,7 @@ export async function updateCounselingAppointmentPayload(
           appointment,
           slot,
           now,
-          policy: counselingCancellationPolicy,
+          policy: await counselingOperationStore.getCancellationPolicy(),
         })
       : undefined;
   if (cancellationDecision && !cancellationDecision.canCancel) {

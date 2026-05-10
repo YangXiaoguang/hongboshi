@@ -53,6 +53,13 @@ export const persistenceStoreSpecs = [
     supportedModes: ["memory", "postgres"],
   },
   {
+    envName: "HONGBOSHI_COUNSELING_OPERATION_STORE",
+    label: "咨询运营配置与审计",
+    fallbackMode: "memory",
+    autoPostgresWithDatabaseUrl: true,
+    supportedModes: ["memory", "postgres"],
+  },
+  {
     envName: "HONGBOSHI_PAYMENT_WEBHOOK_STORE",
     label: "支付回调收据",
     fallbackMode: "memory",

@@ -126,6 +126,7 @@ flowchart LR
 - 接入取消规则决策器：`DEFAULT_COUNSELING_CANCELLATION_POLICY` 统一控制待支付取消、已确认退款申请和时段释放。
 - 接入 `/counselor/workbench` 咨询师工作台页面与 `GET /api/counseling/workbench/appointments`，咨询师/运营可读取分配预约、状态汇总并标记完成/未到访。
 - 接入 `/admin/counseling` 咨询运营配置页面，运营/管理员可更新取消规则并查看规则变更与履约审计。
+- 接入咨询运营配置/审计 Store：取消规则与履约审计可切换 PostgreSQL，服务重启后仍可追溯。
 - 后续接入真实支付渠道适配、订单对账和运营端风险复核。
 
 验收标准：
