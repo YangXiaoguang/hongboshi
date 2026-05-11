@@ -5,11 +5,10 @@ import {
   ChevronDown,
   ClipboardList,
   Heart,
+  LayoutDashboard,
   LogOut,
   Menu,
-  ReceiptText,
   Settings,
-  SlidersHorizontal,
   User,
   X,
 } from "lucide-react";
@@ -77,7 +76,7 @@ export default function AppHeader() {
   const canUseCounselorWorkbench = Boolean(
     user?.roles.some(role => ["counselor", "operator", "admin"].includes(role))
   );
-  const canManageCounselingOperations = Boolean(
+  const canAccessAdmin = Boolean(
     user?.roles.some(role => ["operator", "admin"].includes(role))
   );
 
@@ -96,17 +95,12 @@ export default function AppHeader() {
           },
         ]
       : []),
-    ...(canManageCounselingOperations
+    ...(canAccessAdmin
       ? [
           {
-            icon: SlidersHorizontal,
-            label: "咨询运营配置",
-            onClick: () => navigate("/admin/counseling"),
-          },
-          {
-            icon: ReceiptText,
-            label: "支付对账",
-            onClick: () => navigate("/admin/payments"),
+            icon: LayoutDashboard,
+            label: "运营管理后台",
+            onClick: () => navigate("/admin"),
           },
         ]
       : []),

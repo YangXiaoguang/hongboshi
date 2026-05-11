@@ -7,6 +7,8 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import LoginModal from "./components/LoginModal";
 import Assessment from "./pages/Assessment";
+import AdminHome from "./pages/admin/AdminHome";
+import AdminLayout from "./pages/admin/AdminLayout";
 import Consulting from "./pages/Consulting";
 import CounselingOperations from "./pages/CounselingOperations";
 import CounselorWorkbench from "./pages/CounselorWorkbench";
@@ -22,8 +24,21 @@ function Router() {
       <Route path={"/courses/:courseId"} component={CourseDetail} />
       <Route path={"/consulting"} component={Consulting} />
       <Route path={"/counselor/workbench"} component={CounselorWorkbench} />
-      <Route path={"/admin/counseling"} component={CounselingOperations} />
-      <Route path={"/admin/payments"} component={PaymentReconciliation} />
+      <Route path={"/admin/counseling"}>
+        <AdminLayout>
+          <CounselingOperations />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/payments"}>
+        <AdminLayout>
+          <PaymentReconciliation />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin"}>
+        <AdminLayout>
+          <AdminHome />
+        </AdminLayout>
+      </Route>
       <Route path={"/assessment"} component={Assessment} />
       <Route path={"/me/courses"} component={MyCourses} />
       <Route path={"/404"} component={NotFound} />

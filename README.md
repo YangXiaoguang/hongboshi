@@ -123,6 +123,7 @@ pnpm db:migrate
 - 心理状态快速评估位于 `client/src/pages/Assessment.tsx`，通过 `/assessment` 生成维度分、风险等级和推荐路径
 - 咨询预约入口位于 `client/src/pages/Consulting.tsx`，通过 `/consulting` 选择咨询师、时段和咨询前信息
 - 咨询师工作台位于 `client/src/pages/CounselorWorkbench.tsx`，通过 `/counselor/workbench` 处理分配预约、履约状态和退款中订单
+- 运营管理后台位于 `client/src/pages/admin`，通过 `/admin` 提供统一后台入口、导航、权限守卫和后续模块骨架
 - 咨询运营配置位于 `client/src/pages/CounselingOperations.tsx`，通过 `/admin/counseling` 配置取消规则并查看履约审计
 - 支付对账位于 `client/src/pages/PaymentReconciliation.tsx`，通过 `/admin/payments` 对比支付回调收据、业务订单和咨询预约状态
 - 小程序端预览位于 `client/src/components/MobileView.tsx`
