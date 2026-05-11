@@ -171,7 +171,8 @@ export const coreDatabaseTables = [
   {
     name: "course_product_audit_events",
     domain: "audit",
-    purpose: "Append-only audit events for course product operations.",
+    purpose:
+      "Append-only audit events for course product operations and review workflow.",
     requiredColumns: [
       "id",
       "product_id",
@@ -325,6 +326,7 @@ export const requiredDatabaseIndexes = [
   "idx_payment_webhook_events_status_received_at",
   "uniq_course_products_course_id",
   "idx_course_products_status_updated_at",
+  "idx_course_products_review_status_updated_at",
   "idx_course_product_audit_events_product_created_at",
   "idx_course_product_audit_events_created_at",
   "idx_assessment_reports_user_id_created_at",

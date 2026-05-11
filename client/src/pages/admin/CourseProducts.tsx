@@ -6,6 +6,7 @@ import {
   BookOpenCheck,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   CircleDollarSign,
   Edit3,
   Eye,
@@ -34,6 +35,7 @@ import {
   type CourseProductListQuery,
   type CourseProductListResult,
   type CourseProductPriceUpdateRequest,
+  type CourseProductReviewAction,
   type CourseProductReviewStatus,
   type CourseProductStatus,
   type CourseType,
@@ -46,6 +48,11 @@ type CourseProductCategoryFilter = CourseProductListQuery["category"];
 type StatusActionState = {
   product: CourseProductListItem;
   targetStatus: CourseProductStatus;
+};
+type ReviewActionState = {
+  product: CourseProductListItem;
+  action: CourseProductReviewAction;
+  targetReviewStatus: CourseProductReviewStatus;
 };
 type PriceFormState = {
   amount: string;
@@ -100,6 +107,13 @@ const reviewCopy = {
   rejected: "已驳回",
 } satisfies Record<CourseProductReviewStatus, string>;
 
+const reviewActionCopy = {
+  submit: "提交审核",
+  approve: "通过审核",
+  reject: "驳回审核",
+  withdraw: "撤回审核",
+} satisfies Record<CourseProductReviewAction, string>;
+
 function formatMoney(item: CourseProductListItem) {
   if (item.price.isFree) return "免费";
   return new Intl.NumberFormat("zh-CN", {
@@ -140,11 +154,23 @@ function auditStatusLabel(value: unknown) {
     : "未记录";
 }
 
+function auditReviewStatusLabel(value: unknown) {
+  if (typeof value !== "string") return "未记录";
+  return value in reviewCopy
+    ? reviewCopy[value as CourseProductReviewStatus]
+    : "未记录";
+}
+
 function auditChangeText(event: CourseProductAuditEvent) {
   if (event.action === "status_update") {
     return `${auditStatusLabel(event.before.status)} -> ${auditStatusLabel(
       event.after.status
     )}`;
+  }
+  if (event.action === "review_update") {
+    return `${auditReviewStatusLabel(
+      event.before.reviewStatus
+    )} -> ${auditReviewStatusLabel(event.after.reviewStatus)}`;
   }
   if (event.action === "info_update") {
     const beforeTitle =
@@ -161,6 +187,7 @@ function auditChangeText(event: CourseProductAuditEvent) {
 function auditActionLabel(action: CourseProductAuditEvent["action"]) {
   if (action === "status_update") return "状态更新";
   if (action === "price_update") return "价格更新";
+  if (action === "review_update") return "审核更新";
   return "信息更新";
 }
 
@@ -214,6 +241,41 @@ function metricItems(data?: CourseProductListResult) {
       icon: UsersRound,
     },
   ];
+}
+
+function reviewActionsForItem(item: CourseProductListItem) {
+  if (item.status === "archived") return [];
+
+  if (
+    item.reviewStatus === "not_submitted" ||
+    item.reviewStatus === "rejected"
+  ) {
+    return [
+      {
+        action: "submit" as const,
+        targetReviewStatus: "pending" as const,
+      },
+    ];
+  }
+
+  if (item.reviewStatus === "pending") {
+    return [
+      {
+        action: "approve" as const,
+        targetReviewStatus: "approved" as const,
+      },
+      {
+        action: "reject" as const,
+        targetReviewStatus: "rejected" as const,
+      },
+      {
+        action: "withdraw" as const,
+        targetReviewStatus: "not_submitted" as const,
+      },
+    ];
+  }
+
+  return [];
 }
 
 function AuditTrail({ events }: { events: CourseProductAuditEvent[] }) {
@@ -271,15 +333,23 @@ function CourseProductRow({
   item,
   index,
   isMutating,
+  reviewBlockReason,
   onEditInfo,
   onEditPrice,
+  onRequestReviewAction,
   onRequestStatusChange,
 }: {
   item: CourseProductListItem;
   index: number;
   isMutating: boolean;
+  reviewBlockReason?: string;
   onEditInfo: (item: CourseProductListItem) => void;
   onEditPrice: (item: CourseProductListItem) => void;
+  onRequestReviewAction: (
+    item: CourseProductListItem,
+    action: CourseProductReviewAction,
+    targetReviewStatus: CourseProductReviewStatus
+  ) => void;
   onRequestStatusChange: (
     item: CourseProductListItem,
     targetStatus: CourseProductStatus
@@ -289,9 +359,10 @@ function CourseProductRow({
     item.status === "published" ? "unpublished" : "published";
   const canToggleStatus =
     item.status === "published" ||
-    item.status === "unpublished" ||
-    item.status === "draft";
+    ((item.status === "unpublished" || item.status === "draft") &&
+      item.reviewStatus === "approved");
   const StatusIcon = item.status === "published" ? EyeOff : Eye;
+  const reviewActions = reviewActionsForItem(item);
 
   return (
     <motion.tr
@@ -360,6 +431,11 @@ function CourseProductRow({
           >
             {reviewCopy[item.reviewStatus]}
           </span>
+          {item.reviewStatus === "rejected" && reviewBlockReason && (
+            <p className="max-w-[160px] text-xs leading-5 text-[#AD503A]">
+              {reviewBlockReason}
+            </p>
+          )}
         </div>
       </td>
       <td className="px-5 py-4 text-sm text-[#5F6B64]">
@@ -371,7 +447,7 @@ function CourseProductRow({
         </div>
       </td>
       <td className="px-5 py-4">
-        <div className="flex min-w-[220px] flex-wrap gap-2">
+        <div className="flex min-w-[300px] flex-wrap gap-2">
           <button
             onClick={() => onRequestStatusChange(item, targetStatus)}
             disabled={!canToggleStatus || isMutating}
@@ -380,6 +456,23 @@ function CourseProductRow({
             <StatusIcon className="h-3.5 w-3.5" />
             {item.status === "published" ? "下架" : "上架"}
           </button>
+          {reviewActions.map(action => (
+            <button
+              key={action.action}
+              onClick={() =>
+                onRequestReviewAction(
+                  item,
+                  action.action,
+                  action.targetReviewStatus
+                )
+              }
+              disabled={isMutating}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <ClipboardCheck className="h-3.5 w-3.5" />
+              {reviewActionCopy[action.action]}
+            </button>
+          ))}
           <button
             onClick={() => onEditInfo(item)}
             disabled={isMutating}
@@ -421,6 +514,8 @@ export default function CourseProducts() {
   const [mutatingProductId, setMutatingProductId] = useState<string>();
   const [statusAction, setStatusAction] = useState<StatusActionState>();
   const [statusReason, setStatusReason] = useState("");
+  const [reviewAction, setReviewAction] = useState<ReviewActionState>();
+  const [reviewReason, setReviewReason] = useState("");
   const [infoEditor, setInfoEditor] = useState<CourseProductListItem>();
   const [infoForm, setInfoForm] = useState<BasicInfoFormState>({
     title: "",
@@ -497,6 +592,20 @@ export default function CourseProducts() {
     []
   );
 
+  const openReviewAction = useCallback(
+    (
+      product: CourseProductListItem,
+      action: CourseProductReviewAction,
+      targetReviewStatus: CourseProductReviewStatus
+    ) => {
+      setActionError(undefined);
+      setActionMessage(undefined);
+      setReviewAction({ product, action, targetReviewStatus });
+      setReviewReason("");
+    },
+    []
+  );
+
   const submitStatusAction = useCallback(async () => {
     if (!statusAction) return;
     setMutatingProductId(statusAction.product.id);
@@ -525,6 +634,35 @@ export default function CourseProducts() {
       setMutatingProductId(undefined);
     }
   }, [loadProducts, statusAction, statusReason]);
+
+  const submitReviewAction = useCallback(async () => {
+    if (!reviewAction) return;
+    setMutatingProductId(reviewAction.product.id);
+    setActionError(undefined);
+    setActionMessage(undefined);
+
+    try {
+      await httpCourseProductRepository.updateCourseProductReview(
+        reviewAction.product.id,
+        {
+          action: reviewAction.action,
+          reason: reviewReason,
+        }
+      );
+      setActionMessage(
+        `${reviewAction.product.title} 已${reviewActionCopy[reviewAction.action]}`
+      );
+      setReviewAction(undefined);
+      setReviewReason("");
+      await loadProducts();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "课程商品审核状态更新失败"
+      );
+    } finally {
+      setMutatingProductId(undefined);
+    }
+  }, [loadProducts, reviewAction, reviewReason]);
 
   const submitBasicInfoUpdate = useCallback(async () => {
     if (!infoEditor) return;
@@ -613,6 +751,19 @@ export default function CourseProducts() {
   const items = data?.items ?? [];
   const meta = data?.meta;
   const auditEvents = data?.auditEvents ?? [];
+  const rejectedReviewReasons = useMemo(() => {
+    const reasons = new Map<string, string>();
+    auditEvents.forEach(event => {
+      if (
+        event.action === "review_update" &&
+        event.after.reviewStatus === "rejected" &&
+        !reasons.has(event.productId)
+      ) {
+        reasons.set(event.productId, event.reason);
+      }
+    });
+    return reasons;
+  }, [auditEvents]);
   const hasPreviousPage = Boolean(meta && meta.page > 1);
   const hasNextPage = Boolean(meta && meta.page < meta.totalPages);
 
@@ -631,7 +782,7 @@ export default function CourseProducts() {
             商品列表与状态
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            统一管理课程商品的基础信息、状态、价格和审计记录，已联动前台发布可见性，支持搜索、分类、排序和分页核对。
+            统一管理课程商品的基础信息、审核流、上架状态、价格和审计记录，已联动前台发布可见性，支持搜索、分类、排序和分页核对。
           </p>
         </div>
         <button
@@ -784,7 +935,7 @@ export default function CourseProducts() {
         ) : items.length ? (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1200px] text-left">
+              <table className="w-full min-w-[1320px] text-left">
                 <thead className="bg-[#F8F3EA] text-xs text-[#8A8176]">
                   <tr>
                     <th className="px-5 py-3 font-semibold">商品</th>
@@ -803,8 +954,10 @@ export default function CourseProducts() {
                       item={item}
                       index={index}
                       isMutating={Boolean(mutatingProductId)}
+                      reviewBlockReason={rejectedReviewReasons.get(item.id)}
                       onEditInfo={openInfoEditor}
                       onEditPrice={openPriceEditor}
+                      onRequestReviewAction={openReviewAction}
                       onRequestStatusChange={openStatusAction}
                     />
                   ))}
@@ -918,6 +1071,73 @@ export default function CourseProducts() {
                 )}
                 确认
                 {statusAction.targetStatus === "published" ? "上架" : "下架"}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {reviewAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="w-full max-w-[520px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-[#8A8176]">审核动作</p>
+                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                  {reviewActionCopy[reviewAction.action]}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#6F7771]">
+                  {reviewAction.product.title} ·{" "}
+                  {reviewCopy[reviewAction.product.reviewStatus]} {"->"}{" "}
+                  {reviewCopy[reviewAction.targetReviewStatus]}
+                </p>
+              </div>
+              <button
+                onClick={() => setReviewAction(undefined)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-sm font-semibold text-[#41524B]">
+              审核原因
+              <textarea
+                value={reviewReason}
+                onChange={event => setReviewReason(event.target.value)}
+                placeholder={
+                  reviewAction.action === "reject"
+                    ? "例如：章节素材缺少课后练习说明"
+                    : "例如：课程内容和素材已完成审核确认"
+                }
+                className="mt-2 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+              />
+            </label>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setReviewAction(undefined)}
+                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void submitReviewAction()}
+                disabled={
+                  reviewReason.trim().length < 4 || Boolean(mutatingProductId)
+                }
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {mutatingProductId ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ClipboardCheck className="h-4 w-4" />
+                )}
+                确认{reviewActionCopy[reviewAction.action]}
               </button>
             </div>
           </motion.div>

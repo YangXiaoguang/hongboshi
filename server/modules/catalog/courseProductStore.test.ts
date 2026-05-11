@@ -14,6 +14,7 @@ import {
   summarizeCourseProducts,
   updateCourseProductPrice,
   updateCourseProductBasicInfo,
+  updateCourseProductReview,
   updateCourseProductStatus,
 } from "./courseProductStore";
 
@@ -45,6 +46,7 @@ describe("course product store mapping", () => {
         },
       },
       { ...second, status: "unpublished" },
+      { ...second, id: "course_product_unreviewed", reviewStatus: "pending" },
     ]);
 
     expect(publicCourses).toHaveLength(1);
@@ -177,6 +179,111 @@ describe("course product store mapping", () => {
       action: "info_update",
       productTitle: "婚姻关系沟通训练",
     });
+  });
+
+  it("runs the review workflow before publishing", async () => {
+    const product = {
+      ...courseProductFromCourse(courses[0]),
+      status: "unpublished" as const,
+      reviewStatus: "not_submitted" as const,
+      publishedAt: undefined,
+    };
+    const store = new InMemoryCourseProductStore([product]);
+
+    await expect(
+      updateCourseProductStatus({
+        productId: product.id,
+        request: {
+          status: "published",
+          reason: "未审核直接上架",
+        },
+        actorId: "operator_1",
+        store,
+      })
+    ).rejects.toThrow("COURSE_PRODUCT_REVIEW_NOT_APPROVED");
+
+    const submitted = await updateCourseProductReview({
+      productId: product.id,
+      request: {
+        action: "submit",
+        reason: "课程内容和素材已完成自检",
+      },
+      actorId: "operator_1",
+      store,
+      now: "2026-05-11T10:30:00.000Z",
+    });
+    expect(submitted.product.reviewStatus).toBe("pending");
+    expect(submitted.auditEvent.action).toBe("review_update");
+
+    const approved = await updateCourseProductReview({
+      productId: product.id,
+      request: {
+        action: "approve",
+        reason: "课程内容符合上架标准",
+      },
+      actorId: "operator_2",
+      store,
+      now: "2026-05-11T10:35:00.000Z",
+    });
+    expect(approved.product.reviewStatus).toBe("approved");
+
+    const published = await updateCourseProductStatus({
+      productId: product.id,
+      request: {
+        status: "published",
+        reason: "审核通过后上架",
+      },
+      actorId: "operator_1",
+      store,
+      now: "2026-05-11T10:40:00.000Z",
+    });
+    expect(published.product.status).toBe("published");
+  });
+
+  it("records rejection and withdrawal review reasons", async () => {
+    const product = {
+      ...courseProductFromCourse(courses[0]),
+      status: "unpublished" as const,
+      reviewStatus: "pending" as const,
+      publishedAt: undefined,
+    };
+    const store = new InMemoryCourseProductStore([product]);
+
+    const rejected = await updateCourseProductReview({
+      productId: product.id,
+      request: {
+        action: "reject",
+        reason: "章节素材缺少课后练习说明",
+      },
+      actorId: "operator_2",
+      store,
+      now: "2026-05-11T10:45:00.000Z",
+    });
+    expect(rejected.product.reviewStatus).toBe("rejected");
+    expect(rejected.auditEvent.reason).toBe("章节素材缺少课后练习说明");
+
+    await updateCourseProductReview({
+      productId: product.id,
+      request: {
+        action: "submit",
+        reason: "已补齐课后练习说明并重新提交",
+      },
+      actorId: "operator_1",
+      store,
+      now: "2026-05-11T10:50:00.000Z",
+    });
+    const withdrawn = await updateCourseProductReview({
+      productId: product.id,
+      request: {
+        action: "withdraw",
+        reason: "运营发现标题还需要二次校对",
+      },
+      actorId: "operator_1",
+      store,
+      now: "2026-05-11T10:55:00.000Z",
+    });
+
+    expect(withdrawn.product.reviewStatus).toBe("not_submitted");
   });
 
   it("persists products and audit events in the JSON store", async () => {

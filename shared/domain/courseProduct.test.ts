@@ -4,8 +4,10 @@ import {
   ALL_COURSE_PRODUCT_STATUS,
   CourseProductPriceUpdateRequestSchema,
   CourseProductBasicInfoUpdateRequestSchema,
+  CourseProductDetailContentSchema,
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
+  CourseProductReviewActionRequestSchema,
 } from "./courseProduct";
 
 describe("course product domain contract", () => {
@@ -111,6 +113,56 @@ describe("course product domain contract", () => {
       CourseProductBasicInfoUpdateRequestSchema.safeParse({
         ...parsed,
         reason: "短",
+      }).success
+    ).toBe(false);
+  });
+
+  it("validates review action requests", () => {
+    expect(
+      CourseProductReviewActionRequestSchema.parse({
+        action: "submit",
+        reason: "课程内容和定价信息已完成自检",
+      }).action
+    ).toBe("submit");
+
+    expect(
+      CourseProductReviewActionRequestSchema.safeParse({
+        action: "reject",
+        reason: "短",
+      }).success
+    ).toBe(false);
+  });
+
+  it("validates the first course detail content contract", () => {
+    const parsed = CourseProductDetailContentSchema.parse({
+      productId: "course_product_1",
+      summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+      targetAudience: [
+        "希望提升情绪调节能力的学习者",
+        "需要关系沟通练习的用户",
+      ],
+      chapters: [
+        {
+          id: "chapter_1",
+          title: "认识情绪反应",
+          durationMinutes: 36,
+          materialPlaceholders: [
+            {
+              id: "material_1",
+              title: "课前练习表",
+              type: "exercise",
+            },
+          ],
+        },
+      ],
+      updatedAt: "2026-05-11T10:40:00+08:00",
+    });
+
+    expect(parsed.chapters[0]?.materialPlaceholders[0]?.status).toBe("pending");
+    expect(
+      CourseProductDetailContentSchema.safeParse({
+        ...parsed,
+        chapters: [],
       }).success
     ).toBe(false);
   });

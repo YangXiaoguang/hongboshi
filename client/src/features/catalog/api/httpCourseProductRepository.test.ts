@@ -203,4 +203,66 @@ describe("http course product repository parsing", () => {
       })
     );
   });
+
+  it("sends review workflow mutations to the admin endpoint", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        product: {
+          id: "course_product_1",
+          courseId: 1,
+          title: "情绪管理入门",
+          coverUrl:
+            "https://images.unsplash.com/photo-1499209974431-9dddcece7f88",
+          category: "情绪管理",
+          type: "录播",
+          instructorName: "林若安",
+          learners: 1200,
+          price: {
+            amount: 99,
+            originalAmount: 199,
+            isFree: false,
+            memberIncluded: true,
+          },
+          status: "unpublished",
+          reviewStatus: "pending",
+          source: "seed",
+          createdAt: "2026-05-10T09:00:00+08:00",
+          updatedAt: "2026-05-11T10:30:00+08:00",
+        },
+        auditEvent: {
+          id: "audit_review_course_product_1",
+          productId: "course_product_1",
+          productTitle: "情绪管理入门",
+          actorId: "operator_1",
+          action: "review_update",
+          reason: "课程内容和素材已完成自检",
+          before: { reviewStatus: "not_submitted" },
+          after: { reviewStatus: "pending" },
+          createdAt: "2026-05-11T10:30:00+08:00",
+        },
+        auditEvents: [],
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result = await httpCourseProductRepository.updateCourseProductReview(
+      "course_product_1",
+      {
+        action: "submit",
+        reason: "课程内容和素材已完成自检",
+      }
+    );
+
+    expect(result.product.reviewStatus).toBe("pending");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/course_product_1/review",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining("submit"),
+      })
+    );
+  });
 });

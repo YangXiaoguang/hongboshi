@@ -44,6 +44,28 @@ export const COURSE_PRODUCT_AUDIT_ACTIONS = [
   "status_update",
   "price_update",
   "info_update",
+  "review_update",
+] as const;
+
+export const COURSE_PRODUCT_REVIEW_ACTIONS = [
+  "submit",
+  "approve",
+  "reject",
+  "withdraw",
+] as const;
+
+export const COURSE_PRODUCT_CONTENT_MATERIAL_TYPES = [
+  "video",
+  "audio",
+  "document",
+  "exercise",
+  "live_replay",
+  "other",
+] as const;
+
+export const COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES = [
+  "pending",
+  "ready",
 ] as const;
 
 export const CourseProductStatusSchema = z.enum(COURSE_PRODUCT_STATUSES);
@@ -58,7 +80,19 @@ export const CourseProductAuditActionSchema = z.enum(
   COURSE_PRODUCT_AUDIT_ACTIONS
 );
 
+export const CourseProductReviewActionSchema = z.enum(
+  COURSE_PRODUCT_REVIEW_ACTIONS
+);
+
 export const CourseProductSourceSchema = z.enum(["seed", "manual", "imported"]);
+
+export const CourseProductContentMaterialTypeSchema = z.enum(
+  COURSE_PRODUCT_CONTENT_MATERIAL_TYPES
+);
+
+export const CourseProductContentMaterialStatusSchema = z.enum(
+  COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES
+);
 
 export const CourseProductPriceSchema = z.object({
   currency: z.literal("CNY").default("CNY"),
@@ -187,6 +221,37 @@ export const CourseProductBasicInfoUpdateRequestSchema = z.object({
   reason: z.string().trim().min(4).max(240),
 });
 
+export const CourseProductReviewActionRequestSchema = z.object({
+  action: CourseProductReviewActionSchema,
+  reason: z.string().trim().min(4).max(240),
+});
+
+export const CourseProductContentMaterialSchema = z.object({
+  id: EntityIdSchema,
+  title: z.string().trim().min(2).max(80),
+  type: CourseProductContentMaterialTypeSchema,
+  status: CourseProductContentMaterialStatusSchema.default("pending"),
+  note: z.string().trim().max(200).optional(),
+});
+
+export const CourseProductContentChapterSchema = z.object({
+  id: EntityIdSchema,
+  title: z.string().trim().min(2).max(80),
+  durationMinutes: z.number().int().min(1).max(600),
+  materialPlaceholders: z
+    .array(CourseProductContentMaterialSchema)
+    .max(20)
+    .default([]),
+});
+
+export const CourseProductDetailContentSchema = z.object({
+  productId: EntityIdSchema,
+  summary: z.string().trim().min(20).max(500),
+  targetAudience: z.array(z.string().trim().min(2).max(80)).min(1).max(8),
+  chapters: z.array(CourseProductContentChapterSchema).min(1).max(60),
+  updatedAt: DateTimeLikeSchema,
+});
+
 export const CourseProductMutationResultSchema = z.object({
   product: CourseProductListItemSchema,
   auditEvent: CourseProductAuditEventSchema,
@@ -206,6 +271,9 @@ export type CourseProductReviewStatus = z.infer<
 export type CourseProductSort = z.infer<typeof CourseProductSortSchema>;
 export type CourseProductAuditAction = z.infer<
   typeof CourseProductAuditActionSchema
+>;
+export type CourseProductReviewAction = z.infer<
+  typeof CourseProductReviewActionSchema
 >;
 export type CourseProductPrice = z.infer<typeof CourseProductPriceSchema>;
 export type CourseProductListItem = z.infer<typeof CourseProductListItemSchema>;
@@ -232,6 +300,24 @@ export type CourseProductPriceUpdateRequest = z.infer<
 >;
 export type CourseProductBasicInfoUpdateRequest = z.infer<
   typeof CourseProductBasicInfoUpdateRequestSchema
+>;
+export type CourseProductReviewActionRequest = z.infer<
+  typeof CourseProductReviewActionRequestSchema
+>;
+export type CourseProductContentMaterialType = z.infer<
+  typeof CourseProductContentMaterialTypeSchema
+>;
+export type CourseProductContentMaterialStatus = z.infer<
+  typeof CourseProductContentMaterialStatusSchema
+>;
+export type CourseProductContentMaterial = z.infer<
+  typeof CourseProductContentMaterialSchema
+>;
+export type CourseProductContentChapter = z.infer<
+  typeof CourseProductContentChapterSchema
+>;
+export type CourseProductDetailContent = z.infer<
+  typeof CourseProductDetailContentSchema
 >;
 export type CourseProductMutationResult = z.infer<
   typeof CourseProductMutationResultSchema

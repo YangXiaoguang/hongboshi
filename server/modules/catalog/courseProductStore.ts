@@ -18,6 +18,8 @@ import {
   type CourseProductMutationResult,
   type CourseProductBasicInfoUpdateRequest,
   type CourseProductPriceUpdateRequest,
+  type CourseProductReviewActionRequest,
+  type CourseProductReviewStatus,
   type CourseProductStatusUpdateRequest,
 } from "../../../shared/domain";
 import { courses as seedCourses } from "../../../shared/data/mockCourses";
@@ -233,7 +235,10 @@ export function coursesFromPublishedProducts(
   baseCourses: Course[] = seedCourses
 ) {
   return products
-    .filter(product => product.status === "published")
+    .filter(
+      product =>
+        product.status === "published" && product.reviewStatus === "approved"
+    )
     .map(product => CourseProductListItemSchema.parse(product))
     .map(product => courseFromCourseProduct(product, baseCourses));
 }
@@ -465,6 +470,59 @@ export async function updateCourseProductBasicInfo({
   });
 }
 
+export async function updateCourseProductReview({
+  productId,
+  request,
+  actorId,
+  store = getCourseProductStore(),
+  now = new Date().toISOString(),
+}: {
+  productId: string;
+  request: CourseProductReviewActionRequest;
+  actorId: string;
+  store?: CourseProductStore;
+  now?: string;
+}): Promise<CourseProductMutationResult> {
+  const current = await store.getProduct(productId);
+  if (!current) throw new Error("COURSE_PRODUCT_NOT_FOUND");
+
+  const nextReviewStatus = assertReviewTransitionAllowed(
+    current,
+    request.action
+  );
+  const next = CourseProductListItemSchema.parse({
+    ...current,
+    reviewStatus: nextReviewStatus,
+    updatedAt: now,
+  });
+  const auditEvent = CourseProductAuditEventSchema.parse({
+    id: createAuditEventId("review", productId, now),
+    productId,
+    productTitle: current.title,
+    actorId,
+    action: "review_update",
+    reason: request.reason,
+    before: {
+      reviewStatus: current.reviewStatus,
+      status: current.status,
+    },
+    after: {
+      reviewStatus: next.reviewStatus,
+      status: next.status,
+    },
+    createdAt: now,
+  });
+
+  const saved = await store.saveProduct(next);
+  const savedEvent = await store.appendAuditEvent(auditEvent);
+
+  return CourseProductMutationResultSchema.parse({
+    product: saved,
+    auditEvent: savedEvent,
+    auditEvents: await store.listAuditEvents(productId),
+  });
+}
+
 export function summarizeCourseProducts(
   products: CourseProductListItem[]
 ): CourseProductListSummary {
@@ -567,8 +625,35 @@ function assertStatusTransitionAllowed(
   throw new Error("COURSE_PRODUCT_STATUS_TRANSITION_FORBIDDEN");
 }
 
+function assertReviewTransitionAllowed(
+  product: CourseProductListItem,
+  action: CourseProductReviewActionRequest["action"]
+): CourseProductReviewStatus {
+  if (product.status === "archived") {
+    throw new Error("COURSE_PRODUCT_REVIEW_TRANSITION_FORBIDDEN");
+  }
+
+  if (action === "submit") {
+    if (
+      product.reviewStatus === "not_submitted" ||
+      product.reviewStatus === "rejected"
+    ) {
+      return "pending";
+    }
+    throw new Error("COURSE_PRODUCT_REVIEW_TRANSITION_FORBIDDEN");
+  }
+
+  if (product.reviewStatus !== "pending") {
+    throw new Error("COURSE_PRODUCT_REVIEW_TRANSITION_FORBIDDEN");
+  }
+
+  if (action === "approve") return "approved";
+  if (action === "reject") return "rejected";
+  return "not_submitted";
+}
+
 function createAuditEventId(
-  action: "info" | "price" | "status",
+  action: "info" | "price" | "review" | "status",
   productId: string,
   now: string
 ) {

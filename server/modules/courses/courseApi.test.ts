@@ -38,6 +38,12 @@ describe("course API payloads", () => {
         },
       },
       { ...second, status: "unpublished" },
+      {
+        ...second,
+        id: "course_product_pending",
+        status: "published",
+        reviewStatus: "pending",
+      },
     ]);
 
     const listPayload = await listCoursesPayload(

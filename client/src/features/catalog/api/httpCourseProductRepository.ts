@@ -7,6 +7,7 @@ import {
   type CourseProductPriceUpdateRequest,
   type CourseProductListQuery,
   type CourseProductListResult,
+  type CourseProductReviewActionRequest,
   type CourseProductStatusUpdateRequest,
 } from "@shared/domain";
 
@@ -120,6 +121,17 @@ export const httpCourseProductRepository = {
       `${API_BASE}/course-products/${encodeURIComponent(productId)}/info`,
       request,
       "课程商品基础信息更新失败"
+    );
+  },
+
+  async updateCourseProductReview(
+    productId: string,
+    request: CourseProductReviewActionRequest
+  ): Promise<CourseProductMutationResult> {
+    return requestCourseProductMutation(
+      `${API_BASE}/course-products/${encodeURIComponent(productId)}/review`,
+      request,
+      "课程商品审核状态更新失败"
     );
   },
 };

@@ -8,6 +8,7 @@ import {
   getCourseProductAdminListPayload,
   updateCourseProductBasicInfoPayload,
   updateCourseProductPricePayload,
+  updateCourseProductReviewPayload,
   updateCourseProductStatusPayload,
 } from "./catalogApi";
 
@@ -152,6 +153,50 @@ describe("catalog admin api payloads", () => {
     }
   });
 
+  it("updates course product review status and records audit events", async () => {
+    const store = new InMemoryCourseProductStore([
+      {
+        ...products[0],
+        status: "unpublished",
+        reviewStatus: "not_submitted",
+        publishedAt: undefined,
+      },
+    ]);
+
+    const submitted = await updateCourseProductReviewPayload(
+      { id: "operator_1", roles: ["operator"] },
+      products[0].id,
+      {
+        action: "submit",
+        reason: "课程内容和素材已完成自检",
+      },
+      store,
+      "2026-05-11T10:30:00.000Z"
+    );
+    expect(submitted.status).toBe(200);
+    expect(submitted.body.ok).toBe(true);
+    if (submitted.body.ok) {
+      expect(submitted.body.data.product.reviewStatus).toBe("pending");
+      expect(submitted.body.data.auditEvent.action).toBe("review_update");
+    }
+
+    const approved = await updateCourseProductReviewPayload(
+      { id: "operator_2", roles: ["operator"] },
+      products[0].id,
+      {
+        action: "approve",
+        reason: "课程内容符合上架标准",
+      },
+      store,
+      "2026-05-11T10:35:00.000Z"
+    );
+    expect(approved.status).toBe(200);
+    expect(approved.body.ok).toBe(true);
+    if (approved.body.ok) {
+      expect(approved.body.data.product.reviewStatus).toBe("approved");
+    }
+  });
+
   it("rejects invalid status transitions and invalid price payloads", async () => {
     const store = createStore();
     const unchanged = await updateCourseProductStatusPayload(
@@ -177,5 +222,16 @@ describe("catalog admin api payloads", () => {
       store
     );
     expect(invalidPrice.status).toBe(400);
+
+    const invalidReview = await updateCourseProductReviewPayload(
+      { id: "operator_1", roles: ["operator"] },
+      products[0].id,
+      {
+        action: "approve",
+        reason: "跳过待审状态",
+      },
+      store
+    );
+    expect(invalidReview.status).toBe(409);
   });
 });

@@ -9,6 +9,7 @@
 - `server/db/migrations/0002_payment_webhook_events.sql`：支付回调收据表，用于签名后的事件幂等和处理结果追踪。
 - `server/db/migrations/0003_counseling_operations.sql`：咨询运营配置与履约审计表。
 - `server/db/migrations/0004_course_products.sql`：课程商品表与课程商品审计事件表。
+- `server/db/migrations/0005_course_product_review_workflow.sql`：课程商品审核审计动作约束与审核状态索引。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
@@ -69,6 +70,6 @@
 
 `server/modules/catalog/courseProductStore.ts` 已实现课程商品内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/course-products.json` 保存课程商品状态、价格和审计事件；当设置 `HONGBOSHI_COURSE_PRODUCT_STORE=memory` 时可临时切回内存。
 
-`server/modules/catalog/postgresCourseProductStore.ts` 已实现 `course_products` 与 `course_product_audit_events` 的保存、读取、初始化 seed、基础信息/价格/状态更新承载和审计事件读取能力。当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 时，课程商品会写入 PostgreSQL。
+`server/modules/catalog/postgresCourseProductStore.ts` 已实现 `course_products` 与 `course_product_audit_events` 的保存、读取、初始化 seed、基础信息/价格/审核/状态更新承载和审计事件读取能力。当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 时，课程商品会写入 PostgreSQL。
 
 当前实现已覆盖登录会话、课程权益、课程商品、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
