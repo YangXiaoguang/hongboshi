@@ -530,7 +530,7 @@ export default function CourseProducts() {
             商品列表与状态
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            统一管理课程商品的状态、价格和审计记录，支持搜索、分类、排序和分页核对。
+            统一管理课程商品的状态、价格和审计记录，已联动前台发布可见性，支持搜索、分类、排序和分页核对。
           </p>
         </div>
         <button

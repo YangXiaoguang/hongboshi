@@ -1,7 +1,6 @@
 import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
-import { courses as seedCourses } from "../../../shared/data/mockCourses";
 import {
   ApiResponseSchema,
   CourseCatalogResultSchema,
@@ -11,22 +10,40 @@ import {
   listCoursesByQuery,
   type CourseCatalogQuery,
 } from "../../../shared/domain";
+import {
+  coursesFromPublishedProducts,
+  getCourseProductStore,
+  type CourseProductStore,
+} from "../catalog/courseProductStore";
 
 const CourseListResponseSchema = ApiResponseSchema(CourseCatalogResultSchema);
 const CourseResponseSchema = ApiResponseSchema(CourseSchema);
 
-function validatedCourses() {
-  return seedCourses.map((course) => CourseSchema.parse(course));
-}
-
-function sendJson(res: Response | ServerResponse, status: number, payload: unknown) {
+function sendJson(
+  res: Response | ServerResponse,
+  status: number,
+  payload: unknown
+) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload));
 }
 
-function getCoursePayload(courseId: number) {
-  const course = validatedCourses().find((item) => item.id === courseId);
+async function publishedCourses(
+  store: CourseProductStore = getCourseProductStore()
+) {
+  return coursesFromPublishedProducts(await store.listProducts()).map(course =>
+    CourseSchema.parse(course)
+  );
+}
+
+export async function getCoursePayload(
+  courseId: number,
+  store: CourseProductStore = getCourseProductStore()
+) {
+  const course = (await publishedCourses(store)).find(
+    item => item.id === courseId
+  );
   if (!course) {
     return {
       status: 404,
@@ -75,15 +92,18 @@ function sendBadRequest(res: Response | ServerResponse, message: string) {
   });
 }
 
-export function listCoursesPayload(query: CourseCatalogQuery) {
+export async function listCoursesPayload(
+  query: CourseCatalogQuery,
+  store: CourseProductStore = getCourseProductStore()
+) {
   return CourseListResponseSchema.parse({
     ok: true,
-    data: listCoursesByQuery(validatedCourses(), query),
+    data: listCoursesByQuery(await publishedCourses(store), query),
   });
 }
 
 export function registerCourseApi(app: Express) {
-  app.get("/api/courses", (req: Request, res: Response) => {
+  app.get("/api/courses", async (req: Request, res: Response) => {
     const parsedQuery = CourseListQuerySchema.safeParse({
       category: req.query.category,
       type: req.query.type,
@@ -99,18 +119,40 @@ export function registerCourseApi(app: Express) {
       return;
     }
 
-    sendJson(res, 200, listCoursesPayload(parsedQuery.data));
+    try {
+      sendJson(res, 200, await listCoursesPayload(parsedQuery.data));
+    } catch {
+      sendJson(res, 500, {
+        ok: false,
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "课程列表读取失败",
+        },
+      });
+    }
   });
 
-  app.get("/api/courses/:courseId", (req: Request, res: Response) => {
-    const parsedCourseId = LegacyNumericIdSchema.safeParse(Number(req.params.courseId));
+  app.get("/api/courses/:courseId", async (req: Request, res: Response) => {
+    const parsedCourseId = LegacyNumericIdSchema.safeParse(
+      Number(req.params.courseId)
+    );
     if (!parsedCourseId.success) {
       sendBadRequest(res, "课程 ID 不合法");
       return;
     }
 
-    const payload = getCoursePayload(parsedCourseId.data);
-    sendJson(res, payload.status, payload.body);
+    try {
+      const payload = await getCoursePayload(parsedCourseId.data);
+      sendJson(res, payload.status, payload.body);
+    } catch {
+      sendJson(res, 500, {
+        ok: false,
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "课程详情读取失败",
+        },
+      });
+    }
   });
 }
 
@@ -142,7 +184,17 @@ export function handleCourseApiRequest(
       return true;
     }
 
-    sendJson(res, 200, listCoursesPayload(parsedQuery.data));
+    void listCoursesPayload(parsedQuery.data)
+      .then(payload => sendJson(res, 200, payload))
+      .catch(() =>
+        sendJson(res, 500, {
+          ok: false,
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "课程列表读取失败",
+          },
+        })
+      );
     return true;
   }
 
@@ -155,7 +207,16 @@ export function handleCourseApiRequest(
     return true;
   }
 
-  const payload = getCoursePayload(parsedCourseId.data);
-  sendJson(res, payload.status, payload.body);
+  void getCoursePayload(parsedCourseId.data)
+    .then(payload => sendJson(res, payload.status, payload.body))
+    .catch(() =>
+      sendJson(res, 500, {
+        ok: false,
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "课程详情读取失败",
+        },
+      })
+    );
   return true;
 }

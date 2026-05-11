@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { CourseProductListQuerySchema } from "../../../shared/domain";
 import { courses } from "../../../shared/data/mockCourses";
 import {
   InMemoryCourseProductStore,
+  JsonFileCourseProductStore,
+  courseFromCourseProduct,
   courseProductFromCourse,
+  coursesFromPublishedProducts,
   listCourseProductsByQuery,
   summarizeCourseProducts,
   updateCourseProductPrice,
@@ -23,6 +29,33 @@ describe("course product store mapping", () => {
       source: "seed",
     });
     expect(product.price.amount).toBe(courses[0].price);
+  });
+
+  it("maps course product price and visibility back to public courses", () => {
+    const [first, second] = courses.slice(0, 2).map(courseProductFromCourse);
+    const publicCourses = coursesFromPublishedProducts([
+      {
+        ...first,
+        price: {
+          ...first.price,
+          amount: 88,
+          originalAmount: 188,
+          memberIncluded: false,
+        },
+      },
+      { ...second, status: "unpublished" },
+    ]);
+
+    expect(publicCourses).toHaveLength(1);
+    expect(publicCourses[0]).toMatchObject({
+      id: first.courseId,
+      price: 88,
+      originalPrice: 188,
+      isVip: false,
+    });
+    expect(courseFromCourseProduct(first).createdAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}$/
+    );
   });
 
   it("filters, sorts and paginates course products", () => {
@@ -109,5 +142,39 @@ describe("course product store mapping", () => {
       memberIncluded: true,
     });
     expect(result.auditEvent.action).toBe("price_update");
+  });
+
+  it("persists products and audit events in the JSON store", async () => {
+    const tempDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "hongboshi-products-")
+    );
+    const filePath = path.join(tempDir, "course-products.json");
+
+    try {
+      const product = courseProductFromCourse(courses[0]);
+      const store = new JsonFileCourseProductStore(filePath);
+      await updateCourseProductStatus({
+        productId: product.id,
+        request: {
+          status: "unpublished",
+          reason: "重启恢复状态",
+        },
+        actorId: "operator_1",
+        store,
+        now: "2026-05-11T11:00:00.000Z",
+      });
+
+      const reloaded = new JsonFileCourseProductStore(filePath);
+
+      expect((await reloaded.getProduct(product.id))?.status).toBe(
+        "unpublished"
+      );
+      expect((await reloaded.listAuditEvents(product.id))[0]).toMatchObject({
+        reason: "重启恢复状态",
+        action: "status_update",
+      });
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

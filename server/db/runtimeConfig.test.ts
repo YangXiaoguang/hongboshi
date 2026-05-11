@@ -17,6 +17,7 @@ describe("database runtime persistence config", () => {
     ).toMatchObject({
       HONGBOSHI_AUTH_SESSION_STORE: "memory",
       HONGBOSHI_COURSE_ACCESS_STORE: "file",
+      HONGBOSHI_COURSE_PRODUCT_STORE: "file",
       HONGBOSHI_RISK_EVENT_STORE: "memory",
     });
     expect(config.issues).toEqual([]);
@@ -28,7 +29,16 @@ describe("database runtime persistence config", () => {
     } as NodeJS.ProcessEnv);
 
     expect(config.usesPostgres).toBe(true);
-    expect(config.stores.every(store => store.mode === "postgres")).toBe(true);
+    expect(
+      config.stores
+        .filter(store => store.autoPostgresWithDatabaseUrl)
+        .every(store => store.mode === "postgres")
+    ).toBe(true);
+    expect(
+      config.stores.find(
+        store => store.envName === "HONGBOSHI_COURSE_PRODUCT_STORE"
+      )?.mode
+    ).toBe("file");
   });
 
   it("reports invalid modes and missing database urls", () => {

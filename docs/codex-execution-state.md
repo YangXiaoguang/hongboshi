@@ -7,10 +7,10 @@
 - 最后更新时间：2026-05-11 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
-- 最近已知基线提交：`30bb0ba Add course product admin list`
-- 当前阶段：`M2-C 课程商品持久化与前台发布联动`
-- 当前状态：`M2-B 课程商品上下架与价格编辑动作` 已完成，下一轮应让课程商品状态影响前台可见课程，并补齐开发期持久化。
-- 本轮完成后下一步：执行 `M2-C 课程商品持久化与前台发布联动`
+- 最近已知基线提交：上一阶段 `d859ab6 Add course product admin actions`，本轮提交后以 Git 历史最新提交为准
+- 当前阶段：`M2-D 课程商品 PostgreSQL Store 与基础信息编辑`
+- 当前状态：`M2-C 课程商品持久化与前台发布联动` 已完成，下一轮应把课程商品 Store 接到 PostgreSQL，并补齐基础信息编辑。
+- 本轮完成后下一步：执行 `M2-D 课程商品 PostgreSQL Store 与基础信息编辑`
 
 ## 已完成关键能力
 
@@ -34,53 +34,54 @@
 - 建立课程商品状态动作与价格编辑契约，服务端统一校验上下架、价格和原因。
 - 建立课程商品开发期可变 Store、上下架/改价 API 和课程商品审计事件。
 - `/admin/courses` 支持行级上架、下架、改价操作，并展示最近审计记录。
+- 建立课程商品 JSON 文件 Store，开发期默认写入 `.hongboshi-data/course-products.json`，状态、价格和审计事件可重启恢复。
+- `/api/courses` 和课程详情已读取课程商品 Store，只展示 `published` 商品，并同步后台价格与会员权益变化。
 
 ## 最近完成阶段
 
-M2-B 课程商品上下架与价格编辑动作已交付：
+M2-C 课程商品持久化与前台发布联动已交付：
 
-- `shared/domain/courseProduct.ts`：新增状态更新请求、价格更新请求、课程商品审计事件和动作结果契约。
-- `server/modules/catalog/courseProductStore.ts`：新增开发期可变内存 Store、状态更新服务、价格更新服务和审计事件追加。
-- `server/modules/catalog/catalogApi.ts`：新增 `PATCH /api/catalog/admin/course-products/:productId/status` 和 `/price`，运营/管理员可写，非后台账号不可写。
-- `client/src/features/catalog/api/httpCourseProductRepository.ts`：新增课程商品状态和价格 mutation repository。
-- `client/src/pages/admin/CourseProducts.tsx`：新增行级上下架、改价面板、操作原因、成功/失败反馈和最近审计列表。
-- `client/src/pages/admin/AdminHome.tsx`：后台实施路线更新到 M2-C。
-- 增加共享契约、server action、frontend repository 和审计测试。
+- `server/modules/catalog/courseProductStore.ts`：新增 `JsonFileCourseProductStore`、课程商品文件 schema、Store 路径解析、产品到前台课程映射，以及 `published` 商品过滤。
+- `server/modules/courses/courseApi.ts`：`GET /api/courses` 与 `GET /api/courses/:courseId` 改为读取课程商品 Store，后台下架后前台不可见，后台改价后前台同步。
+- `server/db/runtimeConfig.ts`：新增 `HONGBOSHI_COURSE_PRODUCT_STORE=file|memory` 运行时配置，默认开发期使用文件 Store。
+- `.env.example`：补充 `HONGBOSHI_COURSE_PRODUCT_STORE` 与 `HONGBOSHI_COURSE_PRODUCT_FILE`。
+- `server/modules/catalog/courseProductStore.test.ts`、`server/modules/courses/courseApi.test.ts`、`server/db/runtimeConfig.test.ts`：覆盖 JSON Store 重启恢复、前台发布过滤、价格同步和运行时配置。
+- README、领域契约、数据库说明、产品路线和后台路线图同步了课程商品 Store 边界。
 
-M2-B 验收结果：
-
-- 运营或管理员可在 `/admin/courses` 对课程商品执行上架、下架和价格编辑。
-- 非运营账号无法调用课程商品写 API。
-- 重复状态流转、非法状态流转、非法价格和缺少原因的动作会被拒绝。
-- 每次课程商品状态或价格变更都有审计事件。
-- 列表刷新后能看到变更后的商品状态、价格和审计记录。
-
-## 下一步任务包
-
-### M2-C: 课程商品持久化与前台发布联动
-
-业务目标：
-
-让课程商品管理真正影响用户侧课程中心：后台下架后前台不再展示，价格调整后前台课程卡片和详情同步变化；同时让开发期状态和审计记录在服务重启后可恢复，为后续 PostgreSQL 课程商品表做准备。
-
-实施范围：
-
-- 新增课程商品开发期 JSON Store，建议环境变量 `HONGBOSHI_COURSE_PRODUCT_STORE` 与 `HONGBOSHI_COURSE_PRODUCT_FILE`，默认仍可使用内存。
-- 将 `/api/courses` 与课程详情读取接到课程商品 Store：只返回 `published` 商品，并映射商品价格、会员权益和上下架状态。
-- 保留 seed fallback：首次启动 JSON Store 时从 `shared/data/mockCourses.ts` 初始化课程商品。
-- 更新 `/admin/courses` 列表刷新逻辑，确保写动作后前台读取同一份 Store。
-- 增加前台课程列表、课程详情、后台 Store 持久化和状态过滤测试。
-- 文档补充课程商品 Store 边界、环境变量和后续 PostgreSQL 表设计方向。
-- 更新 README、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
-- 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Persist course product publishing state`。
-
-验收标准：
+M2-C 验收结果：
 
 - 后台下架某个课程商品后，前台课程列表和详情不再展示该课程。
 - 后台改价后，前台课程卡片和详情读取更新后的价格。
 - 开发期 JSON Store 重启后可恢复课程商品状态、价格和审计事件。
 - 课程商品 Store 接口仍能平滑替换为 PostgreSQL 实现。
+
+## 下一步任务包
+
+### M2-D: 课程商品 PostgreSQL Store 与基础信息编辑
+
+业务目标：
+
+把课程商品从开发期文件持久化推进到可上线的数据库持久化，并让运营可以编辑课程商品基础信息。该阶段要保持 Store 抽象稳定，前台课程 API 和后台列表不感知底层从 JSON 切换到 PostgreSQL。
+
+实施范围：
+
+- 设计并新增课程商品数据库迁移，建议包含 `course_products` 与 `course_product_audit_events`，字段覆盖商品基础信息、价格、状态、审核状态、来源、发布时间和更新时间。
+- 新增 `PostgresCourseProductStore`，实现 `CourseProductStore` 接口，并复用现有 Zod schema 做读写校验。
+- 将 `HONGBOSHI_COURSE_PRODUCT_STORE` 扩展为 `memory|file|postgres`，配置 `DATABASE_URL` 时允许切换到 PostgreSQL。
+- 增加课程商品基础信息编辑契约与服务端动作，优先覆盖标题、分类、类型、封面、讲师、学习人数或简介摘要这类低风险字段。
+- 在 `/admin/courses` 增加基础信息编辑入口，写动作后刷新列表，并追加 `CourseProductAuditEventSchema` 审计事件。
+- 保持 `/api/courses` 继续只读取已上架商品，确保 Postgres/File/Memory 三种 Store 下行为一致。
+- 增加迁移校验、PostgreSQL Store 单测、API/action 单测和前端编辑交互测试。
+- 更新 README、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
+- 运行 `pnpm run ci`。
+- 提交并推送，建议 commit message：`Add course product postgres store`。
+
+验收标准：
+
+- `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 且配置 `DATABASE_URL` 后，课程商品、价格、状态和审计事件可写入 PostgreSQL。
+- 没有配置 PostgreSQL 时，现有 JSON 文件开发流程保持可用。
+- 运营可编辑课程商品基础信息，非法字段、缺少原因或无权限请求会被拒绝。
+- 前台课程列表/详情在三种 Store 下都只展示已上架商品，并同步最新商品信息。
 - CI 通过。
 
 ## 执行不变量
@@ -99,5 +100,5 @@ M2-B 验收结果：
 ## 待决策问题
 
 - 后台权限是否需要从 `admin:manage` 拆为 `admin:read`、`catalog:manage`、`order:manage`、`finance:read`、`risk:review` 等更细粒度权限。建议在 M2 或 M3 前完成第一版拆分。
-- 课程商品管理是否优先接 PostgreSQL，还是先用 JSON Store 做开发期运营闭环。建议 M2 使用 Store 接口并同时提供内存/JSON，数据库迁移同步准备。
+- 课程商品 PostgreSQL 表是否独立保存课程内容详情，还是先只保存商品化字段并继续复用现有课程详情 seed。建议 M2-D 先保存商品化字段，内容详情在内容审核阶段独立建模。
 - 真实支付渠道优先接微信支付还是支付宝。建议先把渠道适配接口稳定，再选择一个渠道试点。

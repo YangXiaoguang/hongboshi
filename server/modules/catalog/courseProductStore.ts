@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+import { z } from "zod";
 import {
   ALL_COURSE_PRODUCT_CATEGORY,
   ALL_COURSE_PRODUCT_STATUS,
@@ -17,6 +20,14 @@ import {
   type CourseProductStatusUpdateRequest,
 } from "../../../shared/domain";
 import { courses as seedCourses } from "../../../shared/data/mockCourses";
+
+const CourseProductStoreFileSchema = z.object({
+  version: z.literal(1),
+  products: z.array(CourseProductListItemSchema),
+  auditEvents: z.array(CourseProductAuditEventSchema).default([]),
+});
+
+type CourseProductStoreFile = z.infer<typeof CourseProductStoreFileSchema>;
 
 export interface CourseProductStore {
   listProducts(): Promise<CourseProductListItem[]>;
@@ -39,46 +50,179 @@ export class InMemoryCourseProductStore implements CourseProductStore {
   }
 
   async listProducts() {
-    return Array.from(this.products.values());
+    return Array.from(this.products.values()).map(cloneProduct);
   }
 
   async getProduct(productId: string) {
-    return this.products.get(productId);
+    const product = this.products.get(productId);
+    return product ? cloneProduct(product) : undefined;
   }
 
   async saveProduct(product: CourseProductListItem) {
     const parsed = CourseProductListItemSchema.parse(product);
-    this.products.set(parsed.id, parsed);
-    return parsed;
+    this.products.set(parsed.id, cloneProduct(parsed));
+    return cloneProduct(parsed);
   }
 
   async listAuditEvents(productId?: string) {
     const events = productId
       ? this.auditEvents.filter(event => event.productId === productId)
       : this.auditEvents;
-    return [...events].sort((left, right) =>
-      right.createdAt.localeCompare(left.createdAt)
-    );
+    return events
+      .map(cloneAuditEvent)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   async appendAuditEvent(event: CourseProductAuditEvent) {
     const parsed = CourseProductAuditEventSchema.parse(event);
-    this.auditEvents.unshift(parsed);
-    return parsed;
+    this.auditEvents.unshift(cloneAuditEvent(parsed));
+    return cloneAuditEvent(parsed);
   }
 }
 
 export class SeedCourseProductStore extends InMemoryCourseProductStore {}
 
+export class JsonFileCourseProductStore implements CourseProductStore {
+  constructor(private readonly filePath = resolveCourseProductStorePath()) {}
+
+  async listProducts() {
+    return this.readFile().products.map(cloneProduct);
+  }
+
+  async getProduct(productId: string) {
+    const product = this.readFile().products.find(
+      item => item.id === productId
+    );
+    return product ? cloneProduct(product) : undefined;
+  }
+
+  async saveProduct(product: CourseProductListItem) {
+    const parsed = CourseProductListItemSchema.parse(product);
+    const file = this.readFile();
+    const existingIndex = file.products.findIndex(
+      item => item.id === parsed.id
+    );
+
+    if (existingIndex >= 0) {
+      file.products[existingIndex] = parsed;
+    } else {
+      file.products.push(parsed);
+    }
+
+    this.writeFile(file);
+    return cloneProduct(parsed);
+  }
+
+  async listAuditEvents(productId?: string) {
+    const events = productId
+      ? this.readFile().auditEvents.filter(
+          event => event.productId === productId
+        )
+      : this.readFile().auditEvents;
+
+    return events
+      .map(cloneAuditEvent)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async appendAuditEvent(event: CourseProductAuditEvent) {
+    const parsed = CourseProductAuditEventSchema.parse(event);
+    const file = this.readFile();
+    file.auditEvents.unshift(parsed);
+    this.writeFile(file);
+    return cloneAuditEvent(parsed);
+  }
+
+  clear() {
+    this.writeFile(emptyCourseProductStoreFile());
+  }
+
+  private readFile(): CourseProductStoreFile {
+    if (!fs.existsSync(this.filePath)) return emptyCourseProductStoreFile();
+
+    try {
+      return normalizeCourseProductStoreFile(
+        JSON.parse(fs.readFileSync(this.filePath, "utf8"))
+      );
+    } catch {
+      return emptyCourseProductStoreFile();
+    }
+  }
+
+  private writeFile(file: CourseProductStoreFile) {
+    const normalized = normalizeCourseProductStoreFile(file);
+    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
+
+    const tmpPath = `${this.filePath}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(normalized, null, 2), "utf8");
+    fs.renameSync(tmpPath, this.filePath);
+  }
+}
+
 let defaultStore: CourseProductStore | undefined;
 
 export function getCourseProductStore() {
-  defaultStore ??= new SeedCourseProductStore();
+  defaultStore ??= createDefaultCourseProductStore();
   return defaultStore;
+}
+
+export function setCourseProductStore(store: CourseProductStore) {
+  defaultStore = store;
+}
+
+export function createDefaultCourseProductStore(): CourseProductStore {
+  if (
+    process.env.NODE_ENV === "test" ||
+    process.env.VITEST ||
+    process.env.HONGBOSHI_COURSE_PRODUCT_STORE === "memory"
+  ) {
+    return new InMemoryCourseProductStore();
+  }
+
+  return new JsonFileCourseProductStore();
+}
+
+export function resolveCourseProductStorePath() {
+  return path.resolve(
+    process.cwd(),
+    process.env.HONGBOSHI_COURSE_PRODUCT_FILE ??
+      ".hongboshi-data/course-products.json"
+  );
 }
 
 export function seedProducts() {
   return seedCourses.map(course => courseProductFromCourse(course));
+}
+
+export function courseFromCourseProduct(
+  product: CourseProductListItem,
+  baseCourses: Course[] = seedCourses
+): Course {
+  const baseCourse = baseCourses.find(course => course.id === product.courseId);
+  return {
+    ...(baseCourse ?? courseFallbackFromProduct(product)),
+    id: product.courseId,
+    title: product.title,
+    coverUrl: product.coverUrl,
+    category: product.category,
+    type: product.type,
+    teacher: product.instructorName,
+    learners: product.learners,
+    price: product.price.amount,
+    originalPrice: product.price.originalAmount,
+    isFree: product.price.isFree,
+    isVip: product.price.memberIncluded,
+  };
+}
+
+export function coursesFromPublishedProducts(
+  products: CourseProductListItem[],
+  baseCourses: Course[] = seedCourses
+) {
+  return products
+    .filter(product => product.status === "published")
+    .map(product => CourseProductListItemSchema.parse(product))
+    .map(product => courseFromCourseProduct(product, baseCourses));
 }
 
 export function courseProductFromCourse(course: Course): CourseProductListItem {
@@ -361,6 +505,56 @@ function createAuditEventId(
   now: string
 ) {
   return `audit_${action}_${productId}_${Date.parse(now) || Date.now()}`;
+}
+
+function emptyCourseProductStoreFile(): CourseProductStoreFile {
+  return {
+    version: 1,
+    products: seedProducts(),
+    auditEvents: [],
+  };
+}
+
+function normalizeCourseProductStoreFile(
+  payload: unknown
+): CourseProductStoreFile {
+  const parsed = CourseProductStoreFileSchema.safeParse(payload);
+  if (!parsed.success) return emptyCourseProductStoreFile();
+
+  return {
+    version: 1,
+    products: parsed.data.products.map(product =>
+      CourseProductListItemSchema.parse(product)
+    ),
+    auditEvents: parsed.data.auditEvents.map(event =>
+      CourseProductAuditEventSchema.parse(event)
+    ),
+  };
+}
+
+function cloneProduct(product: CourseProductListItem) {
+  return CourseProductListItemSchema.parse(JSON.parse(JSON.stringify(product)));
+}
+
+function cloneAuditEvent(event: CourseProductAuditEvent) {
+  return CourseProductAuditEventSchema.parse(JSON.parse(JSON.stringify(event)));
+}
+
+function courseFallbackFromProduct(product: CourseProductListItem): Course {
+  return {
+    id: product.courseId,
+    title: product.title,
+    coverUrl: product.coverUrl,
+    category: product.category,
+    type: product.type,
+    teacher: product.instructorName,
+    learners: product.learners,
+    price: product.price.amount,
+    originalPrice: product.price.originalAmount,
+    isFree: product.price.isFree,
+    isVip: product.price.memberIncluded,
+    createdAt: product.createdAt.slice(0, 10),
+  };
 }
 
 function dateToDateTime(date: string, hour: number) {
