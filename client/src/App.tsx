@@ -13,6 +13,7 @@ import Consulting from "./pages/Consulting";
 import CounselingOperations from "./pages/CounselingOperations";
 import CounselorWorkbench from "./pages/CounselorWorkbench";
 import CourseDetail from "./pages/CourseDetail";
+import CourseProducts from "./pages/admin/CourseProducts";
 import Home from "./pages/Home";
 import MyCourses from "./pages/MyCourses";
 import PaymentReconciliation from "./pages/PaymentReconciliation";
@@ -32,6 +33,11 @@ function Router() {
       <Route path={"/admin/payments"}>
         <AdminLayout>
           <PaymentReconciliation />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/courses"}>
+        <AdminLayout>
+          <CourseProducts />
         </AdminLayout>
       </Route>
       <Route path={"/admin"}>

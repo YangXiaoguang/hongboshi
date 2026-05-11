@@ -75,9 +75,9 @@ export const adminNavigationItems = [
     href: "/admin/courses",
     icon: BookOpen,
     permission: "admin:manage",
-    status: "planned",
+    status: "available",
     group: "business",
-    milestone: "M2",
+    milestone: "M2-A",
   },
   {
     key: "users",

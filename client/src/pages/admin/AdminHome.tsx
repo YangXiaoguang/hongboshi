@@ -18,7 +18,8 @@ import {
 
 const implementationRows = [
   ["M1", "统一后台框架", "已完成", "统一入口、导航、鉴权和现有后台页面接入"],
-  ["M2", "课程商品管理", "下一步", "课程商品、价格、上下架、分类和内容状态"],
+  ["M2-A", "课程商品列表", "已完成", "只读商品契约、列表、筛选和分页"],
+  ["M2-B", "商品状态动作", "下一步", "上下架、价格编辑、审核记录和审计日志"],
   ["M3", "用户与会员管理", "规划中", "用户检索、会员权益、账号状态和隐私边界"],
   ["M4", "订单管理", "规划中", "课程、咨询和会员订单的统一状态机"],
   ["M5", "交易与退款管理", "规划中", "支付流水、退款申请和异常处理"],
@@ -30,7 +31,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "M2", icon: GitBranch },
+  { label: "下一阶段", value: "M2-B", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -54,11 +55,11 @@ export default function AdminHome() {
             业务运营总览
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            当前后台先承接咨询运营和支付对账，后续按课程商品、用户会员、订单交易、财务和风险复核逐步扩展。
+            当前后台已接入咨询运营、支付对账和课程商品列表，后续按用户会员、订单交易、财务和风险复核逐步扩展。
           </p>
         </div>
         <button
-          onClick={() => navigate("/admin/counseling")}
+          onClick={() => navigate("/admin/courses")}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
         >
           进入可用模块
@@ -168,7 +169,7 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经指向 M2 课程商品管理。
+              当前连续执行状态已经指向 M2-B 课程商品动作。
             </p>
           </div>
           <div className="overflow-x-auto">

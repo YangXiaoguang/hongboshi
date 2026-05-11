@@ -28,18 +28,15 @@ describe("admin navigation model", () => {
       roles: ["operator"],
     }).map(item => item.key);
 
-    expect(operatorModules).toEqual(["overview", "counseling", "payments"]);
+    expect(operatorModules).toEqual([
+      "overview",
+      "counseling",
+      "payments",
+      "courses",
+    ]);
     expect(
       getPlannedAdminNavigationItems({ roles: ["admin"] }).map(item => item.key)
-    ).toEqual([
-      "courses",
-      "users",
-      "orders",
-      "transactions",
-      "finance",
-      "risk",
-      "audit",
-    ]);
+    ).toEqual(["users", "orders", "transactions", "finance", "risk", "audit"]);
   });
 
   it("matches active admin routes without activating sibling modules", () => {
