@@ -47,6 +47,7 @@ client/src/features/courses/
 - `GET /api/courses`：返回课程目录结果，支持 `category`、`type`、`sort`、`keyword`、`vipOnly`、`page`、`pageSize` 查询参数；开发环境由 Vite middleware 提供，生产环境由 Express 提供。
 - `GET /api/courses/:courseId`：返回单个课程基础信息。
 - `GET /api/courses/:courseId/content`：返回已审核通过且已上架课程的服务端详情内容；详情页优先使用服务端摘要、适合人群和章节，读取失败时继续回落前端领域模型。
+- `GET /api/catalog/admin/course-products/content-quality`：返回后台课程商品详情内容批量校验结果，供运营快速判断哪些商品可以提交审核。
 - `GET /api/course-access`：返回当前课程权益状态。
 - `POST /api/course-access/purchases`：模拟课程购买并返回最新权益状态。
 - `POST /api/course-access/membership`：模拟开通成长会员并返回最新权益状态。
@@ -59,4 +60,4 @@ client/src/features/courses/
 2. 将 `CourseAccessStore` 从 JSON 文件替换为真实订单、会员和支付回调。
 3. 扩展 loading、empty、error 和权限状态到订单、会员、学习记录。
 4. 把移动预览里的课程卡片继续拆成可复用组件。
-5. 将章节素材从 JSON 内容 Store 迁移到 PostgreSQL，并补齐资料下载、学习记录和批量内容校验。
+5. 将素材占位升级为真实资料管理，补齐资料下载、学习记录和课程内容完成度统计。

@@ -32,10 +32,13 @@ import {
   COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES,
   COURSE_PRODUCT_CONTENT_MATERIAL_TYPES,
   COURSE_TYPES,
+  CourseProductDetailContentSchema,
+  evaluateCourseProductContentQuality,
   userCan,
   type CourseCategory,
   type CourseProductAuditEvent,
   type CourseProductBasicInfoUpdateRequest,
+  type CourseProductContentQualityResult,
   type CourseProductContentMaterialStatus,
   type CourseProductContentMaterialType,
   type CourseProductContentUpdateRequest,
@@ -354,6 +357,59 @@ function contentFormFromDetail(
   };
 }
 
+function targetAudienceFromText(value: string) {
+  return value
+    .split("\n")
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function chaptersFromContentForm(chapters: ContentChapterFormState[]) {
+  return chapters.map(chapter => ({
+    id: chapter.id,
+    title: chapter.title,
+    durationMinutes: Number(chapter.durationMinutes),
+    materialPlaceholders: chapter.materialPlaceholders.map(material => ({
+      id: material.id,
+      title: material.title,
+      type: material.type,
+      status: material.status,
+      note: material.note.trim() ? material.note.trim() : undefined,
+    })),
+  }));
+}
+
+function contentQualityFromForm(
+  productId: string,
+  form: ContentFormState
+): CourseProductContentQualityResult {
+  const parsed = CourseProductDetailContentSchema.safeParse({
+    productId,
+    summary: form.summary,
+    targetAudience: targetAudienceFromText(form.targetAudienceText),
+    chapters: chaptersFromContentForm(form.chapters),
+    updatedAt: new Date(0).toISOString(),
+  });
+
+  if (!parsed.success) {
+    return {
+      ready: false,
+      issueCount: 1,
+      blockingCount: 1,
+      warningCount: 0,
+      issues: [
+        {
+          code: "schema_invalid",
+          severity: "blocking",
+          message: "请先补齐摘要、适合人群、章节标题、时长和素材标题。",
+        },
+      ],
+    };
+  }
+
+  return evaluateCourseProductContentQuality(parsed.data);
+}
+
 function createContentChapter(
   productId: string,
   index: number
@@ -434,6 +490,7 @@ function CourseProductRow({
   item,
   index,
   isMutating,
+  contentQuality,
   reviewBlockReason,
   onEditInfo,
   onEditContent,
@@ -444,6 +501,7 @@ function CourseProductRow({
   item: CourseProductListItem;
   index: number;
   isMutating: boolean;
+  contentQuality?: CourseProductContentQualityResult;
   reviewBlockReason?: string;
   onEditInfo: (item: CourseProductListItem) => void;
   onEditContent: (item: CourseProductListItem) => void;
@@ -534,6 +592,21 @@ function CourseProductRow({
           >
             {reviewCopy[item.reviewStatus]}
           </span>
+          {contentQuality && (
+            <span
+              className={`inline-flex h-7 items-center rounded-full px-2.5 text-xs font-semibold ${
+                contentQuality.ready
+                  ? "bg-[#EDF5EF] text-[#41675A]"
+                  : "bg-[#FFF0EA] text-[#AD503A]"
+              }`}
+            >
+              {contentQuality.ready
+                ? contentQuality.warningCount > 0
+                  ? "内容可审"
+                  : "内容达标"
+                : "内容待补"}
+            </span>
+          )}
           {item.reviewStatus === "rejected" && reviewBlockReason && (
             <p className="max-w-[160px] text-xs leading-5 text-[#AD503A]">
               {reviewBlockReason}
@@ -609,6 +682,9 @@ function CourseProductRow({
 export default function CourseProducts() {
   const { user, isLoggedIn, isAuthSyncing } = useAuth();
   const [data, setData] = useState<CourseProductListResult>();
+  const [contentQualityByProductId, setContentQualityByProductId] = useState<
+    Record<string, CourseProductContentQualityResult>
+  >({});
   const [query, setQuery] = useState<CourseProductListQuery>({
     keyword: "",
     category: ALL_COURSE_PRODUCT_CATEGORY,
@@ -660,7 +736,16 @@ export default function CourseProducts() {
     setIsLoading(true);
     setError(undefined);
     try {
-      setData(await httpCourseProductRepository.loadCourseProducts(query));
+      const [products, contentQuality] = await Promise.all([
+        httpCourseProductRepository.loadCourseProducts(query),
+        httpCourseProductRepository.loadCourseProductContentQuality(),
+      ]);
+      setData(products);
+      setContentQualityByProductId(
+        Object.fromEntries(
+          contentQuality.items.map(item => [item.productId, item.quality])
+        )
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "课程商品列表暂时不可用");
     } finally {
@@ -940,22 +1025,10 @@ export default function CourseProducts() {
   const submitContentUpdate = useCallback(async () => {
     if (!contentEditor) return;
 
-    const targetAudience = contentForm.targetAudienceText
-      .split("\n")
-      .map(item => item.trim())
-      .filter(Boolean);
-    const chapters = contentForm.chapters.map(chapter => ({
-      id: chapter.id,
-      title: chapter.title,
-      durationMinutes: Number(chapter.durationMinutes),
-      materialPlaceholders: chapter.materialPlaceholders.map(material => ({
-        id: material.id,
-        title: material.title,
-        type: material.type,
-        status: material.status,
-        note: material.note.trim() ? material.note.trim() : undefined,
-      })),
-    }));
+    const targetAudience = targetAudienceFromText(
+      contentForm.targetAudienceText
+    );
+    const chapters = chaptersFromContentForm(contentForm.chapters);
 
     if (targetAudience.length < 1) {
       setActionError("请至少填写一个适合人群");
@@ -1065,6 +1138,10 @@ export default function CourseProducts() {
     });
     return reasons;
   }, [auditEvents]);
+  const contentQuality = useMemo(() => {
+    if (!contentEditor) return undefined;
+    return contentQualityFromForm(contentEditor.id, contentForm);
+  }, [contentEditor, contentForm]);
   const hasPreviousPage = Boolean(meta && meta.page > 1);
   const hasNextPage = Boolean(meta && meta.page < meta.totalPages);
 
@@ -1255,6 +1332,7 @@ export default function CourseProducts() {
                       item={item}
                       index={index}
                       isMutating={Boolean(mutatingProductId)}
+                      contentQuality={contentQualityByProductId[item.id]}
                       reviewBlockReason={rejectedReviewReasons.get(item.id)}
                       onEditInfo={openInfoEditor}
                       onEditContent={openContentEditor}
@@ -1668,6 +1746,48 @@ export default function CourseProducts() {
                     className="mt-2 min-h-[92px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
                   />
                 </label>
+
+                {contentQuality && (
+                  <div
+                    className={`mt-4 rounded-lg border px-4 py-3 ${
+                      contentQuality.ready
+                        ? "border-[#C8D8C8] bg-[#EEF6ED]"
+                        : "border-[#EDCDBF] bg-[#FFF4EF]"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-sm font-semibold">
+                        {contentQuality.ready ? (
+                          <BadgeCheck className="h-4 w-4 text-[#41675A]" />
+                        ) : (
+                          <AlertTriangle className="h-4 w-4 text-[#A65F48]" />
+                        )}
+                        <span
+                          className={
+                            contentQuality.ready
+                              ? "text-[#41675A]"
+                              : "text-[#A65F48]"
+                          }
+                        >
+                          {contentQuality.ready ? "内容校验通过" : "内容待补齐"}
+                        </span>
+                      </div>
+                      <span className="text-xs font-semibold text-[#7D746B]">
+                        {contentQuality.blockingCount} 个阻塞 ·{" "}
+                        {contentQuality.warningCount} 个提醒
+                      </span>
+                    </div>
+                    {contentQuality.issues.length > 0 && (
+                      <ul className="mt-3 space-y-1 text-xs leading-5 text-[#7D746B]">
+                        {contentQuality.issues.slice(0, 4).map(issue => (
+                          <li key={`${issue.code}-${issue.path ?? issue.message}`}>
+                            {issue.message}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
 
                 <div className="mt-5 flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold text-[#41524B]">

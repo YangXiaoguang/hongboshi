@@ -1,6 +1,6 @@
 # 红博士心理小讲堂
 
-心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估、咨询预约入口和运营管理后台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、成长档案聚合、测评推荐基础链路、咨询预约雏形、课程商品后台列表、上下架、改价、基础信息编辑、内容审核流、详情内容管理、审计记录、前台课程发布联动和 PostgreSQL Store。
+心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估、咨询预约入口和运营管理后台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、成长档案聚合、测评推荐基础链路、咨询预约雏形、课程商品后台列表、上下架、改价、基础信息编辑、内容审核流、详情内容管理、内容质量校验、审计记录、前台课程发布联动和 PostgreSQL Store。
 
 ## 技术栈
 
@@ -107,7 +107,7 @@ docs/
 - `HONGBOSHI_COUNSELING_OPERATION_STORE`
 - `HONGBOSHI_PAYMENT_WEBHOOK_STORE`
 
-切换 PostgreSQL 时，先配置 `DATABASE_URL`，再按需将对应 Store 变量设置为 `postgres`。课程商品支持 `file`、`memory` 和 `postgres`，本地开发仍可用 `.env.example` 中的文件模式。运行：
+切换 PostgreSQL 时，先配置 `DATABASE_URL`，再按需将对应 Store 变量设置为 `postgres`。课程商品和课程商品详情内容均支持 `file`、`memory` 和 `postgres`，本地开发仍可用 `.env.example` 中的文件模式。运行：
 
 ```bash
 pnpm db:doctor
@@ -136,10 +136,10 @@ pnpm db:migrate
 - 课程目录、课程详情、课程权益、后台课程商品、快速测评、咨询预约和成长档案分别由 `/api/courses`、`/api/course-access`、`/api/catalog/admin/course-products`、`/api/assessments/quick`、`/api/counseling/availability`、`/api/counseling/appointments` 和 `/api/growth/profile` 提供；`/api/courses` 已联动课程商品发布状态、审核状态、价格、会员权益和详情内容
 - 课程权益开发期默认写入 `.hongboshi-data/course-access.json`，也可通过 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 切到 PostgreSQL
 - 课程商品开发期默认写入 `.hongboshi-data/course-products.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_STORE=memory` 临时切回内存，或通过 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 写入 PostgreSQL
-- 课程商品详情内容开发期默认写入 `.hongboshi-data/course-product-content.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 临时切回内存；当前内容 Store 先使用 JSON/内存实现，PostgreSQL 内容表留到下一阶段
+- 课程商品详情内容开发期默认写入 `.hongboshi-data/course-product-content.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 临时切回内存，或通过 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 写入 PostgreSQL；后台会展示批量内容校验状态，提交审核前会拦截摘要、适合人群、章节、时长和素材占位等硬性问题
 - 测评结果、咨询预约、咨询运营配置、咨询审计、风险事件和支付回调收据已抽象为服务端 Store 接口，均已有 PostgreSQL 实现，默认仍可使用内存实现
 - 数据库准备层位于 `server/db`，初始 PostgreSQL 迁移草案见 `server/db/migrations/0001_core_tables.sql`
-- 登录会话、课程权益、课程商品、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调 Store 已有 PostgreSQL 实现；设置 `DATABASE_URL` 且分别将对应 `HONGBOSHI_*_STORE` 设为 `postgres` 后可切换
+- 登录会话、课程权益、课程商品、课程商品详情内容、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调 Store 已有 PostgreSQL 实现；设置 `DATABASE_URL` 且分别将对应 `HONGBOSHI_*_STORE` 设为 `postgres` 后可切换
 - 课程权益读取优先使用服务端 session cookie 识别用户，`x-hongboshi-user-id` 仅作为开发期读取兜底
 - 课程购买和会员开通必须具备 `member` 权限，登录时会记录 terms/privacy 协议版本
 - 成长档案读取需要登录；当前聚合课程权益、订单、最新测评报告、咨询预约和最近时间线
@@ -157,6 +157,6 @@ pnpm db:migrate
 3. 建立订单支付状态机，区分待支付、已支付、退款、支付超时关闭。
 4. 接入真实支付渠道、退款通道和支付对账异常处理动作。
 5. 建立风险人工复核台，承接高风险测评和咨询前信息。
-6. 为课程商品详情内容补齐 PostgreSQL Store、批量内容校验和更细粒度权限。
+6. 将后台权限从 `admin:manage` 拆为课程商品、订单、财务、风控等资源级能力。
 7. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
 8. 引入 ESLint 或统一的代码质量检查规则。

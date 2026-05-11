@@ -6,6 +6,7 @@ import {
   ApiResponseSchema,
   CourseProductBasicInfoUpdateRequestSchema,
   CourseProductContentMutationResultSchema,
+  CourseProductContentQualityBatchResultSchema,
   CourseProductContentUpdateRequestSchema,
   CourseProductDetailContentSchema,
   CourseProductMutationResultSchema,
@@ -14,6 +15,7 @@ import {
   CourseProductListResultSchema,
   CourseProductReviewActionRequestSchema,
   CourseProductStatusUpdateRequestSchema,
+  evaluateCourseProductContentQuality,
   userCan,
   type LoginSession,
 } from "../../../shared/domain";
@@ -30,6 +32,7 @@ import {
 import {
   getCourseProductContentForProduct,
   getCourseProductContentStore,
+  listCourseProductContentQuality,
   updateCourseProductContent,
   type CourseProductContentStore,
 } from "./courseProductContentStore";
@@ -42,6 +45,9 @@ const CourseProductMutationResponseSchema = ApiResponseSchema(
 );
 const CourseProductContentResponseSchema = ApiResponseSchema(
   CourseProductDetailContentSchema
+);
+const CourseProductContentQualityResponseSchema = ApiResponseSchema(
+  CourseProductContentQualityBatchResultSchema
 );
 const CourseProductContentMutationResponseSchema = ApiResponseSchema(
   CourseProductContentMutationResultSchema
@@ -59,6 +65,7 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductAdminListResponseSchema>
   | z.infer<typeof CourseProductMutationResponseSchema>
   | z.infer<typeof CourseProductContentResponseSchema>
+  | z.infer<typeof CourseProductContentQualityResponseSchema>
   | z.infer<typeof CourseProductContentMutationResponseSchema>;
 type CatalogApiPayload = {
   status: number;
@@ -244,7 +251,8 @@ export async function updateCourseProductReviewPayload(
   productId: string,
   body: unknown,
   store: CourseProductStore = getCourseProductStore(),
-  now = new Date().toISOString()
+  now = new Date().toISOString(),
+  contentStore: CourseProductContentStore = getCourseProductContentStore()
 ): Promise<CatalogApiPayload> {
   const denied = denyUnauthorizedActor(actor);
   if (denied) return denied;
@@ -258,6 +266,19 @@ export async function updateCourseProductReviewPayload(
   }
 
   try {
+    if (parsed.data.action === "submit") {
+      const content = await getCourseProductContentForProduct({
+        productId,
+        productStore: store,
+        contentStore,
+        now,
+      });
+      const quality = evaluateCourseProductContentQuality(content);
+      if (!quality.ready) {
+        throw new Error("COURSE_PRODUCT_CONTENT_QUALITY_BLOCKED");
+      }
+    }
+
     return {
       status: 200,
       body: CourseProductMutationResponseSchema.parse({
@@ -299,6 +320,30 @@ export async function getCourseProductContentPayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程商品详情内容读取失败");
+  }
+}
+
+export async function getCourseProductContentQualityPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  productStore: CourseProductStore = getCourseProductStore(),
+  contentStore: CourseProductContentStore = getCourseProductContentStore()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(actor);
+  if (denied) return denied;
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductContentQualityResponseSchema.parse({
+        ok: true,
+        data: await listCourseProductContentQuality({
+          productStore,
+          contentStore,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程商品内容校验失败");
   }
 }
 
@@ -483,6 +528,25 @@ export function registerCatalogApi(app: Express) {
       }
     }
   );
+
+  app.get(
+    "/api/catalog/admin/course-products/content-quality",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await getCourseProductContentQualityPayload(
+          session?.user
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程商品内容校验失败")
+        );
+      }
+    }
+  );
 }
 
 export function handleCatalogApiRequest(
@@ -512,6 +576,26 @@ export function handleCatalogApiRequest(
           res,
           500,
           errorPayload("INTERNAL_ERROR", "课程商品列表暂时不可用")
+        )
+      );
+
+    return true;
+  }
+
+  if (url.pathname === "/api/catalog/admin/course-products/content-quality") {
+    if (req.method !== "GET") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+      return true;
+    }
+
+    void getLoginSessionFromRequest(req)
+      .then(session => getCourseProductContentQualityPayload(session?.user))
+      .then(payload => sendJson(res, payload.status, payload.body))
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程商品内容校验失败")
         )
       );
 
@@ -745,6 +829,16 @@ function courseProductActionFailure(
     return {
       status: 409,
       body: errorPayload("CONFLICT", "课程商品详情内容没有变化"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_CONTENT_QUALITY_BLOCKED"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "课程详情内容校验未通过，暂不能提交审核"),
     };
   }
 

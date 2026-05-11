@@ -69,6 +69,21 @@ export const COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES = [
   "ready",
 ] as const;
 
+export const COURSE_PRODUCT_CONTENT_QUALITY_ISSUE_CODES = [
+  "schema_invalid",
+  "summary_too_short",
+  "audience_too_few",
+  "chapters_too_few",
+  "chapter_duration_too_short",
+  "chapter_material_missing",
+  "material_pending",
+] as const;
+
+export const COURSE_PRODUCT_CONTENT_QUALITY_SEVERITIES = [
+  "blocking",
+  "warning",
+] as const;
+
 export const CourseProductStatusSchema = z.enum(COURSE_PRODUCT_STATUSES);
 
 export const CourseProductReviewStatusSchema = z.enum(
@@ -93,6 +108,14 @@ export const CourseProductContentMaterialTypeSchema = z.enum(
 
 export const CourseProductContentMaterialStatusSchema = z.enum(
   COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES
+);
+
+export const CourseProductContentQualityIssueCodeSchema = z.enum(
+  COURSE_PRODUCT_CONTENT_QUALITY_ISSUE_CODES
+);
+
+export const CourseProductContentQualitySeveritySchema = z.enum(
+  COURSE_PRODUCT_CONTENT_QUALITY_SEVERITIES
 );
 
 export const CourseProductPriceSchema = z.object({
@@ -261,6 +284,39 @@ export const CourseProductContentUpdateRequestSchema =
     reason: z.string().trim().min(4).max(240),
   });
 
+export const CourseProductContentQualityIssueSchema = z.object({
+  code: CourseProductContentQualityIssueCodeSchema,
+  severity: CourseProductContentQualitySeveritySchema,
+  message: z.string().min(1),
+  path: z.string().optional(),
+});
+
+export const CourseProductContentQualityResultSchema = z.object({
+  ready: z.boolean(),
+  issueCount: z.number().int().nonnegative(),
+  blockingCount: z.number().int().nonnegative(),
+  warningCount: z.number().int().nonnegative(),
+  issues: z.array(CourseProductContentQualityIssueSchema),
+});
+
+export const CourseProductContentQualityItemSchema = z.object({
+  productId: EntityIdSchema,
+  productTitle: z.string().min(2),
+  status: CourseProductStatusSchema,
+  reviewStatus: CourseProductReviewStatusSchema,
+  quality: CourseProductContentQualityResultSchema,
+});
+
+export const CourseProductContentQualityBatchResultSchema = z.object({
+  items: z.array(CourseProductContentQualityItemSchema),
+  summary: z.object({
+    totalCount: z.number().int().nonnegative(),
+    readyCount: z.number().int().nonnegative(),
+    blockedCount: z.number().int().nonnegative(),
+    warningCount: z.number().int().nonnegative(),
+  }),
+});
+
 export const CourseProductContentMutationResultSchema = z.object({
   product: CourseProductListItemSchema,
   content: CourseProductDetailContentSchema,
@@ -279,6 +335,91 @@ export const courseProductFilterOptions = {
   types: [...COURSE_TYPES],
   statuses: [...COURSE_PRODUCT_STATUSES],
 } satisfies z.infer<typeof CourseProductFilterOptionsSchema>;
+
+export function evaluateCourseProductContentQuality(
+  content: CourseProductDetailContent
+): CourseProductContentQualityResult {
+  const normalized = CourseProductDetailContentSchema.parse(content);
+  const issues: CourseProductContentQualityIssue[] = [];
+  const addIssue = (issue: CourseProductContentQualityIssue) => {
+    issues.push(CourseProductContentQualityIssueSchema.parse(issue));
+  };
+
+  if (normalized.summary.trim().length < 40) {
+    addIssue({
+      code: "summary_too_short",
+      severity: "blocking",
+      message: "课程摘要需要至少 40 个字，才能支撑审核判断。",
+      path: "summary",
+    });
+  }
+
+  if (normalized.targetAudience.length < 2) {
+    addIssue({
+      code: "audience_too_few",
+      severity: "blocking",
+      message: "适合人群至少需要 2 条，方便前台用户判断是否匹配。",
+      path: "targetAudience",
+    });
+  }
+
+  if (normalized.chapters.length < 2) {
+    addIssue({
+      code: "chapters_too_few",
+      severity: "blocking",
+      message: "课程至少需要 2 个章节，避免商品内容过薄。",
+      path: "chapters",
+    });
+  }
+
+  normalized.chapters.forEach((chapter, chapterIndex) => {
+    const chapterPath = `chapters.${chapterIndex}`;
+
+    if (chapter.durationMinutes < 10) {
+      addIssue({
+        code: "chapter_duration_too_short",
+        severity: "blocking",
+        message: `「${chapter.title}」时长少于 10 分钟，请补齐课程设计。`,
+        path: `${chapterPath}.durationMinutes`,
+      });
+    }
+
+    if (chapter.materialPlaceholders.length < 1) {
+      addIssue({
+        code: "chapter_material_missing",
+        severity: "blocking",
+        message: `「${chapter.title}」至少需要 1 个素材占位。`,
+        path: `${chapterPath}.materialPlaceholders`,
+      });
+      return;
+    }
+
+    const pendingCount = chapter.materialPlaceholders.filter(
+      material => material.status !== "ready"
+    ).length;
+    if (pendingCount > 0) {
+      addIssue({
+        code: "material_pending",
+        severity: "warning",
+        message: `「${chapter.title}」还有 ${pendingCount} 个素材未标记就绪。`,
+        path: `${chapterPath}.materialPlaceholders`,
+      });
+    }
+  });
+
+  const blockingCount = issues.filter(
+    issue => issue.severity === "blocking"
+  ).length;
+  const warningCount = issues.length - blockingCount;
+
+  return CourseProductContentQualityResultSchema.parse({
+    ready: blockingCount === 0,
+    issueCount: issues.length,
+    blockingCount,
+    warningCount,
+    issues,
+  });
+}
 
 export type CourseProductStatus = z.infer<typeof CourseProductStatusSchema>;
 export type CourseProductReviewStatus = z.infer<
@@ -326,6 +467,12 @@ export type CourseProductContentMaterialType = z.infer<
 export type CourseProductContentMaterialStatus = z.infer<
   typeof CourseProductContentMaterialStatusSchema
 >;
+export type CourseProductContentQualityIssueCode = z.infer<
+  typeof CourseProductContentQualityIssueCodeSchema
+>;
+export type CourseProductContentQualitySeverity = z.infer<
+  typeof CourseProductContentQualitySeveritySchema
+>;
 export type CourseProductContentMaterial = z.infer<
   typeof CourseProductContentMaterialSchema
 >;
@@ -337,6 +484,18 @@ export type CourseProductDetailContent = z.infer<
 >;
 export type CourseProductContentUpdateRequest = z.infer<
   typeof CourseProductContentUpdateRequestSchema
+>;
+export type CourseProductContentQualityIssue = z.infer<
+  typeof CourseProductContentQualityIssueSchema
+>;
+export type CourseProductContentQualityResult = z.infer<
+  typeof CourseProductContentQualityResultSchema
+>;
+export type CourseProductContentQualityItem = z.infer<
+  typeof CourseProductContentQualityItemSchema
+>;
+export type CourseProductContentQualityBatchResult = z.infer<
+  typeof CourseProductContentQualityBatchResultSchema
 >;
 export type CourseProductContentMutationResult = z.infer<
   typeof CourseProductContentMutationResultSchema

@@ -169,6 +169,20 @@ export const coreDatabaseTables = [
     ],
   },
   {
+    name: "course_product_contents",
+    domain: "commerce",
+    purpose:
+      "Operational course product detail content, chapters and material placeholders.",
+    requiredColumns: [
+      "product_id",
+      "summary",
+      "target_audience",
+      "chapters",
+      "created_at",
+      "updated_at",
+    ],
+  },
+  {
     name: "course_product_audit_events",
     domain: "audit",
     purpose:
@@ -327,6 +341,7 @@ export const requiredDatabaseIndexes = [
   "uniq_course_products_course_id",
   "idx_course_products_status_updated_at",
   "idx_course_products_review_status_updated_at",
+  "idx_course_product_contents_updated_at",
   "idx_course_product_audit_events_product_created_at",
   "idx_course_product_audit_events_created_at",
   "idx_assessment_reports_user_id_created_at",

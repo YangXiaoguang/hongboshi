@@ -1,10 +1,12 @@
 import {
   ApiResponseSchema,
   CourseProductContentMutationResultSchema,
+  CourseProductContentQualityBatchResultSchema,
   CourseProductDetailContentSchema,
   CourseProductListResultSchema,
   CourseProductMutationResultSchema,
   type CourseProductContentMutationResult,
+  type CourseProductContentQualityBatchResult,
   type CourseProductContentUpdateRequest,
   type CourseProductDetailContent,
   type CourseProductMutationResult,
@@ -24,6 +26,9 @@ const CourseProductMutationResponseSchema = ApiResponseSchema(
 );
 const CourseProductContentResponseSchema = ApiResponseSchema(
   CourseProductDetailContentSchema
+);
+const CourseProductContentQualityResponseSchema = ApiResponseSchema(
+  CourseProductContentQualityBatchResultSchema
 );
 const CourseProductContentMutationResponseSchema = ApiResponseSchema(
   CourseProductContentMutationResultSchema
@@ -63,6 +68,14 @@ export function parseCourseProductContentResponse(
   return parsed.data;
 }
 
+export function parseCourseProductContentQualityResponse(
+  payload: unknown
+): CourseProductContentQualityBatchResult {
+  const parsed = CourseProductContentQualityResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 export function parseCourseProductContentMutationResponse(
   payload: unknown
 ): CourseProductContentMutationResult {
@@ -85,6 +98,12 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   const contentParsed = CourseProductContentResponseSchema.safeParse(payload);
   if (contentParsed.success && !contentParsed.data.ok) {
     return contentParsed.data.error.message;
+  }
+
+  const contentQualityParsed =
+    CourseProductContentQualityResponseSchema.safeParse(payload);
+  if (contentQualityParsed.success && !contentQualityParsed.data.ok) {
+    return contentQualityParsed.data.error.message;
   }
 
   const contentMutationParsed =
@@ -191,6 +210,24 @@ export const httpCourseProductRepository = {
       throw new Error(extractErrorMessage(payload, "课程商品详情内容读取失败"));
     }
     return parseCourseProductContentResponse(payload);
+  },
+
+  async loadCourseProductContentQuality(): Promise<CourseProductContentQualityBatchResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/content-quality`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "课程商品内容校验失败"));
+    }
+    return parseCourseProductContentQualityResponse(payload);
   },
 
   async updateCourseProductContent(

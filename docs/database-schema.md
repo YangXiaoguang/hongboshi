@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品已完成开发期 JSON Store、专用 PostgreSQL 表与 Store，课程详情内容已先落 JSON/内存 Store。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品与课程详情内容均已完成开发期 JSON Store、专用 PostgreSQL 表与 Store。
 
 ## 文件位置
 
@@ -11,6 +11,7 @@
 - `server/db/migrations/0004_course_products.sql`：课程商品表与课程商品审计事件表。
 - `server/db/migrations/0005_course_product_review_workflow.sql`：课程商品审核审计动作约束与审核状态索引。
 - `server/db/migrations/0006_course_product_content_management.sql`：课程商品内容审计动作约束。
+- `server/db/migrations/0007_course_product_contents.sql`：课程商品详情内容表，使用 JSONB 保存适合人群、章节和素材占位。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
@@ -18,7 +19,7 @@
 ## 初始化命令
 
 1. 配置 `DATABASE_URL`。
-2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_COURSE_PRODUCT_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE` 设置为 `postgres`。
+2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_COURSE_PRODUCT_STORE`、`HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE` 设置为 `postgres`。
 3. 运行 `pnpm db:doctor` 检查 Store 配置与数据库连接。
 4. 运行 `pnpm db:migrate` 应用 `server/db/migrations/*.sql`。
 
@@ -40,7 +41,7 @@
 | 领域           | 表                                                                                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                                                                        |
-| 课程权益与订单 | `course_memberships`, `course_access_grants`, `course_products`, `orders`, `order_items`, `payments`, `payment_webhook_events` |
+| 课程权益与订单 | `course_memberships`, `course_access_grants`, `course_products`, `course_product_contents`, `orders`, `order_items`, `payments`, `payment_webhook_events` |
 | 测评           | `assessment_reports`                                                                                                           |
 | 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`, `counseling_operation_settings`                                   |
 | 风险与审计     | `risk_events`, `audit_logs`, `course_product_audit_events`, `counseling_operation_audit_events`                                |
@@ -73,6 +74,8 @@
 
 `server/modules/catalog/postgresCourseProductStore.ts` 已实现 `course_products` 与 `course_product_audit_events` 的保存、读取、初始化 seed、基础信息/价格/审核/状态更新承载和审计事件读取能力。当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 时，课程商品会写入 PostgreSQL。
 
-`server/modules/catalog/courseProductContentStore.ts` 已实现课程详情内容的内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/course-product-content.json` 保存详情摘要、适合人群、章节和素材占位；当设置 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 时可临时切回内存。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。PostgreSQL 内容表计划在下一阶段补齐。
+`server/modules/catalog/courseProductContentStore.ts` 已实现课程详情内容的内存 Store、JSON 文件 Store 和批量内容质量校验。开发期默认使用 `.hongboshi-data/course-product-content.json` 保存详情摘要、适合人群、章节和素材占位；当设置 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 时可临时切回内存。
 
-当前实现已覆盖登录会话、课程权益、课程商品、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+`server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节和素材占位；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
+
+当前实现已覆盖登录会话、课程权益、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

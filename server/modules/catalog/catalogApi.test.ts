@@ -6,6 +6,7 @@ import {
 } from "./courseProductStore";
 import {
   getCourseProductAdminListPayload,
+  getCourseProductContentQualityPayload,
   getCourseProductContentPayload,
   updateCourseProductBasicInfoPayload,
   updateCourseProductContentPayload,
@@ -197,6 +198,69 @@ describe("catalog admin api payloads", () => {
     expect(approved.body.ok).toBe(true);
     if (approved.body.ok) {
       expect(approved.body.data.product.reviewStatus).toBe("approved");
+    }
+  });
+
+  it("blocks review submission when detail content quality has blocking issues", async () => {
+    const store = new InMemoryCourseProductStore([
+      {
+        ...products[0],
+        status: "unpublished",
+        reviewStatus: "not_submitted",
+        publishedAt: undefined,
+      },
+    ]);
+    const contentStore = new InMemoryCourseProductContentStore([
+      {
+        productId: products[0].id,
+        summary: "这是一段达到契约最低长度但还不足以支撑审核判断的摘要。",
+        targetAudience: ["学习者"],
+        chapters: [
+          {
+            id: "chapter_1",
+            title: "短章",
+            durationMinutes: 5,
+            materialPlaceholders: [],
+          },
+        ],
+        updatedAt: "2026-05-12T09:00:00.000Z",
+      },
+    ]);
+
+    const blocked = await updateCourseProductReviewPayload(
+      { id: "operator_1", roles: ["operator"] },
+      products[0].id,
+      {
+        action: "submit",
+        reason: "提交审核前进行内容校验",
+      },
+      store,
+      "2026-05-12T09:10:00.000Z",
+      contentStore
+    );
+
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.ok).toBe(false);
+    if (!blocked.body.ok) {
+      expect(blocked.body.error.message).toContain("校验未通过");
+    }
+  });
+
+  it("returns batch content quality results to operators", async () => {
+    const productStore = createStore();
+    const contentStore = new InMemoryCourseProductContentStore();
+
+    const payload = await getCourseProductContentQualityPayload(
+      { id: "operator_1", roles: ["operator"] },
+      productStore,
+      contentStore
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (payload.body.ok) {
+      expect(payload.body.data.summary.totalCount).toBe(products.length);
+      expect(payload.body.data.items[0]?.quality.ready).toBe(true);
     }
   });
 

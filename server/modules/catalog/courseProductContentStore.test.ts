@@ -12,6 +12,7 @@ import {
   JsonFileCourseProductContentStore,
   buildDefaultCourseProductContent,
   getCourseProductContentForProduct,
+  listCourseProductContentQuality,
   updateCourseProductContent,
 } from "./courseProductContentStore";
 
@@ -79,6 +80,39 @@ describe("course product content store", () => {
       reviewStatus: "not_submitted",
     });
     expect(result.auditEvent.action).toBe("content_update");
+  });
+
+  it("evaluates content quality for all course products", async () => {
+    const product = courseProductFromCourse(courses[0]);
+    const productStore = new InMemoryCourseProductStore([product]);
+    const contentStore = new InMemoryCourseProductContentStore([
+      {
+        productId: product.id,
+        summary: "这是一段达到契约最低长度但还不足以支撑审核判断的摘要。",
+        targetAudience: ["学习者"],
+        chapters: [
+          {
+            id: "chapter_1",
+            title: "短章",
+            durationMinutes: 5,
+            materialPlaceholders: [],
+          },
+        ],
+        updatedAt: "2026-05-12T09:00:00.000Z",
+      },
+    ]);
+
+    const result = await listCourseProductContentQuality({
+      productStore,
+      contentStore,
+    });
+
+    expect(result.summary).toMatchObject({
+      totalCount: 1,
+      readyCount: 0,
+      blockedCount: 1,
+    });
+    expect(result.items[0]?.quality.ready).toBe(false);
   });
 
   it("persists content in the JSON store", async () => {

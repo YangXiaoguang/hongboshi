@@ -4,18 +4,23 @@ import { z } from "zod";
 import {
   CourseProductAuditEventSchema,
   CourseProductContentMutationResultSchema,
+  CourseProductContentQualityBatchResultSchema,
   CourseProductDetailContentSchema,
   CourseProductListItemSchema,
+  evaluateCourseProductContentQuality,
   type CourseProductAuditEvent,
+  type CourseProductContentQualityBatchResult,
   type CourseProductContentMutationResult,
   type CourseProductContentUpdateRequest,
   type CourseProductDetailContent,
   type CourseProductListItem,
 } from "../../../shared/domain";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
 import {
   getCourseProductStore,
   type CourseProductStore,
 } from "./courseProductStore";
+import { PostgresCourseProductContentStore } from "./postgresCourseProductContentStore";
 
 const CourseProductContentStoreFileSchema = z.object({
   version: z.literal(1),
@@ -134,6 +139,14 @@ export function createDefaultCourseProductContentStore(): CourseProductContentSt
     return new InMemoryCourseProductContentStore();
   }
 
+  if (
+    process.env.HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE === "postgres" ||
+    (process.env.HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE !== "file" &&
+      getDatabaseUrl())
+  ) {
+    return new PostgresCourseProductContentStore(getSharedPostgresPool());
+  }
+
   return new JsonFileCourseProductContentStore();
 }
 
@@ -241,6 +254,47 @@ export async function updateCourseProductContent({
     content: savedContent,
     auditEvent: savedEvent,
     auditEvents: await productStore.listAuditEvents(productId),
+  });
+}
+
+export async function listCourseProductContentQuality({
+  productStore = getCourseProductStore(),
+  contentStore = getCourseProductContentStore(),
+  now = new Date().toISOString(),
+}: {
+  productStore?: CourseProductStore;
+  contentStore?: CourseProductContentStore;
+  now?: string;
+} = {}): Promise<CourseProductContentQualityBatchResult> {
+  const products = await productStore.listProducts();
+  const items = await Promise.all(
+    products.map(async product => {
+      const content =
+        (await contentStore.getContent(product.id)) ??
+        buildDefaultCourseProductContent(product, now);
+      return {
+        productId: product.id,
+        productTitle: product.title,
+        status: product.status,
+        reviewStatus: product.reviewStatus,
+        quality: evaluateCourseProductContentQuality(content),
+      };
+    })
+  );
+  const readyCount = items.filter(item => item.quality.ready).length;
+  const blockedCount = items.length - readyCount;
+  const warningCount = items.filter(
+    item => item.quality.warningCount > 0
+  ).length;
+
+  return CourseProductContentQualityBatchResultSchema.parse({
+    items,
+    summary: {
+      totalCount: items.length,
+      readyCount,
+      blockedCount,
+      warningCount,
+    },
   });
 }
 

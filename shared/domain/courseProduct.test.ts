@@ -9,6 +9,7 @@ import {
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
   CourseProductReviewActionRequestSchema,
+  evaluateCourseProductContentQuality,
 } from "./courseProduct";
 
 describe("course product domain contract", () => {
@@ -202,5 +203,77 @@ describe("course product domain contract", () => {
         ],
       }).success
     ).toBe(false);
+  });
+
+  it("evaluates content quality separately from schema validity", () => {
+    const readyWithWarnings = CourseProductDetailContentSchema.parse({
+      productId: "course_product_1",
+      summary:
+        "这门课程围绕情绪识别、调节练习和日常沟通展开，帮助学习者把困扰拆成可执行的行动计划。",
+      targetAudience: ["希望提升情绪调节能力的学习者", "需要关系沟通练习的用户"],
+      chapters: [
+        {
+          id: "chapter_1",
+          title: "认识情绪反应",
+          durationMinutes: 36,
+          materialPlaceholders: [
+            {
+              id: "material_1",
+              title: "课前练习表",
+              type: "exercise",
+              status: "pending",
+            },
+          ],
+        },
+        {
+          id: "chapter_2",
+          title: "建立日常练习",
+          durationMinutes: 42,
+          materialPlaceholders: [
+            {
+              id: "material_2",
+              title: "章节讲义",
+              type: "document",
+              status: "ready",
+            },
+          ],
+        },
+      ],
+      updatedAt: "2026-05-12T09:00:00+08:00",
+    });
+
+    expect(evaluateCourseProductContentQuality(readyWithWarnings)).toMatchObject(
+      {
+        ready: true,
+        blockingCount: 0,
+        warningCount: 1,
+      }
+    );
+
+    const blocked = CourseProductDetailContentSchema.parse({
+      productId: "course_product_1",
+      summary: "这是一段达到契约最低长度但还不足以支撑审核判断的摘要。",
+      targetAudience: ["学习者"],
+      chapters: [
+        {
+          id: "chapter_1",
+          title: "短章",
+          durationMinutes: 5,
+          materialPlaceholders: [],
+        },
+      ],
+      updatedAt: "2026-05-12T09:00:00+08:00",
+    });
+
+    const quality = evaluateCourseProductContentQuality(blocked);
+    expect(quality.ready).toBe(false);
+    expect(quality.issues.map(issue => issue.code)).toEqual(
+      expect.arrayContaining([
+        "audience_too_few",
+        "chapters_too_few",
+        "chapter_duration_too_short",
+        "chapter_material_missing",
+      ])
+    );
   });
 });

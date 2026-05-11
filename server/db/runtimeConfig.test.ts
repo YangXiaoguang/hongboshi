@@ -18,6 +18,7 @@ describe("database runtime persistence config", () => {
       HONGBOSHI_AUTH_SESSION_STORE: "memory",
       HONGBOSHI_COURSE_ACCESS_STORE: "file",
       HONGBOSHI_COURSE_PRODUCT_STORE: "file",
+      HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE: "file",
       HONGBOSHI_RISK_EVENT_STORE: "memory",
     });
     expect(config.issues).toEqual([]);
@@ -36,7 +37,7 @@ describe("database runtime persistence config", () => {
     ).toBe(true);
     expect(
       config.stores.find(
-        store => store.envName === "HONGBOSHI_COURSE_PRODUCT_STORE"
+        store => store.envName === "HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE"
       )?.mode
     ).toBe("postgres");
   });
