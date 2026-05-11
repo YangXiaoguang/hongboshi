@@ -78,6 +78,9 @@ docs/
 - [领域契约说明](./docs/domain-contracts.md)
 - [数据库 Schema 准备说明](./docs/database-schema.md)
 - [课程中心 Feature 架构](./docs/course-feature-architecture.md)
+- [运营管理后台建设路线图](./docs/admin-management-roadmap.md)
+- [Codex 连续执行状态](./docs/codex-execution-state.md)
+- [Codex 连续执行协议](./docs/codex-operating-protocol.md)
 
 ## 环境变量
 

@@ -46,6 +46,12 @@ flowchart LR
 
 ## 工程阶段
 
+持续二次开发的执行状态、下一步任务包和后台专项路线图由以下文档维护：
+
+- [运营管理后台建设路线图](./admin-management-roadmap.md)
+- [Codex 连续执行状态](./codex-execution-state.md)
+- [Codex 连续执行协议](./codex-operating-protocol.md)
+
 ### M1: 工程基础与领域契约
 
 - 建立 `shared/domain` 作为前后端共享的业务类型与 Zod 校验契约。
