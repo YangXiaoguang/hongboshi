@@ -7,11 +7,17 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  Edit3,
+  Eye,
+  EyeOff,
+  History,
   Layers3,
   ListFilter,
   Loader2,
   RefreshCw,
   Search,
+  ShieldCheck,
+  X,
   UsersRound,
 } from "lucide-react";
 import {
@@ -20,9 +26,11 @@ import {
   COURSE_CATEGORIES,
   COURSE_PRODUCT_PAGE_SIZE,
   userCan,
+  type CourseProductAuditEvent,
   type CourseProductListItem,
   type CourseProductListQuery,
   type CourseProductListResult,
+  type CourseProductPriceUpdateRequest,
   type CourseProductReviewStatus,
   type CourseProductStatus,
 } from "@shared/domain";
@@ -31,6 +39,17 @@ import { httpCourseProductRepository } from "@/features/catalog";
 
 type CourseProductStatusFilter = CourseProductListQuery["status"];
 type CourseProductCategoryFilter = CourseProductListQuery["category"];
+type StatusActionState = {
+  product: CourseProductListItem;
+  targetStatus: CourseProductStatus;
+};
+type PriceFormState = {
+  amount: string;
+  originalAmount: string;
+  isFree: boolean;
+  memberIncluded: boolean;
+  reason: string;
+};
 
 const statusFilters: {
   value: CourseProductStatusFilter;
@@ -88,6 +107,37 @@ function formatDate(value: string) {
   }).format(date);
 }
 
+function formatAuditMoney(value: unknown) {
+  if (!value || typeof value !== "object") return "未记录";
+  const amount = "amount" in value ? Number(value.amount) : Number.NaN;
+  const isFree = "isFree" in value ? Boolean(value.isFree) : false;
+  if (isFree) return "免费";
+  if (!Number.isFinite(amount)) return "未记录";
+  return new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency: "CNY",
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function auditStatusLabel(value: unknown) {
+  if (typeof value !== "string") return "未记录";
+  return value in statusCopy
+    ? statusCopy[value as CourseProductStatus]
+    : "未记录";
+}
+
+function auditChangeText(event: CourseProductAuditEvent) {
+  if (event.action === "status_update") {
+    return `${auditStatusLabel(event.before.status)} -> ${auditStatusLabel(
+      event.after.status
+    )}`;
+  }
+  return `${formatAuditMoney(event.before.price)} -> ${formatAuditMoney(
+    event.after.price
+  )}`;
+}
+
 function statusClass(status: CourseProductStatus) {
   if (status === "published") {
     return "bg-[#E7EFE8] text-[#41675A] ring-[#BCD1C4]";
@@ -140,13 +190,81 @@ function metricItems(data?: CourseProductListResult) {
   ];
 }
 
+function AuditTrail({ events }: { events: CourseProductAuditEvent[] }) {
+  const recentEvents = events.slice(0, 5);
+
+  return (
+    <section className="mt-6 overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
+      <div className="flex items-center justify-between border-b border-[#E8DED0] px-5 py-4">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <History className="h-4 w-4 text-[#6F8F83]" />
+          最近审计
+        </div>
+        <span className="rounded-full bg-[#F1E8DC] px-2.5 py-1 text-xs font-semibold text-[#756B60]">
+          {events.length} 条
+        </span>
+      </div>
+
+      {recentEvents.length ? (
+        <div className="divide-y divide-[#E8DED0]">
+          {recentEvents.map(event => (
+            <div
+              key={event.id}
+              className="grid gap-3 px-5 py-3 text-sm md:grid-cols-[140px_minmax(0,1fr)_180px]"
+            >
+              <div>
+                <p className="font-semibold text-[#243B35]">
+                  {event.action === "status_update" ? "状态更新" : "价格更新"}
+                </p>
+                <p className="mt-1 text-xs text-[#8A8176]">
+                  {formatDate(event.createdAt)}
+                </p>
+              </div>
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-[#41524B]">
+                  {event.productTitle}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                  {auditChangeText(event)} · {event.reason}
+                </p>
+              </div>
+              <p className="text-xs text-[#8A8176]">操作者 {event.actorId}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex min-h-[116px] items-center justify-center px-5 text-sm text-[#8A8176]">
+          本轮还没有课程商品操作记录
+        </div>
+      )}
+    </section>
+  );
+}
+
 function CourseProductRow({
   item,
   index,
+  isMutating,
+  onEditPrice,
+  onRequestStatusChange,
 }: {
   item: CourseProductListItem;
   index: number;
+  isMutating: boolean;
+  onEditPrice: (item: CourseProductListItem) => void;
+  onRequestStatusChange: (
+    item: CourseProductListItem,
+    targetStatus: CourseProductStatus
+  ) => void;
 }) {
+  const targetStatus =
+    item.status === "published" ? "unpublished" : "published";
+  const canToggleStatus =
+    item.status === "published" ||
+    item.status === "unpublished" ||
+    item.status === "draft";
+  const StatusIcon = item.status === "published" ? EyeOff : Eye;
+
   return (
     <motion.tr
       initial={{ opacity: 0, y: 8 }}
@@ -224,6 +342,26 @@ function CourseProductRow({
           </p>
         </div>
       </td>
+      <td className="px-5 py-4">
+        <div className="flex min-w-[142px] flex-wrap gap-2">
+          <button
+            onClick={() => onRequestStatusChange(item, targetStatus)}
+            disabled={!canToggleStatus || isMutating}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <StatusIcon className="h-3.5 w-3.5" />
+            {item.status === "published" ? "下架" : "上架"}
+          </button>
+          <button
+            onClick={() => onEditPrice(item)}
+            disabled={isMutating}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#E6EDDF] px-2.5 text-xs font-semibold text-[#355F51] transition hover:bg-[#D7E5D4] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <Edit3 className="h-3.5 w-3.5" />
+            改价
+          </button>
+        </div>
+      </td>
     </motion.tr>
   );
 }
@@ -242,6 +380,19 @@ export default function CourseProducts() {
   const [keywordDraft, setKeywordDraft] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [actionError, setActionError] = useState<string>();
+  const [actionMessage, setActionMessage] = useState<string>();
+  const [mutatingProductId, setMutatingProductId] = useState<string>();
+  const [statusAction, setStatusAction] = useState<StatusActionState>();
+  const [statusReason, setStatusReason] = useState("");
+  const [priceEditor, setPriceEditor] = useState<CourseProductListItem>();
+  const [priceForm, setPriceForm] = useState<PriceFormState>({
+    amount: "",
+    originalAmount: "",
+    isFree: false,
+    memberIncluded: false,
+    reason: "",
+  });
 
   const canManageCourses = Boolean(user && userCan(user, "admin:manage"));
 
@@ -262,12 +413,105 @@ export default function CourseProducts() {
     void loadProducts();
   }, [canManageCourses, isAuthSyncing, isLoggedIn, loadProducts]);
 
+  const openPriceEditor = useCallback((item: CourseProductListItem) => {
+    setActionError(undefined);
+    setActionMessage(undefined);
+    setPriceEditor(item);
+    setPriceForm({
+      amount: String(item.price.amount),
+      originalAmount: String(item.price.originalAmount),
+      isFree: item.price.isFree,
+      memberIncluded: item.price.memberIncluded,
+      reason: "",
+    });
+  }, []);
+
+  const openStatusAction = useCallback(
+    (product: CourseProductListItem, targetStatus: CourseProductStatus) => {
+      setActionError(undefined);
+      setActionMessage(undefined);
+      setStatusAction({ product, targetStatus });
+      setStatusReason("");
+    },
+    []
+  );
+
+  const submitStatusAction = useCallback(async () => {
+    if (!statusAction) return;
+    setMutatingProductId(statusAction.product.id);
+    setActionError(undefined);
+    setActionMessage(undefined);
+
+    try {
+      await httpCourseProductRepository.updateCourseProductStatus(
+        statusAction.product.id,
+        {
+          status: statusAction.targetStatus,
+          reason: statusReason,
+        }
+      );
+      setActionMessage(
+        `${statusAction.product.title} 已${statusAction.targetStatus === "published" ? "上架" : "下架"}`
+      );
+      setStatusAction(undefined);
+      setStatusReason("");
+      await loadProducts();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "课程商品状态更新失败"
+      );
+    } finally {
+      setMutatingProductId(undefined);
+    }
+  }, [loadProducts, statusAction, statusReason]);
+
+  const submitPriceUpdate = useCallback(async () => {
+    if (!priceEditor) return;
+
+    const amount = priceForm.isFree ? 0 : Number(priceForm.amount);
+    const originalAmount = Number(priceForm.originalAmount || amount);
+
+    if (!Number.isFinite(amount) || !Number.isFinite(originalAmount)) {
+      setActionError("请填写有效的课程价格");
+      return;
+    }
+
+    const request: CourseProductPriceUpdateRequest = {
+      amount,
+      originalAmount,
+      isFree: priceForm.isFree,
+      memberIncluded: priceForm.memberIncluded,
+      reason: priceForm.reason,
+    };
+
+    setMutatingProductId(priceEditor.id);
+    setActionError(undefined);
+    setActionMessage(undefined);
+
+    try {
+      await httpCourseProductRepository.updateCourseProductPrice(
+        priceEditor.id,
+        request
+      );
+      setActionMessage(`${priceEditor.title} 价格已更新`);
+      setPriceEditor(undefined);
+      await loadProducts();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "课程商品价格更新失败"
+      );
+    } finally {
+      setMutatingProductId(undefined);
+    }
+  }, [loadProducts, priceEditor, priceForm]);
+
   const categories = useMemo(
     () => [ALL_COURSE_PRODUCT_CATEGORY, ...COURSE_CATEGORIES],
     []
   );
   const items = data?.items ?? [];
   const meta = data?.meta;
+  const auditEvents = data?.auditEvents ?? [];
   const hasPreviousPage = Boolean(meta && meta.page > 1);
   const hasNextPage = Boolean(meta && meta.page < meta.totalPages);
 
@@ -286,7 +530,7 @@ export default function CourseProducts() {
             商品列表与状态
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            读取前台课程种子数据并统一为运营商品模型，支持搜索、状态、分类和分页核对。
+            统一管理课程商品的状态、价格和审计记录，支持搜索、分类、排序和分页核对。
           </p>
         </div>
         <button
@@ -307,6 +551,18 @@ export default function CourseProducts() {
         <div className="mt-5 flex items-start gap-3 rounded-lg border border-[#EDCDBF] bg-[#FFF4EF] px-4 py-3 text-sm text-[#A65F48]">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+      {actionError && (
+        <div className="mt-5 flex items-start gap-3 rounded-lg border border-[#EDCDBF] bg-[#FFF4EF] px-4 py-3 text-sm text-[#A65F48]">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
+      {actionMessage && (
+        <div className="mt-5 flex items-start gap-3 rounded-lg border border-[#C8D8C8] bg-[#EEF6ED] px-4 py-3 text-sm text-[#41675A]">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{actionMessage}</span>
         </div>
       )}
 
@@ -334,6 +590,8 @@ export default function CourseProducts() {
           );
         })}
       </motion.section>
+
+      <AuditTrail events={auditEvents} />
 
       <section className="mt-6 overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
         <form
@@ -425,7 +683,7 @@ export default function CourseProducts() {
         ) : items.length ? (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-left">
+              <table className="w-full min-w-[1120px] text-left">
                 <thead className="bg-[#F8F3EA] text-xs text-[#8A8176]">
                   <tr>
                     <th className="px-5 py-3 font-semibold">商品</th>
@@ -434,11 +692,19 @@ export default function CourseProducts() {
                     <th className="px-5 py-3 font-semibold">价格</th>
                     <th className="px-5 py-3 font-semibold">状态</th>
                     <th className="px-5 py-3 font-semibold">更新时间</th>
+                    <th className="px-5 py-3 font-semibold">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item, index) => (
-                    <CourseProductRow key={item.id} item={item} index={index} />
+                    <CourseProductRow
+                      key={item.id}
+                      item={item}
+                      index={index}
+                      isMutating={Boolean(mutatingProductId)}
+                      onEditPrice={openPriceEditor}
+                      onRequestStatusChange={openStatusAction}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -489,6 +755,202 @@ export default function CourseProducts() {
           </div>
         )}
       </section>
+
+      {statusAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="w-full max-w-[520px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-[#8A8176]">状态动作</p>
+                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                  {statusAction.targetStatus === "published"
+                    ? "上架课程商品"
+                    : "下架课程商品"}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#6F7771]">
+                  {statusAction.product.title}
+                </p>
+              </div>
+              <button
+                onClick={() => setStatusAction(undefined)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-sm font-semibold text-[#41524B]">
+              操作原因
+              <textarea
+                value={statusReason}
+                onChange={event => setStatusReason(event.target.value)}
+                placeholder="例如：内容完成复核，允许本周活动曝光"
+                className="mt-2 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+              />
+            </label>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setStatusAction(undefined)}
+                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void submitStatusAction()}
+                disabled={
+                  statusReason.trim().length < 4 || Boolean(mutatingProductId)
+                }
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {mutatingProductId ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : statusAction.targetStatus === "published" ? (
+                  <Eye className="h-4 w-4" />
+                ) : (
+                  <EyeOff className="h-4 w-4" />
+                )}
+                确认
+                {statusAction.targetStatus === "published" ? "上架" : "下架"}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {priceEditor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="w-full max-w-[560px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-[#8A8176]">价格编辑</p>
+                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                  {priceEditor.title}
+                </h2>
+              </div>
+              <button
+                onClick={() => setPriceEditor(undefined)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-semibold text-[#41524B]">
+                售价
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={priceForm.amount}
+                  disabled={priceForm.isFree}
+                  onChange={event =>
+                    setPriceForm(current => ({
+                      ...current,
+                      amount: event.target.value,
+                    }))
+                  }
+                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83] disabled:bg-[#F4EFE7] disabled:text-[#9A8F82]"
+                />
+              </label>
+              <label className="text-sm font-semibold text-[#41524B]">
+                原价
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={priceForm.originalAmount}
+                  onChange={event =>
+                    setPriceForm(current => ({
+                      ...current,
+                      originalAmount: event.target.value,
+                    }))
+                  }
+                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center gap-3 rounded-lg border border-[#E1D7C8] bg-white px-3 py-2 text-sm font-semibold text-[#41524B]">
+                <input
+                  type="checkbox"
+                  checked={priceForm.isFree}
+                  onChange={event =>
+                    setPriceForm(current => ({
+                      ...current,
+                      isFree: event.target.checked,
+                      amount: event.target.checked ? "0" : current.amount,
+                    }))
+                  }
+                />
+                免费课程
+              </label>
+              <label className="flex items-center gap-3 rounded-lg border border-[#E1D7C8] bg-white px-3 py-2 text-sm font-semibold text-[#41524B]">
+                <input
+                  type="checkbox"
+                  checked={priceForm.memberIncluded}
+                  onChange={event =>
+                    setPriceForm(current => ({
+                      ...current,
+                      memberIncluded: event.target.checked,
+                    }))
+                  }
+                />
+                会员权益内
+              </label>
+            </div>
+
+            <label className="mt-4 block text-sm font-semibold text-[#41524B]">
+              改价原因
+              <textarea
+                value={priceForm.reason}
+                onChange={event =>
+                  setPriceForm(current => ({
+                    ...current,
+                    reason: event.target.value,
+                  }))
+                }
+                placeholder="例如：配合课程专题活动调整本期价格"
+                className="mt-2 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+              />
+            </label>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setPriceEditor(undefined)}
+                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void submitPriceUpdate()}
+                disabled={
+                  priceForm.reason.trim().length < 4 ||
+                  Boolean(mutatingProductId)
+                }
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {mutatingProductId ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Edit3 className="h-4 w-4" />
+                )}
+                保存价格
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

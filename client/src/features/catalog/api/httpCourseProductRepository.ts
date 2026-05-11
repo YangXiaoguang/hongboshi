@@ -1,12 +1,19 @@
 import {
   ApiResponseSchema,
   CourseProductListResultSchema,
+  CourseProductMutationResultSchema,
+  type CourseProductMutationResult,
+  type CourseProductPriceUpdateRequest,
   type CourseProductListQuery,
   type CourseProductListResult,
+  type CourseProductStatusUpdateRequest,
 } from "@shared/domain";
 
 const CourseProductListResponseSchema = ApiResponseSchema(
   CourseProductListResultSchema
+);
+const CourseProductMutationResponseSchema = ApiResponseSchema(
+  CourseProductMutationResultSchema
 );
 
 const API_BASE = "/api/catalog/admin";
@@ -27,9 +34,25 @@ export function parseCourseProductListResponse(
   return parsed.data;
 }
 
+export function parseCourseProductMutationResponse(
+  payload: unknown
+): CourseProductMutationResult {
+  const parsed = CourseProductMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
-  const parsed = CourseProductListResponseSchema.safeParse(payload);
-  if (parsed.success && !parsed.data.ok) return parsed.data.error.message;
+  const listParsed = CourseProductListResponseSchema.safeParse(payload);
+  if (listParsed.success && !listParsed.data.ok) {
+    return listParsed.data.error.message;
+  }
+
+  const mutationParsed = CourseProductMutationResponseSchema.safeParse(payload);
+  if (mutationParsed.success && !mutationParsed.data.ok) {
+    return mutationParsed.data.error.message;
+  }
+
   return fallback;
 }
 
@@ -65,4 +88,48 @@ export const httpCourseProductRepository = {
     }
     return parseCourseProductListResponse(payload);
   },
+
+  async updateCourseProductStatus(
+    productId: string,
+    request: CourseProductStatusUpdateRequest
+  ): Promise<CourseProductMutationResult> {
+    return requestCourseProductMutation(
+      `${API_BASE}/course-products/${encodeURIComponent(productId)}/status`,
+      request,
+      "课程商品状态更新失败"
+    );
+  },
+
+  async updateCourseProductPrice(
+    productId: string,
+    request: CourseProductPriceUpdateRequest
+  ): Promise<CourseProductMutationResult> {
+    return requestCourseProductMutation(
+      `${API_BASE}/course-products/${encodeURIComponent(productId)}/price`,
+      request,
+      "课程商品价格更新失败"
+    );
+  },
 };
+
+async function requestCourseProductMutation(
+  url: string,
+  body: unknown,
+  fallback: string
+) {
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    credentials: "same-origin",
+    body: JSON.stringify(body),
+  });
+  const payload = await readJson(response);
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(payload, fallback));
+  }
+  return parseCourseProductMutationResponse(payload);
+}

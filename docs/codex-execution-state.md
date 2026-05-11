@@ -7,10 +7,10 @@
 - 最后更新时间：2026-05-11 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
-- 最近已知基线提交：`0daf47b Add unified admin shell`
-- 当前阶段：`M2-B 课程商品上下架与价格编辑动作`
-- 当前状态：`M2-A 课程商品契约与只读后台列表` 已完成，下一轮应开始课程商品写动作的服务端状态机与审计设计。
-- 本轮完成后下一步：执行 `M2-B 课程商品上下架与价格编辑动作`
+- 最近已知基线提交：`30bb0ba Add course product admin list`
+- 当前阶段：`M2-C 课程商品持久化与前台发布联动`
+- 当前状态：`M2-B 课程商品上下架与价格编辑动作` 已完成，下一轮应让课程商品状态影响前台可见课程，并补齐开发期持久化。
+- 本轮完成后下一步：执行 `M2-C 课程商品持久化与前台发布联动`
 
 ## 已完成关键能力
 
@@ -31,56 +31,56 @@
 - 建立 `server/modules/catalog` 课程商品只读 Store 与后台 API，首版从课程 seed 映射商品快照并校验 `admin:manage`。
 - 建立 `/admin/courses` 课程商品列表页面，支持搜索、状态筛选、分类筛选、排序和分页。
 - 后台导航已将课程商品从“规划”切换为“可用”。
+- 建立课程商品状态动作与价格编辑契约，服务端统一校验上下架、价格和原因。
+- 建立课程商品开发期可变 Store、上下架/改价 API 和课程商品审计事件。
+- `/admin/courses` 支持行级上架、下架、改价操作，并展示最近审计记录。
 
 ## 最近完成阶段
 
-M2-A 课程商品契约与只读后台列表已交付：
+M2-B 课程商品上下架与价格编辑动作已交付：
 
-- `shared/domain/courseProduct.ts`：课程商品、商品状态、审核状态、价格、后台列表查询和响应契约。
-- `server/modules/catalog/courseProductStore.ts`：从 `shared/data/mockCourses.ts` 映射课程商品快照，并提供筛选、排序、分页和汇总。
-- `server/modules/catalog/catalogApi.ts`：新增 `GET /api/catalog/admin/course-products`，运营/管理员可读，非后台账号不可读。
-- `client/src/features/catalog/api/httpCourseProductRepository.ts`：前端仓储解析后台课程商品列表响应。
-- `client/src/pages/admin/CourseProducts.tsx`：课程商品后台列表，支持搜索、状态、分类、排序和分页。
-- `client/src/features/admin/adminNavigation.ts`：课程商品模块已标记为可用，`/admin` 首页状态指向 M2-B。
-- 增加共享契约、server store/API、frontend repository 和后台导航测试。
+- `shared/domain/courseProduct.ts`：新增状态更新请求、价格更新请求、课程商品审计事件和动作结果契约。
+- `server/modules/catalog/courseProductStore.ts`：新增开发期可变内存 Store、状态更新服务、价格更新服务和审计事件追加。
+- `server/modules/catalog/catalogApi.ts`：新增 `PATCH /api/catalog/admin/course-products/:productId/status` 和 `/price`，运营/管理员可写，非后台账号不可写。
+- `client/src/features/catalog/api/httpCourseProductRepository.ts`：新增课程商品状态和价格 mutation repository。
+- `client/src/pages/admin/CourseProducts.tsx`：新增行级上下架、改价面板、操作原因、成功/失败反馈和最近审计列表。
+- `client/src/pages/admin/AdminHome.tsx`：后台实施路线更新到 M2-C。
+- 增加共享契约、server action、frontend repository 和审计测试。
 
-M2-A 验收结果：
+M2-B 验收结果：
 
-- 运营或管理员可从 `/admin` 进入 `/admin/courses`。
-- 非运营账号无法读取课程商品后台 API。
-- 后台课程商品列表展示标题、分类、讲师、学习人数、价格、状态、审核状态、更新时间和来源。
-- 搜索、状态筛选、分类筛选、排序和分页查询走共享契约。
-- 首版不提供上下架或编辑动作，写操作留到 M2-B。
+- 运营或管理员可在 `/admin/courses` 对课程商品执行上架、下架和价格编辑。
+- 非运营账号无法调用课程商品写 API。
+- 重复状态流转、非法状态流转、非法价格和缺少原因的动作会被拒绝。
+- 每次课程商品状态或价格变更都有审计事件。
+- 列表刷新后能看到变更后的商品状态、价格和审计记录。
 
 ## 下一步任务包
 
-### M2-B: 课程商品上下架与价格编辑动作
+### M2-C: 课程商品持久化与前台发布联动
 
 业务目标：
 
-把只读课程商品升级为可运营商品动作：由服务端统一处理上下架、价格编辑和审核状态变更，并为后续数据库持久化、前台只展示已上架课程、操作审计打基础。
+让课程商品管理真正影响用户侧课程中心：后台下架后前台不再展示，价格调整后前台课程卡片和详情同步变化；同时让开发期状态和审计记录在服务重启后可恢复，为后续 PostgreSQL 课程商品表做准备。
 
 实施范围：
 
-- 扩展 `shared/domain/courseProduct.ts`，定义课程商品动作请求、动作结果、价格更新 payload 和审计事件契约。
-- 扩展 `server/modules/catalog` Store 接口，增加 `updateStatus`、`updatePrice`、`appendAuditEvent` 等受控写方法；开发期可先用内存或 JSON Store。
-- 新增后台课程商品动作 API，必须校验 `admin:manage` 权限，所有状态变更由 server service 决策。
-- 上下架规则建议：草稿可上架，已上架可下架，已归档不可直接上架；价格必须非负，免费课程价格为 0。
-- 新增课程商品审计列表或详情区，至少记录操作者、动作、变更前后状态、原因和时间。
-- 前端 `/admin/courses` 增加行级动作入口、价格编辑弹层/表单、loading/error/成功反馈。
-- 保持只读列表筛选分页能力不回退。
-- 增加共享契约、server action、frontend repository/page 和审计测试。
+- 新增课程商品开发期 JSON Store，建议环境变量 `HONGBOSHI_COURSE_PRODUCT_STORE` 与 `HONGBOSHI_COURSE_PRODUCT_FILE`，默认仍可使用内存。
+- 将 `/api/courses` 与课程详情读取接到课程商品 Store：只返回 `published` 商品，并映射商品价格、会员权益和上下架状态。
+- 保留 seed fallback：首次启动 JSON Store 时从 `shared/data/mockCourses.ts` 初始化课程商品。
+- 更新 `/admin/courses` 列表刷新逻辑，确保写动作后前台读取同一份 Store。
+- 增加前台课程列表、课程详情、后台 Store 持久化和状态过滤测试。
+- 文档补充课程商品 Store 边界、环境变量和后续 PostgreSQL 表设计方向。
 - 更新 README、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add course product admin actions`。
+- 提交并推送，建议 commit message：`Persist course product publishing state`。
 
 验收标准：
 
-- 运营或管理员可在 `/admin/courses` 对商品执行上架、下架和价格编辑。
-- 非运营账号无法调用课程商品写 API。
-- 非法状态流转、非法价格和缺少原因的敏感动作会被拒绝。
-- 每次商品状态或价格变更都有审计事件。
-- 列表刷新后能看到变更后的商品状态和价格。
+- 后台下架某个课程商品后，前台课程列表和详情不再展示该课程。
+- 后台改价后，前台课程卡片和详情读取更新后的价格。
+- 开发期 JSON Store 重启后可恢复课程商品状态、价格和审计事件。
+- 课程商品 Store 接口仍能平滑替换为 PostgreSQL 实现。
 - CI 通过。
 
 ## 执行不变量

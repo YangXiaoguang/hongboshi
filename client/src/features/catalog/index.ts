@@ -4,6 +4,10 @@ export type {
   CourseProductListQuery,
   CourseProductListResult,
   CourseProductListSummary,
+  CourseProductMutationResult,
+  CourseProductPriceUpdateRequest,
   CourseProductReviewStatus,
   CourseProductStatus,
+  CourseProductStatusUpdateRequest,
+  CourseProductAuditEvent,
 } from "@shared/domain";

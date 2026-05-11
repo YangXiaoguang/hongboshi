@@ -40,6 +40,11 @@ export const COURSE_PRODUCT_SORTS = [
   "price_desc",
 ] as const;
 
+export const COURSE_PRODUCT_AUDIT_ACTIONS = [
+  "status_update",
+  "price_update",
+] as const;
+
 export const CourseProductStatusSchema = z.enum(COURSE_PRODUCT_STATUSES);
 
 export const CourseProductReviewStatusSchema = z.enum(
@@ -47,6 +52,10 @@ export const CourseProductReviewStatusSchema = z.enum(
 );
 
 export const CourseProductSortSchema = z.enum(COURSE_PRODUCT_SORTS);
+
+export const CourseProductAuditActionSchema = z.enum(
+  COURSE_PRODUCT_AUDIT_ACTIONS
+);
 
 export const CourseProductSourceSchema = z.enum(["seed", "manual", "imported"]);
 
@@ -98,6 +107,18 @@ export const CourseProductListSummarySchema = z.object({
   memberIncludedCount: z.number().int().nonnegative(),
 });
 
+export const CourseProductAuditEventSchema = z.object({
+  id: EntityIdSchema,
+  productId: EntityIdSchema,
+  productTitle: z.string().min(2),
+  actorId: EntityIdSchema,
+  action: CourseProductAuditActionSchema,
+  reason: z.string().trim().min(4).max(240),
+  before: z.record(z.string(), z.unknown()),
+  after: z.record(z.string(), z.unknown()),
+  createdAt: DateTimeLikeSchema,
+});
+
 export const CourseProductFilterOptionsSchema = z.object({
   categories: z.array(CourseCategorySchema),
   types: z.array(CourseTypeSchema),
@@ -109,7 +130,56 @@ export const CourseProductListResultSchema = z.object({
   meta: PageMetaSchema,
   summary: CourseProductListSummarySchema,
   filters: CourseProductFilterOptionsSchema,
+  auditEvents: z.array(CourseProductAuditEventSchema),
   query: CourseProductListQuerySchema,
+});
+
+export const CourseProductStatusUpdateRequestSchema = z.object({
+  status: CourseProductStatusSchema,
+  reason: z.string().trim().min(4).max(240),
+});
+
+export const CourseProductPriceUpdateRequestSchema = z
+  .object({
+    amount: MoneyAmountSchema,
+    originalAmount: MoneyAmountSchema.optional(),
+    isFree: z.boolean(),
+    memberIncluded: z.boolean().optional(),
+    reason: z.string().trim().min(4).max(240),
+  })
+  .superRefine((value, ctx) => {
+    if (value.isFree && value.amount !== 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["amount"],
+        message: "免费课程价格必须为 0",
+      });
+    }
+
+    if (!value.isFree && value.amount <= 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["amount"],
+        message: "非免费课程价格必须大于 0",
+      });
+    }
+
+    if (
+      typeof value.originalAmount === "number" &&
+      value.originalAmount < value.amount
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["originalAmount"],
+        message: "原价不能小于售价",
+      });
+    }
+  });
+
+export const CourseProductMutationResultSchema = z.object({
+  product: CourseProductListItemSchema,
+  auditEvent: CourseProductAuditEventSchema,
+  auditEvents: z.array(CourseProductAuditEventSchema),
 });
 
 export const courseProductFilterOptions = {
@@ -123,6 +193,9 @@ export type CourseProductReviewStatus = z.infer<
   typeof CourseProductReviewStatusSchema
 >;
 export type CourseProductSort = z.infer<typeof CourseProductSortSchema>;
+export type CourseProductAuditAction = z.infer<
+  typeof CourseProductAuditActionSchema
+>;
 export type CourseProductPrice = z.infer<typeof CourseProductPriceSchema>;
 export type CourseProductListItem = z.infer<typeof CourseProductListItemSchema>;
 export type CourseProductListQuery = z.infer<
@@ -131,9 +204,21 @@ export type CourseProductListQuery = z.infer<
 export type CourseProductListSummary = z.infer<
   typeof CourseProductListSummarySchema
 >;
+export type CourseProductAuditEvent = z.infer<
+  typeof CourseProductAuditEventSchema
+>;
 export type CourseProductFilterOptions = z.infer<
   typeof CourseProductFilterOptionsSchema
 >;
 export type CourseProductListResult = z.infer<
   typeof CourseProductListResultSchema
+>;
+export type CourseProductStatusUpdateRequest = z.infer<
+  typeof CourseProductStatusUpdateRequestSchema
+>;
+export type CourseProductPriceUpdateRequest = z.infer<
+  typeof CourseProductPriceUpdateRequestSchema
+>;
+export type CourseProductMutationResult = z.infer<
+  typeof CourseProductMutationResultSchema
 >;

@@ -1,6 +1,6 @@
 # 红博士心理小讲堂
 
-心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估、咨询预约入口和运营管理后台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、成长档案聚合、测评推荐基础链路、咨询预约雏形和课程商品只读后台列表。
+心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估、咨询预约入口和运营管理后台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、成长档案聚合、测评推荐基础链路、咨询预约雏形、课程商品后台列表、上下架、改价和审计记录。
 
 ## 技术栈
 
@@ -124,7 +124,7 @@ pnpm db:migrate
 - 咨询预约入口位于 `client/src/pages/Consulting.tsx`，通过 `/consulting` 选择咨询师、时段和咨询前信息
 - 咨询师工作台位于 `client/src/pages/CounselorWorkbench.tsx`，通过 `/counselor/workbench` 处理分配预约、履约状态和退款中订单
 - 运营管理后台位于 `client/src/pages/admin`，通过 `/admin` 提供统一后台入口、导航、权限守卫和后续模块骨架
-- 课程商品后台位于 `client/src/pages/admin/CourseProducts.tsx`，通过 `/admin/courses` 展示课程商品、价格、状态、审核状态、筛选和分页
+- 课程商品后台位于 `client/src/pages/admin/CourseProducts.tsx`，通过 `/admin/courses` 展示课程商品、价格、状态、审核状态、筛选、分页、上下架、改价和最近审计
 - 咨询运营配置位于 `client/src/pages/CounselingOperations.tsx`，通过 `/admin/counseling` 配置取消规则并查看履约审计
 - 支付对账位于 `client/src/pages/PaymentReconciliation.tsx`，通过 `/admin/payments` 对比支付回调收据、业务订单和咨询预约状态
 - 小程序端预览位于 `client/src/components/MobileView.tsx`
@@ -141,7 +141,7 @@ pnpm db:migrate
 - 咨询师工作台需要 `counselor`、`operator` 或 `admin` 角色；服务端通过 `counseling:fulfill` 权限控制读取和履约操作
 - 咨询运营配置需要 `operator` 或 `admin` 角色；服务端通过 `admin:manage` 权限控制取消规则更新和审计读取
 - 支付对账需要 `operator` 或 `admin` 角色；服务端通过 `admin:manage` 权限控制回调收据和业务状态读取
-- 课程商品后台列表需要 `operator` 或 `admin` 角色；服务端通过 `admin:manage` 权限控制商品快照读取
+- 课程商品后台列表与写动作需要 `operator` 或 `admin` 角色；服务端通过 `admin:manage` 权限控制商品快照读取、上下架和改价
 - 生产构建后由 `server/index.ts` 托管 `dist/public`
 
 ## 后续二开建议
@@ -151,6 +151,6 @@ pnpm db:migrate
 3. 建立订单支付状态机，区分待支付、已支付、退款、支付超时关闭。
 4. 接入真实支付渠道、退款通道和支付对账异常处理动作。
 5. 建立风险人工复核台，承接高风险测评和咨询前信息。
-6. 为课程商品增加上下架、价格编辑、审核记录和操作审计。
+6. 让课程商品发布状态和价格联动前台课程列表/详情，并增加开发期持久化。
 7. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
 8. 引入 ESLint 或统一的代码质量检查规则。

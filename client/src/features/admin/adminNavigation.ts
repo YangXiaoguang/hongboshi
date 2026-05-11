@@ -77,7 +77,7 @@ export const adminNavigationItems = [
     permission: "admin:manage",
     status: "available",
     group: "business",
-    milestone: "M2-A",
+    milestone: "M2-B",
   },
   {
     key: "users",

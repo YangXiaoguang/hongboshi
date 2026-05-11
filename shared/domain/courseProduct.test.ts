@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_COURSE_PRODUCT_CATEGORY,
   ALL_COURSE_PRODUCT_STATUS,
+  CourseProductPriceUpdateRequestSchema,
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
 } from "./courseProduct";
@@ -65,10 +66,31 @@ describe("course product domain contract", () => {
         types: ["录播"],
         statuses: ["published"],
       },
+      auditEvents: [],
       query: {},
     });
 
     expect(parsed.query.category).toBe(ALL_COURSE_PRODUCT_CATEGORY);
     expect(parsed.items[0]?.price.currency).toBe("CNY");
+  });
+
+  it("rejects invalid price update requests", () => {
+    expect(
+      CourseProductPriceUpdateRequestSchema.safeParse({
+        amount: 99,
+        originalAmount: 199,
+        isFree: true,
+        reason: "免费活动调整",
+      }).success
+    ).toBe(false);
+
+    expect(
+      CourseProductPriceUpdateRequestSchema.safeParse({
+        amount: 199,
+        originalAmount: 99,
+        isFree: false,
+        reason: "活动价格调整",
+      }).success
+    ).toBe(false);
   });
 });

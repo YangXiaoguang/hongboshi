@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { CourseProductListQuerySchema } from "../../../shared/domain";
 import { courses } from "../../../shared/data/mockCourses";
 import {
+  InMemoryCourseProductStore,
   courseProductFromCourse,
   listCourseProductsByQuery,
   summarizeCourseProducts,
+  updateCourseProductPrice,
+  updateCourseProductStatus,
 } from "./courseProductStore";
 
 describe("course product store mapping", () => {
@@ -50,5 +53,61 @@ describe("course product store mapping", () => {
     expect(summary.publishedCount).toBe(1);
     expect(summary.unpublishedCount).toBe(1);
     expect(summary.freeCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("updates status and writes an audit event", async () => {
+    const store = new InMemoryCourseProductStore([
+      courseProductFromCourse(courses[0]),
+    ]);
+    const product = courseProductFromCourse(courses[0]);
+
+    const result = await updateCourseProductStatus({
+      productId: product.id,
+      request: {
+        status: "unpublished",
+        reason: "本周活动结束下架",
+      },
+      actorId: "operator_1",
+      store,
+      now: "2026-05-11T10:00:00.000Z",
+    });
+
+    expect(result.product.status).toBe("unpublished");
+    expect(result.auditEvent).toMatchObject({
+      productId: product.id,
+      actorId: "operator_1",
+      action: "status_update",
+    });
+    expect((await store.listAuditEvents(product.id))[0]?.reason).toBe(
+      "本周活动结束下架"
+    );
+  });
+
+  it("updates price and keeps the operation auditable", async () => {
+    const store = new InMemoryCourseProductStore([
+      courseProductFromCourse(courses[0]),
+    ]);
+    const product = courseProductFromCourse(courses[0]);
+
+    const result = await updateCourseProductPrice({
+      productId: product.id,
+      request: {
+        amount: 99,
+        originalAmount: 199,
+        isFree: false,
+        memberIncluded: true,
+        reason: "专题活动价格调整",
+      },
+      actorId: "operator_1",
+      store,
+      now: "2026-05-11T10:10:00.000Z",
+    });
+
+    expect(result.product.price).toMatchObject({
+      amount: 99,
+      originalAmount: 199,
+      memberIncluded: true,
+    });
+    expect(result.auditEvent.action).toBe("price_update");
   });
 });
