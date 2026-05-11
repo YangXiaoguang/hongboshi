@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseCourseListResponse,
+  parseCourseProductContentResponse,
   parseCourseResponse,
 } from "./httpCourseRepository";
 
@@ -54,5 +55,34 @@ describe("http course repository parsing", () => {
         },
       })
     ).toBeUndefined();
+  });
+
+  it("parses course product detail content responses", () => {
+    const content = parseCourseProductContentResponse({
+      ok: true,
+      data: {
+        productId: "course_product_1",
+        summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+        targetAudience: ["希望提升情绪调节能力的学习者"],
+        chapters: [
+          {
+            id: "chapter_1",
+            title: "认识情绪反应",
+            durationMinutes: 36,
+            materialPlaceholders: [
+              {
+                id: "material_1",
+                title: "课后练习表",
+                type: "exercise",
+                status: "ready",
+              },
+            ],
+          },
+        ],
+        updatedAt: "2026-05-11T11:20:00+08:00",
+      },
+    });
+
+    expect(content?.chapters[0]?.title).toBe("认识情绪反应");
   });
 });

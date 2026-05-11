@@ -1,7 +1,12 @@
 import {
   ApiResponseSchema,
+  CourseProductContentMutationResultSchema,
+  CourseProductDetailContentSchema,
   CourseProductListResultSchema,
   CourseProductMutationResultSchema,
+  type CourseProductContentMutationResult,
+  type CourseProductContentUpdateRequest,
+  type CourseProductDetailContent,
   type CourseProductMutationResult,
   type CourseProductBasicInfoUpdateRequest,
   type CourseProductPriceUpdateRequest,
@@ -16,6 +21,12 @@ const CourseProductListResponseSchema = ApiResponseSchema(
 );
 const CourseProductMutationResponseSchema = ApiResponseSchema(
   CourseProductMutationResultSchema
+);
+const CourseProductContentResponseSchema = ApiResponseSchema(
+  CourseProductDetailContentSchema
+);
+const CourseProductContentMutationResponseSchema = ApiResponseSchema(
+  CourseProductContentMutationResultSchema
 );
 
 const API_BASE = "/api/catalog/admin";
@@ -44,6 +55,22 @@ export function parseCourseProductMutationResponse(
   return parsed.data;
 }
 
+export function parseCourseProductContentResponse(
+  payload: unknown
+): CourseProductDetailContent {
+  const parsed = CourseProductContentResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCourseProductContentMutationResponse(
+  payload: unknown
+): CourseProductContentMutationResult {
+  const parsed = CourseProductContentMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = CourseProductListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -53,6 +80,17 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   const mutationParsed = CourseProductMutationResponseSchema.safeParse(payload);
   if (mutationParsed.success && !mutationParsed.data.ok) {
     return mutationParsed.data.error.message;
+  }
+
+  const contentParsed = CourseProductContentResponseSchema.safeParse(payload);
+  if (contentParsed.success && !contentParsed.data.ok) {
+    return contentParsed.data.error.message;
+  }
+
+  const contentMutationParsed =
+    CourseProductContentMutationResponseSchema.safeParse(payload);
+  if (contentMutationParsed.success && !contentMutationParsed.data.ok) {
+    return contentMutationParsed.data.error.message;
   }
 
   return fallback;
@@ -133,6 +171,50 @@ export const httpCourseProductRepository = {
       request,
       "课程商品审核状态更新失败"
     );
+  },
+
+  async loadCourseProductContent(
+    productId: string
+  ): Promise<CourseProductDetailContent> {
+    const response = await fetch(
+      `${API_BASE}/course-products/${encodeURIComponent(productId)}/content`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "课程商品详情内容读取失败"));
+    }
+    return parseCourseProductContentResponse(payload);
+  },
+
+  async updateCourseProductContent(
+    productId: string,
+    request: CourseProductContentUpdateRequest
+  ): Promise<CourseProductContentMutationResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/${encodeURIComponent(productId)}/content`,
+      {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify(request),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "课程商品详情内容更新失败"));
+    }
+    return parseCourseProductContentMutationResponse(payload);
   },
 };
 

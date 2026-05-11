@@ -1,14 +1,19 @@
 import {
   ApiResponseSchema,
   CourseCatalogResultSchema,
+  CourseProductDetailContentSchema,
   CourseSchema,
   type CourseCatalogQuery,
   type CourseCatalogResult,
   type Course,
+  type CourseProductDetailContent,
 } from "@shared/domain";
 
 const CourseListResponseSchema = ApiResponseSchema(CourseCatalogResultSchema);
 const CourseResponseSchema = ApiResponseSchema(CourseSchema);
+const CourseProductContentResponseSchema = ApiResponseSchema(
+  CourseProductDetailContentSchema
+);
 
 const API_BASE = "/api/courses";
 
@@ -28,6 +33,17 @@ export function parseCourseListResponse(payload: unknown): CourseCatalogResult {
 
 export function parseCourseResponse(payload: unknown): Course | undefined {
   const parsed = CourseResponseSchema.parse(payload);
+  if (!parsed.ok) {
+    if (parsed.error.code === "NOT_FOUND") return undefined;
+    throw new Error(parsed.error.message);
+  }
+  return parsed.data;
+}
+
+export function parseCourseProductContentResponse(
+  payload: unknown
+): CourseProductDetailContent | undefined {
+  const parsed = CourseProductContentResponseSchema.parse(payload);
   if (!parsed.ok) {
     if (parsed.error.code === "NOT_FOUND") return undefined;
     throw new Error(parsed.error.message);
@@ -85,5 +101,21 @@ export const httpCourseRepository = {
       throw new Error("课程服务暂时不可用");
     }
     return parseCourseResponse(payload);
+  },
+
+  async getCourseDetailContent(
+    courseId: number
+  ): Promise<CourseProductDetailContent | undefined> {
+    const response = await fetch(`${API_BASE}/${courseId}/content`, {
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
+    const payload = await readJson(response);
+    if (!response.ok && response.status !== 404) {
+      throw new Error("课程详情内容暂时不可用");
+    }
+    return parseCourseProductContentResponse(payload);
   },
 };

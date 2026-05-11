@@ -11,13 +11,16 @@ import {
   Edit3,
   Eye,
   EyeOff,
+  FilePenLine,
   History,
   Layers3,
   ListFilter,
   Loader2,
+  Plus,
   RefreshCw,
   Search,
   ShieldCheck,
+  Trash2,
   X,
   UsersRound,
 } from "lucide-react";
@@ -26,11 +29,17 @@ import {
   ALL_COURSE_PRODUCT_STATUS,
   COURSE_CATEGORIES,
   COURSE_PRODUCT_PAGE_SIZE,
+  COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES,
+  COURSE_PRODUCT_CONTENT_MATERIAL_TYPES,
   COURSE_TYPES,
   userCan,
   type CourseCategory,
   type CourseProductAuditEvent,
   type CourseProductBasicInfoUpdateRequest,
+  type CourseProductContentMaterialStatus,
+  type CourseProductContentMaterialType,
+  type CourseProductContentUpdateRequest,
+  type CourseProductDetailContent,
   type CourseProductListItem,
   type CourseProductListQuery,
   type CourseProductListResult,
@@ -68,6 +77,25 @@ type BasicInfoFormState = {
   type: CourseType;
   instructorName: string;
   learners: string;
+  reason: string;
+};
+type ContentMaterialFormState = {
+  id: string;
+  title: string;
+  type: CourseProductContentMaterialType;
+  status: CourseProductContentMaterialStatus;
+  note: string;
+};
+type ContentChapterFormState = {
+  id: string;
+  title: string;
+  durationMinutes: string;
+  materialPlaceholders: ContentMaterialFormState[];
+};
+type ContentFormState = {
+  summary: string;
+  targetAudienceText: string;
+  chapters: ContentChapterFormState[];
   reason: string;
 };
 
@@ -113,6 +141,20 @@ const reviewActionCopy = {
   reject: "驳回审核",
   withdraw: "撤回审核",
 } satisfies Record<CourseProductReviewAction, string>;
+
+const materialTypeCopy = {
+  video: "视频",
+  audio: "音频",
+  document: "文档",
+  exercise: "练习",
+  live_replay: "直播回放",
+  other: "其他",
+} satisfies Record<CourseProductContentMaterialType, string>;
+
+const materialStatusCopy = {
+  pending: "待准备",
+  ready: "已就绪",
+} satisfies Record<CourseProductContentMaterialStatus, string>;
 
 function formatMoney(item: CourseProductListItem) {
   if (item.price.isFree) return "免费";
@@ -172,6 +214,17 @@ function auditChangeText(event: CourseProductAuditEvent) {
       event.before.reviewStatus
     )} -> ${auditReviewStatusLabel(event.after.reviewStatus)}`;
   }
+  if (event.action === "content_update") {
+    const beforeChapters =
+      typeof event.before.chapterCount === "number"
+        ? event.before.chapterCount
+        : 0;
+    const afterChapters =
+      typeof event.after.chapterCount === "number"
+        ? event.after.chapterCount
+        : 0;
+    return `${beforeChapters} 章 -> ${afterChapters} 章`;
+  }
   if (event.action === "info_update") {
     const beforeTitle =
       typeof event.before.title === "string" ? event.before.title : "未记录";
@@ -188,6 +241,7 @@ function auditActionLabel(action: CourseProductAuditEvent["action"]) {
   if (action === "status_update") return "状态更新";
   if (action === "price_update") return "价格更新";
   if (action === "review_update") return "审核更新";
+  if (action === "content_update") return "内容更新";
   return "信息更新";
 }
 
@@ -278,6 +332,53 @@ function reviewActionsForItem(item: CourseProductListItem) {
   return [];
 }
 
+function contentFormFromDetail(
+  content: CourseProductDetailContent
+): ContentFormState {
+  return {
+    summary: content.summary,
+    targetAudienceText: content.targetAudience.join("\n"),
+    chapters: content.chapters.map(chapter => ({
+      id: chapter.id,
+      title: chapter.title,
+      durationMinutes: String(chapter.durationMinutes),
+      materialPlaceholders: chapter.materialPlaceholders.map(material => ({
+        id: material.id,
+        title: material.title,
+        type: material.type,
+        status: material.status,
+        note: material.note ?? "",
+      })),
+    })),
+    reason: "",
+  };
+}
+
+function createContentChapter(
+  productId: string,
+  index: number
+): ContentChapterFormState {
+  return {
+    id: `${productId}_chapter_${Date.now()}_${index}`,
+    title: "",
+    durationMinutes: "30",
+    materialPlaceholders: [],
+  };
+}
+
+function createContentMaterial(
+  chapterId: string,
+  index: number
+): ContentMaterialFormState {
+  return {
+    id: `${chapterId}_material_${Date.now()}_${index}`,
+    title: "",
+    type: "exercise",
+    status: "pending",
+    note: "",
+  };
+}
+
 function AuditTrail({ events }: { events: CourseProductAuditEvent[] }) {
   const recentEvents = events.slice(0, 5);
 
@@ -335,6 +436,7 @@ function CourseProductRow({
   isMutating,
   reviewBlockReason,
   onEditInfo,
+  onEditContent,
   onEditPrice,
   onRequestReviewAction,
   onRequestStatusChange,
@@ -344,6 +446,7 @@ function CourseProductRow({
   isMutating: boolean;
   reviewBlockReason?: string;
   onEditInfo: (item: CourseProductListItem) => void;
+  onEditContent: (item: CourseProductListItem) => void;
   onEditPrice: (item: CourseProductListItem) => void;
   onRequestReviewAction: (
     item: CourseProductListItem,
@@ -482,6 +585,14 @@ function CourseProductRow({
             编辑
           </button>
           <button
+            onClick={() => onEditContent(item)}
+            disabled={isMutating}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <FilePenLine className="h-3.5 w-3.5" />
+            内容
+          </button>
+          <button
             onClick={() => onEditPrice(item)}
             disabled={isMutating}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#E6EDDF] px-2.5 text-xs font-semibold text-[#355F51] transition hover:bg-[#D7E5D4] disabled:cursor-not-allowed disabled:opacity-45"
@@ -526,6 +637,14 @@ export default function CourseProducts() {
     learners: "0",
     reason: "",
   });
+  const [contentEditor, setContentEditor] = useState<CourseProductListItem>();
+  const [isContentLoading, setIsContentLoading] = useState(false);
+  const [contentForm, setContentForm] = useState<ContentFormState>({
+    summary: "",
+    targetAudienceText: "",
+    chapters: [],
+    reason: "",
+  });
   const [priceEditor, setPriceEditor] = useState<CourseProductListItem>();
   const [priceForm, setPriceForm] = useState<PriceFormState>({
     amount: "",
@@ -567,6 +686,25 @@ export default function CourseProducts() {
       learners: String(item.learners),
       reason: "",
     });
+  }, []);
+
+  const openContentEditor = useCallback(async (item: CourseProductListItem) => {
+    setActionError(undefined);
+    setActionMessage(undefined);
+    setContentEditor(item);
+    setIsContentLoading(true);
+    try {
+      const content =
+        await httpCourseProductRepository.loadCourseProductContent(item.id);
+      setContentForm(contentFormFromDetail(content));
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "课程商品详情内容读取失败"
+      );
+      setContentEditor(undefined);
+    } finally {
+      setIsContentLoading(false);
+    }
   }, []);
 
   const openPriceEditor = useCallback((item: CourseProductListItem) => {
@@ -704,6 +842,169 @@ export default function CourseProducts() {
     }
   }, [infoEditor, infoForm, loadProducts]);
 
+  const updateContentChapter = useCallback(
+    (
+      chapterIndex: number,
+      patch: Partial<Omit<ContentChapterFormState, "materialPlaceholders">>
+    ) => {
+      setContentForm(current => ({
+        ...current,
+        chapters: current.chapters.map((chapter, index) =>
+          index === chapterIndex ? { ...chapter, ...patch } : chapter
+        ),
+      }));
+    },
+    []
+  );
+
+  const updateContentMaterial = useCallback(
+    (
+      chapterIndex: number,
+      materialIndex: number,
+      patch: Partial<ContentMaterialFormState>
+    ) => {
+      setContentForm(current => ({
+        ...current,
+        chapters: current.chapters.map((chapter, index) => {
+          if (index !== chapterIndex) return chapter;
+          return {
+            ...chapter,
+            materialPlaceholders: chapter.materialPlaceholders.map(
+              (material, innerIndex) =>
+                innerIndex === materialIndex
+                  ? { ...material, ...patch }
+                  : material
+            ),
+          };
+        }),
+      }));
+    },
+    []
+  );
+
+  const addContentChapter = useCallback(() => {
+    if (!contentEditor) return;
+    setContentForm(current => ({
+      ...current,
+      chapters: [
+        ...current.chapters,
+        createContentChapter(contentEditor.id, current.chapters.length + 1),
+      ],
+    }));
+  }, [contentEditor]);
+
+  const removeContentChapter = useCallback((chapterIndex: number) => {
+    setContentForm(current => ({
+      ...current,
+      chapters: current.chapters.filter((_, index) => index !== chapterIndex),
+    }));
+  }, []);
+
+  const addContentMaterial = useCallback((chapterIndex: number) => {
+    setContentForm(current => ({
+      ...current,
+      chapters: current.chapters.map((chapter, index) => {
+        if (index !== chapterIndex) return chapter;
+        return {
+          ...chapter,
+          materialPlaceholders: [
+            ...chapter.materialPlaceholders,
+            createContentMaterial(
+              chapter.id,
+              chapter.materialPlaceholders.length + 1
+            ),
+          ],
+        };
+      }),
+    }));
+  }, []);
+
+  const removeContentMaterial = useCallback(
+    (chapterIndex: number, materialIndex: number) => {
+      setContentForm(current => ({
+        ...current,
+        chapters: current.chapters.map((chapter, index) => {
+          if (index !== chapterIndex) return chapter;
+          return {
+            ...chapter,
+            materialPlaceholders: chapter.materialPlaceholders.filter(
+              (_, innerIndex) => innerIndex !== materialIndex
+            ),
+          };
+        }),
+      }));
+    },
+    []
+  );
+
+  const submitContentUpdate = useCallback(async () => {
+    if (!contentEditor) return;
+
+    const targetAudience = contentForm.targetAudienceText
+      .split("\n")
+      .map(item => item.trim())
+      .filter(Boolean);
+    const chapters = contentForm.chapters.map(chapter => ({
+      id: chapter.id,
+      title: chapter.title,
+      durationMinutes: Number(chapter.durationMinutes),
+      materialPlaceholders: chapter.materialPlaceholders.map(material => ({
+        id: material.id,
+        title: material.title,
+        type: material.type,
+        status: material.status,
+        note: material.note.trim() ? material.note.trim() : undefined,
+      })),
+    }));
+
+    if (targetAudience.length < 1) {
+      setActionError("请至少填写一个适合人群");
+      return;
+    }
+    if (
+      chapters.length < 1 ||
+      chapters.some(
+        chapter =>
+          chapter.title.trim().length < 2 ||
+          !Number.isInteger(chapter.durationMinutes) ||
+          chapter.durationMinutes < 1 ||
+          chapter.materialPlaceholders.some(
+            material => material.title.trim().length < 2
+          )
+      )
+    ) {
+      setActionError("请填写有效的章节和素材信息");
+      return;
+    }
+
+    const request: CourseProductContentUpdateRequest = {
+      summary: contentForm.summary,
+      targetAudience,
+      chapters,
+      reason: contentForm.reason,
+    };
+
+    setMutatingProductId(contentEditor.id);
+    setActionError(undefined);
+    setActionMessage(undefined);
+
+    try {
+      await httpCourseProductRepository.updateCourseProductContent(
+        contentEditor.id,
+        request
+      );
+      setActionMessage(`${contentEditor.title} 详情内容已更新，需重新审核`);
+      setContentEditor(undefined);
+      await loadProducts();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "课程商品详情内容更新失败"
+      );
+    } finally {
+      setMutatingProductId(undefined);
+    }
+  }, [contentEditor, contentForm, loadProducts]);
+
   const submitPriceUpdate = useCallback(async () => {
     if (!priceEditor) return;
 
@@ -782,7 +1083,7 @@ export default function CourseProducts() {
             商品列表与状态
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            统一管理课程商品的基础信息、审核流、上架状态、价格和审计记录，已联动前台发布可见性，支持搜索、分类、排序和分页核对。
+            统一管理课程商品的基础信息、详情内容、审核流、上架状态、价格和审计记录，已联动前台发布可见性，支持搜索、分类、排序和分页核对。
           </p>
         </div>
         <button
@@ -956,6 +1257,7 @@ export default function CourseProducts() {
                       isMutating={Boolean(mutatingProductId)}
                       reviewBlockReason={rejectedReviewReasons.get(item.id)}
                       onEditInfo={openInfoEditor}
+                      onEditContent={openContentEditor}
                       onEditPrice={openPriceEditor}
                       onRequestReviewAction={openReviewAction}
                       onRequestStatusChange={openStatusAction}
@@ -1306,6 +1608,272 @@ export default function CourseProducts() {
                 保存信息
               </button>
             </div>
+          </motion.div>
+        </div>
+      )}
+
+      {contentEditor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="max-h-[92vh] w-full max-w-[900px] overflow-y-auto rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-[#8A8176]">详情内容</p>
+                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                  {contentEditor.title}
+                </h2>
+              </div>
+              <button
+                onClick={() => setContentEditor(undefined)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {isContentLoading ? (
+              <div className="mt-6 flex min-h-[260px] items-center justify-center text-sm text-[#6F7771]">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                正在读取详情内容
+              </div>
+            ) : (
+              <>
+                <label className="mt-5 block text-sm font-semibold text-[#41524B]">
+                  课程摘要
+                  <textarea
+                    value={contentForm.summary}
+                    onChange={event =>
+                      setContentForm(current => ({
+                        ...current,
+                        summary: event.target.value,
+                      }))
+                    }
+                    className="mt-2 min-h-[104px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                  />
+                </label>
+
+                <label className="mt-4 block text-sm font-semibold text-[#41524B]">
+                  适合人群
+                  <textarea
+                    value={contentForm.targetAudienceText}
+                    onChange={event =>
+                      setContentForm(current => ({
+                        ...current,
+                        targetAudienceText: event.target.value,
+                      }))
+                    }
+                    className="mt-2 min-h-[92px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                  />
+                </label>
+
+                <div className="mt-5 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-[#41524B]">
+                    章节与素材
+                  </h3>
+                  <button
+                    onClick={addContentChapter}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                  >
+                    <Plus className="h-4 w-4" />
+                    添加章节
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-4">
+                  {contentForm.chapters.map((chapter, chapterIndex) => (
+                    <div
+                      key={chapter.id}
+                      className="rounded-lg border border-[#E1D7C8] bg-white p-4"
+                    >
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_140px_auto] md:items-end">
+                        <label className="text-sm font-semibold text-[#41524B]">
+                          章节标题
+                          <input
+                            value={chapter.title}
+                            onChange={event =>
+                              updateContentChapter(chapterIndex, {
+                                title: event.target.value,
+                              })
+                            }
+                            className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                          />
+                        </label>
+                        <label className="text-sm font-semibold text-[#41524B]">
+                          时长分钟
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={chapter.durationMinutes}
+                            onChange={event =>
+                              updateContentChapter(chapterIndex, {
+                                durationMinutes: event.target.value,
+                              })
+                            }
+                            className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                          />
+                        </label>
+                        <button
+                          onClick={() => removeContentChapter(chapterIndex)}
+                          disabled={contentForm.chapters.length <= 1}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#E5C6BA] bg-[#FFF7F2] px-3 text-sm font-semibold text-[#A65F48] transition hover:border-[#DFAE9F] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          删除
+                        </button>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold text-[#8A8176]">
+                          素材占位
+                        </p>
+                        <button
+                          onClick={() => addContentMaterial(chapterIndex)}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-[#FFFDF8] px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          添加素材
+                        </button>
+                      </div>
+
+                      <div className="mt-3 space-y-3">
+                        {chapter.materialPlaceholders.map(
+                          (material, materialIndex) => (
+                            <div
+                              key={material.id}
+                              className="grid gap-3 rounded-lg bg-[#F8F3EA] p-3 lg:grid-cols-[minmax(0,1fr)_120px_110px_minmax(0,1fr)_auto]"
+                            >
+                              <input
+                                value={material.title}
+                                onChange={event =>
+                                  updateContentMaterial(
+                                    chapterIndex,
+                                    materialIndex,
+                                    { title: event.target.value }
+                                  )
+                                }
+                                placeholder="素材标题"
+                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              />
+                              <select
+                                value={material.type}
+                                onChange={event =>
+                                  updateContentMaterial(
+                                    chapterIndex,
+                                    materialIndex,
+                                    {
+                                      type: event.target
+                                        .value as CourseProductContentMaterialType,
+                                    }
+                                  )
+                                }
+                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              >
+                                {COURSE_PRODUCT_CONTENT_MATERIAL_TYPES.map(
+                                  type => (
+                                    <option key={type} value={type}>
+                                      {materialTypeCopy[type]}
+                                    </option>
+                                  )
+                                )}
+                              </select>
+                              <select
+                                value={material.status}
+                                onChange={event =>
+                                  updateContentMaterial(
+                                    chapterIndex,
+                                    materialIndex,
+                                    {
+                                      status: event.target
+                                        .value as CourseProductContentMaterialStatus,
+                                    }
+                                  )
+                                }
+                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              >
+                                {COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES.map(
+                                  status => (
+                                    <option key={status} value={status}>
+                                      {materialStatusCopy[status]}
+                                    </option>
+                                  )
+                                )}
+                              </select>
+                              <input
+                                value={material.note}
+                                onChange={event =>
+                                  updateContentMaterial(
+                                    chapterIndex,
+                                    materialIndex,
+                                    { note: event.target.value }
+                                  )
+                                }
+                                placeholder="备注"
+                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              />
+                              <button
+                                onClick={() =>
+                                  removeContentMaterial(
+                                    chapterIndex,
+                                    materialIndex
+                                  )
+                                }
+                                className="flex h-9 w-9 items-center justify-center rounded-lg text-[#A65F48] transition hover:bg-[#FFE8DE]"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <label className="mt-4 block text-sm font-semibold text-[#41524B]">
+                  更新原因
+                  <textarea
+                    value={contentForm.reason}
+                    onChange={event =>
+                      setContentForm(current => ({
+                        ...current,
+                        reason: event.target.value,
+                      }))
+                    }
+                    placeholder="例如：章节结构和课后素材完成校对"
+                    className="mt-2 min-h-[92px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                  />
+                </label>
+
+                <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    onClick={() => setContentEditor(undefined)}
+                    className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={() => void submitContentUpdate()}
+                    disabled={
+                      contentForm.summary.trim().length < 20 ||
+                      contentForm.reason.trim().length < 4 ||
+                      Boolean(mutatingProductId)
+                    }
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {mutatingProductId ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FilePenLine className="h-4 w-4" />
+                    )}
+                    保存内容
+                  </button>
+                </div>
+              </>
+            )}
           </motion.div>
         </div>
       )}

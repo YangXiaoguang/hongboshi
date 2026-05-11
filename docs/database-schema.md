@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品已完成开发期 JSON Store、专用 PostgreSQL 表与 Store。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品已完成开发期 JSON Store、专用 PostgreSQL 表与 Store，课程详情内容已先落 JSON/内存 Store。
 
 ## 文件位置
 
@@ -10,6 +10,7 @@
 - `server/db/migrations/0003_counseling_operations.sql`：咨询运营配置与履约审计表。
 - `server/db/migrations/0004_course_products.sql`：课程商品表与课程商品审计事件表。
 - `server/db/migrations/0005_course_product_review_workflow.sql`：课程商品审核审计动作约束与审核状态索引。
+- `server/db/migrations/0006_course_product_content_management.sql`：课程商品内容审计动作约束。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
@@ -71,5 +72,7 @@
 `server/modules/catalog/courseProductStore.ts` 已实现课程商品内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/course-products.json` 保存课程商品状态、价格和审计事件；当设置 `HONGBOSHI_COURSE_PRODUCT_STORE=memory` 时可临时切回内存。
 
 `server/modules/catalog/postgresCourseProductStore.ts` 已实现 `course_products` 与 `course_product_audit_events` 的保存、读取、初始化 seed、基础信息/价格/审核/状态更新承载和审计事件读取能力。当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 时，课程商品会写入 PostgreSQL。
+
+`server/modules/catalog/courseProductContentStore.ts` 已实现课程详情内容的内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/course-product-content.json` 保存详情摘要、适合人群、章节和素材占位；当设置 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 时可临时切回内存。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。PostgreSQL 内容表计划在下一阶段补齐。
 
 当前实现已覆盖登录会话、课程权益、课程商品、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

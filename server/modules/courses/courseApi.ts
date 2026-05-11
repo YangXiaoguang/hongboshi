@@ -4,6 +4,7 @@ import { URL } from "url";
 import {
   ApiResponseSchema,
   CourseCatalogResultSchema,
+  CourseProductDetailContentSchema,
   CourseListQuerySchema,
   CourseSchema,
   LegacyNumericIdSchema,
@@ -15,9 +16,17 @@ import {
   getCourseProductStore,
   type CourseProductStore,
 } from "../catalog/courseProductStore";
+import {
+  getCourseProductContentForProduct,
+  getCourseProductContentStore,
+  type CourseProductContentStore,
+} from "../catalog/courseProductContentStore";
 
 const CourseListResponseSchema = ApiResponseSchema(CourseCatalogResultSchema);
 const CourseResponseSchema = ApiResponseSchema(CourseSchema);
+const CourseProductContentResponseSchema = ApiResponseSchema(
+  CourseProductDetailContentSchema
+);
 
 function sendJson(
   res: Response | ServerResponse,
@@ -62,6 +71,43 @@ export async function getCoursePayload(
     body: CourseResponseSchema.parse({
       ok: true,
       data: course,
+    }),
+  } as const;
+}
+
+export async function getCourseDetailContentPayload(
+  courseId: number,
+  productStore: CourseProductStore = getCourseProductStore(),
+  contentStore: CourseProductContentStore = getCourseProductContentStore()
+) {
+  const product = (await productStore.listProducts()).find(
+    item =>
+      item.courseId === courseId &&
+      item.status === "published" &&
+      item.reviewStatus === "approved"
+  );
+  if (!product) {
+    return {
+      status: 404,
+      body: {
+        ok: false,
+        error: {
+          code: "NOT_FOUND",
+          message: "课程详情内容不存在",
+        },
+      },
+    } as const;
+  }
+
+  return {
+    status: 200,
+    body: CourseProductContentResponseSchema.parse({
+      ok: true,
+      data: await getCourseProductContentForProduct({
+        productId: product.id,
+        productStore,
+        contentStore,
+      }),
     }),
   } as const;
 }
@@ -154,6 +200,34 @@ export function registerCourseApi(app: Express) {
       });
     }
   });
+
+  app.get(
+    "/api/courses/:courseId/content",
+    async (req: Request, res: Response) => {
+      const parsedCourseId = LegacyNumericIdSchema.safeParse(
+        Number(req.params.courseId)
+      );
+      if (!parsedCourseId.success) {
+        sendBadRequest(res, "课程 ID 不合法");
+        return;
+      }
+
+      try {
+        const payload = await getCourseDetailContentPayload(
+          parsedCourseId.data
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(res, 500, {
+          ok: false,
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "课程详情内容读取失败",
+          },
+        });
+      }
+    }
+  );
 }
 
 export function handleCourseApiRequest(
@@ -192,6 +266,30 @@ export function handleCourseApiRequest(
           error: {
             code: "INTERNAL_ERROR",
             message: "课程列表读取失败",
+          },
+        })
+      );
+    return true;
+  }
+
+  const contentMatch = url.pathname.match(/^\/api\/courses\/(\d+)\/content$/);
+  if (contentMatch?.[1]) {
+    const parsedCourseId = LegacyNumericIdSchema.safeParse(
+      Number(contentMatch[1])
+    );
+    if (!parsedCourseId.success) {
+      sendBadRequest(res, "课程 ID 不合法");
+      return true;
+    }
+
+    void getCourseDetailContentPayload(parsedCourseId.data)
+      .then(payload => sendJson(res, payload.status, payload.body))
+      .catch(() =>
+        sendJson(res, 500, {
+          ok: false,
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "课程详情内容读取失败",
           },
         })
       );

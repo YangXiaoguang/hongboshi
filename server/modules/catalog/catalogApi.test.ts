@@ -6,11 +6,14 @@ import {
 } from "./courseProductStore";
 import {
   getCourseProductAdminListPayload,
+  getCourseProductContentPayload,
   updateCourseProductBasicInfoPayload,
+  updateCourseProductContentPayload,
   updateCourseProductPricePayload,
   updateCourseProductReviewPayload,
   updateCourseProductStatusPayload,
 } from "./catalogApi";
+import { InMemoryCourseProductContentStore } from "./courseProductContentStore";
 
 const products = courses.slice(0, 4).map(courseProductFromCourse);
 const createStore = () => new InMemoryCourseProductStore(products);
@@ -194,6 +197,60 @@ describe("catalog admin api payloads", () => {
     expect(approved.body.ok).toBe(true);
     if (approved.body.ok) {
       expect(approved.body.data.product.reviewStatus).toBe("approved");
+    }
+  });
+
+  it("reads and updates course product detail content", async () => {
+    const productStore = createStore();
+    const contentStore = new InMemoryCourseProductContentStore();
+    const contentPayload = await getCourseProductContentPayload(
+      { id: "operator_1", roles: ["operator"] },
+      products[0].id,
+      productStore,
+      contentStore
+    );
+
+    expect(contentPayload.status).toBe(200);
+    expect(contentPayload.body.ok).toBe(true);
+    if (contentPayload.body.ok) {
+      expect(contentPayload.body.data.productId).toBe(products[0].id);
+      expect(contentPayload.body.data.chapters.length).toBeGreaterThan(0);
+    }
+
+    const updated = await updateCourseProductContentPayload(
+      { id: "operator_1", roles: ["operator"] },
+      products[0].id,
+      {
+        summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+        targetAudience: ["希望提升情绪调节能力的学习者"],
+        chapters: [
+          {
+            id: "chapter_1",
+            title: "认识情绪反应",
+            durationMinutes: 36,
+            materialPlaceholders: [
+              {
+                id: "material_1",
+                title: "课后练习表",
+                type: "exercise",
+                status: "ready",
+              },
+            ],
+          },
+        ],
+        reason: "课程详情内容完成校对",
+      },
+      productStore,
+      contentStore,
+      "2026-05-11T11:20:00.000Z"
+    );
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.ok).toBe(true);
+    if (updated.body.ok) {
+      expect(updated.body.data.content.chapters).toHaveLength(1);
+      expect(updated.body.data.product.reviewStatus).toBe("not_submitted");
+      expect(updated.body.data.auditEvent.action).toBe("content_update");
     }
   });
 

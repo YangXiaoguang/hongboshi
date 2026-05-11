@@ -7,10 +7,10 @@
 - 最后更新时间：2026-05-11 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
-- 最近已知基线提交：上一阶段 `30a08ae Add course product postgres store`，本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M2-F 课程商品详情内容管理`
-- 当前状态：`M2-E 课程商品内容审核流与详情契约` 已完成，下一轮应补齐课程详情内容 Store、章节/素材编辑和发布前内容校验。
-- 本轮完成后下一步：执行 `M2-F 课程商品详情内容管理`
+- 最近已知基线提交：上一阶段 `8470ae2 Add course product review workflow`，本轮提交后以 Git 历史最新提交为准
+- 当前阶段：`M2-G 课程商品内容数据库化与批量校验`
+- 当前状态：`M2-F 课程商品详情内容管理` 已完成，下一轮应补齐课程详情内容 PostgreSQL Store、批量内容校验和更细粒度权限。
+- 本轮完成后下一步：执行 `M2-G 课程商品内容数据库化与批量校验`
 
 ## 已完成关键能力
 
@@ -35,7 +35,7 @@
 - 建立课程商品开发期可变 Store、上下架/改价 API 和课程商品审计事件。
 - `/admin/courses` 支持行级上架、下架、改价操作，并展示最近审计记录。
 - 建立课程商品 JSON 文件 Store，开发期默认写入 `.hongboshi-data/course-products.json`，状态、价格和审计事件可重启恢复。
-- `/api/courses` 和课程详情已读取课程商品 Store，只展示 `published` 商品，并同步后台价格与会员权益变化。
+- `/api/courses` 和课程详情已读取课程商品 Store，只展示 `published + approved` 商品，并同步后台价格与会员权益变化。
 - 建立课程商品 PostgreSQL Store、`course_products` 与 `course_product_audit_events` 迁移表，支持 seed 初始化、状态/价格/基础信息和审计事件持久化。
 - `/admin/courses` 支持课程商品基础信息编辑，服务端通过共享契约校验标题、封面、分类、类型、讲师、学习人数和操作原因。
 - 建立课程商品审核动作契约，支持提交审核、通过审核、驳回审核和撤回审核。
@@ -43,53 +43,58 @@
 - `/admin/courses` 支持行级审核动作，驳回原因会在列表中直接展示，帮助运营快速定位阻塞项。
 - `/api/courses` 和课程详情只展示 `published + approved` 商品，未审核通过的课程即使异常处于上架状态也不会进入前台。
 - 建立第一版 `CourseProductDetailContentSchema`，为课程详情摘要、适合人群、章节时长和素材占位管理预留稳定契约。
+- 建立课程商品详情内容 Store，支持内存/JSON 文件保存课程摘要、适合人群、章节和素材占位。
+- 建立后台课程详情内容读取/更新 API 与 `/admin/courses` 内容编辑弹窗，运营可维护章节和素材占位。
+- 课程内容更新会写入 `content_update` 审计事件，并将已审核或已上架商品回退到未提交审核/下架，避免内容绕过复审发布。
+- 前台课程详情支持读取服务端内容 Store，读取失败时继续使用原前端详情 fallback。
 
 ## 最近完成阶段
 
-M2-E 课程商品内容审核流与详情契约已交付：
+M2-F 课程商品详情内容管理已交付：
 
-- `shared/domain/courseProduct.ts`：新增 `CourseProductReviewActionRequestSchema`、`review_update` 审计动作和 `CourseProductDetailContentSchema` 详情内容契约。
-- `server/modules/catalog/courseProductStore.ts`：新增审核状态机，提交审核、通过、驳回和撤回都由服务端统一校验；前台课程映射改为只读取 `published + approved` 商品。
-- `server/modules/catalog/catalogApi.ts`：新增 `PATCH /api/catalog/admin/course-products/:productId/review`，运营/管理员可执行审核动作，非法入参、无权限和非法流转会被拒绝。
-- `server/db/migrations/0005_course_product_review_workflow.sql` 与 `server/db/schema.ts`：扩展课程商品审计动作约束，并增加审核状态索引。
-- `client/src/features/catalog/api/httpCourseProductRepository.ts` 与 `client/src/pages/admin/CourseProducts.tsx`：新增审核 mutation repository、行级审核按钮、统一审核确认弹窗和驳回原因展示。
-- README、领域契约、数据库说明、产品路线和后台路线图同步了课程商品审核流和详情内容契约边界。
+- `shared/domain/courseProduct.ts`：新增 `CourseProductContentUpdateRequestSchema`、`CourseProductContentMutationResultSchema` 和 `content_update` 审计动作。
+- `server/modules/catalog/courseProductContentStore.ts`：新增课程详情内容内存/JSON Store，默认内容可从课程商品生成。
+- `server/modules/catalog/catalogApi.ts`：新增 `GET/PATCH /api/catalog/admin/course-products/:productId/content`，运营/管理员可读取和保存课程摘要、适合人群、章节和素材占位。
+- `server/modules/courses/courseApi.ts`：新增 `GET /api/courses/:courseId/content`，前台详情只读取已审核通过且已上架课程的服务端详情内容。
+- `client/src/features/catalog/api/httpCourseProductRepository.ts` 与 `client/src/pages/admin/CourseProducts.tsx`：新增内容读取/更新 repository 和后台内容编辑弹窗。
+- `client/src/features/courses/hooks/useCourseDetail.ts`：前台详情优先叠加服务端详情内容，失败时保留本地 fallback。
+- `server/db/migrations/0006_course_product_content_management.sql`：扩展课程商品审计动作约束，允许 `content_update`。
+- README、领域契约、数据库说明、课程中心架构、产品路线和后台路线图同步了详情内容管理边界。
 
-M2-E 验收结果：
+M2-F 验收结果：
 
-- 未审核通过的课程商品不能上架，异常数据也不会进入前台课程列表/详情。
-- 运营/管理员可提交审核、通过审核、驳回审核或撤回审核，并产生审计事件。
-- 审核失败原因能在后台列表中被运营看到。
-- 课程详情内容管理已有第一版共享契约，后续可直接接 Store、API 和后台编辑器。
+- 运营/管理员可读取并编辑课程详情内容、适合人群、章节和素材占位。
+- 内容变更有 `content_update` 审计事件，并且会回退审核状态，已上架课程会同步下架。
+- 前台课程详情能使用服务端内容或稳定 fallback，不影响未发布/未审核内容隔离。
+- 章节和素材表单有基本校验，非法内容不能保存。
 - CI 通过后方可提交推送。
 
 ## 下一步任务包
 
-### M2-F: 课程商品详情内容管理
+### M2-G: 课程商品内容数据库化与批量校验
 
 业务目标：
 
-把课程商品从“可审核的商品壳”推进到“可运营维护的课程内容”。该阶段要把详情摘要、适合人群、章节和素材占位从前端静态数据迁移到服务端 Store，并和审核流打通。
+把课程详情内容从开发期 JSON Store 推进到生产可用的数据库持久化与质量校验。该阶段要让章节、素材占位和内容审计可以进入 PostgreSQL，并补齐发布前批量校验能力。
 
 实施范围：
 
-- 复用并必要时扩展 `CourseProductDetailContentSchema`，新增详情内容更新请求契约。
-- 建立课程详情内容 Store 接口，建议先提供内存/JSON 实现，再按复杂度决定是否同阶段补 PostgreSQL 迁移。
-- 服务端新增 `GET/PATCH /api/catalog/admin/course-products/:productId/content`，后台读取与保存课程摘要、适合人群、章节标题、章节时长和素材占位。
-- 内容保存应写入审计事件；如果已审核通过的课程内容发生实质变更，应将审核状态回退到 `not_submitted` 或形成明确待复审状态。
-- 后台 `/admin/courses` 增加“内容”入口和详情内容编辑弹窗/抽屉，表单要适合章节列表和素材占位的持续维护。
-- 前台课程详情可逐步读取服务端内容 Store，静态 `courseDetail` 保留为 fallback。
-- 增加 domain、server action、API、前端 repository 和关键表单测试。
-- 更新 README、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
+- 新增 `course_product_contents` 或等价 PostgreSQL 表，保存 productId、summary、targetAudience、chapters、updatedAt 等字段；章节/素材可先使用 JSONB，后续再拆表。
+- 新增 `PostgresCourseProductContentStore`，实现详情内容读取、保存、seed/default fallback 和清空测试辅助。
+- 将 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE` 扩展为 `memory/file/postgres`，配置 `DATABASE_URL` 时可切换 PostgreSQL。
+- 增加内容质量校验 service：覆盖摘要长度、适合人群数量、章节数量、章节时长、素材标题、素材就绪状态等，并为审核提交前提供可复用校验结果。
+- 后台 `/admin/courses` 在内容弹窗或列表中展示基础校验状态，帮助运营知道能否提交审核。
+- 更新 README、`docs/database-schema.md`、`docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
+- 增加 domain、Postgres Store、API 和前端关键测试。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add course product content management`。
+- 提交并推送，建议 commit message：`Add course product content postgres store`。
 
 验收标准：
 
-- 运营/管理员可读取并编辑课程详情内容、适合人群、章节和素材占位。
-- 内容变更有审计事件，并且不会绕过审核发布保护。
-- 前台课程详情能使用服务端内容或稳定 fallback，不影响未发布/未审核内容隔离。
-- 章节和素材表单有基本校验，非法内容不能保存。
+- `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 且配置 `DATABASE_URL` 后，课程详情内容可写入 PostgreSQL。
+- 未配置 PostgreSQL 时，现有 JSON 内容 Store 继续可用。
+- 审核提交前可以得到明确的内容质量校验结果。
+- 前台详情内容读取不受未发布或未审核内容影响。
 - CI 通过。
 
 ## 执行不变量
@@ -108,5 +113,5 @@ M2-E 验收结果：
 ## 待决策问题
 
 - 后台权限是否需要从 `admin:manage` 拆为 `admin:read`、`catalog:manage`、`order:manage`、`finance:read`、`risk:review` 等更细粒度权限。建议在 M2 或 M3 前完成第一版拆分。
-- 课程详情内容 Store 第一版先用 JSON 还是直接 PostgreSQL。建议 M2-F 先用 Store 接口和 JSON 开发期实现跑通运营编辑，再补 PostgreSQL 迁移。
+- 课程详情章节/素材是否要从 JSONB 拆成独立表。建议 M2-G 先用 JSONB 保持可维护速度，等学习记录、资料下载和素材真实文件管理进入后再拆表。
 - 真实支付渠道优先接微信支付还是支付宝。建议先把渠道适配接口稳定，再选择一个渠道试点。

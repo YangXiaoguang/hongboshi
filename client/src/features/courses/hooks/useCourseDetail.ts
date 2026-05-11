@@ -3,14 +3,41 @@ import {
   CourseDetailSchema,
   type Course,
   type CourseDetail,
+  type CourseProductDetailContent,
 } from "@shared/domain";
 import { httpCourseRepository } from "../api/httpCourseRepository";
 import { mockCourseRepository } from "../api/mockCourseRepository";
 import { buildCourseDetail, getRelatedCourses } from "../model/courseDetail";
 
-function buildDetailFromCourse(course: Course | undefined): CourseDetail | undefined {
+function buildDetailFromCourse(
+  course: Course | undefined,
+  content?: CourseProductDetailContent
+): CourseDetail | undefined {
   if (!course) return undefined;
-  return CourseDetailSchema.parse(buildCourseDetail(course));
+  const detail = buildCourseDetail(course);
+  if (!content) return CourseDetailSchema.parse(detail);
+
+  return CourseDetailSchema.parse({
+    ...detail,
+    summary: content.summary,
+    suitableFor: content.targetAudience.map((title, index) => ({
+      title,
+      description:
+        detail.suitableFor[index]?.description ??
+        "适合希望用低压力方式开始学习，并把内容带回日常练习的人。",
+    })),
+    chapters: content.chapters.map((chapter, index) => ({
+      id: chapter.id,
+      title: chapter.title,
+      description:
+        chapter.materialPlaceholders.length > 0
+          ? `包含${chapter.materialPlaceholders.map(material => material.title).join("、")}等素材。`
+          : (detail.chapters[index]?.description ??
+            "围绕当前主题完成一组结构化学习和练习。"),
+      durationMinutes: chapter.durationMinutes,
+      lessonCount: Math.max(1, chapter.materialPlaceholders.length || 1),
+    })),
+  });
 }
 
 function getFallbackDetail(courseId: number) {
@@ -32,8 +59,12 @@ export function useCourseDetail(courseId: number | undefined) {
     return getFallbackDetail(validCourseId);
   }, [validCourseId]);
 
-  const [course, setCourse] = useState<CourseDetail | undefined>(fallback.course);
-  const [relatedCourses, setRelatedCourses] = useState<Course[]>(fallback.relatedCourses);
+  const [course, setCourse] = useState<CourseDetail | undefined>(
+    fallback.course
+  );
+  const [relatedCourses, setRelatedCourses] = useState<Course[]>(
+    fallback.relatedCourses
+  );
   const [isLoading, setIsLoading] = useState(Boolean(validCourseId));
   const [error, setError] = useState<string | undefined>();
   const [dataSource, setDataSource] = useState<"api" | "fallback">("fallback");
@@ -49,12 +80,15 @@ export function useCourseDetail(courseId: number | undefined) {
 
     setIsLoading(true);
     try {
-      const [remoteCourse, remoteCourses] = await Promise.all([
+      const [remoteCourse, remoteCourses, remoteContent] = await Promise.all([
         httpCourseRepository.getCourseById(validCourseId),
         httpCourseRepository.listAllCourses(),
+        httpCourseRepository
+          .getCourseDetailContent(validCourseId)
+          .catch(() => undefined),
       ]);
 
-      const detail = buildDetailFromCourse(remoteCourse);
+      const detail = buildDetailFromCourse(remoteCourse, remoteContent);
       setCourse(detail);
       setRelatedCourses(
         detail ? getRelatedCourses(remoteCourses, detail, 3) : []

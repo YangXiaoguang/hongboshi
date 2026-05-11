@@ -71,13 +71,13 @@ export const adminNavigationItems = [
   {
     key: "courses",
     title: "课程商品",
-    description: "课程商品、分类、价格、基础信息、审核流和上下架。",
+    description: "课程商品、详情内容、价格、审核流和上下架。",
     href: "/admin/courses",
     icon: BookOpen,
     permission: "admin:manage",
     status: "available",
     group: "business",
-    milestone: "M2-E",
+    milestone: "M2-F",
   },
   {
     key: "users",

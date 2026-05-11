@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   httpCourseProductRepository,
+  parseCourseProductContentResponse,
   parseCourseProductListResponse,
   parseCourseProductMutationResponse,
 } from "./httpCourseProductRepository";
@@ -262,6 +263,122 @@ describe("http course product repository parsing", () => {
       expect.objectContaining({
         method: "PATCH",
         body: expect.stringContaining("submit"),
+      })
+    );
+  });
+
+  it("parses and updates course product detail content", async () => {
+    const contentPayload = {
+      ok: true,
+      data: {
+        productId: "course_product_1",
+        summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+        targetAudience: ["希望提升情绪调节能力的学习者"],
+        chapters: [
+          {
+            id: "chapter_1",
+            title: "认识情绪反应",
+            durationMinutes: 36,
+            materialPlaceholders: [
+              {
+                id: "material_1",
+                title: "课后练习表",
+                type: "exercise",
+                status: "ready",
+              },
+            ],
+          },
+        ],
+        updatedAt: "2026-05-11T11:20:00+08:00",
+      },
+    };
+
+    expect(
+      parseCourseProductContentResponse(contentPayload).chapters
+    ).toHaveLength(1);
+  });
+
+  it("sends detail content update mutations to the admin endpoint", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        product: {
+          id: "course_product_1",
+          courseId: 1,
+          title: "情绪管理入门",
+          coverUrl:
+            "https://images.unsplash.com/photo-1499209974431-9dddcece7f88",
+          category: "情绪管理",
+          type: "录播",
+          instructorName: "林若安",
+          learners: 1200,
+          price: {
+            amount: 99,
+            originalAmount: 199,
+            isFree: false,
+            memberIncluded: true,
+          },
+          status: "unpublished",
+          reviewStatus: "not_submitted",
+          source: "seed",
+          createdAt: "2026-05-10T09:00:00+08:00",
+          updatedAt: "2026-05-11T11:20:00+08:00",
+        },
+        content: {
+          productId: "course_product_1",
+          summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+          targetAudience: ["希望提升情绪调节能力的学习者"],
+          chapters: [
+            {
+              id: "chapter_1",
+              title: "认识情绪反应",
+              durationMinutes: 36,
+              materialPlaceholders: [],
+            },
+          ],
+          updatedAt: "2026-05-11T11:20:00+08:00",
+        },
+        auditEvent: {
+          id: "audit_content_course_product_1",
+          productId: "course_product_1",
+          productTitle: "情绪管理入门",
+          actorId: "operator_1",
+          action: "content_update",
+          reason: "课程详情内容完成校对",
+          before: { chapterCount: 3 },
+          after: { chapterCount: 1 },
+          createdAt: "2026-05-11T11:20:00+08:00",
+        },
+        auditEvents: [],
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result = await httpCourseProductRepository.updateCourseProductContent(
+      "course_product_1",
+      {
+        summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+        targetAudience: ["希望提升情绪调节能力的学习者"],
+        chapters: [
+          {
+            id: "chapter_1",
+            title: "认识情绪反应",
+            durationMinutes: 36,
+            materialPlaceholders: [],
+          },
+        ],
+        reason: "课程详情内容完成校对",
+      }
+    );
+
+    expect(result.auditEvent.action).toBe("content_update");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/course_product_1/content",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining("认识情绪反应"),
       })
     );
   });

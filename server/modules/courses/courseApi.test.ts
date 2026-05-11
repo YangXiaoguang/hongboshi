@@ -4,7 +4,12 @@ import {
   InMemoryCourseProductStore,
   courseProductFromCourse,
 } from "../catalog/courseProductStore";
-import { getCoursePayload, listCoursesPayload } from "./courseApi";
+import { InMemoryCourseProductContentStore } from "../catalog/courseProductContentStore";
+import {
+  getCourseDetailContentPayload,
+  getCoursePayload,
+  listCoursesPayload,
+} from "./courseApi";
 
 describe("course API payloads", () => {
   it("filters and paginates course list payloads", async () => {
@@ -74,5 +79,37 @@ describe("course API payloads", () => {
       expect(detailPayload.body.data.price).toBe(88);
     }
     expect(hiddenDetailPayload.status).toBe(404);
+  });
+
+  it("returns public detail content only for published and approved products", async () => {
+    const [first, second] = courses.slice(0, 2).map(courseProductFromCourse);
+    const productStore = new InMemoryCourseProductStore([
+      first,
+      {
+        ...second,
+        status: "published",
+        reviewStatus: "pending",
+      },
+    ]);
+    const contentStore = new InMemoryCourseProductContentStore();
+
+    const contentPayload = await getCourseDetailContentPayload(
+      first.courseId,
+      productStore,
+      contentStore
+    );
+    const hiddenPayload = await getCourseDetailContentPayload(
+      second.courseId,
+      productStore,
+      contentStore
+    );
+
+    expect(contentPayload.status).toBe(200);
+    expect(contentPayload.body.ok).toBe(true);
+    if (contentPayload.body.ok) {
+      expect(contentPayload.body.data.productId).toBe(first.id);
+      expect(contentPayload.body.data.chapters.length).toBeGreaterThan(0);
+    }
+    expect(hiddenPayload.status).toBe(404);
   });
 });

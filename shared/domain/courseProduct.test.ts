@@ -4,6 +4,7 @@ import {
   ALL_COURSE_PRODUCT_STATUS,
   CourseProductPriceUpdateRequestSchema,
   CourseProductBasicInfoUpdateRequestSchema,
+  CourseProductContentUpdateRequestSchema,
   CourseProductDetailContentSchema,
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
@@ -163,6 +164,42 @@ describe("course product domain contract", () => {
       CourseProductDetailContentSchema.safeParse({
         ...parsed,
         chapters: [],
+      }).success
+    ).toBe(false);
+  });
+
+  it("validates course detail content update requests", () => {
+    const parsed = CourseProductContentUpdateRequestSchema.parse({
+      summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+      targetAudience: ["希望提升情绪调节能力的学习者"],
+      chapters: [
+        {
+          id: "chapter_1",
+          title: "认识情绪反应",
+          durationMinutes: 36,
+          materialPlaceholders: [
+            {
+              id: "material_1",
+              title: "课后练习表",
+              type: "exercise",
+              status: "ready",
+            },
+          ],
+        },
+      ],
+      reason: "课程详情内容完成校对",
+    });
+
+    expect(parsed.chapters[0]?.durationMinutes).toBe(36);
+    expect(
+      CourseProductContentUpdateRequestSchema.safeParse({
+        ...parsed,
+        chapters: [
+          {
+            ...parsed.chapters[0],
+            durationMinutes: 0,
+          },
+        ],
       }).success
     ).toBe(false);
   });

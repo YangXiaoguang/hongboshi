@@ -45,6 +45,7 @@ export const COURSE_PRODUCT_AUDIT_ACTIONS = [
   "price_update",
   "info_update",
   "review_update",
+  "content_update",
 ] as const;
 
 export const COURSE_PRODUCT_REVIEW_ACTIONS = [
@@ -252,6 +253,21 @@ export const CourseProductDetailContentSchema = z.object({
   updatedAt: DateTimeLikeSchema,
 });
 
+export const CourseProductContentUpdateRequestSchema =
+  CourseProductDetailContentSchema.omit({
+    productId: true,
+    updatedAt: true,
+  }).extend({
+    reason: z.string().trim().min(4).max(240),
+  });
+
+export const CourseProductContentMutationResultSchema = z.object({
+  product: CourseProductListItemSchema,
+  content: CourseProductDetailContentSchema,
+  auditEvent: CourseProductAuditEventSchema,
+  auditEvents: z.array(CourseProductAuditEventSchema),
+});
+
 export const CourseProductMutationResultSchema = z.object({
   product: CourseProductListItemSchema,
   auditEvent: CourseProductAuditEventSchema,
@@ -318,6 +334,12 @@ export type CourseProductContentChapter = z.infer<
 >;
 export type CourseProductDetailContent = z.infer<
   typeof CourseProductDetailContentSchema
+>;
+export type CourseProductContentUpdateRequest = z.infer<
+  typeof CourseProductContentUpdateRequestSchema
+>;
+export type CourseProductContentMutationResult = z.infer<
+  typeof CourseProductContentMutationResultSchema
 >;
 export type CourseProductMutationResult = z.infer<
   typeof CourseProductMutationResultSchema
