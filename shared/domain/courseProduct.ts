@@ -43,6 +43,7 @@ export const COURSE_PRODUCT_SORTS = [
 export const COURSE_PRODUCT_AUDIT_ACTIONS = [
   "status_update",
   "price_update",
+  "info_update",
 ] as const;
 
 export const CourseProductStatusSchema = z.enum(COURSE_PRODUCT_STATUSES);
@@ -176,6 +177,16 @@ export const CourseProductPriceUpdateRequestSchema = z
     }
   });
 
+export const CourseProductBasicInfoUpdateRequestSchema = z.object({
+  title: z.string().trim().min(2).max(80),
+  coverUrl: z.string().trim().url(),
+  category: CourseCategorySchema,
+  type: CourseTypeSchema,
+  instructorName: z.string().trim().min(1).max(40),
+  learners: z.number().int().nonnegative().max(999999),
+  reason: z.string().trim().min(4).max(240),
+});
+
 export const CourseProductMutationResultSchema = z.object({
   product: CourseProductListItemSchema,
   auditEvent: CourseProductAuditEventSchema,
@@ -218,6 +229,9 @@ export type CourseProductStatusUpdateRequest = z.infer<
 >;
 export type CourseProductPriceUpdateRequest = z.infer<
   typeof CourseProductPriceUpdateRequestSchema
+>;
+export type CourseProductBasicInfoUpdateRequest = z.infer<
+  typeof CourseProductBasicInfoUpdateRequestSchema
 >;
 export type CourseProductMutationResult = z.infer<
   typeof CourseProductMutationResultSchema

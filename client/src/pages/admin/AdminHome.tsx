@@ -24,9 +24,10 @@ const implementationRows = [
   [
     "M2-D",
     "商品数据库化",
-    "下一步",
-    "PostgreSQL Store、基础信息编辑和审核建模",
+    "已完成",
+    "PostgreSQL Store、基础信息编辑和迁移契约",
   ],
+  ["M2-E", "内容审核流", "下一步", "审核状态、内容详情、章节素材和权限细化"],
   ["M3", "用户与会员管理", "规划中", "用户检索、会员权益、账号状态和隐私边界"],
   ["M4", "订单管理", "规划中", "课程、咨询和会员订单的统一状态机"],
   ["M5", "交易与退款管理", "规划中", "支付流水、退款申请和异常处理"],
@@ -38,7 +39,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "M2-D", icon: GitBranch },
+  { label: "下一阶段", value: "M2-E", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -176,7 +177,7 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经指向 M2-D 课程商品数据库化。
+              当前连续执行状态已经指向 M2-E 课程内容审核流。
             </p>
           </div>
           <div className="overflow-x-auto">

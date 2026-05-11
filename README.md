@@ -1,6 +1,6 @@
 # 红博士心理小讲堂
 
-心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估、咨询预约入口和运营管理后台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、成长档案聚合、测评推荐基础链路、咨询预约雏形、课程商品后台列表、上下架、改价、审计记录、开发期持久化和前台课程发布联动。
+心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估、咨询预约入口和运营管理后台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、成长档案聚合、测评推荐基础链路、咨询预约雏形、课程商品后台列表、上下架、改价、基础信息编辑、审计记录、前台课程发布联动和 PostgreSQL Store。
 
 ## 技术栈
 
@@ -105,7 +105,7 @@ docs/
 - `HONGBOSHI_COUNSELING_OPERATION_STORE`
 - `HONGBOSHI_PAYMENT_WEBHOOK_STORE`
 
-切换 PostgreSQL 时，先配置 `DATABASE_URL`，再按需将对应 Store 变量设置为 `postgres`。课程商品当前支持 `file`/`memory`，PostgreSQL Store 是下一步任务。运行：
+切换 PostgreSQL 时，先配置 `DATABASE_URL`，再按需将对应 Store 变量设置为 `postgres`。课程商品支持 `file`、`memory` 和 `postgres`，本地开发仍可用 `.env.example` 中的文件模式。运行：
 
 ```bash
 pnpm db:doctor
@@ -126,17 +126,17 @@ pnpm db:migrate
 - 咨询预约入口位于 `client/src/pages/Consulting.tsx`，通过 `/consulting` 选择咨询师、时段和咨询前信息
 - 咨询师工作台位于 `client/src/pages/CounselorWorkbench.tsx`，通过 `/counselor/workbench` 处理分配预约、履约状态和退款中订单
 - 运营管理后台位于 `client/src/pages/admin`，通过 `/admin` 提供统一后台入口、导航、权限守卫和后续模块骨架
-- 课程商品后台位于 `client/src/pages/admin/CourseProducts.tsx`，通过 `/admin/courses` 展示课程商品、价格、状态、审核状态、筛选、分页、上下架、改价和最近审计
+- 课程商品后台位于 `client/src/pages/admin/CourseProducts.tsx`，通过 `/admin/courses` 展示课程商品、价格、状态、审核状态、筛选、分页、基础信息编辑、上下架、改价和最近审计
 - 咨询运营配置位于 `client/src/pages/CounselingOperations.tsx`，通过 `/admin/counseling` 配置取消规则并查看履约审计
 - 支付对账位于 `client/src/pages/PaymentReconciliation.tsx`，通过 `/admin/payments` 对比支付回调收据、业务订单和咨询预约状态
 - 小程序端预览位于 `client/src/components/MobileView.tsx`
 - 登录状态由 `/api/auth/session`、`/api/auth/login/phone`、`/api/auth/login/wechat` 和 `AuthContext` 共同管理，服务端会话可切换到 PostgreSQL
 - 课程目录、课程详情、课程权益、后台课程商品、快速测评、咨询预约和成长档案分别由 `/api/courses`、`/api/course-access`、`/api/catalog/admin/course-products`、`/api/assessments/quick`、`/api/counseling/availability`、`/api/counseling/appointments` 和 `/api/growth/profile` 提供；`/api/courses` 已联动课程商品发布状态、价格和会员权益
 - 课程权益开发期默认写入 `.hongboshi-data/course-access.json`，也可通过 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 切到 PostgreSQL
-- 课程商品开发期默认写入 `.hongboshi-data/course-products.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_STORE=memory` 临时切回内存
+- 课程商品开发期默认写入 `.hongboshi-data/course-products.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_STORE=memory` 临时切回内存，或通过 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 写入 PostgreSQL
 - 测评结果、咨询预约、咨询运营配置、咨询审计、风险事件和支付回调收据已抽象为服务端 Store 接口，均已有 PostgreSQL 实现，默认仍可使用内存实现
 - 数据库准备层位于 `server/db`，初始 PostgreSQL 迁移草案见 `server/db/migrations/0001_core_tables.sql`
-- 登录会话、课程权益、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调 Store 已有 PostgreSQL 实现；设置 `DATABASE_URL` 且分别将对应 `HONGBOSHI_*_STORE` 设为 `postgres` 后可切换。课程商品当前使用 JSON/内存 Store，PostgreSQL Store 留给下一阶段
+- 登录会话、课程权益、课程商品、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调 Store 已有 PostgreSQL 实现；设置 `DATABASE_URL` 且分别将对应 `HONGBOSHI_*_STORE` 设为 `postgres` 后可切换
 - 课程权益读取优先使用服务端 session cookie 识别用户，`x-hongboshi-user-id` 仅作为开发期读取兜底
 - 课程购买和会员开通必须具备 `member` 权限，登录时会记录 terms/privacy 协议版本
 - 成长档案读取需要登录；当前聚合课程权益、订单、最新测评报告、咨询预约和最近时间线
@@ -144,7 +144,7 @@ pnpm db:migrate
 - 咨询师工作台需要 `counselor`、`operator` 或 `admin` 角色；服务端通过 `counseling:fulfill` 权限控制读取和履约操作
 - 咨询运营配置需要 `operator` 或 `admin` 角色；服务端通过 `admin:manage` 权限控制取消规则更新和审计读取
 - 支付对账需要 `operator` 或 `admin` 角色；服务端通过 `admin:manage` 权限控制回调收据和业务状态读取
-- 课程商品后台列表与写动作需要 `operator` 或 `admin` 角色；服务端通过 `admin:manage` 权限控制商品快照读取、上下架和改价
+- 课程商品后台列表与写动作需要 `operator` 或 `admin` 角色；服务端通过 `admin:manage` 权限控制商品快照读取、基础信息编辑、上下架和改价
 - 生产构建后由 `server/index.ts` 托管 `dist/public`
 
 ## 后续二开建议
@@ -154,6 +154,6 @@ pnpm db:migrate
 3. 建立订单支付状态机，区分待支付、已支付、退款、支付超时关闭。
 4. 接入真实支付渠道、退款通道和支付对账异常处理动作。
 5. 建立风险人工复核台，承接高风险测评和咨询前信息。
-6. 为课程商品补齐 PostgreSQL Store、基础信息编辑、内容审核流和更细粒度权限。
+6. 为课程商品补齐内容审核流、课程详情内容管理、章节/素材管理和更细粒度权限。
 7. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
 8. 引入 ESLint 或统一的代码质量检查规则。

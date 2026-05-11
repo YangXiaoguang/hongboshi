@@ -38,7 +38,7 @@ describe("database runtime persistence config", () => {
       config.stores.find(
         store => store.envName === "HONGBOSHI_COURSE_PRODUCT_STORE"
       )?.mode
-    ).toBe("file");
+    ).toBe("postgres");
   });
 
   it("reports invalid modes and missing database urls", () => {

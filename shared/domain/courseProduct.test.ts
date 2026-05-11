@@ -3,6 +3,7 @@ import {
   ALL_COURSE_PRODUCT_CATEGORY,
   ALL_COURSE_PRODUCT_STATUS,
   CourseProductPriceUpdateRequestSchema,
+  CourseProductBasicInfoUpdateRequestSchema,
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
 } from "./courseProduct";
@@ -90,6 +91,26 @@ describe("course product domain contract", () => {
         originalAmount: 99,
         isFree: false,
         reason: "活动价格调整",
+      }).success
+    ).toBe(false);
+  });
+
+  it("validates basic information update requests", () => {
+    const parsed = CourseProductBasicInfoUpdateRequestSchema.parse({
+      title: "婚姻关系沟通课",
+      coverUrl: "https://images.unsplash.com/photo-1499209974431-9dddcece7f88",
+      category: "婚姻关系",
+      type: "直播",
+      instructorName: "林若安",
+      learners: 1800,
+      reason: "课程基础信息校对完成",
+    });
+
+    expect(parsed.title).toBe("婚姻关系沟通课");
+    expect(
+      CourseProductBasicInfoUpdateRequestSchema.safeParse({
+        ...parsed,
+        reason: "短",
       }).success
     ).toBe(false);
   });

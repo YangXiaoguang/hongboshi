@@ -5,6 +5,7 @@ export type {
   CourseProductListResult,
   CourseProductListSummary,
   CourseProductMutationResult,
+  CourseProductBasicInfoUpdateRequest,
   CourseProductPriceUpdateRequest,
   CourseProductReviewStatus,
   CourseProductStatus,

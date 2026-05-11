@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  httpCourseProductRepository,
   parseCourseProductListResponse,
   parseCourseProductMutationResponse,
 } from "./httpCourseProductRepository";
 
 describe("http course product repository parsing", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("parses course product list responses", () => {
     const parsed = parseCourseProductListResponse({
       ok: true,
@@ -127,5 +132,75 @@ describe("http course product repository parsing", () => {
 
     expect(parsed.product.price.amount).toBe(99);
     expect(parsed.auditEvent.action).toBe("price_update");
+  });
+
+  it("sends basic information update mutations to the admin endpoint", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        product: {
+          id: "course_product_1",
+          courseId: 1,
+          title: "婚姻关系沟通训练",
+          coverUrl:
+            "https://images.unsplash.com/photo-1499209974431-9dddcece7f88",
+          category: "婚姻关系",
+          type: "直播",
+          instructorName: "林若安",
+          learners: 1888,
+          price: {
+            amount: 99,
+            originalAmount: 199,
+            isFree: false,
+            memberIncluded: true,
+          },
+          status: "published",
+          reviewStatus: "approved",
+          source: "seed",
+          createdAt: "2026-05-10T09:00:00+08:00",
+          updatedAt: "2026-05-11T10:20:00+08:00",
+          publishedAt: "2026-05-10T09:00:00+08:00",
+        },
+        auditEvent: {
+          id: "audit_info_course_product_1",
+          productId: "course_product_1",
+          productTitle: "婚姻关系沟通训练",
+          actorId: "operator_1",
+          action: "info_update",
+          reason: "运营校对课程基础信息",
+          before: { title: "情绪管理入门" },
+          after: { title: "婚姻关系沟通训练" },
+          createdAt: "2026-05-11T10:20:00+08:00",
+        },
+        auditEvents: [],
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.updateCourseProductBasicInfo(
+        "course_product_1",
+        {
+          title: "婚姻关系沟通训练",
+          coverUrl:
+            "https://images.unsplash.com/photo-1499209974431-9dddcece7f88",
+          category: "婚姻关系",
+          type: "直播",
+          instructorName: "林若安",
+          learners: 1888,
+          reason: "运营校对课程基础信息",
+        }
+      );
+
+    expect(result.auditEvent.action).toBe("info_update");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/course_product_1/info",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining("婚姻关系沟通训练"),
+      })
+    );
   });
 });

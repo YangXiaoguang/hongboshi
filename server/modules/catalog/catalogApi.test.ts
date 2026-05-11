@@ -6,6 +6,7 @@ import {
 } from "./courseProductStore";
 import {
   getCourseProductAdminListPayload,
+  updateCourseProductBasicInfoPayload,
   updateCourseProductPricePayload,
   updateCourseProductStatusPayload,
 } from "./catalogApi";
@@ -117,6 +118,37 @@ describe("catalog admin api payloads", () => {
     if (payload.body.ok) {
       expect(payload.body.data.product.price.amount).toBe(99);
       expect(payload.body.data.auditEvent.action).toBe("price_update");
+    }
+  });
+
+  it("updates course product basic information and records audit events", async () => {
+    const store = createStore();
+    const payload = await updateCourseProductBasicInfoPayload(
+      { id: "operator_1", roles: ["operator"] },
+      products[0].id,
+      {
+        title: "婚姻关系沟通训练",
+        coverUrl: products[0].coverUrl,
+        category: "婚姻关系",
+        type: "直播",
+        instructorName: "林若安",
+        learners: 1888,
+        reason: "运营校对课程基础信息",
+      },
+      store,
+      "2026-05-11T10:20:00.000Z"
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (payload.body.ok) {
+      expect(payload.body.data.product).toMatchObject({
+        title: "婚姻关系沟通训练",
+        category: "婚姻关系",
+        type: "直播",
+        learners: 1888,
+      });
+      expect(payload.body.data.auditEvent.action).toBe("info_update");
     }
   });
 

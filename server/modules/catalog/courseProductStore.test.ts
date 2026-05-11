@@ -13,6 +13,7 @@ import {
   listCourseProductsByQuery,
   summarizeCourseProducts,
   updateCourseProductPrice,
+  updateCourseProductBasicInfo,
   updateCourseProductStatus,
 } from "./courseProductStore";
 
@@ -142,6 +143,40 @@ describe("course product store mapping", () => {
       memberIncluded: true,
     });
     expect(result.auditEvent.action).toBe("price_update");
+  });
+
+  it("updates basic information and keeps the operation auditable", async () => {
+    const store = new InMemoryCourseProductStore([
+      courseProductFromCourse(courses[0]),
+    ]);
+    const product = courseProductFromCourse(courses[0]);
+
+    const result = await updateCourseProductBasicInfo({
+      productId: product.id,
+      request: {
+        title: "婚姻关系沟通训练",
+        coverUrl: product.coverUrl,
+        category: "婚姻关系",
+        type: "直播",
+        instructorName: "林若安",
+        learners: 1888,
+        reason: "运营校对课程基础信息",
+      },
+      actorId: "operator_1",
+      store,
+      now: "2026-05-11T10:20:00.000Z",
+    });
+
+    expect(result.product).toMatchObject({
+      title: "婚姻关系沟通训练",
+      category: "婚姻关系",
+      type: "直播",
+      learners: 1888,
+    });
+    expect(result.auditEvent).toMatchObject({
+      action: "info_update",
+      productTitle: "婚姻关系沟通训练",
+    });
   });
 
   it("persists products and audit events in the JSON store", async () => {

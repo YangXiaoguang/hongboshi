@@ -25,14 +25,18 @@ import {
   ALL_COURSE_PRODUCT_STATUS,
   COURSE_CATEGORIES,
   COURSE_PRODUCT_PAGE_SIZE,
+  COURSE_TYPES,
   userCan,
+  type CourseCategory,
   type CourseProductAuditEvent,
+  type CourseProductBasicInfoUpdateRequest,
   type CourseProductListItem,
   type CourseProductListQuery,
   type CourseProductListResult,
   type CourseProductPriceUpdateRequest,
   type CourseProductReviewStatus,
   type CourseProductStatus,
+  type CourseType,
 } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpCourseProductRepository } from "@/features/catalog";
@@ -48,6 +52,15 @@ type PriceFormState = {
   originalAmount: string;
   isFree: boolean;
   memberIncluded: boolean;
+  reason: string;
+};
+type BasicInfoFormState = {
+  title: string;
+  coverUrl: string;
+  category: CourseCategory;
+  type: CourseType;
+  instructorName: string;
+  learners: string;
   reason: string;
 };
 
@@ -133,9 +146,22 @@ function auditChangeText(event: CourseProductAuditEvent) {
       event.after.status
     )}`;
   }
+  if (event.action === "info_update") {
+    const beforeTitle =
+      typeof event.before.title === "string" ? event.before.title : "未记录";
+    const afterTitle =
+      typeof event.after.title === "string" ? event.after.title : "未记录";
+    return `${beforeTitle} -> ${afterTitle}`;
+  }
   return `${formatAuditMoney(event.before.price)} -> ${formatAuditMoney(
     event.after.price
   )}`;
+}
+
+function auditActionLabel(action: CourseProductAuditEvent["action"]) {
+  if (action === "status_update") return "状态更新";
+  if (action === "price_update") return "价格更新";
+  return "信息更新";
 }
 
 function statusClass(status: CourseProductStatus) {
@@ -214,7 +240,7 @@ function AuditTrail({ events }: { events: CourseProductAuditEvent[] }) {
             >
               <div>
                 <p className="font-semibold text-[#243B35]">
-                  {event.action === "status_update" ? "状态更新" : "价格更新"}
+                  {auditActionLabel(event.action)}
                 </p>
                 <p className="mt-1 text-xs text-[#8A8176]">
                   {formatDate(event.createdAt)}
@@ -245,12 +271,14 @@ function CourseProductRow({
   item,
   index,
   isMutating,
+  onEditInfo,
   onEditPrice,
   onRequestStatusChange,
 }: {
   item: CourseProductListItem;
   index: number;
   isMutating: boolean;
+  onEditInfo: (item: CourseProductListItem) => void;
   onEditPrice: (item: CourseProductListItem) => void;
   onRequestStatusChange: (
     item: CourseProductListItem,
@@ -343,7 +371,7 @@ function CourseProductRow({
         </div>
       </td>
       <td className="px-5 py-4">
-        <div className="flex min-w-[142px] flex-wrap gap-2">
+        <div className="flex min-w-[220px] flex-wrap gap-2">
           <button
             onClick={() => onRequestStatusChange(item, targetStatus)}
             disabled={!canToggleStatus || isMutating}
@@ -351,6 +379,14 @@ function CourseProductRow({
           >
             <StatusIcon className="h-3.5 w-3.5" />
             {item.status === "published" ? "下架" : "上架"}
+          </button>
+          <button
+            onClick={() => onEditInfo(item)}
+            disabled={isMutating}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <Edit3 className="h-3.5 w-3.5" />
+            编辑
           </button>
           <button
             onClick={() => onEditPrice(item)}
@@ -385,6 +421,16 @@ export default function CourseProducts() {
   const [mutatingProductId, setMutatingProductId] = useState<string>();
   const [statusAction, setStatusAction] = useState<StatusActionState>();
   const [statusReason, setStatusReason] = useState("");
+  const [infoEditor, setInfoEditor] = useState<CourseProductListItem>();
+  const [infoForm, setInfoForm] = useState<BasicInfoFormState>({
+    title: "",
+    coverUrl: "",
+    category: COURSE_CATEGORIES[0],
+    type: COURSE_TYPES[0],
+    instructorName: "",
+    learners: "0",
+    reason: "",
+  });
   const [priceEditor, setPriceEditor] = useState<CourseProductListItem>();
   const [priceForm, setPriceForm] = useState<PriceFormState>({
     amount: "",
@@ -412,6 +458,21 @@ export default function CourseProducts() {
     if (isAuthSyncing || !isLoggedIn || !canManageCourses) return;
     void loadProducts();
   }, [canManageCourses, isAuthSyncing, isLoggedIn, loadProducts]);
+
+  const openInfoEditor = useCallback((item: CourseProductListItem) => {
+    setActionError(undefined);
+    setActionMessage(undefined);
+    setInfoEditor(item);
+    setInfoForm({
+      title: item.title,
+      coverUrl: item.coverUrl,
+      category: item.category,
+      type: item.type,
+      instructorName: item.instructorName,
+      learners: String(item.learners),
+      reason: "",
+    });
+  }, []);
 
   const openPriceEditor = useCallback((item: CourseProductListItem) => {
     setActionError(undefined);
@@ -464,6 +525,46 @@ export default function CourseProducts() {
       setMutatingProductId(undefined);
     }
   }, [loadProducts, statusAction, statusReason]);
+
+  const submitBasicInfoUpdate = useCallback(async () => {
+    if (!infoEditor) return;
+
+    const learners = Number(infoForm.learners);
+    if (!Number.isInteger(learners) || learners < 0) {
+      setActionError("请填写有效的学习人数");
+      return;
+    }
+
+    const request: CourseProductBasicInfoUpdateRequest = {
+      title: infoForm.title,
+      coverUrl: infoForm.coverUrl,
+      category: infoForm.category,
+      type: infoForm.type,
+      instructorName: infoForm.instructorName,
+      learners,
+      reason: infoForm.reason,
+    };
+
+    setMutatingProductId(infoEditor.id);
+    setActionError(undefined);
+    setActionMessage(undefined);
+
+    try {
+      await httpCourseProductRepository.updateCourseProductBasicInfo(
+        infoEditor.id,
+        request
+      );
+      setActionMessage(`${infoEditor.title} 基础信息已更新`);
+      setInfoEditor(undefined);
+      await loadProducts();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "课程商品基础信息更新失败"
+      );
+    } finally {
+      setMutatingProductId(undefined);
+    }
+  }, [infoEditor, infoForm, loadProducts]);
 
   const submitPriceUpdate = useCallback(async () => {
     if (!priceEditor) return;
@@ -530,7 +631,7 @@ export default function CourseProducts() {
             商品列表与状态
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            统一管理课程商品的状态、价格和审计记录，已联动前台发布可见性，支持搜索、分类、排序和分页核对。
+            统一管理课程商品的基础信息、状态、价格和审计记录，已联动前台发布可见性，支持搜索、分类、排序和分页核对。
           </p>
         </div>
         <button
@@ -683,7 +784,7 @@ export default function CourseProducts() {
         ) : items.length ? (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1120px] text-left">
+              <table className="w-full min-w-[1200px] text-left">
                 <thead className="bg-[#F8F3EA] text-xs text-[#8A8176]">
                   <tr>
                     <th className="px-5 py-3 font-semibold">商品</th>
@@ -702,6 +803,7 @@ export default function CourseProducts() {
                       item={item}
                       index={index}
                       isMutating={Boolean(mutatingProductId)}
+                      onEditInfo={openInfoEditor}
                       onEditPrice={openPriceEditor}
                       onRequestStatusChange={openStatusAction}
                     />
@@ -816,6 +918,172 @@ export default function CourseProducts() {
                 )}
                 确认
                 {statusAction.targetStatus === "published" ? "上架" : "下架"}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {infoEditor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="w-full max-w-[680px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-[#8A8176]">基础信息</p>
+                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                  {infoEditor.title}
+                </h2>
+              </div>
+              <button
+                onClick={() => setInfoEditor(undefined)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-semibold text-[#41524B]">
+                课程标题
+                <input
+                  value={infoForm.title}
+                  onChange={event =>
+                    setInfoForm(current => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
+                  }
+                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                />
+              </label>
+              <label className="text-sm font-semibold text-[#41524B]">
+                讲师
+                <input
+                  value={infoForm.instructorName}
+                  onChange={event =>
+                    setInfoForm(current => ({
+                      ...current,
+                      instructorName: event.target.value,
+                    }))
+                  }
+                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                />
+              </label>
+            </div>
+
+            <label className="mt-4 block text-sm font-semibold text-[#41524B]">
+              封面地址
+              <input
+                value={infoForm.coverUrl}
+                onChange={event =>
+                  setInfoForm(current => ({
+                    ...current,
+                    coverUrl: event.target.value,
+                  }))
+                }
+                className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+              />
+            </label>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <label className="text-sm font-semibold text-[#41524B]">
+                分类
+                <select
+                  value={infoForm.category}
+                  onChange={event =>
+                    setInfoForm(current => ({
+                      ...current,
+                      category: event.target.value as CourseCategory,
+                    }))
+                  }
+                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                >
+                  {COURSE_CATEGORIES.map(category => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-semibold text-[#41524B]">
+                类型
+                <select
+                  value={infoForm.type}
+                  onChange={event =>
+                    setInfoForm(current => ({
+                      ...current,
+                      type: event.target.value as CourseType,
+                    }))
+                  }
+                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                >
+                  {COURSE_TYPES.map(type => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-semibold text-[#41524B]">
+                学习人数
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={infoForm.learners}
+                  onChange={event =>
+                    setInfoForm(current => ({
+                      ...current,
+                      learners: event.target.value,
+                    }))
+                  }
+                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                />
+              </label>
+            </div>
+
+            <label className="mt-4 block text-sm font-semibold text-[#41524B]">
+              更新原因
+              <textarea
+                value={infoForm.reason}
+                onChange={event =>
+                  setInfoForm(current => ({
+                    ...current,
+                    reason: event.target.value,
+                  }))
+                }
+                placeholder="例如：课程封面和讲师信息完成校对"
+                className="mt-2 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+              />
+            </label>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setInfoEditor(undefined)}
+                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void submitBasicInfoUpdate()}
+                disabled={
+                  infoForm.title.trim().length < 2 ||
+                  infoForm.instructorName.trim().length < 1 ||
+                  infoForm.reason.trim().length < 4 ||
+                  Boolean(mutatingProductId)
+                }
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {mutatingProductId ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Edit3 className="h-4 w-4" />
+                )}
+                保存信息
               </button>
             </div>
           </motion.div>

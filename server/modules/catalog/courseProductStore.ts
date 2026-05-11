@@ -16,10 +16,13 @@ import {
   type CourseProductListResult,
   type CourseProductListSummary,
   type CourseProductMutationResult,
+  type CourseProductBasicInfoUpdateRequest,
   type CourseProductPriceUpdateRequest,
   type CourseProductStatusUpdateRequest,
 } from "../../../shared/domain";
 import { courses as seedCourses } from "../../../shared/data/mockCourses";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
+import { PostgresCourseProductStore } from "./postgresCourseProductStore";
 
 const CourseProductStoreFileSchema = z.object({
   version: z.literal(1),
@@ -177,6 +180,16 @@ export function createDefaultCourseProductStore(): CourseProductStore {
     process.env.HONGBOSHI_COURSE_PRODUCT_STORE === "memory"
   ) {
     return new InMemoryCourseProductStore();
+  }
+
+  if (
+    process.env.HONGBOSHI_COURSE_PRODUCT_STORE === "postgres" ||
+    (process.env.HONGBOSHI_COURSE_PRODUCT_STORE !== "file" && getDatabaseUrl())
+  ) {
+    return new PostgresCourseProductStore(
+      getSharedPostgresPool(),
+      seedProducts
+    );
   }
 
   return new JsonFileCourseProductStore();
@@ -397,6 +410,61 @@ export async function updateCourseProductPrice({
   });
 }
 
+export async function updateCourseProductBasicInfo({
+  productId,
+  request,
+  actorId,
+  store = getCourseProductStore(),
+  now = new Date().toISOString(),
+}: {
+  productId: string;
+  request: CourseProductBasicInfoUpdateRequest;
+  actorId: string;
+  store?: CourseProductStore;
+  now?: string;
+}): Promise<CourseProductMutationResult> {
+  const current = await store.getProduct(productId);
+  if (!current) throw new Error("COURSE_PRODUCT_NOT_FOUND");
+
+  const next = CourseProductListItemSchema.parse({
+    ...current,
+    title: request.title,
+    coverUrl: request.coverUrl,
+    category: request.category,
+    type: request.type,
+    instructorName: request.instructorName,
+    learners: request.learners,
+    updatedAt: now,
+  });
+  const before = pickBasicInfoAuditFields(current);
+  const after = pickBasicInfoAuditFields(next);
+
+  if (JSON.stringify(before) === JSON.stringify(after)) {
+    throw new Error("COURSE_PRODUCT_INFO_UNCHANGED");
+  }
+
+  const auditEvent = CourseProductAuditEventSchema.parse({
+    id: createAuditEventId("info", productId, now),
+    productId,
+    productTitle: next.title,
+    actorId,
+    action: "info_update",
+    reason: request.reason,
+    before,
+    after,
+    createdAt: now,
+  });
+
+  const saved = await store.saveProduct(next);
+  const savedEvent = await store.appendAuditEvent(auditEvent);
+
+  return CourseProductMutationResultSchema.parse({
+    product: saved,
+    auditEvent: savedEvent,
+    auditEvents: await store.listAuditEvents(productId),
+  });
+}
+
 export function summarizeCourseProducts(
   products: CourseProductListItem[]
 ): CourseProductListSummary {
@@ -500,11 +568,22 @@ function assertStatusTransitionAllowed(
 }
 
 function createAuditEventId(
-  action: "price" | "status",
+  action: "info" | "price" | "status",
   productId: string,
   now: string
 ) {
   return `audit_${action}_${productId}_${Date.parse(now) || Date.now()}`;
+}
+
+function pickBasicInfoAuditFields(product: CourseProductListItem) {
+  return {
+    title: product.title,
+    coverUrl: product.coverUrl,
+    category: product.category,
+    type: product.type,
+    instructorName: product.instructorName,
+    learners: product.learners,
+  };
 }
 
 function emptyCourseProductStoreFile(): CourseProductStoreFile {
