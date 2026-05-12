@@ -16,6 +16,8 @@ import {
   markOrderPaid,
   markOrderRefunded,
   PaymentReconciliationConsoleSchema,
+  TransactionAdminDetailSchema,
+  TransactionAdminListResultSchema,
   requestOrderRefund,
   upsertCourseAccessOrder,
   UserProfileSchema,
@@ -110,16 +112,19 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["member"] }, "user:membership")).toBe(false);
     expect(userCan({ roles: ["member"] }, "order:read")).toBe(false);
     expect(userCan({ roles: ["member"] }, "order:operate")).toBe(false);
+    expect(userCan({ roles: ["member"] }, "transaction:read")).toBe(false);
     expect(userCan({ roles: ["operator"] }, "user:read")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "user:membership")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "order:read")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "order:operate")).toBe(true);
+    expect(userCan({ roles: ["operator"] }, "transaction:read")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "admin:manage")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "catalog:publish")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "user:read")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "user:membership")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "order:read")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "order:operate")).toBe(true);
+    expect(userCan({ roles: ["admin"] }, "transaction:read")).toBe(true);
   });
 
   it("captures consent records in login sessions", () => {
@@ -282,6 +287,119 @@ describe("domain contracts", () => {
           criticalCount: 0,
         },
         serverTime: "2026-05-10T08:11:00.000Z",
+      }).success
+    ).toBe(true);
+  });
+
+  it("validates transaction admin list and detail snapshots", () => {
+    const transaction = {
+      id: "evt_payment_1",
+      type: "payment",
+      eventType: "payment.succeeded",
+      orderId: "order_counseling_appointment_1",
+      channel: "manual",
+      status: "processed",
+      amount: 399,
+      transactionId: "tx_1",
+      occurredAt: "2026-05-10T08:10:00.000Z",
+      receivedAt: "2026-05-10T08:10:01.000Z",
+      processedAt: "2026-05-10T08:10:02.000Z",
+      responseStatus: 200,
+      user: {
+        id: "user_1",
+        displayName: "测试用户",
+        phoneMasked: "138****2049",
+      },
+      relatedOrder: {
+        id: "order_counseling_appointment_1",
+        status: "paid",
+        user: {
+          id: "user_1",
+          displayName: "测试用户",
+          phoneMasked: "138****2049",
+        },
+        itemTypes: ["counseling_session"],
+        primaryTitle: "林若安 咨询服务",
+        payableAmount: 399,
+        paidAt: "2026-05-10T08:10:00.000Z",
+      },
+      businessObjects: [
+        {
+          domain: "counseling",
+          type: "counseling_session",
+          targetId: "appointment_1",
+          title: "林若安 咨询服务",
+          status: "scheduled",
+          counselorName: "林若安",
+        },
+      ],
+      itemTypes: ["counseling_session"],
+      primaryTitle: "林若安 咨询服务",
+      severity: "ok",
+      issues: [],
+    };
+
+    expect(
+      TransactionAdminListResultSchema.safeParse({
+        items: [transaction],
+        meta: {
+          page: 1,
+          pageSize: 12,
+          total: 1,
+          totalPages: 1,
+        },
+        summary: {
+          totalCount: 1,
+          paymentCount: 1,
+          refundCount: 0,
+          processedCount: 1,
+          failedCount: 0,
+          processingCount: 0,
+          warningCount: 0,
+          criticalCount: 0,
+          grossPaymentAmount: 399,
+          refundAmount: 0,
+          netAmount: 399,
+        },
+        filters: {
+          types: ["payment"],
+          channels: ["manual"],
+          statuses: ["processed"],
+          itemTypes: ["counseling_session"],
+        },
+        query: {},
+        serverTime: "2026-05-10T08:11:00.000Z",
+      }).success
+    ).toBe(true);
+
+    expect(
+      TransactionAdminDetailSchema.safeParse({
+        transaction,
+        relatedOrder: transaction.relatedOrder,
+        businessObjects: transaction.businessObjects,
+        timeline: [
+          {
+            type: "webhook_received",
+            label: "回调收据进入系统",
+            occurredAt: "2026-05-10T08:10:01.000Z",
+            detail: "manual · processed",
+          },
+        ],
+        receipt: {
+          id: "evt_payment_1",
+          type: "payment.succeeded",
+          orderId: "order_counseling_appointment_1",
+          channel: "manual",
+          status: "processed",
+          amount: 399,
+          transactionId: "tx_1",
+          occurredAt: "2026-05-10T08:10:00.000Z",
+          receivedAt: "2026-05-10T08:10:01.000Z",
+          processedAt: "2026-05-10T08:10:02.000Z",
+          responseStatus: 200,
+        },
+        privacyNotice: "交易后台仅展示对账和履约排障必要信息。",
+        generatedAt: "2026-05-10T08:11:00.000Z",
       }).success
     ).toBe(true);
   });

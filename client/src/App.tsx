@@ -18,6 +18,7 @@ import Home from "./pages/Home";
 import MyCourses from "./pages/MyCourses";
 import OrderManagement from "./pages/admin/OrderManagement";
 import PaymentReconciliation from "./pages/PaymentReconciliation";
+import TransactionManagement from "./pages/admin/TransactionManagement";
 import UserMembers from "./pages/admin/UserMembers";
 
 function Router() {
@@ -50,6 +51,11 @@ function Router() {
       <Route path={"/admin/orders"}>
         <AdminLayout>
           <OrderManagement />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/transactions"}>
+        <AdminLayout>
+          <TransactionManagement />
         </AdminLayout>
       </Route>
       <Route path={"/admin"}>

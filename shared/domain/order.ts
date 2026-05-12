@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   DateTimeLikeSchema,
   EntityIdSchema,
+  ISODateSchema,
   MoneyAmountSchema,
   PageMetaSchema,
   PaginationQuerySchema,
@@ -257,6 +258,192 @@ export const OrderAdminExceptionFlagSchema = z.object({
   markedAt: DateTimeLikeSchema,
   clearedBy: EntityIdSchema.optional(),
   clearedAt: DateTimeLikeSchema.optional(),
+});
+
+export const TRANSACTION_ADMIN_PAGE_SIZE = 12;
+export const ALL_TRANSACTION_ADMIN_TYPE = "all";
+export const ALL_TRANSACTION_ADMIN_CHANNEL = "all";
+export const ALL_TRANSACTION_ADMIN_STATUS = "all";
+export const ALL_TRANSACTION_ADMIN_ITEM_TYPE = "all";
+
+export const TransactionAdminFlowTypeSchema = z.enum(["payment", "refund"]);
+
+export const TransactionAdminFlowTypeFilterSchema = z.union([
+  TransactionAdminFlowTypeSchema,
+  z.literal(ALL_TRANSACTION_ADMIN_TYPE),
+]);
+
+export const TransactionAdminChannelFilterSchema = z.union([
+  PaymentChannelSchema,
+  z.literal(ALL_TRANSACTION_ADMIN_CHANNEL),
+]);
+
+export const TransactionAdminStatusFilterSchema = z.union([
+  PaymentWebhookReceiptStatusSchema,
+  z.literal(ALL_TRANSACTION_ADMIN_STATUS),
+]);
+
+export const TransactionAdminItemTypeFilterSchema = z.union([
+  PurchasableTypeSchema,
+  z.literal(ALL_TRANSACTION_ADMIN_ITEM_TYPE),
+]);
+
+export const TransactionAdminSortSchema = z.enum([
+  "occurred_desc",
+  "received_desc",
+  "amount_desc",
+]);
+
+export const TransactionAdminListQuerySchema = PaginationQuerySchema.extend({
+  keyword: z.string().trim().max(80).default(""),
+  type: TransactionAdminFlowTypeFilterSchema.default(
+    ALL_TRANSACTION_ADMIN_TYPE
+  ),
+  channel: TransactionAdminChannelFilterSchema.default(
+    ALL_TRANSACTION_ADMIN_CHANNEL
+  ),
+  status: TransactionAdminStatusFilterSchema.default(
+    ALL_TRANSACTION_ADMIN_STATUS
+  ),
+  itemType: TransactionAdminItemTypeFilterSchema.default(
+    ALL_TRANSACTION_ADMIN_ITEM_TYPE
+  ),
+  fromDate: ISODateSchema.optional(),
+  toDate: ISODateSchema.optional(),
+  sort: TransactionAdminSortSchema.default("occurred_desc"),
+  pageSize: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(TRANSACTION_ADMIN_PAGE_SIZE),
+});
+
+export const TransactionAdminBusinessDomainSchema = z.enum([
+  "course_access",
+  "counseling",
+]);
+
+export const TransactionAdminBusinessObjectSchema = z.object({
+  domain: TransactionAdminBusinessDomainSchema,
+  type: PurchasableTypeSchema,
+  targetId: z.string().min(1),
+  title: z.string().min(1),
+  status: z.string().min(1).optional(),
+  counselorName: z.string().min(1).optional(),
+});
+
+export const TransactionAdminRelatedOrderSchema = z.object({
+  id: EntityIdSchema,
+  status: OrderStatusSchema,
+  user: OrderAdminUserSummarySchema,
+  itemTypes: z.array(PurchasableTypeSchema).min(1),
+  primaryTitle: z.string().min(1),
+  payableAmount: MoneyAmountSchema,
+  paidAt: DateTimeLikeSchema.optional(),
+  exception: OrderAdminExceptionFlagSchema.optional(),
+});
+
+export const TransactionAdminSeveritySchema = z.enum([
+  "ok",
+  "warning",
+  "critical",
+]);
+
+export const TransactionAdminIssueCodeSchema = z.enum([
+  "webhook_processing",
+  "webhook_failed",
+  "order_missing",
+  "order_amount_mismatch",
+  "order_status_not_settled",
+  "refund_order_not_completed",
+  "refund_business_not_completed",
+  "order_exception_open",
+]);
+
+export const TransactionAdminIssueSchema = z.object({
+  code: TransactionAdminIssueCodeSchema,
+  severity: TransactionAdminSeveritySchema.exclude(["ok"]),
+  message: z.string().min(1),
+});
+
+export const TransactionAdminListItemSchema = z.object({
+  id: EntityIdSchema,
+  type: TransactionAdminFlowTypeSchema,
+  eventType: z.enum(["payment.succeeded", "refund.succeeded"]),
+  orderId: EntityIdSchema,
+  channel: PaymentChannelSchema,
+  status: PaymentWebhookReceiptStatusSchema,
+  amount: MoneyAmountSchema,
+  transactionId: z.string().min(1),
+  occurredAt: DateTimeLikeSchema,
+  receivedAt: DateTimeLikeSchema,
+  processedAt: DateTimeLikeSchema.optional(),
+  responseStatus: z.number().int().positive().optional(),
+  errorMessage: z.string().min(1).optional(),
+  user: OrderAdminUserSummarySchema.optional(),
+  relatedOrder: TransactionAdminRelatedOrderSchema.optional(),
+  businessObjects: z.array(TransactionAdminBusinessObjectSchema).default([]),
+  itemTypes: z.array(PurchasableTypeSchema).default([]),
+  primaryTitle: z.string().min(1),
+  severity: TransactionAdminSeveritySchema,
+  issues: z.array(TransactionAdminIssueSchema),
+});
+
+export const TransactionAdminSummarySchema = z.object({
+  totalCount: z.number().int().nonnegative(),
+  paymentCount: z.number().int().nonnegative(),
+  refundCount: z.number().int().nonnegative(),
+  processedCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  processingCount: z.number().int().nonnegative(),
+  warningCount: z.number().int().nonnegative(),
+  criticalCount: z.number().int().nonnegative(),
+  grossPaymentAmount: MoneyAmountSchema,
+  refundAmount: MoneyAmountSchema,
+  netAmount: z.number().finite(),
+});
+
+export const TransactionAdminFilterOptionsSchema = z.object({
+  types: z.array(TransactionAdminFlowTypeSchema),
+  channels: z.array(PaymentChannelSchema),
+  statuses: z.array(PaymentWebhookReceiptStatusSchema),
+  itemTypes: z.array(PurchasableTypeSchema),
+});
+
+export const TransactionAdminListResultSchema = z.object({
+  items: z.array(TransactionAdminListItemSchema),
+  meta: PageMetaSchema,
+  summary: TransactionAdminSummarySchema,
+  filters: TransactionAdminFilterOptionsSchema,
+  query: TransactionAdminListQuerySchema,
+  serverTime: DateTimeLikeSchema,
+});
+
+export const TransactionAdminTimelineEventTypeSchema = z.enum([
+  "webhook_received",
+  "webhook_processed",
+  "webhook_failed",
+  "order_status",
+  "business_status",
+  "order_exception",
+]);
+
+export const TransactionAdminTimelineEventSchema = z.object({
+  type: TransactionAdminTimelineEventTypeSchema,
+  label: z.string().min(1),
+  occurredAt: DateTimeLikeSchema,
+  detail: z.string().min(1).optional(),
+});
+
+export const TransactionAdminDetailSchema = z.object({
+  transaction: TransactionAdminListItemSchema,
+  relatedOrder: TransactionAdminRelatedOrderSchema.optional(),
+  businessObjects: z.array(TransactionAdminBusinessObjectSchema),
+  timeline: z.array(TransactionAdminTimelineEventSchema),
+  receipt: PaymentWebhookReceiptSnapshotSchema,
+  privacyNotice: z.string().min(1),
+  generatedAt: DateTimeLikeSchema,
 });
 
 export const OrderAdminActionSchema = z.enum([
@@ -651,6 +838,63 @@ export type OrderAdminExceptionSeverity = z.infer<
 >;
 export type OrderAdminExceptionFlag = z.infer<
   typeof OrderAdminExceptionFlagSchema
+>;
+export type TransactionAdminFlowType = z.infer<
+  typeof TransactionAdminFlowTypeSchema
+>;
+export type TransactionAdminFlowTypeFilter = z.infer<
+  typeof TransactionAdminFlowTypeFilterSchema
+>;
+export type TransactionAdminChannelFilter = z.infer<
+  typeof TransactionAdminChannelFilterSchema
+>;
+export type TransactionAdminStatusFilter = z.infer<
+  typeof TransactionAdminStatusFilterSchema
+>;
+export type TransactionAdminItemTypeFilter = z.infer<
+  typeof TransactionAdminItemTypeFilterSchema
+>;
+export type TransactionAdminListQuery = z.infer<
+  typeof TransactionAdminListQuerySchema
+>;
+export type TransactionAdminBusinessDomain = z.infer<
+  typeof TransactionAdminBusinessDomainSchema
+>;
+export type TransactionAdminBusinessObject = z.infer<
+  typeof TransactionAdminBusinessObjectSchema
+>;
+export type TransactionAdminRelatedOrder = z.infer<
+  typeof TransactionAdminRelatedOrderSchema
+>;
+export type TransactionAdminSeverity = z.infer<
+  typeof TransactionAdminSeveritySchema
+>;
+export type TransactionAdminIssueCode = z.infer<
+  typeof TransactionAdminIssueCodeSchema
+>;
+export type TransactionAdminIssue = z.infer<
+  typeof TransactionAdminIssueSchema
+>;
+export type TransactionAdminListItem = z.infer<
+  typeof TransactionAdminListItemSchema
+>;
+export type TransactionAdminSummary = z.infer<
+  typeof TransactionAdminSummarySchema
+>;
+export type TransactionAdminFilterOptions = z.infer<
+  typeof TransactionAdminFilterOptionsSchema
+>;
+export type TransactionAdminListResult = z.infer<
+  typeof TransactionAdminListResultSchema
+>;
+export type TransactionAdminTimelineEventType = z.infer<
+  typeof TransactionAdminTimelineEventTypeSchema
+>;
+export type TransactionAdminTimelineEvent = z.infer<
+  typeof TransactionAdminTimelineEventSchema
+>;
+export type TransactionAdminDetail = z.infer<
+  typeof TransactionAdminDetailSchema
 >;
 export type OrderAdminAction = z.infer<typeof OrderAdminActionSchema>;
 export type OrderAdminActionRequest = z.infer<

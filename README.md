@@ -1,6 +1,6 @@
 # 红博士心理小讲堂
 
-心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估、咨询预约入口和运营管理后台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、成长档案聚合、测评推荐基础链路、咨询预约雏形、课程商品后台列表、用户会员后台、统一订单后台、会员权益操作审计、订单操作审计、资源级权限、上下架、改价、基础信息编辑、内容审核流、详情内容管理、内容质量校验、审计记录、前台课程发布联动和 PostgreSQL Store。
+心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估、咨询预约入口和运营管理后台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、成长档案聚合、测评推荐基础链路、咨询预约雏形、课程商品后台列表、用户会员后台、统一订单后台、交易流水只读台、会员权益操作审计、订单操作审计、资源级权限、上下架、改价、基础信息编辑、内容审核流、详情内容管理、内容质量校验、审计记录、前台课程发布联动和 PostgreSQL Store。
 
 ## 技术栈
 
@@ -131,11 +131,12 @@ pnpm db:migrate
 - 课程商品后台位于 `client/src/pages/admin/CourseProducts.tsx`，通过 `/admin/courses` 展示课程商品、价格、状态、审核状态、筛选、分页、基础信息编辑、详情内容编辑、审核动作、上下架、改价、素材资料占位和最近审计
 - 用户会员后台位于 `client/src/pages/admin/UserMembers.tsx`，通过 `/admin/users` 展示账号摘要、角色、会员状态、课程权益、订单摘要、咨询预约摘要、风险提示和会员操作审计；具备 `user:membership` 权限的后台账号可执行开通、延期、标记到期和调整计划，手机号、咨询说明、测评答案和风险信号原文保持最小化展示
 - 订单管理后台位于 `client/src/pages/admin/OrderManagement.tsx`，通过 `/admin/orders` 展示课程、会员和咨询订单列表、筛选、详情、支付回调摘要、关联履约对象、状态时间线、待支付订单关闭、异常标记和订单操作审计
+- 交易退款后台位于 `client/src/pages/admin/TransactionManagement.tsx`，通过 `/admin/transactions` 展示支付流水、退款流水、渠道回调状态、关联订单、业务对象和异常摘要；当前阶段只读，不发起退款或渠道补偿动作
 - 咨询运营配置位于 `client/src/pages/CounselingOperations.tsx`，通过 `/admin/counseling` 配置取消规则并查看履约审计
 - 支付对账位于 `client/src/pages/PaymentReconciliation.tsx`，通过 `/admin/payments` 对比支付回调收据、业务订单和咨询预约状态
 - 小程序端预览位于 `client/src/components/MobileView.tsx`
 - 登录状态由 `/api/auth/session`、`/api/auth/login/phone`、`/api/auth/login/wechat` 和 `AuthContext` 共同管理，服务端会话可切换到 PostgreSQL
-- 课程目录、课程详情、课程权益、后台课程商品、后台用户会员、后台订单、快速测评、咨询预约和成长档案分别由 `/api/courses`、`/api/course-access`、`/api/catalog/admin/course-products`、`/api/users/admin/users`、`/api/users/admin/users/:userId/membership`、`/api/orders/admin/orders`、`/api/assessments/quick`、`/api/counseling/availability`、`/api/counseling/appointments` 和 `/api/growth/profile` 提供；`/api/courses` 已联动课程商品发布状态、审核状态、价格、会员权益和详情内容
+- 课程目录、课程详情、课程权益、后台课程商品、后台用户会员、后台订单、后台交易流水、快速测评、咨询预约和成长档案分别由 `/api/courses`、`/api/course-access`、`/api/catalog/admin/course-products`、`/api/users/admin/users`、`/api/users/admin/users/:userId/membership`、`/api/orders/admin/orders`、`/api/transactions/admin/transactions`、`/api/assessments/quick`、`/api/counseling/availability`、`/api/counseling/appointments` 和 `/api/growth/profile` 提供；`/api/courses` 已联动课程商品发布状态、审核状态、价格、会员权益和详情内容
 - 课程权益和会员操作审计开发期默认写入 `.hongboshi-data/course-access.json`，也可通过 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 切到 PostgreSQL
 - 课程商品开发期默认写入 `.hongboshi-data/course-products.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_STORE=memory` 临时切回内存，或通过 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 写入 PostgreSQL
 - 课程商品详情内容开发期默认写入 `.hongboshi-data/course-product-content.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 临时切回内存，或通过 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 写入 PostgreSQL；后台会展示批量内容校验状态，提交审核前会拦截摘要、适合人群、章节、时长和素材占位等硬性问题，并已为素材资料 ID、资料地址、下载开关和合规审核状态预留字段
@@ -152,15 +153,16 @@ pnpm db:migrate
 - 课程商品后台使用资源级权限控制：`catalog:read` 可查看列表、详情和内容校验；`catalog:edit` 可编辑基础信息和详情内容；`catalog:review` 可执行审核动作；`catalog:publish` 可上下架；`catalog:price` 可改价。`catalog_viewer` 是课程商品只读角色，`catalog_operator` 是课程商品运营角色，现有 `operator` 和 `admin` 仍具备课程商品完整操作能力
 - 用户会员后台使用 `user:read` 权限控制列表和详情聚合，使用 `user:membership` 权限控制会员开通、延期、到期标记和计划调整；当前由 `operator` 与 `admin` 拥有，详情不返回咨询说明、测评答案和风险信号原文
 - 订单管理后台使用 `order:read` 权限控制课程、会员和咨询订单的列表与详情聚合，使用 `order:operate` 权限控制关闭待支付订单、标记异常和解除异常；当前由 `operator` 与 `admin` 拥有，详情只展示履约和对账所需摘要，操作必须填写原因并写入审计
+- 交易退款后台使用 `transaction:read` 权限控制支付/退款流水的列表与详情聚合；当前由 `operator` 与 `admin` 拥有，详情只展示对账、履约排障和客服核查所需摘要，本阶段不提供退款申请、订单退款状态修改或真实渠道补偿动作
 - 生产构建后由 `server/index.ts` 托管 `dist/public`
 
 ## 后续二开建议
 
 1. 接入真实短信/微信登录服务，并替换当前 mock 登录凭证校验。
 2. 引入 Prisma 或 Drizzle 管理迁移、事务和类型安全查询。
-3. 完善交易流水和退款管理台，区分支付流水、退款流水、异常处理和财务口径。
+3. 建立退款申请、支付异常处理工单和交易操作审计，把订单异常、回调异常和退款异常串联到统一处理流程。
 4. 接入真实支付渠道、退款通道和支付对账异常处理动作。
-5. 建立支付对账异常处理工单，把订单异常、回调异常和退款异常串联到统一处理流程。
+5. 建立财务管理台，沉淀收入、退款、实收口径和导出基础。
 6. 建立风险人工复核台，承接高风险测评和咨询前信息。
 7. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
 8. 引入 ESLint 或统一的代码质量检查规则。

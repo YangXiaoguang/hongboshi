@@ -15,6 +15,7 @@ import {
 import {
   COURSE_CATALOG_PERMISSIONS,
   ORDER_ADMIN_PERMISSIONS,
+  TRANSACTION_ADMIN_PERMISSIONS,
   USER_ADMIN_PERMISSIONS,
   type AuthPermission,
   type UserProfile,
@@ -111,11 +112,11 @@ export const adminNavigationItems = [
   {
     key: "transactions",
     title: "交易退款",
-    description: "支付流水、退款申请、渠道回调和异常处理。",
+    description: "支付/退款流水、回调状态和关联订单追踪。",
     href: "/admin/transactions",
     icon: CreditCard,
-    permission: "admin:manage",
-    status: "planned",
+    permission: TRANSACTION_ADMIN_PERMISSIONS.read,
+    status: "available",
     group: "business",
     milestone: "M5-A",
   },
