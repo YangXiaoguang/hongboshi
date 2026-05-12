@@ -118,6 +118,10 @@ export function loadCourseAccessState(userId = LOCAL_COURSE_ACCESS_USER_ID) {
   return Promise.resolve(courseAccessStore.load(userId));
 }
 
+export function listCourseAccessUserStates() {
+  return Promise.resolve(courseAccessStore.listUserStates());
+}
+
 export function saveCourseAccessState(
   userId: string,
   state: CourseAccessState

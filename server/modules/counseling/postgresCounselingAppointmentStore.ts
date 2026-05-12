@@ -379,6 +379,31 @@ export class PostgresCounselingAppointmentStore {
     return result.rows.map(counselingAppointmentRowToDomain);
   }
 
+  async listAppointments(): Promise<CounselingAppointment[]> {
+    const result = await this.db.query<CounselingAppointmentRow>(
+      `
+        SELECT
+          id,
+          user_id,
+          counselor_id,
+          slot_id,
+          order_id,
+          channel,
+          status,
+          concern_tags,
+          note_for_counselor,
+          assessment_report_id,
+          risk_event_id,
+          created_at,
+          updated_at
+        FROM counseling_appointments
+        ORDER BY created_at DESC
+      `
+    );
+
+    return result.rows.map(counselingAppointmentRowToDomain);
+  }
+
   async listAppointmentsByCounselor(
     counselorId: string
   ): Promise<CounselingAppointment[]> {

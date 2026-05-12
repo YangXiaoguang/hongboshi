@@ -21,6 +21,7 @@ type CourseAccessStoreFile = z.infer<typeof CourseAccessStoreFileSchema>;
 
 export interface CourseAccessStore {
   load(userId: string): MaybePromise<CourseAccessState>;
+  listUserStates(): MaybePromise<Array<{ userId: string; state: CourseAccessState }>>;
   save(
     userId: string,
     state: CourseAccessState
@@ -63,6 +64,13 @@ export class InMemoryCourseAccessStore implements CourseAccessStore {
     return state ? cloneState(state) : createEmptyCourseAccessState();
   }
 
+  listUserStates(): Array<{ userId: string; state: CourseAccessState }> {
+    return Array.from(this.states.entries()).map(([userId, state]) => ({
+      userId,
+      state: cloneState(state),
+    }));
+  }
+
   save(userId: string, state: CourseAccessState): CourseAccessState {
     const normalized = normalizeCourseAccessState(state);
     this.states.set(userId, cloneState(normalized));
@@ -85,6 +93,14 @@ export class JsonFileCourseAccessStore implements CourseAccessStore {
     const file = this.readFile();
     const state = file.users[userId];
     return state ? cloneState(state) : createEmptyCourseAccessState();
+  }
+
+  listUserStates(): Array<{ userId: string; state: CourseAccessState }> {
+    const file = this.readFile();
+    return Object.entries(file.users).map(([userId, state]) => ({
+      userId,
+      state: cloneState(state),
+    }));
   }
 
   save(userId: string, state: CourseAccessState): CourseAccessState {

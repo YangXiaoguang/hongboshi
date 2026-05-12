@@ -1,8 +1,10 @@
 import {
   LoginSessionSchema,
   UserConsentSchema,
+  UserProfileSchema,
   type LoginSession,
   type UserConsent,
+  type UserProfile,
 } from "../../../shared/domain";
 import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
 import { PostgresAuthSessionStore } from "./postgresAuthSessionStore";
@@ -15,6 +17,7 @@ export interface AuthSessionStore {
   destroySession(token: string): MaybePromise<void>;
   reset(): MaybePromise<void>;
   getUserConsents(userId: string): MaybePromise<UserConsent[]>;
+  listUsers(): MaybePromise<UserProfile[]>;
 }
 
 function cloneSession(session: LoginSession): LoginSession {
@@ -25,13 +28,19 @@ function cloneConsent(consent: UserConsent): UserConsent {
   return UserConsentSchema.parse(JSON.parse(JSON.stringify(consent)));
 }
 
+function cloneUser(user: UserProfile): UserProfile {
+  return UserProfileSchema.parse(JSON.parse(JSON.stringify(user)));
+}
+
 export class InMemoryAuthSessionStore implements AuthSessionStore {
   private sessions = new Map<string, LoginSession>();
   private consents = new Map<string, UserConsent[]>();
+  private users = new Map<string, UserProfile>();
 
   saveSession(token: string, session: LoginSession): void {
     const normalized = LoginSessionSchema.parse(session);
     this.sessions.set(token, cloneSession(normalized));
+    this.users.set(normalized.user.id, cloneUser(normalized.user));
     this.consents.set(
       normalized.user.id,
       normalized.consents.map(cloneConsent)
@@ -50,10 +59,17 @@ export class InMemoryAuthSessionStore implements AuthSessionStore {
   reset(): void {
     this.sessions.clear();
     this.consents.clear();
+    this.users.clear();
   }
 
   getUserConsents(userId: string): UserConsent[] {
     return (this.consents.get(userId) ?? []).map(cloneConsent);
+  }
+
+  listUsers(): UserProfile[] {
+    return Array.from(this.users.values())
+      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+      .map(cloneUser);
   }
 }
 

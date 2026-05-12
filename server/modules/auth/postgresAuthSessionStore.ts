@@ -262,4 +262,42 @@ export class PostgresAuthSessionStore {
 
     return result.rows.map(consentRowToDomain);
   }
+
+  async listUsers(): Promise<UserProfile[]> {
+    const [users, roles] = await Promise.all([
+      this.db.query<UserRow>(
+        `
+          SELECT
+            id,
+            display_name,
+            phone_masked,
+            avatar_url,
+            is_minor,
+            created_at,
+            updated_at
+          FROM users
+          ORDER BY updated_at DESC, created_at DESC
+        `
+      ),
+      this.db.query<{ user_id: string; role: UserRole }>(
+        `
+          SELECT user_id, role
+          FROM user_roles
+          ORDER BY role ASC
+        `
+      ),
+    ]);
+
+    const rolesByUserId = new Map<string, UserRole[]>();
+    for (const role of roles.rows) {
+      rolesByUserId.set(role.user_id, [
+        ...(rolesByUserId.get(role.user_id) ?? []),
+        role.role,
+      ]);
+    }
+
+    return users.rows.map(row =>
+      userRowToProfile(row, rolesByUserId.get(row.id) ?? ["visitor"])
+    );
+  }
 }

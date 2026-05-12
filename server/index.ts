@@ -14,6 +14,7 @@ import {
   capturePaymentWebhookRawBody,
   registerPaymentApi,
 } from "./modules/payments/paymentApi";
+import { registerUserAdminApi } from "./modules/users/userAdminApi";
 import { assertPersistenceConfig } from "./db/runtimeConfig";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,6 +35,7 @@ async function startServer() {
   registerCourseApi(app);
   registerGrowthProfileApi(app);
   registerPaymentApi(app);
+  registerUserAdminApi(app);
 
   // Serve static files from dist/public in production
   const staticPath =

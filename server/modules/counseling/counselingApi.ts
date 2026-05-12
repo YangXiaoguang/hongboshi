@@ -998,6 +998,14 @@ export async function listCounselingAppointmentRecords(
   );
 }
 
+export async function listCounselingAppointmentUserIds(
+  now = new Date().toISOString()
+) {
+  await expireOverdueCounselingPayments(now);
+  const appointments = await counselingAppointmentStore.listAppointments();
+  return Array.from(new Set(appointments.map(appointment => appointment.userId)));
+}
+
 export async function listCounselingAppointmentsPayload(
   userId?: string,
   now = new Date().toISOString()

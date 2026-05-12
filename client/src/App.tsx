@@ -17,6 +17,7 @@ import CourseProducts from "./pages/admin/CourseProducts";
 import Home from "./pages/Home";
 import MyCourses from "./pages/MyCourses";
 import PaymentReconciliation from "./pages/PaymentReconciliation";
+import UserMembers from "./pages/admin/UserMembers";
 
 function Router() {
   return (
@@ -38,6 +39,11 @@ function Router() {
       <Route path={"/admin/courses"}>
         <AdminLayout>
           <CourseProducts />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/users"}>
+        <AdminLayout>
+          <UserMembers />
         </AdminLayout>
       </Route>
       <Route path={"/admin"}>

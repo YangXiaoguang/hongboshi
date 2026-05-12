@@ -205,6 +205,10 @@ export function getUserConsents(userId: string) {
   return Promise.resolve(authSessionStore.getUserConsents(userId));
 }
 
+export function listAuthUsers() {
+  return Promise.resolve(authSessionStore.listUsers());
+}
+
 export async function loginWithPhonePayload(body: unknown) {
   const parsed = PhoneLoginRequestSchema.safeParse(body);
   if (!parsed.success) {

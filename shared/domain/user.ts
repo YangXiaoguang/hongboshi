@@ -1,5 +1,22 @@
 import { z } from "zod";
-import { DateTimeLikeSchema, EntityIdSchema } from "./common";
+import {
+  DateTimeLikeSchema,
+  EntityIdSchema,
+  MoneyAmountSchema,
+  PageMetaSchema,
+  PaginationQuerySchema,
+} from "./common";
+import { CourseMembershipSchema } from "./courseAccess";
+import {
+  AppointmentStatusSchema,
+  CounselingChannelSchema,
+} from "./counseling";
+import { OrderStatusSchema, PurchasableTypeSchema } from "./order";
+import {
+  RiskEventSourceSchema,
+  RiskEventStatusSchema,
+  RiskLevelSchema,
+} from "./risk";
 
 export const UserRoleSchema = z.enum([
   "visitor",
@@ -28,6 +45,7 @@ export const AuthPermissionSchema = z.enum([
   "counseling:fulfill",
   "admin:read",
   "admin:manage",
+  "user:read",
   "catalog:read",
   "catalog:edit",
   "catalog:review",
@@ -41,6 +59,10 @@ export const COURSE_CATALOG_PERMISSIONS = {
   review: "catalog:review",
   publish: "catalog:publish",
   price: "catalog:price",
+} satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
+
+export const USER_ADMIN_PERMISSIONS = {
+  read: "user:read",
 } satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
 
 export const CURRENT_USER_CONSENT_VERSION = "2026.05";
@@ -104,6 +126,7 @@ const RolePermissionMap = {
     "counseling:fulfill",
     "admin:read",
     "admin:manage",
+    "user:read",
     "catalog:read",
     "catalog:edit",
     "catalog:review",
@@ -117,6 +140,7 @@ const RolePermissionMap = {
     "counseling:fulfill",
     "admin:read",
     "admin:manage",
+    "user:read",
     "catalog:read",
     "catalog:edit",
     "catalog:review",
@@ -138,6 +162,158 @@ export function userCan(
   return user.roles.some(role => roleCan(role, permission));
 }
 
+export const USER_ADMIN_PAGE_SIZE = 12;
+export const ALL_USER_ADMIN_ROLE = "all";
+export const ALL_USER_ADMIN_MEMBERSHIP_STATUS = "all";
+
+export const UserAdminMembershipStatusSchema = CourseMembershipSchema.shape.status;
+
+export const UserAdminRoleFilterSchema = z.union([
+  UserRoleSchema,
+  z.literal(ALL_USER_ADMIN_ROLE),
+]);
+
+export const UserAdminMembershipStatusFilterSchema = z.union([
+  UserAdminMembershipStatusSchema,
+  z.literal(ALL_USER_ADMIN_MEMBERSHIP_STATUS),
+]);
+
+export const UserAdminSortSchema = z.enum([
+  "last_activity_desc",
+  "created_desc",
+  "updated_desc",
+]);
+
+export const UserAdminListQuerySchema = PaginationQuerySchema.extend({
+  keyword: z.string().trim().max(80).default(""),
+  role: UserAdminRoleFilterSchema.default(ALL_USER_ADMIN_ROLE),
+  membershipStatus: UserAdminMembershipStatusFilterSchema.default(
+    ALL_USER_ADMIN_MEMBERSHIP_STATUS
+  ),
+  sort: UserAdminSortSchema.default("last_activity_desc"),
+  pageSize: z.number().int().min(1).max(50).default(USER_ADMIN_PAGE_SIZE),
+});
+
+export const UserAdminPrivacyFlagsSchema = z.object({
+  isMinor: z.boolean(),
+  guardianVerified: z.boolean(),
+  phoneMasked: z.boolean(),
+});
+
+export const UserAdminListItemSchema = z.object({
+  id: EntityIdSchema,
+  displayName: z.string().min(1),
+  phoneMasked: z.string().optional(),
+  roles: z.array(UserRoleSchema).min(1),
+  membershipStatus: UserAdminMembershipStatusSchema,
+  membershipPlanName: z.string().min(1).optional(),
+  membershipExpiresAt: DateTimeLikeSchema.optional(),
+  ownedCourseCount: z.number().int().nonnegative(),
+  orderCount: z.number().int().nonnegative(),
+  counselingAppointmentCount: z.number().int().nonnegative(),
+  activeRiskCount: z.number().int().nonnegative(),
+  latestOrderStatus: OrderStatusSchema.optional(),
+  lastActivityAt: DateTimeLikeSchema.optional(),
+  createdAt: DateTimeLikeSchema,
+  updatedAt: DateTimeLikeSchema,
+  privacyFlags: UserAdminPrivacyFlagsSchema,
+});
+
+export const UserAdminSummarySchema = z.object({
+  totalCount: z.number().int().nonnegative(),
+  activeMembershipCount: z.number().int().nonnegative(),
+  expiredMembershipCount: z.number().int().nonnegative(),
+  minorCount: z.number().int().nonnegative(),
+  activeRiskCount: z.number().int().nonnegative(),
+});
+
+export const UserAdminFilterOptionsSchema = z.object({
+  roles: z.array(UserRoleSchema),
+  membershipStatuses: z.array(UserAdminMembershipStatusSchema),
+});
+
+export const UserAdminListResultSchema = z.object({
+  items: z.array(UserAdminListItemSchema),
+  meta: PageMetaSchema,
+  summary: UserAdminSummarySchema,
+  filters: UserAdminFilterOptionsSchema,
+  query: UserAdminListQuerySchema,
+  serverTime: DateTimeLikeSchema,
+});
+
+export const UserAdminConsentSummarySchema = z.object({
+  type: ConsentTypeSchema,
+  version: z.string().min(1),
+  acceptedAt: DateTimeLikeSchema,
+});
+
+export const UserAdminMembershipSummarySchema = z.object({
+  status: UserAdminMembershipStatusSchema,
+  planName: z.string().min(1).optional(),
+  activatedAt: DateTimeLikeSchema.optional(),
+  expiresAt: DateTimeLikeSchema.optional(),
+  activeNow: z.boolean(),
+});
+
+export const UserAdminOrderSummarySchema = z.object({
+  id: EntityIdSchema,
+  status: OrderStatusSchema,
+  itemTypes: z.array(PurchasableTypeSchema).min(1),
+  title: z.string().min(1),
+  payableAmount: MoneyAmountSchema,
+  createdAt: DateTimeLikeSchema,
+  paidAt: DateTimeLikeSchema.optional(),
+});
+
+export const UserAdminCourseAccessSummarySchema = z.object({
+  ownedCourseIds: z.array(z.number().int().positive()),
+  ownedCourseCount: z.number().int().nonnegative(),
+  orderCount: z.number().int().nonnegative(),
+  recentOrders: z.array(UserAdminOrderSummarySchema),
+});
+
+export const UserAdminCounselingAppointmentSummarySchema = z.object({
+  appointmentId: EntityIdSchema,
+  status: AppointmentStatusSchema,
+  counselorName: z.string().min(1),
+  channel: CounselingChannelSchema,
+  startsAt: DateTimeLikeSchema,
+  createdAt: DateTimeLikeSchema,
+  orderStatus: OrderStatusSchema.optional(),
+  riskLevel: RiskLevelSchema.optional(),
+});
+
+export const UserAdminCounselingSummarySchema = z.object({
+  totalCount: z.number().int().nonnegative(),
+  upcomingCount: z.number().int().nonnegative(),
+  recentAppointments: z.array(UserAdminCounselingAppointmentSummarySchema),
+});
+
+export const UserAdminRiskEventSummarySchema = z.object({
+  id: EntityIdSchema,
+  source: RiskEventSourceSchema,
+  riskLevel: RiskLevelSchema,
+  status: RiskEventStatusSchema,
+  createdAt: DateTimeLikeSchema,
+});
+
+export const UserAdminRiskSummarySchema = z.object({
+  openCount: z.number().int().nonnegative(),
+  highestRiskLevel: RiskLevelSchema.optional(),
+  recentEvents: z.array(UserAdminRiskEventSummarySchema),
+});
+
+export const UserAdminDetailSchema = z.object({
+  user: UserAdminListItemSchema,
+  consents: z.array(UserAdminConsentSummarySchema),
+  membership: UserAdminMembershipSummarySchema,
+  courseAccess: UserAdminCourseAccessSummarySchema,
+  counseling: UserAdminCounselingSummarySchema,
+  risk: UserAdminRiskSummarySchema,
+  privacyNotice: z.string().min(1),
+  generatedAt: DateTimeLikeSchema,
+});
+
 export type UserRole = z.infer<typeof UserRoleSchema>;
 export type LoginProvider = z.infer<typeof LoginProviderSchema>;
 export type ConsentType = z.infer<typeof ConsentTypeSchema>;
@@ -147,3 +323,10 @@ export type UserConsent = z.infer<typeof UserConsentSchema>;
 export type LoginSession = z.infer<typeof LoginSessionSchema>;
 export type PhoneLoginRequest = z.infer<typeof PhoneLoginRequestSchema>;
 export type WechatLoginRequest = z.infer<typeof WechatLoginRequestSchema>;
+export type UserAdminMembershipStatus = z.infer<
+  typeof UserAdminMembershipStatusSchema
+>;
+export type UserAdminListQuery = z.infer<typeof UserAdminListQuerySchema>;
+export type UserAdminListItem = z.infer<typeof UserAdminListItemSchema>;
+export type UserAdminListResult = z.infer<typeof UserAdminListResultSchema>;
+export type UserAdminDetail = z.infer<typeof UserAdminDetailSchema>;

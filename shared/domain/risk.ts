@@ -15,11 +15,13 @@ export const RiskEventStatusSchema = z.enum([
   "escalated",
 ]);
 
+export const RiskLevelSchema = z.enum(["medium", "high", "urgent"]);
+
 export const RiskEventSchema = z.object({
   id: EntityIdSchema,
   userId: EntityIdSchema.optional(),
   source: RiskEventSourceSchema,
-  riskLevel: z.enum(["medium", "high", "urgent"]),
+  riskLevel: RiskLevelSchema,
   signal: z.string().min(1),
   status: RiskEventStatusSchema,
   reviewerId: EntityIdSchema.optional(),
@@ -51,6 +53,7 @@ export const AuditLogSchema = z.object({
 
 export type RiskEventSource = z.infer<typeof RiskEventSourceSchema>;
 export type RiskEventStatus = z.infer<typeof RiskEventStatusSchema>;
+export type RiskLevel = z.infer<typeof RiskLevelSchema>;
 export type RiskEvent = z.infer<typeof RiskEventSchema>;
 export type AuditAction = z.infer<typeof AuditActionSchema>;
 export type AuditLog = z.infer<typeof AuditLogSchema>;

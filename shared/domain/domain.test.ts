@@ -108,8 +108,11 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["catalog_operator"] }, "catalog:review")).toBe(
       true
     );
+    expect(userCan({ roles: ["member"] }, "user:read")).toBe(false);
+    expect(userCan({ roles: ["operator"] }, "user:read")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "admin:manage")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "catalog:publish")).toBe(true);
+    expect(userCan({ roles: ["admin"] }, "user:read")).toBe(true);
   });
 
   it("captures consent records in login sessions", () => {

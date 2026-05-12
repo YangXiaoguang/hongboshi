@@ -34,8 +34,14 @@ const implementationRows = [
   [
     "M3-A",
     "用户与会员只读台",
-    "下一步",
+    "已完成",
     "用户检索、会员权益摘要、账号状态和隐私边界",
+  ],
+  [
+    "M3-B",
+    "会员权益操作",
+    "下一步",
+    "会员开通、延期、到期处理和审计记录",
   ],
   ["M4", "订单管理", "规划中", "课程、咨询和会员订单的统一状态机"],
   ["M5", "交易与退款管理", "规划中", "支付流水、退款申请和异常处理"],
@@ -47,7 +53,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "M3-A", icon: GitBranch },
+  { label: "下一阶段", value: "M3-B", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -71,11 +77,11 @@ export default function AdminHome() {
             业务运营总览
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            当前后台已接入咨询运营、支付对账和课程商品列表，后续按用户会员、订单交易、财务和风险复核逐步扩展。
+            当前后台已接入咨询运营、支付对账、课程商品和用户会员只读台，后续按会员操作、订单交易、财务和风险复核逐步扩展。
           </p>
         </div>
         <button
-          onClick={() => navigate("/admin/courses")}
+          onClick={() => navigate("/admin/users")}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
         >
           进入可用模块
@@ -185,7 +191,7 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经指向 M3-A 用户与会员管理只读台。
+              当前连续执行状态已经指向 M3-B 会员权益操作与审计。
             </p>
           </div>
           <div className="overflow-x-auto">

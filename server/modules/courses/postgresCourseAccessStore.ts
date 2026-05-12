@@ -187,6 +187,29 @@ export class PostgresCourseAccessStore {
     });
   }
 
+  async listUserStates(): Promise<Array<{ userId: string; state: CourseAccessState }>> {
+    const result = await this.db.query<{ user_id: string }>(
+      `
+        SELECT user_id
+        FROM course_memberships
+        UNION
+        SELECT user_id
+        FROM course_access_grants
+        UNION
+        SELECT user_id
+        FROM orders
+        ORDER BY user_id ASC
+      `
+    );
+
+    return Promise.all(
+      result.rows.map(async row => ({
+        userId: row.user_id,
+        state: await this.load(row.user_id),
+      }))
+    );
+  }
+
   async save(
     userId: string,
     state: CourseAccessState
