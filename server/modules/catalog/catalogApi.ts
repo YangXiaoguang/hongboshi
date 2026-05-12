@@ -4,6 +4,7 @@ import { URL } from "url";
 import { z } from "zod";
 import {
   ApiResponseSchema,
+  COURSE_CATALOG_PERMISSIONS,
   CourseProductBasicInfoUpdateRequestSchema,
   CourseProductContentMutationResultSchema,
   CourseProductContentQualityBatchResultSchema,
@@ -17,6 +18,7 @@ import {
   CourseProductStatusUpdateRequestSchema,
   evaluateCourseProductContentQuality,
   userCan,
+  type AuthPermission,
   type LoginSession,
 } from "../../../shared/domain";
 import { getLoginSessionFromRequest } from "../auth/authSessionApi";
@@ -72,6 +74,17 @@ type CatalogApiPayload = {
   body: CatalogApiBody;
 };
 
+export const catalogOperationPermissions = {
+  list: COURSE_CATALOG_PERMISSIONS.read,
+  contentRead: COURSE_CATALOG_PERMISSIONS.read,
+  contentQualityRead: COURSE_CATALOG_PERMISSIONS.read,
+  basicInfoUpdate: COURSE_CATALOG_PERMISSIONS.edit,
+  contentUpdate: COURSE_CATALOG_PERMISSIONS.edit,
+  reviewUpdate: COURSE_CATALOG_PERMISSIONS.review,
+  statusUpdate: COURSE_CATALOG_PERMISSIONS.publish,
+  priceUpdate: COURSE_CATALOG_PERMISSIONS.price,
+} satisfies Record<string, AuthPermission>;
+
 function sendJson(
   res: Response | ServerResponse,
   status: number,
@@ -97,19 +110,12 @@ export async function getCourseProductAdminListPayload(
   rawQuery: Record<string, unknown>,
   store: CourseProductStore = getCourseProductStore()
 ): Promise<CatalogApiPayload> {
-  if (!actor) {
-    return {
-      status: 401,
-      body: errorPayload("UNAUTHORIZED", "请先登录后查看课程商品"),
-    };
-  }
-
-  if (!userCan(actor, "admin:manage")) {
-    return {
-      status: 403,
-      body: errorPayload("FORBIDDEN", "当前账号暂无课程商品管理权限"),
-    };
-  }
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.list,
+    "请先登录后查看课程商品"
+  );
+  if (denied) return denied;
 
   const queryResult = CourseProductListQuerySchema.safeParse(rawQuery);
   if (!queryResult.success) {
@@ -142,7 +148,10 @@ export async function updateCourseProductStatusPayload(
   store: CourseProductStore = getCourseProductStore(),
   now = new Date().toISOString()
 ): Promise<CatalogApiPayload> {
-  const denied = denyUnauthorizedActor(actor);
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.statusUpdate
+  );
   if (denied) return denied;
 
   const parsed = CourseProductStatusUpdateRequestSchema.safeParse(body);
@@ -179,7 +188,10 @@ export async function updateCourseProductPricePayload(
   store: CourseProductStore = getCourseProductStore(),
   now = new Date().toISOString()
 ): Promise<CatalogApiPayload> {
-  const denied = denyUnauthorizedActor(actor);
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.priceUpdate
+  );
   if (denied) return denied;
 
   const parsed = CourseProductPriceUpdateRequestSchema.safeParse(body);
@@ -216,7 +228,10 @@ export async function updateCourseProductBasicInfoPayload(
   store: CourseProductStore = getCourseProductStore(),
   now = new Date().toISOString()
 ): Promise<CatalogApiPayload> {
-  const denied = denyUnauthorizedActor(actor);
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.basicInfoUpdate
+  );
   if (denied) return denied;
 
   const parsed = CourseProductBasicInfoUpdateRequestSchema.safeParse(body);
@@ -254,7 +269,10 @@ export async function updateCourseProductReviewPayload(
   now = new Date().toISOString(),
   contentStore: CourseProductContentStore = getCourseProductContentStore()
 ): Promise<CatalogApiPayload> {
-  const denied = denyUnauthorizedActor(actor);
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.reviewUpdate
+  );
   if (denied) return denied;
 
   const parsed = CourseProductReviewActionRequestSchema.safeParse(body);
@@ -303,7 +321,10 @@ export async function getCourseProductContentPayload(
   productStore: CourseProductStore = getCourseProductStore(),
   contentStore: CourseProductContentStore = getCourseProductContentStore()
 ): Promise<CatalogApiPayload> {
-  const denied = denyUnauthorizedActor(actor);
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.contentRead
+  );
   if (denied) return denied;
 
   try {
@@ -328,7 +349,10 @@ export async function getCourseProductContentQualityPayload(
   productStore: CourseProductStore = getCourseProductStore(),
   contentStore: CourseProductContentStore = getCourseProductContentStore()
 ): Promise<CatalogApiPayload> {
-  const denied = denyUnauthorizedActor(actor);
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.contentQualityRead
+  );
   if (denied) return denied;
 
   try {
@@ -355,7 +379,10 @@ export async function updateCourseProductContentPayload(
   contentStore: CourseProductContentStore = getCourseProductContentStore(),
   now = new Date().toISOString()
 ): Promise<CatalogApiPayload> {
-  const denied = denyUnauthorizedActor(actor);
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.contentUpdate
+  );
   if (denied) return denied;
 
   const parsed = CourseProductContentUpdateRequestSchema.safeParse(body);
@@ -775,19 +802,21 @@ export function handleCatalogApiRequest(
 }
 
 function denyUnauthorizedActor(
-  actor: CatalogOperationsActor | null | undefined
+  actor: CatalogOperationsActor | null | undefined,
+  permission: AuthPermission,
+  unauthorizedMessage = "请先登录后管理课程商品"
 ): CatalogApiPayload | undefined {
   if (!actor) {
     return {
       status: 401,
-      body: errorPayload("UNAUTHORIZED", "请先登录后管理课程商品"),
+      body: errorPayload("UNAUTHORIZED", unauthorizedMessage),
     };
   }
 
-  if (!userCan(actor, "admin:manage")) {
+  if (!userCan(actor, permission)) {
     return {
       status: 403,
-      body: errorPayload("FORBIDDEN", "当前账号暂无课程商品管理权限"),
+      body: errorPayload("FORBIDDEN", "当前账号暂无课程商品操作权限"),
     };
   }
 

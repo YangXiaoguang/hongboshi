@@ -48,6 +48,7 @@ client/src/features/courses/
 - `GET /api/courses/:courseId`：返回单个课程基础信息。
 - `GET /api/courses/:courseId/content`：返回已审核通过且已上架课程的服务端详情内容；详情页优先使用服务端摘要、适合人群和章节，读取失败时继续回落前端领域模型。
 - `GET /api/catalog/admin/course-products/content-quality`：返回后台课程商品详情内容批量校验结果，供运营快速判断哪些商品可以提交审核。
+- 后台课程商品接口已拆分 `catalog:read`、`catalog:edit`、`catalog:review`、`catalog:publish`、`catalog:price` 权限；前端也会按权限显示或隐藏危险动作。
 - `GET /api/course-access`：返回当前课程权益状态。
 - `POST /api/course-access/purchases`：模拟课程购买并返回最新权益状态。
 - `POST /api/course-access/membership`：模拟开通成长会员并返回最新权益状态。

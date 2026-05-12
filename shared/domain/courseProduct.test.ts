@@ -153,6 +153,12 @@ describe("course product domain contract", () => {
               id: "material_1",
               title: "课前练习表",
               type: "exercise",
+              assetId: "asset_emotion_intro_1",
+              assetUrl: "https://cdn.example.com/assets/emotion-intro.pdf",
+              uploadedBy: "operator_1",
+              uploadedAt: "2026-05-11T10:30:00+08:00",
+              complianceStatus: "approved",
+              downloadEnabled: true,
             },
           ],
         },
@@ -161,6 +167,12 @@ describe("course product domain contract", () => {
     });
 
     expect(parsed.chapters[0]?.materialPlaceholders[0]?.status).toBe("pending");
+    expect(parsed.chapters[0]?.materialPlaceholders[0]?.assetId).toBe(
+      "asset_emotion_intro_1"
+    );
+    expect(parsed.chapters[0]?.materialPlaceholders[0]?.complianceStatus).toBe(
+      "approved"
+    );
     expect(
       CourseProductDetailContentSchema.safeParse({
         ...parsed,

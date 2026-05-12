@@ -27,6 +27,8 @@
 - 数据库字段可以比领域模型更细，但不能绕过领域模型暴露给前端。
 - 枚举值使用英文稳定值或现有中文业务值，展示文案由 UI 层决定。
 
+当前后台权限已经开始从粗粒度 `admin:manage` 拆分为资源级能力。课程商品模块使用 `catalog:read`、`catalog:edit`、`catalog:review`、`catalog:publish`、`catalog:price` 控制列表/详情读取、内容编辑、审核、上下架和改价；`catalog_viewer` 为课程商品只读角色，`catalog_operator` 为课程商品运营角色，`operator` 与 `admin` 继续拥有课程商品完整权限。
+
 ## 后端落地建议
 
 第一阶段 API 可以按下面的模块组织：
@@ -57,8 +59,8 @@ server/
 ## 服务端 Store 边界
 
 - 课程权益：`server/modules/courses/courseAccessStore.ts` 已支持 JSON 文件和内存实现。
-- 课程商品：`server/modules/catalog/courseProductStore.ts` 负责后台课程商品快照、筛选、排序、分页、汇总、写动作、审核状态流和审计事件；当前支持内存、JSON 文件与 PostgreSQL Store，并为前台 `/api/courses` 提供已审核通过且已上架课程映射。
-- 课程详情内容：`server/modules/catalog/courseProductContentStore.ts` 负责课程摘要、适合人群、章节、素材占位和批量质量校验；当前支持内存、JSON 文件与 PostgreSQL Store，内容更新会写入课程商品审计并触发复审。
+- 课程商品：`server/modules/catalog/courseProductStore.ts` 负责后台课程商品快照、筛选、排序、分页、汇总、写动作、审核状态流和审计事件；当前支持内存、JSON 文件与 PostgreSQL Store，并为前台 `/api/courses` 提供已审核通过且已上架课程映射。`server/modules/catalog/catalogApi.ts` 将读取、编辑、审核、发布和改价分别绑定到 `catalog:*` 权限。
+- 课程详情内容：`server/modules/catalog/courseProductContentStore.ts` 负责课程摘要、适合人群、章节、素材占位和批量质量校验；当前支持内存、JSON 文件与 PostgreSQL Store，内容更新会写入课程商品审计并触发复审。素材占位已预留 `assetId`、`assetUrl`、上传人、上传时间、下载开关和合规审核状态，后续可平滑接真实文件管理。
 - 测评结果：`server/modules/assessments/assessmentResultStore.ts` 负责按用户保存与读取最新报告。
 - 咨询预约：`server/modules/counseling/counselingAppointmentStore.ts` 负责时段、预约单和预约关联风险事件。
 - 咨询运营：`server/modules/counseling/counselingOperationStore.ts` 负责取消规则和规则/履约审计。

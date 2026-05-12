@@ -29,14 +29,15 @@ import {
   ALL_COURSE_PRODUCT_STATUS,
   COURSE_CATEGORIES,
   COURSE_PRODUCT_PAGE_SIZE,
+  COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES,
   COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES,
   COURSE_PRODUCT_CONTENT_MATERIAL_TYPES,
   COURSE_TYPES,
   CourseProductDetailContentSchema,
   evaluateCourseProductContentQuality,
-  userCan,
   type CourseCategory,
   type CourseProductAuditEvent,
+  type CourseProductContentAssetReviewStatus,
   type CourseProductBasicInfoUpdateRequest,
   type CourseProductContentQualityResult,
   type CourseProductContentMaterialStatus,
@@ -54,6 +55,7 @@ import {
 } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpCourseProductRepository } from "@/features/catalog";
+import { getCourseProductAdminPermissions } from "@/features/catalog/model/courseProductAdminPermissions";
 
 type CourseProductStatusFilter = CourseProductListQuery["status"];
 type CourseProductCategoryFilter = CourseProductListQuery["category"];
@@ -87,6 +89,12 @@ type ContentMaterialFormState = {
   title: string;
   type: CourseProductContentMaterialType;
   status: CourseProductContentMaterialStatus;
+  assetId: string;
+  assetUrl: string;
+  uploadedBy: string;
+  uploadedAt?: string;
+  complianceStatus: CourseProductContentAssetReviewStatus;
+  downloadEnabled: boolean;
   note: string;
 };
 type ContentChapterFormState = {
@@ -158,6 +166,13 @@ const materialStatusCopy = {
   pending: "待准备",
   ready: "已就绪",
 } satisfies Record<CourseProductContentMaterialStatus, string>;
+
+const assetReviewStatusCopy = {
+  not_required: "无需审核",
+  pending: "待审核",
+  approved: "已通过",
+  rejected: "已驳回",
+} satisfies Record<CourseProductContentAssetReviewStatus, string>;
 
 function formatMoney(item: CourseProductListItem) {
   if (item.price.isFree) return "免费";
@@ -350,6 +365,12 @@ function contentFormFromDetail(
         title: material.title,
         type: material.type,
         status: material.status,
+        assetId: material.assetId ?? "",
+        assetUrl: material.assetUrl ?? "",
+        uploadedBy: material.uploadedBy ?? "",
+        uploadedAt: material.uploadedAt,
+        complianceStatus: material.complianceStatus,
+        downloadEnabled: material.downloadEnabled,
         note: material.note ?? "",
       })),
     })),
@@ -374,6 +395,14 @@ function chaptersFromContentForm(chapters: ContentChapterFormState[]) {
       title: material.title,
       type: material.type,
       status: material.status,
+      assetId: material.assetId.trim() ? material.assetId.trim() : undefined,
+      assetUrl: material.assetUrl.trim() ? material.assetUrl.trim() : undefined,
+      uploadedBy: material.uploadedBy.trim()
+        ? material.uploadedBy.trim()
+        : undefined,
+      uploadedAt: material.uploadedAt,
+      complianceStatus: material.complianceStatus,
+      downloadEnabled: material.downloadEnabled,
       note: material.note.trim() ? material.note.trim() : undefined,
     })),
   }));
@@ -431,6 +460,11 @@ function createContentMaterial(
     title: "",
     type: "exercise",
     status: "pending",
+    assetId: "",
+    assetUrl: "",
+    uploadedBy: "",
+    complianceStatus: "not_required",
+    downloadEnabled: false,
     note: "",
   };
 }
@@ -491,6 +525,10 @@ function CourseProductRow({
   index,
   isMutating,
   contentQuality,
+  canEdit,
+  canReview,
+  canPublish,
+  canPrice,
   reviewBlockReason,
   onEditInfo,
   onEditContent,
@@ -502,6 +540,10 @@ function CourseProductRow({
   index: number;
   isMutating: boolean;
   contentQuality?: CourseProductContentQualityResult;
+  canEdit: boolean;
+  canReview: boolean;
+  canPublish: boolean;
+  canPrice: boolean;
   reviewBlockReason?: string;
   onEditInfo: (item: CourseProductListItem) => void;
   onEditContent: (item: CourseProductListItem) => void;
@@ -524,6 +566,7 @@ function CourseProductRow({
       item.reviewStatus === "approved");
   const StatusIcon = item.status === "published" ? EyeOff : Eye;
   const reviewActions = reviewActionsForItem(item);
+  const hasVisibleActions = canEdit || canReview || canPublish || canPrice;
 
   return (
     <motion.tr
@@ -624,55 +667,69 @@ function CourseProductRow({
       </td>
       <td className="px-5 py-4">
         <div className="flex min-w-[300px] flex-wrap gap-2">
-          <button
-            onClick={() => onRequestStatusChange(item, targetStatus)}
-            disabled={!canToggleStatus || isMutating}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <StatusIcon className="h-3.5 w-3.5" />
-            {item.status === "published" ? "下架" : "上架"}
-          </button>
-          {reviewActions.map(action => (
+          {canPublish && (
             <button
-              key={action.action}
-              onClick={() =>
-                onRequestReviewAction(
-                  item,
-                  action.action,
-                  action.targetReviewStatus
-                )
-              }
-              disabled={isMutating}
+              onClick={() => onRequestStatusChange(item, targetStatus)}
+              disabled={!canToggleStatus || isMutating}
               className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
             >
-              <ClipboardCheck className="h-3.5 w-3.5" />
-              {reviewActionCopy[action.action]}
+              <StatusIcon className="h-3.5 w-3.5" />
+              {item.status === "published" ? "下架" : "上架"}
             </button>
-          ))}
-          <button
-            onClick={() => onEditInfo(item)}
-            disabled={isMutating}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <Edit3 className="h-3.5 w-3.5" />
-            编辑
-          </button>
-          <button
-            onClick={() => onEditContent(item)}
-            disabled={isMutating}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <FilePenLine className="h-3.5 w-3.5" />
-            内容
-          </button>
-          <button
-            onClick={() => onEditPrice(item)}
-            disabled={isMutating}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#E6EDDF] px-2.5 text-xs font-semibold text-[#355F51] transition hover:bg-[#D7E5D4] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <Edit3 className="h-3.5 w-3.5" />
-            改价
-          </button>
+          )}
+          {canReview &&
+            reviewActions.map(action => (
+              <button
+                key={action.action}
+                onClick={() =>
+                  onRequestReviewAction(
+                    item,
+                    action.action,
+                    action.targetReviewStatus
+                  )
+                }
+                disabled={isMutating}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <ClipboardCheck className="h-3.5 w-3.5" />
+                {reviewActionCopy[action.action]}
+              </button>
+            ))}
+          {canEdit && (
+            <>
+              <button
+                onClick={() => onEditInfo(item)}
+                disabled={isMutating}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                编辑
+              </button>
+              <button
+                onClick={() => onEditContent(item)}
+                disabled={isMutating}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <FilePenLine className="h-3.5 w-3.5" />
+                内容
+              </button>
+            </>
+          )}
+          {canPrice && (
+            <button
+              onClick={() => onEditPrice(item)}
+              disabled={isMutating}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#E6EDDF] px-2.5 text-xs font-semibold text-[#355F51] transition hover:bg-[#D7E5D4] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Edit3 className="h-3.5 w-3.5" />
+              改价
+            </button>
+          )}
+          {!hasVisibleActions && (
+            <span className="inline-flex h-8 items-center rounded-lg bg-[#F1E8DC] px-2.5 text-xs font-semibold text-[#7B817C]">
+              只读
+            </span>
+          )}
         </div>
       </td>
     </motion.tr>
@@ -730,7 +787,10 @@ export default function CourseProducts() {
     reason: "",
   });
 
-  const canManageCourses = Boolean(user && userCan(user, "admin:manage"));
+  const catalogPermissions = useMemo(
+    () => getCourseProductAdminPermissions(user),
+    [user]
+  );
 
   const loadProducts = useCallback(async () => {
     setIsLoading(true);
@@ -754,65 +814,78 @@ export default function CourseProducts() {
   }, [query]);
 
   useEffect(() => {
-    if (isAuthSyncing || !isLoggedIn || !canManageCourses) return;
+    if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) return;
     void loadProducts();
-  }, [canManageCourses, isAuthSyncing, isLoggedIn, loadProducts]);
+  }, [catalogPermissions.canRead, isAuthSyncing, isLoggedIn, loadProducts]);
 
-  const openInfoEditor = useCallback((item: CourseProductListItem) => {
-    setActionError(undefined);
-    setActionMessage(undefined);
-    setInfoEditor(item);
-    setInfoForm({
-      title: item.title,
-      coverUrl: item.coverUrl,
-      category: item.category,
-      type: item.type,
-      instructorName: item.instructorName,
-      learners: String(item.learners),
-      reason: "",
-    });
-  }, []);
+  const openInfoEditor = useCallback(
+    (item: CourseProductListItem) => {
+      if (!catalogPermissions.canEdit) return;
+      setActionError(undefined);
+      setActionMessage(undefined);
+      setInfoEditor(item);
+      setInfoForm({
+        title: item.title,
+        coverUrl: item.coverUrl,
+        category: item.category,
+        type: item.type,
+        instructorName: item.instructorName,
+        learners: String(item.learners),
+        reason: "",
+      });
+    },
+    [catalogPermissions.canEdit]
+  );
 
-  const openContentEditor = useCallback(async (item: CourseProductListItem) => {
-    setActionError(undefined);
-    setActionMessage(undefined);
-    setContentEditor(item);
-    setIsContentLoading(true);
-    try {
-      const content =
-        await httpCourseProductRepository.loadCourseProductContent(item.id);
-      setContentForm(contentFormFromDetail(content));
-    } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : "课程商品详情内容读取失败"
-      );
-      setContentEditor(undefined);
-    } finally {
-      setIsContentLoading(false);
-    }
-  }, []);
+  const openContentEditor = useCallback(
+    async (item: CourseProductListItem) => {
+      if (!catalogPermissions.canEdit) return;
+      setActionError(undefined);
+      setActionMessage(undefined);
+      setContentEditor(item);
+      setIsContentLoading(true);
+      try {
+        const content =
+          await httpCourseProductRepository.loadCourseProductContent(item.id);
+        setContentForm(contentFormFromDetail(content));
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程商品详情内容读取失败"
+        );
+        setContentEditor(undefined);
+      } finally {
+        setIsContentLoading(false);
+      }
+    },
+    [catalogPermissions.canEdit]
+  );
 
-  const openPriceEditor = useCallback((item: CourseProductListItem) => {
-    setActionError(undefined);
-    setActionMessage(undefined);
-    setPriceEditor(item);
-    setPriceForm({
-      amount: String(item.price.amount),
-      originalAmount: String(item.price.originalAmount),
-      isFree: item.price.isFree,
-      memberIncluded: item.price.memberIncluded,
-      reason: "",
-    });
-  }, []);
+  const openPriceEditor = useCallback(
+    (item: CourseProductListItem) => {
+      if (!catalogPermissions.canPrice) return;
+      setActionError(undefined);
+      setActionMessage(undefined);
+      setPriceEditor(item);
+      setPriceForm({
+        amount: String(item.price.amount),
+        originalAmount: String(item.price.originalAmount),
+        isFree: item.price.isFree,
+        memberIncluded: item.price.memberIncluded,
+        reason: "",
+      });
+    },
+    [catalogPermissions.canPrice]
+  );
 
   const openStatusAction = useCallback(
     (product: CourseProductListItem, targetStatus: CourseProductStatus) => {
+      if (!catalogPermissions.canPublish) return;
       setActionError(undefined);
       setActionMessage(undefined);
       setStatusAction({ product, targetStatus });
       setStatusReason("");
     },
-    []
+    [catalogPermissions.canPublish]
   );
 
   const openReviewAction = useCallback(
@@ -821,16 +894,21 @@ export default function CourseProducts() {
       action: CourseProductReviewAction,
       targetReviewStatus: CourseProductReviewStatus
     ) => {
+      if (!catalogPermissions.canReview) return;
       setActionError(undefined);
       setActionMessage(undefined);
       setReviewAction({ product, action, targetReviewStatus });
       setReviewReason("");
     },
-    []
+    [catalogPermissions.canReview]
   );
 
   const submitStatusAction = useCallback(async () => {
     if (!statusAction) return;
+    if (!catalogPermissions.canPublish) {
+      setActionError("当前账号暂无课程商品发布权限");
+      return;
+    }
     setMutatingProductId(statusAction.product.id);
     setActionError(undefined);
     setActionMessage(undefined);
@@ -856,10 +934,14 @@ export default function CourseProducts() {
     } finally {
       setMutatingProductId(undefined);
     }
-  }, [loadProducts, statusAction, statusReason]);
+  }, [catalogPermissions.canPublish, loadProducts, statusAction, statusReason]);
 
   const submitReviewAction = useCallback(async () => {
     if (!reviewAction) return;
+    if (!catalogPermissions.canReview) {
+      setActionError("当前账号暂无课程商品审核权限");
+      return;
+    }
     setMutatingProductId(reviewAction.product.id);
     setActionError(undefined);
     setActionMessage(undefined);
@@ -885,10 +967,14 @@ export default function CourseProducts() {
     } finally {
       setMutatingProductId(undefined);
     }
-  }, [loadProducts, reviewAction, reviewReason]);
+  }, [catalogPermissions.canReview, loadProducts, reviewAction, reviewReason]);
 
   const submitBasicInfoUpdate = useCallback(async () => {
     if (!infoEditor) return;
+    if (!catalogPermissions.canEdit) {
+      setActionError("当前账号暂无课程商品编辑权限");
+      return;
+    }
 
     const learners = Number(infoForm.learners);
     if (!Number.isInteger(learners) || learners < 0) {
@@ -925,7 +1011,7 @@ export default function CourseProducts() {
     } finally {
       setMutatingProductId(undefined);
     }
-  }, [infoEditor, infoForm, loadProducts]);
+  }, [catalogPermissions.canEdit, infoEditor, infoForm, loadProducts]);
 
   const updateContentChapter = useCallback(
     (
@@ -1024,6 +1110,10 @@ export default function CourseProducts() {
 
   const submitContentUpdate = useCallback(async () => {
     if (!contentEditor) return;
+    if (!catalogPermissions.canEdit) {
+      setActionError("当前账号暂无课程商品编辑权限");
+      return;
+    }
 
     const targetAudience = targetAudienceFromText(
       contentForm.targetAudienceText
@@ -1076,10 +1166,14 @@ export default function CourseProducts() {
     } finally {
       setMutatingProductId(undefined);
     }
-  }, [contentEditor, contentForm, loadProducts]);
+  }, [catalogPermissions.canEdit, contentEditor, contentForm, loadProducts]);
 
   const submitPriceUpdate = useCallback(async () => {
     if (!priceEditor) return;
+    if (!catalogPermissions.canPrice) {
+      setActionError("当前账号暂无课程商品价格权限");
+      return;
+    }
 
     const amount = priceForm.isFree ? 0 : Number(priceForm.amount);
     const originalAmount = Number(priceForm.originalAmount || amount);
@@ -1116,7 +1210,7 @@ export default function CourseProducts() {
     } finally {
       setMutatingProductId(undefined);
     }
-  }, [loadProducts, priceEditor, priceForm]);
+  }, [catalogPermissions.canPrice, loadProducts, priceEditor, priceForm]);
 
   const categories = useMemo(
     () => [ALL_COURSE_PRODUCT_CATEGORY, ...COURSE_CATEGORIES],
@@ -1145,7 +1239,7 @@ export default function CourseProducts() {
   const hasPreviousPage = Boolean(meta && meta.page > 1);
   const hasNextPage = Boolean(meta && meta.page < meta.totalPages);
 
-  if (isAuthSyncing || !isLoggedIn || !canManageCourses) {
+  if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) {
     return null;
   }
 
@@ -1333,6 +1427,10 @@ export default function CourseProducts() {
                       index={index}
                       isMutating={Boolean(mutatingProductId)}
                       contentQuality={contentQualityByProductId[item.id]}
+                      canEdit={catalogPermissions.canEdit}
+                      canReview={catalogPermissions.canReview}
+                      canPublish={catalogPermissions.canPublish}
+                      canPrice={catalogPermissions.canPrice}
                       reviewBlockReason={rejectedReviewReasons.get(item.id)}
                       onEditInfo={openInfoEditor}
                       onEditContent={openContentEditor}
@@ -1864,87 +1962,155 @@ export default function CourseProducts() {
                           (material, materialIndex) => (
                             <div
                               key={material.id}
-                              className="grid gap-3 rounded-lg bg-[#F8F3EA] p-3 lg:grid-cols-[minmax(0,1fr)_120px_110px_minmax(0,1fr)_auto]"
+                              className="rounded-lg bg-[#F8F3EA] p-3"
                             >
-                              <input
-                                value={material.title}
-                                onChange={event =>
-                                  updateContentMaterial(
-                                    chapterIndex,
-                                    materialIndex,
-                                    { title: event.target.value }
-                                  )
-                                }
-                                placeholder="素材标题"
-                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
-                              />
-                              <select
-                                value={material.type}
-                                onChange={event =>
-                                  updateContentMaterial(
-                                    chapterIndex,
-                                    materialIndex,
-                                    {
-                                      type: event.target
-                                        .value as CourseProductContentMaterialType,
+                              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_120px_110px_minmax(0,1fr)_auto]">
+                                <input
+                                  value={material.title}
+                                  onChange={event =>
+                                    updateContentMaterial(
+                                      chapterIndex,
+                                      materialIndex,
+                                      { title: event.target.value }
+                                    )
+                                  }
+                                  placeholder="素材标题"
+                                  className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                                />
+                                <select
+                                  value={material.type}
+                                  onChange={event =>
+                                    updateContentMaterial(
+                                      chapterIndex,
+                                      materialIndex,
+                                      {
+                                        type: event.target
+                                          .value as CourseProductContentMaterialType,
+                                      }
+                                    )
+                                  }
+                                  className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                                >
+                                  {COURSE_PRODUCT_CONTENT_MATERIAL_TYPES.map(
+                                    type => (
+                                      <option key={type} value={type}>
+                                        {materialTypeCopy[type]}
+                                      </option>
+                                    )
+                                  )}
+                                </select>
+                                <select
+                                  value={material.status}
+                                  onChange={event =>
+                                    updateContentMaterial(
+                                      chapterIndex,
+                                      materialIndex,
+                                      {
+                                        status: event.target
+                                          .value as CourseProductContentMaterialStatus,
+                                      }
+                                    )
+                                  }
+                                  className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                                >
+                                  {COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES.map(
+                                    status => (
+                                      <option key={status} value={status}>
+                                        {materialStatusCopy[status]}
+                                      </option>
+                                    )
+                                  )}
+                                </select>
+                                <input
+                                  value={material.note}
+                                  onChange={event =>
+                                    updateContentMaterial(
+                                      chapterIndex,
+                                      materialIndex,
+                                      { note: event.target.value }
+                                    )
+                                  }
+                                  placeholder="备注"
+                                  className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                                />
+                                <button
+                                  onClick={() =>
+                                    removeContentMaterial(
+                                      chapterIndex,
+                                      materialIndex
+                                    )
+                                  }
+                                  className="flex h-9 w-9 items-center justify-center rounded-lg text-[#A65F48] transition hover:bg-[#FFE8DE]"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                              <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_120px_96px]">
+                                <input
+                                  value={material.assetId}
+                                  onChange={event =>
+                                    updateContentMaterial(
+                                      chapterIndex,
+                                      materialIndex,
+                                      { assetId: event.target.value }
+                                    )
+                                  }
+                                  placeholder="资料 ID"
+                                  className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                                />
+                                <input
+                                  value={material.assetUrl}
+                                  onChange={event =>
+                                    updateContentMaterial(
+                                      chapterIndex,
+                                      materialIndex,
+                                      { assetUrl: event.target.value }
+                                    )
+                                  }
+                                  placeholder="资料地址"
+                                  className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                                />
+                                <select
+                                  value={material.complianceStatus}
+                                  onChange={event =>
+                                    updateContentMaterial(
+                                      chapterIndex,
+                                      materialIndex,
+                                      {
+                                        complianceStatus: event.target
+                                          .value as CourseProductContentAssetReviewStatus,
+                                      }
+                                    )
+                                  }
+                                  className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                                >
+                                  {COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES.map(
+                                    status => (
+                                      <option key={status} value={status}>
+                                        {assetReviewStatusCopy[status]}
+                                      </option>
+                                    )
+                                  )}
+                                </select>
+                                <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D8CEC0] bg-white px-3 text-xs font-semibold text-[#41524B]">
+                                  <input
+                                    type="checkbox"
+                                    checked={material.downloadEnabled}
+                                    onChange={event =>
+                                      updateContentMaterial(
+                                        chapterIndex,
+                                        materialIndex,
+                                        {
+                                          downloadEnabled:
+                                            event.target.checked,
+                                        }
+                                      )
                                     }
-                                  )
-                                }
-                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
-                              >
-                                {COURSE_PRODUCT_CONTENT_MATERIAL_TYPES.map(
-                                  type => (
-                                    <option key={type} value={type}>
-                                      {materialTypeCopy[type]}
-                                    </option>
-                                  )
-                                )}
-                              </select>
-                              <select
-                                value={material.status}
-                                onChange={event =>
-                                  updateContentMaterial(
-                                    chapterIndex,
-                                    materialIndex,
-                                    {
-                                      status: event.target
-                                        .value as CourseProductContentMaterialStatus,
-                                    }
-                                  )
-                                }
-                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
-                              >
-                                {COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES.map(
-                                  status => (
-                                    <option key={status} value={status}>
-                                      {materialStatusCopy[status]}
-                                    </option>
-                                  )
-                                )}
-                              </select>
-                              <input
-                                value={material.note}
-                                onChange={event =>
-                                  updateContentMaterial(
-                                    chapterIndex,
-                                    materialIndex,
-                                    { note: event.target.value }
-                                  )
-                                }
-                                placeholder="备注"
-                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
-                              />
-                              <button
-                                onClick={() =>
-                                  removeContentMaterial(
-                                    chapterIndex,
-                                    materialIndex
-                                  )
-                                }
-                                className="flex h-9 w-9 items-center justify-center rounded-lg text-[#A65F48] transition hover:bg-[#FFE8DE]"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
+                                    className="h-3.5 w-3.5 accent-[#41675A]"
+                                  />
+                                  下载
+                                </label>
+                              </div>
                             </div>
                           )
                         )}

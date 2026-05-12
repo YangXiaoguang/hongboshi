@@ -12,7 +12,12 @@ import {
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
-import { type AuthPermission, type UserProfile, userCan } from "@shared/domain";
+import {
+  COURSE_CATALOG_PERMISSIONS,
+  type AuthPermission,
+  type UserProfile,
+  userCan,
+} from "@shared/domain";
 
 export type AdminModuleStatus = "available" | "planned";
 export type AdminModuleGroup = "overview" | "business" | "governance";
@@ -41,7 +46,7 @@ export const adminNavigationItems = [
     description: "运营模块入口、建设状态和下一步任务。",
     href: "/admin",
     icon: LayoutDashboard,
-    permission: "admin:manage",
+    permission: "admin:read",
     status: "available",
     group: "overview",
     milestone: "M1",
@@ -74,10 +79,10 @@ export const adminNavigationItems = [
     description: "课程商品、详情内容、价格、审核流和上下架。",
     href: "/admin/courses",
     icon: BookOpen,
-    permission: "admin:manage",
+    permission: COURSE_CATALOG_PERMISSIONS.read,
     status: "available",
     group: "business",
-    milestone: "M2-F",
+    milestone: "M2-H",
   },
   {
     key: "users",
@@ -153,7 +158,9 @@ export function getAdminAccessState(
 ): AdminAccessState {
   if (isAuthSyncing) return "syncing";
   if (!user) return "anonymous";
-  return userCan(user, "admin:manage") ? "authorized" : "forbidden";
+  return adminNavigationItems.some(item => userCan(user, item.permission))
+    ? "authorized"
+    : "forbidden";
 }
 
 export function canAccessAdmin(

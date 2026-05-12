@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { canAccessAdmin as canAccessAdminShell } from "@/features/admin/adminNavigation";
 
 const navItems = [
   { label: "首页", href: "/" },
@@ -76,9 +77,7 @@ export default function AppHeader() {
   const canUseCounselorWorkbench = Boolean(
     user?.roles.some(role => ["counselor", "operator", "admin"].includes(role))
   );
-  const canAccessAdmin = Boolean(
-    user?.roles.some(role => ["operator", "admin"].includes(role))
-  );
+  const canAccessAdmin = canAccessAdminShell(user);
 
   const userMenuItems = [
     {

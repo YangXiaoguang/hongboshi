@@ -69,6 +69,13 @@ export const COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES = [
   "ready",
 ] as const;
 
+export const COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES = [
+  "not_required",
+  "pending",
+  "approved",
+  "rejected",
+] as const;
+
 export const COURSE_PRODUCT_CONTENT_QUALITY_ISSUE_CODES = [
   "schema_invalid",
   "summary_too_short",
@@ -108,6 +115,10 @@ export const CourseProductContentMaterialTypeSchema = z.enum(
 
 export const CourseProductContentMaterialStatusSchema = z.enum(
   COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES
+);
+
+export const CourseProductContentAssetReviewStatusSchema = z.enum(
+  COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES
 );
 
 export const CourseProductContentQualityIssueCodeSchema = z.enum(
@@ -255,6 +266,14 @@ export const CourseProductContentMaterialSchema = z.object({
   title: z.string().trim().min(2).max(80),
   type: CourseProductContentMaterialTypeSchema,
   status: CourseProductContentMaterialStatusSchema.default("pending"),
+  assetId: z.string().trim().min(1).max(120).optional(),
+  assetUrl: z.string().trim().url().optional(),
+  uploadedBy: EntityIdSchema.optional(),
+  uploadedAt: DateTimeLikeSchema.optional(),
+  complianceStatus: CourseProductContentAssetReviewStatusSchema.default(
+    "not_required"
+  ),
+  downloadEnabled: z.boolean().default(false),
   note: z.string().trim().max(200).optional(),
 });
 
@@ -466,6 +485,9 @@ export type CourseProductContentMaterialType = z.infer<
 >;
 export type CourseProductContentMaterialStatus = z.infer<
   typeof CourseProductContentMaterialStatusSchema
+>;
+export type CourseProductContentAssetReviewStatus = z.infer<
+  typeof CourseProductContentAssetReviewStatusSchema
 >;
 export type CourseProductContentQualityIssueCode = z.infer<
   typeof CourseProductContentQualityIssueCodeSchema

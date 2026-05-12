@@ -14,6 +14,9 @@ describe("admin navigation model", () => {
     expect(getAdminAccessState(null, true)).toBe("syncing");
     expect(getAdminAccessState(null, false)).toBe("anonymous");
     expect(getAdminAccessState({ roles: ["member"] }, false)).toBe("forbidden");
+    expect(getAdminAccessState({ roles: ["catalog_viewer"] }, false)).toBe(
+      "authorized"
+    );
     expect(getAdminAccessState({ roles: ["operator"] }, false)).toBe(
       "authorized"
     );
@@ -34,6 +37,11 @@ describe("admin navigation model", () => {
       "payments",
       "courses",
     ]);
+    expect(
+      getAvailableAdminNavigationItems({ roles: ["catalog_viewer"] }).map(
+        item => item.key
+      )
+    ).toEqual(["overview", "courses"]);
     expect(
       getPlannedAdminNavigationItems({ roles: ["admin"] }).map(item => item.key)
     ).toEqual(["users", "orders", "transactions", "finance", "risk", "audit"]);

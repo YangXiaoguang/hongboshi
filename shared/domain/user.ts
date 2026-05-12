@@ -5,6 +5,8 @@ export const UserRoleSchema = z.enum([
   "visitor",
   "member",
   "counselor",
+  "catalog_viewer",
+  "catalog_operator",
   "operator",
   "admin",
 ]);
@@ -24,8 +26,22 @@ export const AuthPermissionSchema = z.enum([
   "course:purchase",
   "membership:activate",
   "counseling:fulfill",
+  "admin:read",
   "admin:manage",
+  "catalog:read",
+  "catalog:edit",
+  "catalog:review",
+  "catalog:publish",
+  "catalog:price",
 ]);
+
+export const COURSE_CATALOG_PERMISSIONS = {
+  read: "catalog:read",
+  edit: "catalog:edit",
+  review: "catalog:review",
+  publish: "catalog:publish",
+  price: "catalog:price",
+} satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
 
 export const CURRENT_USER_CONSENT_VERSION = "2026.05";
 
@@ -71,19 +87,41 @@ const RolePermissionMap = {
   visitor: ["course_access:read"],
   member: ["course_access:read", "course:purchase", "membership:activate"],
   counselor: ["course_access:read", "counseling:fulfill"],
+  catalog_viewer: ["course_access:read", "admin:read", "catalog:read"],
+  catalog_operator: [
+    "course_access:read",
+    "admin:read",
+    "catalog:read",
+    "catalog:edit",
+    "catalog:review",
+    "catalog:publish",
+    "catalog:price",
+  ],
   operator: [
     "course_access:read",
     "course:purchase",
     "membership:activate",
     "counseling:fulfill",
+    "admin:read",
     "admin:manage",
+    "catalog:read",
+    "catalog:edit",
+    "catalog:review",
+    "catalog:publish",
+    "catalog:price",
   ],
   admin: [
     "course_access:read",
     "course:purchase",
     "membership:activate",
     "counseling:fulfill",
+    "admin:read",
     "admin:manage",
+    "catalog:read",
+    "catalog:edit",
+    "catalog:review",
+    "catalog:publish",
+    "catalog:price",
   ],
 } satisfies Record<UserRole, AuthPermission[]>;
 

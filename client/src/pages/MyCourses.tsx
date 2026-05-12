@@ -75,6 +75,8 @@ const roleCopy = {
   visitor: "访客",
   member: "会员用户",
   counselor: "咨询师",
+  catalog_viewer: "课程只读",
+  catalog_operator: "课程运营",
   operator: "运营",
   admin: "管理员",
 } satisfies Record<UserRole, string>;

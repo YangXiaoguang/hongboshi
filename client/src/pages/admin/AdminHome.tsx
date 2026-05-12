@@ -29,8 +29,14 @@ const implementationRows = [
   ],
   ["M2-E", "内容审核流", "已完成", "审核状态、驳回原因、详情契约和发布保护"],
   ["M2-F", "详情内容管理", "已完成", "详情内容 Store、章节素材和复审保护"],
-  ["M2-G", "内容数据库化", "下一步", "PostgreSQL Store、批量校验和权限细化"],
-  ["M3", "用户与会员管理", "规划中", "用户检索、会员权益、账号状态和隐私边界"],
+  ["M2-G", "内容数据库化", "已完成", "PostgreSQL Store、批量校验和审核前校验"],
+  ["M2-H", "权限细化", "已完成", "课程商品资源级权限和素材字段预留"],
+  [
+    "M3-A",
+    "用户与会员只读台",
+    "下一步",
+    "用户检索、会员权益摘要、账号状态和隐私边界",
+  ],
   ["M4", "订单管理", "规划中", "课程、咨询和会员订单的统一状态机"],
   ["M5", "交易与退款管理", "规划中", "支付流水、退款申请和异常处理"],
 ] as const;
@@ -41,7 +47,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "M2-G", icon: GitBranch },
+  { label: "下一阶段", value: "M3-A", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -179,7 +185,7 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经指向 M2-G 课程内容数据库化。
+              当前连续执行状态已经指向 M3-A 用户与会员管理只读台。
             </p>
           </div>
           <div className="overflow-x-auto">

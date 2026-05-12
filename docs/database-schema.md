@@ -12,6 +12,7 @@
 - `server/db/migrations/0005_course_product_review_workflow.sql`：课程商品审核审计动作约束与审核状态索引。
 - `server/db/migrations/0006_course_product_content_management.sql`：课程商品内容审计动作约束。
 - `server/db/migrations/0007_course_product_contents.sql`：课程商品详情内容表，使用 JSONB 保存适合人群、章节和素材占位。
+- `server/db/migrations/0008_catalog_permissions.sql`：扩展 `user_roles` 角色约束，支持课程商品只读与课程商品运营角色。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
@@ -49,7 +50,7 @@
 ## 后续接入顺序
 
 1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
-2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、课程商品、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，后续接入 ORM/迁移工具统一管理。
+2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、课程商品、课程商品详情内容、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，后续接入 ORM/迁移工具统一管理。
 3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
 4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
 5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。

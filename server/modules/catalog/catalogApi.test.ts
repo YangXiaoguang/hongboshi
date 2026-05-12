@@ -5,6 +5,7 @@ import {
   courseProductFromCourse,
 } from "./courseProductStore";
 import {
+  catalogOperationPermissions,
   getCourseProductAdminListPayload,
   getCourseProductContentQualityPayload,
   getCourseProductContentPayload,
@@ -20,7 +21,7 @@ const products = courses.slice(0, 4).map(courseProductFromCourse);
 const createStore = () => new InMemoryCourseProductStore(products);
 
 describe("catalog admin api payloads", () => {
-  it("requires admin management permission", async () => {
+  it("requires catalog read permission", async () => {
     const store = createStore();
     const anonymous = await getCourseProductAdminListPayload(null, {}, store);
     expect(anonymous.status).toBe(401);
@@ -31,6 +32,26 @@ describe("catalog admin api payloads", () => {
       store
     );
     expect(forbidden.status).toBe(403);
+
+    const catalogViewer = await getCourseProductAdminListPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      {},
+      store
+    );
+    expect(catalogViewer.status).toBe(200);
+  });
+
+  it("keeps catalog operation permissions explicit", () => {
+    expect(catalogOperationPermissions).toMatchObject({
+      list: "catalog:read",
+      contentRead: "catalog:read",
+      contentQualityRead: "catalog:read",
+      basicInfoUpdate: "catalog:edit",
+      contentUpdate: "catalog:edit",
+      reviewUpdate: "catalog:review",
+      statusUpdate: "catalog:publish",
+      priceUpdate: "catalog:price",
+    });
   });
 
   it("returns filtered course products to operators", async () => {
@@ -55,6 +76,107 @@ describe("catalog admin api payloads", () => {
       expect(payload.body.data.summary.totalCount).toBe(products.length);
       expect(payload.body.data.auditEvents).toEqual([]);
     }
+  });
+
+  it("allows read-only catalog actors to inspect but not mutate products", async () => {
+    const productStore = createStore();
+    const contentStore = new InMemoryCourseProductContentStore();
+    const actor = { id: "catalog_viewer_1", roles: ["catalog_viewer" as const] };
+
+    const list = await getCourseProductAdminListPayload(actor, {}, productStore);
+    const content = await getCourseProductContentPayload(
+      actor,
+      products[0].id,
+      productStore,
+      contentStore
+    );
+    const quality = await getCourseProductContentQualityPayload(
+      actor,
+      productStore,
+      contentStore
+    );
+
+    expect(list.status).toBe(200);
+    expect(content.status).toBe(200);
+    expect(quality.status).toBe(200);
+
+    const deniedStatus = await updateCourseProductStatusPayload(
+      actor,
+      products[0].id,
+      {
+        status: "unpublished",
+        reason: "只读账号不能上下架",
+      },
+      productStore
+    );
+    const deniedPrice = await updateCourseProductPricePayload(
+      actor,
+      products[0].id,
+      {
+        amount: 99,
+        originalAmount: 199,
+        isFree: false,
+        reason: "只读账号不能改价",
+      },
+      productStore
+    );
+    const deniedInfo = await updateCourseProductBasicInfoPayload(
+      actor,
+      products[0].id,
+      {
+        title: "婚姻关系沟通训练",
+        coverUrl: products[0].coverUrl,
+        category: "婚姻关系",
+        type: "直播",
+        instructorName: "林若安",
+        learners: 1888,
+        reason: "只读账号不能编辑信息",
+      },
+      productStore
+    );
+    const deniedReview = await updateCourseProductReviewPayload(
+      actor,
+      products[0].id,
+      {
+        action: "approve",
+        reason: "只读账号不能审核",
+      },
+      productStore
+    );
+    const deniedContent = await updateCourseProductContentPayload(
+      actor,
+      products[0].id,
+      {
+        summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+        targetAudience: ["希望提升情绪调节能力的学习者"],
+        chapters: [
+          {
+            id: "chapter_1",
+            title: "认识情绪反应",
+            durationMinutes: 36,
+            materialPlaceholders: [
+              {
+                id: "material_1",
+                title: "课后练习表",
+                type: "exercise",
+                status: "ready",
+              },
+            ],
+          },
+        ],
+        reason: "只读账号不能编辑内容",
+      },
+      productStore,
+      contentStore
+    );
+
+    expect([
+      deniedStatus.status,
+      deniedPrice.status,
+      deniedInfo.status,
+      deniedReview.status,
+      deniedContent.status,
+    ]).toEqual([403, 403, 403, 403, 403]);
   });
 
   it("rejects invalid list query values", async () => {

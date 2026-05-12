@@ -101,7 +101,15 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["visitor"] }, "course_access:read")).toBe(true);
     expect(userCan({ roles: ["visitor"] }, "course:purchase")).toBe(false);
     expect(userCan({ roles: ["member"] }, "course:purchase")).toBe(true);
+    expect(userCan({ roles: ["catalog_viewer"] }, "catalog:read")).toBe(true);
+    expect(userCan({ roles: ["catalog_viewer"] }, "catalog:price")).toBe(
+      false
+    );
+    expect(userCan({ roles: ["catalog_operator"] }, "catalog:review")).toBe(
+      true
+    );
     expect(userCan({ roles: ["admin"] }, "admin:manage")).toBe(true);
+    expect(userCan({ roles: ["admin"] }, "catalog:publish")).toBe(true);
   });
 
   it("captures consent records in login sessions", () => {
