@@ -44,6 +44,7 @@ export const AuthPermissionSchema = z.enum([
   "admin:manage",
   "user:read",
   "user:membership",
+  "order:read",
   "catalog:read",
   "catalog:edit",
   "catalog:review",
@@ -62,6 +63,10 @@ export const COURSE_CATALOG_PERMISSIONS = {
 export const USER_ADMIN_PERMISSIONS = {
   read: "user:read",
   membership: "user:membership",
+} satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
+
+export const ORDER_ADMIN_PERMISSIONS = {
+  read: "order:read",
 } satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
 
 export const CURRENT_USER_CONSENT_VERSION = "2026.05";
@@ -127,6 +132,7 @@ const RolePermissionMap = {
     "admin:manage",
     "user:read",
     "user:membership",
+    "order:read",
     "catalog:read",
     "catalog:edit",
     "catalog:review",
@@ -142,6 +148,7 @@ const RolePermissionMap = {
     "admin:manage",
     "user:read",
     "user:membership",
+    "order:read",
     "catalog:read",
     "catalog:edit",
     "catalog:review",

@@ -16,7 +16,7 @@
 | `assessmentEngine.ts` | 测评维度评分、风险分级、推荐路径生成                             |
 | `counseling.ts`       | 咨询师、擅长方向、时段、预约状态、预约请求与结果                 |
 | `growthProfile.ts`    | 成长档案聚合、摘要指标和用户成长时间线                           |
-| `order.ts`            | 可购买对象、订单、支付                                           |
+| `order.ts`            | 可购买对象、订单、支付和订单后台聚合契约                         |
 | `risk.ts`             | 风险事件、审计日志                                               |
 
 ## 使用约定
@@ -27,9 +27,11 @@
 - 数据库字段可以比领域模型更细，但不能绕过领域模型暴露给前端。
 - 枚举值使用英文稳定值或现有中文业务值，展示文案由 UI 层决定。
 
-当前后台权限已经开始从粗粒度 `admin:manage` 拆分为资源级能力。课程商品模块使用 `catalog:read`、`catalog:edit`、`catalog:review`、`catalog:publish`、`catalog:price` 控制列表/详情读取、内容编辑、审核、上下架和改价；用户会员后台使用 `user:read` 控制用户列表与详情聚合，使用 `user:membership` 控制会员开通、延期、到期标记和计划调整；`catalog_viewer` 为课程商品只读角色，`catalog_operator` 为课程商品运营角色，`operator` 与 `admin` 继续拥有课程商品完整权限，且拥有用户后台读取与会员操作权限。
+当前后台权限已经开始从粗粒度 `admin:manage` 拆分为资源级能力。课程商品模块使用 `catalog:read`、`catalog:edit`、`catalog:review`、`catalog:publish`、`catalog:price` 控制列表/详情读取、内容编辑、审核、上下架和改价；用户会员后台使用 `user:read` 控制用户列表与详情聚合，使用 `user:membership` 控制会员开通、延期、到期标记和计划调整；订单后台使用 `order:read` 控制课程、会员和咨询订单列表/详情读取；`catalog_viewer` 为课程商品只读角色，`catalog_operator` 为课程商品运营角色，`operator` 与 `admin` 继续拥有课程商品完整权限，且拥有用户后台读取、会员操作和订单后台读取权限。
 
 `UserAdminListResultSchema` 与 `UserAdminDetailSchema` 是运营用户会员后台的聚合契约，只暴露账号摘要、角色、会员状态、课程权益、订单摘要、咨询预约摘要、风险等级/状态摘要和会员操作审计摘要。手机号只允许脱敏值，咨询说明、测评答案和风险信号原文不进入该契约；后续需要查看敏感内容时应新增更高权限和审计事件，而不是扩展当前聚合视图。`UserAdminMembershipActionRequestSchema`、`UserAdminMembershipAuditEventSchema` 和 `UserAdminMembershipMutationResultSchema` 描述会员开通、延期、标记到期、调整计划、操作原因、操作者角色和前后会员状态。
+
+`OrderAdminListResultSchema` 与 `OrderAdminDetailSchema` 是运营订单后台的只读投影契约，聚合课程、会员和咨询订单，暴露订单状态、商品类型、金额、用户脱敏摘要、支付回调摘要、关联履约对象和只读时间线。M4-A 不提供订单状态写动作；后续关闭待支付、异常标记、退款处理必须新增服务端状态机动作和审计事件。
 
 ## 后端落地建议
 
@@ -62,6 +64,7 @@ server/
 
 - 课程权益：`server/modules/courses/courseAccessStore.ts` 已支持 JSON 文件和内存实现，并保存会员后台操作审计事件。
 - 用户会员后台：`server/modules/users/userAdminApi.ts` 负责用户会员聚合与会员权益后台动作，读取 auth 用户目录、课程权益、咨询预约和风险事件 Store，只输出脱敏手机号和摘要字段；会员操作由服务端计算状态、校验原因并写入审计。
+- 订单后台：`server/modules/orders/orderAdminApi.ts` 负责课程、会员和咨询订单只读聚合，读取课程权益订单、咨询预约记录、支付回调收据和 auth 用户目录，只输出履约与对账所需摘要。
 - 课程商品：`server/modules/catalog/courseProductStore.ts` 负责后台课程商品快照、筛选、排序、分页、汇总、写动作、审核状态流和审计事件；当前支持内存、JSON 文件与 PostgreSQL Store，并为前台 `/api/courses` 提供已审核通过且已上架课程映射。`server/modules/catalog/catalogApi.ts` 将读取、编辑、审核、发布和改价分别绑定到 `catalog:*` 权限。
 - 课程详情内容：`server/modules/catalog/courseProductContentStore.ts` 负责课程摘要、适合人群、章节、素材占位和批量质量校验；当前支持内存、JSON 文件与 PostgreSQL Store，内容更新会写入课程商品审计并触发复审。素材占位已预留 `assetId`、`assetUrl`、上传人、上传时间、下载开关和合规审核状态，后续可平滑接真实文件管理。
 - 测评结果：`server/modules/assessments/assessmentResultStore.ts` 负责按用户保存与读取最新报告。

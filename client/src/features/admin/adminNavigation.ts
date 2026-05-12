@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import {
   COURSE_CATALOG_PERMISSIONS,
+  ORDER_ADMIN_PERMISSIONS,
   USER_ADMIN_PERMISSIONS,
   type AuthPermission,
   type UserProfile,
@@ -88,24 +89,24 @@ export const adminNavigationItems = [
   {
     key: "users",
     title: "用户会员",
-    description: "用户检索、会员权益、账号状态和隐私边界。",
+    description: "用户检索、会员权益、账号状态和会员操作审计。",
     href: "/admin/users",
     icon: UsersRound,
     permission: USER_ADMIN_PERMISSIONS.read,
     status: "available",
     group: "business",
-    milestone: "M3-A",
+    milestone: "M3-B",
   },
   {
     key: "orders",
     title: "订单管理",
-    description: "课程、咨询和会员订单的状态机与履约追踪。",
+    description: "课程、咨询和会员订单的只读聚合与履约追踪。",
     href: "/admin/orders",
     icon: ClipboardList,
-    permission: "admin:manage",
-    status: "planned",
+    permission: ORDER_ADMIN_PERMISSIONS.read,
+    status: "available",
     group: "business",
-    milestone: "M4",
+    milestone: "M4-A",
   },
   {
     key: "transactions",

@@ -11,6 +11,7 @@ import { handleCounselingApiRequest } from "./server/modules/counseling/counseli
 import { handleCourseAccessApiRequest } from "./server/modules/courses/courseAccessApi";
 import { handleCourseApiRequest } from "./server/modules/courses/courseApi";
 import { handleGrowthProfileApiRequest } from "./server/modules/growth/growthProfileApi";
+import { handleOrderAdminApiRequest } from "./server/modules/orders/orderAdminApi";
 import { handlePaymentApiRequest } from "./server/modules/payments/paymentApi";
 import { handleUserAdminApiRequest } from "./server/modules/users/userAdminApi";
 //import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
@@ -115,6 +116,7 @@ function vitePluginManusDebugCollector(): Plugin {
         if (handleCourseAccessApiRequest(req, res)) return;
         if (handleCourseApiRequest(req, res)) return;
         if (handleGrowthProfileApiRequest(req, res)) return;
+        if (handleOrderAdminApiRequest(req, res)) return;
         if (handlePaymentApiRequest(req, res)) return;
         if (handleUserAdminApiRequest(req, res)) return;
         next();

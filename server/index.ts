@@ -14,6 +14,7 @@ import {
   capturePaymentWebhookRawBody,
   registerPaymentApi,
 } from "./modules/payments/paymentApi";
+import { registerOrderAdminApi } from "./modules/orders/orderAdminApi";
 import { registerUserAdminApi } from "./modules/users/userAdminApi";
 import { assertPersistenceConfig } from "./db/runtimeConfig";
 
@@ -35,6 +36,7 @@ async function startServer() {
   registerCourseApi(app);
   registerGrowthProfileApi(app);
   registerPaymentApi(app);
+  registerOrderAdminApi(app);
   registerUserAdminApi(app);
 
   // Serve static files from dist/public in production

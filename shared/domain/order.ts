@@ -3,6 +3,8 @@ import {
   DateTimeLikeSchema,
   EntityIdSchema,
   MoneyAmountSchema,
+  PageMetaSchema,
+  PaginationQuerySchema,
 } from "./common";
 
 export const PurchasableTypeSchema = z.enum([
@@ -166,6 +168,128 @@ export const PaymentReconciliationConsoleSchema = z.object({
   entries: z.array(PaymentReconciliationEntrySchema),
   summary: PaymentReconciliationSummarySchema,
   serverTime: DateTimeLikeSchema,
+});
+
+export const ORDER_ADMIN_PAGE_SIZE = 12;
+export const ALL_ORDER_ADMIN_STATUS = "all";
+export const ALL_ORDER_ADMIN_ITEM_TYPE = "all";
+
+export const OrderAdminStatusFilterSchema = z.union([
+  OrderStatusSchema,
+  z.literal(ALL_ORDER_ADMIN_STATUS),
+]);
+
+export const OrderAdminItemTypeFilterSchema = z.union([
+  PurchasableTypeSchema,
+  z.literal(ALL_ORDER_ADMIN_ITEM_TYPE),
+]);
+
+export const OrderAdminSortSchema = z.enum([
+  "created_desc",
+  "paid_desc",
+  "amount_desc",
+]);
+
+export const OrderAdminListQuerySchema = PaginationQuerySchema.extend({
+  keyword: z.string().trim().max(80).default(""),
+  status: OrderAdminStatusFilterSchema.default(ALL_ORDER_ADMIN_STATUS),
+  itemType: OrderAdminItemTypeFilterSchema.default(ALL_ORDER_ADMIN_ITEM_TYPE),
+  sort: OrderAdminSortSchema.default("created_desc"),
+  pageSize: z.number().int().min(1).max(50).default(ORDER_ADMIN_PAGE_SIZE),
+});
+
+export const OrderAdminUserSummarySchema = z.object({
+  id: EntityIdSchema,
+  displayName: z.string().min(1),
+  phoneMasked: z.string().optional(),
+});
+
+export const OrderAdminTimelineEventTypeSchema = z.enum([
+  "order_created",
+  "payment_succeeded",
+  "refund_succeeded",
+  "appointment_status",
+  "order_status",
+]);
+
+export const OrderAdminTimelineEventSchema = z.object({
+  type: OrderAdminTimelineEventTypeSchema,
+  label: z.string().min(1),
+  occurredAt: DateTimeLikeSchema,
+  detail: z.string().min(1).optional(),
+});
+
+export const OrderAdminRelatedObjectSchema = z.object({
+  type: PurchasableTypeSchema,
+  targetId: z.string().min(1),
+  title: z.string().min(1),
+  status: z.string().min(1).optional(),
+  counselorName: z.string().min(1).optional(),
+});
+
+export const OrderAdminPaymentReceiptSummarySchema = z.object({
+  id: EntityIdSchema,
+  type: z.enum(["payment.succeeded", "refund.succeeded"]),
+  channel: PaymentChannelSchema,
+  status: PaymentWebhookReceiptStatusSchema,
+  amount: MoneyAmountSchema,
+  transactionId: z.string().min(1),
+  occurredAt: DateTimeLikeSchema,
+  receivedAt: DateTimeLikeSchema,
+  processedAt: DateTimeLikeSchema.optional(),
+  responseStatus: z.number().int().positive().optional(),
+  errorMessage: z.string().min(1).optional(),
+});
+
+export const OrderAdminListItemSchema = z.object({
+  id: EntityIdSchema,
+  user: OrderAdminUserSummarySchema,
+  status: OrderStatusSchema,
+  itemTypes: z.array(PurchasableTypeSchema).min(1),
+  primaryTitle: z.string().min(1),
+  itemCount: z.number().int().positive(),
+  payableAmount: MoneyAmountSchema,
+  createdAt: DateTimeLikeSchema,
+  paidAt: DateTimeLikeSchema.optional(),
+  latestReceiptStatus: PaymentWebhookReceiptStatusSchema.optional(),
+  relatedObjectStatus: z.string().min(1).optional(),
+});
+
+export const OrderAdminSummarySchema = z.object({
+  totalCount: z.number().int().nonnegative(),
+  pendingPaymentCount: z.number().int().nonnegative(),
+  paidCount: z.number().int().nonnegative(),
+  refundingCount: z.number().int().nonnegative(),
+  refundedCount: z.number().int().nonnegative(),
+  payableAmount: MoneyAmountSchema,
+  paidAmount: MoneyAmountSchema,
+});
+
+export const OrderAdminFilterOptionsSchema = z.object({
+  statuses: z.array(OrderStatusSchema),
+  itemTypes: z.array(PurchasableTypeSchema),
+});
+
+export const OrderAdminListResultSchema = z.object({
+  items: z.array(OrderAdminListItemSchema),
+  meta: PageMetaSchema,
+  summary: OrderAdminSummarySchema,
+  filters: OrderAdminFilterOptionsSchema,
+  query: OrderAdminListQuerySchema,
+  serverTime: DateTimeLikeSchema,
+});
+
+export const OrderAdminDetailSchema = z.object({
+  order: OrderAdminListItemSchema,
+  items: z.array(OrderItemSchema).min(1),
+  subtotal: MoneyAmountSchema,
+  discountAmount: MoneyAmountSchema,
+  payableAmount: MoneyAmountSchema,
+  paymentReceipts: z.array(OrderAdminPaymentReceiptSummarySchema),
+  relatedObjects: z.array(OrderAdminRelatedObjectSchema),
+  timeline: z.array(OrderAdminTimelineEventSchema),
+  privacyNotice: z.string().min(1),
+  generatedAt: DateTimeLikeSchema,
 });
 
 export const PaymentWebhookProcessingResultSchema = z.object({
@@ -439,6 +563,27 @@ export type PaymentReconciliationSummary = z.infer<
 export type PaymentReconciliationConsole = z.infer<
   typeof PaymentReconciliationConsoleSchema
 >;
+export type OrderAdminStatusFilter = z.infer<
+  typeof OrderAdminStatusFilterSchema
+>;
+export type OrderAdminItemTypeFilter = z.infer<
+  typeof OrderAdminItemTypeFilterSchema
+>;
+export type OrderAdminListQuery = z.infer<typeof OrderAdminListQuerySchema>;
+export type OrderAdminUserSummary = z.infer<typeof OrderAdminUserSummarySchema>;
+export type OrderAdminTimelineEvent = z.infer<
+  typeof OrderAdminTimelineEventSchema
+>;
+export type OrderAdminRelatedObject = z.infer<
+  typeof OrderAdminRelatedObjectSchema
+>;
+export type OrderAdminPaymentReceiptSummary = z.infer<
+  typeof OrderAdminPaymentReceiptSummarySchema
+>;
+export type OrderAdminListItem = z.infer<typeof OrderAdminListItemSchema>;
+export type OrderAdminSummary = z.infer<typeof OrderAdminSummarySchema>;
+export type OrderAdminListResult = z.infer<typeof OrderAdminListResultSchema>;
+export type OrderAdminDetail = z.infer<typeof OrderAdminDetailSchema>;
 export type PaymentWebhookProcessingResult = z.infer<
   typeof PaymentWebhookProcessingResultSchema
 >;

@@ -16,6 +16,7 @@ import CourseDetail from "./pages/CourseDetail";
 import CourseProducts from "./pages/admin/CourseProducts";
 import Home from "./pages/Home";
 import MyCourses from "./pages/MyCourses";
+import OrderManagement from "./pages/admin/OrderManagement";
 import PaymentReconciliation from "./pages/PaymentReconciliation";
 import UserMembers from "./pages/admin/UserMembers";
 
@@ -44,6 +45,11 @@ function Router() {
       <Route path={"/admin/users"}>
         <AdminLayout>
           <UserMembers />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/orders"}>
+        <AdminLayout>
+          <OrderManagement />
         </AdminLayout>
       </Route>
       <Route path={"/admin"}>
