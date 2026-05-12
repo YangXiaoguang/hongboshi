@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品与课程详情内容均已完成开发期 JSON Store、专用 PostgreSQL 表与 Store。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容和会员权益操作审计均已完成开发期 Store、专用 PostgreSQL 表与 Store。
 
 ## 文件位置
 
@@ -13,6 +13,7 @@
 - `server/db/migrations/0006_course_product_content_management.sql`：课程商品内容审计动作约束。
 - `server/db/migrations/0007_course_product_contents.sql`：课程商品详情内容表，使用 JSONB 保存适合人群、章节和素材占位。
 - `server/db/migrations/0008_catalog_permissions.sql`：扩展 `user_roles` 角色约束，支持课程商品只读与课程商品运营角色。
+- `server/db/migrations/0009_user_membership_audit_events.sql`：用户会员权益后台操作审计表，记录操作者、原因和前后会员状态。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
@@ -35,17 +36,17 @@
 - 测评分数、推荐结果这类强业务结构先用 `JSONB` 存储，保持与报告生成引擎同步；当运营查询变复杂后再拆维度表。
 - 咨询时段和预约单分表，`uniq_active_counseling_slot` 防止同一时段被多个有效预约占用；咨询预约通过 `order_id` 关联 `orders`，用于支付确认、超时关闭和后续退款流转。
 - 风险事件独立建表，测评报告和咨询预约通过 `risk_event_id` 关联，咨询预约同时保留 `assessment_report_id`，方便咨询师在服务前回看用户授权带入的测评上下文。
-- 审计日志只追加，不作为业务状态来源；咨询运营审计单独保留规则快照、履约状态前后值和操作者角色，便于后台追溯。
+- 审计日志只追加，不作为业务状态来源；咨询运营审计单独保留规则快照、履约状态前后值和操作者角色，会员操作审计保留前后会员状态、操作原因和操作者角色，便于后台追溯。
 
 ## 初始核心表
 
-| 领域           | 表                                                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                                                                        |
+| 领域           | 表                                                                                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                                                                                                   |
 | 课程权益与订单 | `course_memberships`, `course_access_grants`, `course_products`, `course_product_contents`, `orders`, `order_items`, `payments`, `payment_webhook_events` |
-| 测评           | `assessment_reports`                                                                                                           |
-| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`, `counseling_operation_settings`                                   |
-| 风险与审计     | `risk_events`, `audit_logs`, `course_product_audit_events`, `counseling_operation_audit_events`                                |
+| 测评           | `assessment_reports`                                                                                                                                      |
+| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`, `counseling_operation_settings`                                                              |
+| 风险与审计     | `risk_events`, `audit_logs`, `course_product_audit_events`, `counseling_operation_audit_events`, `user_membership_audit_events`                           |
 
 ## 后续接入顺序
 
@@ -65,7 +66,7 @@
 
 `server/modules/counseling/postgresCounselingOperationStore.ts` 已实现取消规则配置、规则变更审计、履约审计读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COUNSELING_OPERATION_STORE=postgres` 时，咨询运营配置与审计会写入 PostgreSQL。
 
-`server/modules/courses/postgresCourseAccessStore.ts` 已实现课程会员、课程授权、订单和订单明细的保存、单用户读取与后台聚合所需的用户权益快照列表能力。开发期默认仍可使用 JSON Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 时，课程权益会写入 PostgreSQL。
+`server/modules/courses/postgresCourseAccessStore.ts` 已实现课程会员、课程授权、订单、订单明细和会员操作审计事件的保存、单用户读取与后台聚合所需的用户权益快照列表能力。开发期默认仍可使用 JSON Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 时，课程权益和会员操作审计会写入 PostgreSQL。
 
 `server/modules/auth/postgresAuthSessionStore.ts` 已实现用户、角色、协议同意和登录会话的保存、读取、注销与用户目录列表能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_AUTH_SESSION_STORE=postgres` 时，登录会话会写入 PostgreSQL，并只保存 session token 的哈希值。
 
@@ -79,4 +80,4 @@
 
 `server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节和素材占位；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
 
-当前实现已覆盖登录会话、课程权益、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化，并支撑 `/admin/users` 只读聚合。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+当前实现已覆盖登录会话、课程权益、会员操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合与会员权益后台动作。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

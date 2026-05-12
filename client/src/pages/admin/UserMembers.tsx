@@ -5,10 +5,12 @@ import {
   AlertTriangle,
   BadgeCheck,
   CalendarClock,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
   Eye,
+  History,
   Loader2,
   RefreshCw,
   Search,
@@ -29,6 +31,8 @@ import {
   type UserAdminDetail,
   type UserAdminListItem,
   type UserAdminListQuery,
+  type UserAdminMembershipAction,
+  type UserAdminMembershipActionRequest,
   type UserAdminMembershipStatus,
   type UserRole,
 } from "@shared/domain";
@@ -50,6 +54,20 @@ const membershipCopy = {
   active: "生效中",
   expired: "已到期",
 } satisfies Record<UserAdminMembershipStatus, string>;
+
+const membershipActionCopy = {
+  activate: "开通会员",
+  extend: "延期会员",
+  expire: "标记到期",
+  adjust_plan: "调整计划",
+} satisfies Record<UserAdminMembershipAction, string>;
+
+const membershipActionOptions: UserAdminMembershipAction[] = [
+  "extend",
+  "activate",
+  "adjust_plan",
+  "expire",
+];
 
 const orderStatusCopy = {
   created: "已创建",
@@ -133,7 +151,9 @@ function membershipClass(status: UserAdminMembershipStatus) {
 }
 
 function riskClass(count: number) {
-  return count > 0 ? "bg-[#FBEAE7] text-[#9B3B2F]" : "bg-[#E7EFE8] text-[#41675A]";
+  return count > 0
+    ? "bg-[#FBEAE7] text-[#9B3B2F]"
+    : "bg-[#E7EFE8] text-[#41675A]";
 }
 
 function metricValue(value: number) {
@@ -211,7 +231,9 @@ function UserRow({
             user.activeRiskCount
           )}`}
         >
-          {user.activeRiskCount > 0 ? `${user.activeRiskCount} 个风险` : "无开放风险"}
+          {user.activeRiskCount > 0
+            ? `${user.activeRiskCount} 个风险`
+            : "无开放风险"}
         </span>
       </span>
     </button>
@@ -260,11 +282,74 @@ function UserDetailPanel({
   detail,
   loading,
   error,
+  canManageMembership,
+  membershipSubmitting,
+  membershipError,
+  onSubmitMembership,
 }: {
   detail?: UserAdminDetail;
   loading: boolean;
   error?: string;
+  canManageMembership: boolean;
+  membershipSubmitting: boolean;
+  membershipError?: string;
+  onSubmitMembership: (
+    request: UserAdminMembershipActionRequest
+  ) => Promise<void>;
 }) {
+  const [membershipAction, setMembershipAction] =
+    useState<UserAdminMembershipAction>("extend");
+  const [planName, setPlanName] = useState("成长会员");
+  const [durationDays, setDurationDays] = useState(365);
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    if (detail?.membership.planName) {
+      setPlanName(detail.membership.planName);
+    }
+  }, [detail?.membership.planName, detail?.user.id]);
+
+  async function submitMembershipAction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedReason = reason.trim();
+    const trimmedPlanName = planName.trim() || "成长会员";
+    const normalizedDurationDays = Math.max(
+      1,
+      Math.min(1095, Math.trunc(durationDays || 1))
+    );
+    const request: UserAdminMembershipActionRequest =
+      membershipAction === "activate"
+        ? {
+            action: "activate",
+            planName: trimmedPlanName,
+            durationDays: normalizedDurationDays,
+            reason: trimmedReason,
+          }
+        : membershipAction === "extend"
+          ? {
+              action: "extend",
+              durationDays: normalizedDurationDays,
+              reason: trimmedReason,
+            }
+          : membershipAction === "adjust_plan"
+            ? {
+                action: "adjust_plan",
+                planName: trimmedPlanName,
+                reason: trimmedReason,
+              }
+            : {
+                action: "expire",
+                reason: trimmedReason,
+              };
+
+    try {
+      await onSubmitMembership(request);
+      setReason("");
+    } catch {
+      // Parent state owns the error copy.
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[420px] items-center justify-center text-sm text-[#6F7771]">
@@ -318,11 +403,15 @@ function UserDetailPanel({
 
         <div className="mt-4 grid grid-cols-3 border-y border-[#E8DED0] text-center text-sm">
           <div className="border-r border-[#E8DED0] py-3">
-            <p className="text-lg font-semibold">{detail.courseAccess.ownedCourseCount}</p>
+            <p className="text-lg font-semibold">
+              {detail.courseAccess.ownedCourseCount}
+            </p>
             <p className="mt-0.5 text-xs text-[#8A8176]">课程</p>
           </div>
           <div className="border-r border-[#E8DED0] py-3">
-            <p className="text-lg font-semibold">{detail.counseling.totalCount}</p>
+            <p className="text-lg font-semibold">
+              {detail.counseling.totalCount}
+            </p>
             <p className="mt-0.5 text-xs text-[#8A8176]">咨询</p>
           </div>
           <div className="py-3">
@@ -353,6 +442,133 @@ function UserDetailPanel({
             </span>
           </div>
         </div>
+        {canManageMembership && (
+          <form
+            onSubmit={submitMembershipAction}
+            className="mt-4 grid gap-3 rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-3"
+          >
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="grid gap-1 text-xs font-semibold text-[#73695F]">
+                操作
+                <select
+                  value={membershipAction}
+                  onChange={event =>
+                    setMembershipAction(
+                      event.target.value as UserAdminMembershipAction
+                    )
+                  }
+                  className="h-9 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm font-medium text-[#243B35] outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
+                >
+                  {membershipActionOptions.map(action => (
+                    <option key={action} value={action}>
+                      {membershipActionCopy[action]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {(membershipAction === "activate" ||
+                membershipAction === "adjust_plan") && (
+                <label className="grid gap-1 text-xs font-semibold text-[#73695F]">
+                  计划
+                  <input
+                    value={planName}
+                    onChange={event => setPlanName(event.target.value)}
+                    minLength={2}
+                    maxLength={40}
+                    required
+                    className="h-9 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm font-medium text-[#243B35] outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
+                  />
+                </label>
+              )}
+
+              {(membershipAction === "activate" ||
+                membershipAction === "extend") && (
+                <label className="grid gap-1 text-xs font-semibold text-[#73695F]">
+                  天数
+                  <input
+                    type="number"
+                    min={1}
+                    max={1095}
+                    value={durationDays}
+                    onChange={event =>
+                      setDurationDays(Number(event.target.value))
+                    }
+                    required
+                    className="h-9 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm font-medium text-[#243B35] outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
+                  />
+                </label>
+              )}
+            </div>
+
+            <label className="grid gap-1 text-xs font-semibold text-[#73695F]">
+              原因
+              <textarea
+                value={reason}
+                onChange={event => setReason(event.target.value)}
+                minLength={4}
+                maxLength={240}
+                required
+                rows={3}
+                className="min-h-[78px] resize-none rounded-lg border border-[#DCCDBB] bg-white px-3 py-2 text-sm font-medium text-[#243B35] outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
+              />
+            </label>
+
+            {membershipError && (
+              <p className="rounded-lg bg-[#FBEAE7] px-3 py-2 text-xs font-semibold text-[#9B3B2F]">
+                {membershipError}
+              </p>
+            )}
+
+            <button
+              disabled={membershipSubmitting || reason.trim().length < 4}
+              className="inline-flex h-9 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-3 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-60"
+            >
+              {membershipSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              确认
+            </button>
+          </form>
+        )}
+      </DetailSection>
+
+      <DetailSection title="会员操作审计">
+        {detail.membershipAuditEvents.length === 0 ? (
+          <p className="text-sm text-[#8A8176]">暂无会员操作记录</p>
+        ) : (
+          <div className="divide-y divide-[#E8DED0]">
+            {detail.membershipAuditEvents.map(event => (
+              <div key={event.id} className="py-3 first:pt-0 last:pb-0">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#E5ECE1] text-[#41675A]">
+                    <History className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-[#243B35]">
+                        {membershipActionCopy[event.action]}
+                      </p>
+                      <p className="text-xs text-[#8A8176]">
+                        {formatDate(event.createdAt)}
+                      </p>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-[#73695F]">
+                      {membershipCopy[event.before.status]} -&gt;{" "}
+                      {membershipCopy[event.after.status]} ·{" "}
+                      {event.after.planName ?? "未记录"}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                      {event.reason}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </DetailSection>
 
       <DetailSection title="最近订单">
@@ -432,7 +648,8 @@ function UserDetailPanel({
                     </p>
                   </div>
                   <span className="rounded-full bg-[#FBEAE7] px-2 py-0.5 text-xs font-semibold text-[#9B3B2F]">
-                    {riskLevelCopy[event.riskLevel]} · {riskStatusCopy[event.status]}
+                    {riskLevelCopy[event.riskLevel]} ·{" "}
+                    {riskStatusCopy[event.status]}
                   </span>
                 </div>
               </div>
@@ -472,6 +689,9 @@ function UserDetailPanel({
 export default function UserMembers() {
   const { user } = useAuth();
   const canRead = Boolean(user && userCan(user, USER_ADMIN_PERMISSIONS.read));
+  const canManageMembership = Boolean(
+    user && userCan(user, USER_ADMIN_PERMISSIONS.membership)
+  );
   const [query, setQuery] = useState<UserAdminListQuery>({
     keyword: "",
     role: ALL_USER_ADMIN_ROLE,
@@ -488,6 +708,8 @@ export default function UserMembers() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [detailError, setDetailError] = useState<string>();
+  const [membershipSubmitting, setMembershipSubmitting] = useState(false);
+  const [membershipError, setMembershipError] = useState<string>();
 
   const loadUsers = useCallback(() => {
     if (!canRead) return;
@@ -524,6 +746,7 @@ export default function UserMembers() {
 
     setDetailLoading(true);
     setDetailError(undefined);
+    setMembershipError(undefined);
     httpAdminUserRepository
       .loadUserDetail(selectedUserId)
       .then(setDetail)
@@ -557,6 +780,31 @@ export default function UserMembers() {
     event.preventDefault();
     updateQuery({ keyword: keywordDraft.trim() });
   }
+
+  const submitMembershipAction = useCallback(
+    async (request: UserAdminMembershipActionRequest) => {
+      if (!detail) return;
+
+      setMembershipSubmitting(true);
+      setMembershipError(undefined);
+      try {
+        const result = await httpAdminUserRepository.updateUserMembership(
+          detail.user.id,
+          request
+        );
+        setDetail(result.detail);
+        loadUsers();
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "用户会员操作暂时不可用";
+        setMembershipError(message);
+        throw err;
+      } finally {
+        setMembershipSubmitting(false);
+      }
+    },
+    [detail, loadUsers]
+  );
 
   if (!canRead) {
     return (
@@ -761,7 +1009,9 @@ export default function UserMembers() {
               </span>
               <div className="flex gap-2">
                 <button
-                  onClick={() => updateQuery({ page: Math.max(1, query.page - 1) })}
+                  onClick={() =>
+                    updateQuery({ page: Math.max(1, query.page - 1) })
+                  }
                   disabled={query.page <= 1}
                   className="inline-flex h-9 items-center gap-1 rounded-lg border border-[#DCCDBB] px-3 font-semibold text-[#53675D] transition hover:bg-[#F8F3EA] disabled:cursor-not-allowed disabled:opacity-45"
                 >
@@ -800,6 +1050,10 @@ export default function UserMembers() {
             detail={detail}
             loading={detailLoading}
             error={detailError}
+            canManageMembership={canManageMembership}
+            membershipSubmitting={membershipSubmitting}
+            membershipError={membershipError}
+            onSubmitMembership={submitMembershipAction}
           />
         </aside>
       </section>

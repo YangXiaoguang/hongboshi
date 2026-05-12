@@ -8,7 +8,9 @@ import { createEmptyCourseAccessState } from "../../../shared/domain";
 const tempDirs: string[] = [];
 
 function createTempStore() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hongboshi-course-access-"));
+  const dir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "hongboshi-course-access-")
+  );
   tempDirs.push(dir);
   return new JsonFileCourseAccessStore(path.join(dir, "course-access.json"));
 }
@@ -42,5 +44,33 @@ describe("course access JSON store", () => {
     });
 
     expect(store.load("u_20001").ownedCourseIds).toEqual([]);
+  });
+
+  it("persists membership audit events by user id", () => {
+    const store = createTempStore();
+    store.appendMembershipAuditEvent({
+      id: "audit_1",
+      userId: "u_10001",
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      action: "extend",
+      reason: "客服补偿延期",
+      before: { status: "active", expiresAt: "2027-05-01T10:00:00+08:00" },
+      after: { status: "active", expiresAt: "2027-05-31T10:00:00+08:00" },
+      createdAt: "2026-05-12T10:00:00+08:00",
+    });
+
+    const reloadedStore = new JsonFileCourseAccessStore(
+      path.join(tempDirs[0], "course-access.json")
+    );
+
+    expect(reloadedStore.listMembershipAuditEvents("u_10001")[0]).toMatchObject(
+      {
+        id: "audit_1",
+        action: "extend",
+        reason: "客服补偿延期",
+      }
+    );
+    expect(reloadedStore.listMembershipAuditEvents("u_20001")).toEqual([]);
   });
 });

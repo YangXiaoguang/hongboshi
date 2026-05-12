@@ -3,6 +3,7 @@ import {
   httpAdminUserRepository,
   parseAdminUserDetailResponse,
   parseAdminUserListResponse,
+  parseAdminUserMembershipMutationResponse,
 } from "./httpAdminUserRepository";
 
 const listData = {
@@ -67,6 +68,7 @@ const detailData = {
     expiresAt: "2027-05-10T10:00:00+08:00",
     activeNow: true,
   },
+  membershipAuditEvents: [],
   courseAccess: {
     ownedCourseIds: [1],
     ownedCourseCount: 1,
@@ -94,6 +96,36 @@ const detailData = {
   },
   privacyNotice: "用户后台仅展示运营所需摘要。",
   generatedAt: "2026-05-12T10:00:00+08:00",
+};
+
+const auditEvent = {
+  id: "audit_1",
+  userId: "u_member_1",
+  actorId: "operator_1",
+  actorRoles: ["operator"],
+  action: "extend",
+  reason: "客服补偿延期",
+  before: {
+    status: "active",
+    planName: "成长会员",
+    expiresAt: "2027-05-10T10:00:00+08:00",
+  },
+  after: {
+    status: "active",
+    planName: "成长会员",
+    expiresAt: "2027-06-09T10:00:00+08:00",
+  },
+  createdAt: "2026-05-12T10:00:00+08:00",
+};
+
+const mutationData = {
+  detail: {
+    ...detailData,
+    membershipAuditEvents: [auditEvent],
+  },
+  auditEvent,
+  auditEvents: [auditEvent],
+  serverTime: "2026-05-12T10:00:00+08:00",
 };
 
 describe("http admin user repository", () => {
@@ -133,10 +165,22 @@ describe("http admin user repository", () => {
     expect(JSON.stringify(parsed)).not.toContain("risk signal");
   });
 
+  it("parses membership mutation responses", () => {
+    const parsed = parseAdminUserMembershipMutationResponse({
+      ok: true,
+      data: mutationData,
+    });
+
+    expect(parsed.auditEvent.action).toBe("extend");
+    expect(parsed.detail.membershipAuditEvents[0]?.reason).toBe("客服补偿延期");
+  });
+
   it("loads users from the admin endpoint with filters", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ ok: true, data: listData })));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ ok: true, data: listData }))
+      );
 
     const result = await httpAdminUserRepository.loadUsers({
       keyword: "测试",
@@ -176,5 +220,40 @@ describe("http admin user repository", () => {
         cache: "no-store",
       })
     );
+  });
+
+  it("updates user membership through the admin endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: mutationData,
+        })
+      )
+    );
+
+    const result = await httpAdminUserRepository.updateUserMembership(
+      "u_member_1",
+      {
+        action: "extend",
+        durationDays: 30,
+        reason: "客服补偿延期",
+      }
+    );
+
+    expect(result.auditEvent.reason).toBe("客服补偿延期");
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe("/api/users/admin/users/u_member_1/membership");
+    expect(init).toEqual(
+      expect.objectContaining({
+        method: "PATCH",
+        credentials: "same-origin",
+      })
+    );
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      action: "extend",
+      durationDays: 30,
+      reason: "客服补偿延期",
+    });
   });
 });

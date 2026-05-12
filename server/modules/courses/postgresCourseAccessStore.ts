@@ -1,12 +1,14 @@
 import { createHash } from "crypto";
 import {
   CourseAccessStateSchema,
+  UserAdminMembershipAuditEventSchema,
   createEmptyCourseAccessState,
   normalizeCourseAccessState,
   type CourseAccessState,
   type CourseMembership,
   type Order,
   type OrderItem,
+  type UserAdminMembershipAuditEvent,
 } from "../../../shared/domain";
 import type { DatabaseQueryExecutor } from "../../db/postgres";
 
@@ -40,6 +42,18 @@ type OrderItemRow = {
   title: string;
   unit_price_cents: number;
   quantity: number;
+};
+
+type MembershipAuditEventRow = {
+  id: string;
+  user_id: string;
+  actor_id: string;
+  actor_roles: string[];
+  action: UserAdminMembershipAuditEvent["action"];
+  reason: string;
+  before_membership: unknown;
+  after_membership: unknown;
+  created_at: string | Date;
 };
 
 function toDateTimeLike(value: string | Date | null | undefined) {
@@ -103,6 +117,22 @@ function orderRowsToDomain(orders: OrderRow[], items: OrderItemRow[]): Order[] {
     createdAt: toDateTimeLike(order.created_at) ?? new Date(0).toISOString(),
     paidAt: toDateTimeLike(order.paid_at),
   }));
+}
+
+function membershipAuditEventRowToDomain(
+  row: MembershipAuditEventRow
+): UserAdminMembershipAuditEvent {
+  return UserAdminMembershipAuditEventSchema.parse({
+    id: row.id,
+    userId: row.user_id,
+    actorId: row.actor_id,
+    actorRoles: row.actor_roles,
+    action: row.action,
+    reason: row.reason,
+    before: row.before_membership,
+    after: row.after_membership,
+    createdAt: toDateTimeLike(row.created_at) ?? new Date(0).toISOString(),
+  });
 }
 
 function sourceOrderIdForCourse(state: CourseAccessState, courseId: number) {
@@ -187,7 +217,9 @@ export class PostgresCourseAccessStore {
     });
   }
 
-  async listUserStates(): Promise<Array<{ userId: string; state: CourseAccessState }>> {
+  async listUserStates(): Promise<
+    Array<{ userId: string; state: CourseAccessState }>
+  > {
     const result = await this.db.query<{ user_id: string }>(
       `
         SELECT user_id
@@ -373,6 +405,67 @@ export class PostgresCourseAccessStore {
     return normalized;
   }
 
+  async listMembershipAuditEvents(
+    userId: string
+  ): Promise<UserAdminMembershipAuditEvent[]> {
+    const result = await this.db.query<MembershipAuditEventRow>(
+      `
+        SELECT
+          id,
+          user_id,
+          actor_id,
+          actor_roles,
+          action,
+          reason,
+          before_membership,
+          after_membership,
+          created_at
+        FROM user_membership_audit_events
+        WHERE user_id = $1
+        ORDER BY created_at DESC, id DESC
+      `,
+      [userId]
+    );
+
+    return result.rows.map(membershipAuditEventRowToDomain);
+  }
+
+  async appendMembershipAuditEvent(
+    event: UserAdminMembershipAuditEvent
+  ): Promise<UserAdminMembershipAuditEvent> {
+    const normalized = UserAdminMembershipAuditEventSchema.parse(event);
+    await this.db.query(
+      `
+        INSERT INTO user_membership_audit_events (
+          id,
+          user_id,
+          actor_id,
+          actor_roles,
+          action,
+          reason,
+          before_membership,
+          after_membership,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
+        ON CONFLICT (id) DO NOTHING
+      `,
+      [
+        normalized.id,
+        normalized.userId,
+        normalized.actorId,
+        normalized.actorRoles,
+        normalized.action,
+        normalized.reason,
+        JSON.stringify(normalized.before),
+        JSON.stringify(normalized.after),
+        normalized.createdAt,
+      ]
+    );
+
+    return normalized;
+  }
+
   async reset(
     userId: string,
     state = createEmptyCourseAccessState()
@@ -381,6 +474,7 @@ export class PostgresCourseAccessStore {
   }
 
   async clear(): Promise<void> {
+    await this.db.query("DELETE FROM user_membership_audit_events");
     await this.db.query("DELETE FROM course_access_grants");
     await this.db.query("DELETE FROM course_memberships");
     await this.db.query("DELETE FROM orders");

@@ -7,10 +7,7 @@ import {
   PaginationQuerySchema,
 } from "./common";
 import { CourseMembershipSchema } from "./courseAccess";
-import {
-  AppointmentStatusSchema,
-  CounselingChannelSchema,
-} from "./counseling";
+import { AppointmentStatusSchema, CounselingChannelSchema } from "./counseling";
 import { OrderStatusSchema, PurchasableTypeSchema } from "./order";
 import {
   RiskEventSourceSchema,
@@ -46,6 +43,7 @@ export const AuthPermissionSchema = z.enum([
   "admin:read",
   "admin:manage",
   "user:read",
+  "user:membership",
   "catalog:read",
   "catalog:edit",
   "catalog:review",
@@ -63,6 +61,7 @@ export const COURSE_CATALOG_PERMISSIONS = {
 
 export const USER_ADMIN_PERMISSIONS = {
   read: "user:read",
+  membership: "user:membership",
 } satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
 
 export const CURRENT_USER_CONSENT_VERSION = "2026.05";
@@ -127,6 +126,7 @@ const RolePermissionMap = {
     "admin:read",
     "admin:manage",
     "user:read",
+    "user:membership",
     "catalog:read",
     "catalog:edit",
     "catalog:review",
@@ -141,6 +141,7 @@ const RolePermissionMap = {
     "admin:read",
     "admin:manage",
     "user:read",
+    "user:membership",
     "catalog:read",
     "catalog:edit",
     "catalog:review",
@@ -166,7 +167,8 @@ export const USER_ADMIN_PAGE_SIZE = 12;
 export const ALL_USER_ADMIN_ROLE = "all";
 export const ALL_USER_ADMIN_MEMBERSHIP_STATUS = "all";
 
-export const UserAdminMembershipStatusSchema = CourseMembershipSchema.shape.status;
+export const UserAdminMembershipStatusSchema =
+  CourseMembershipSchema.shape.status;
 
 export const UserAdminRoleFilterSchema = z.union([
   UserRoleSchema,
@@ -255,6 +257,54 @@ export const UserAdminMembershipSummarySchema = z.object({
   activeNow: z.boolean(),
 });
 
+const UserAdminMembershipPlanNameSchema = z.string().trim().min(2).max(40);
+const UserAdminMembershipActionReasonSchema = z.string().trim().min(4).max(240);
+
+export const UserAdminMembershipActionSchema = z.enum([
+  "activate",
+  "extend",
+  "expire",
+  "adjust_plan",
+]);
+
+export const UserAdminMembershipActionRequestSchema = z.discriminatedUnion(
+  "action",
+  [
+    z.object({
+      action: z.literal("activate"),
+      planName: UserAdminMembershipPlanNameSchema,
+      durationDays: z.number().int().min(1).max(1095),
+      reason: UserAdminMembershipActionReasonSchema,
+    }),
+    z.object({
+      action: z.literal("extend"),
+      durationDays: z.number().int().min(1).max(1095),
+      reason: UserAdminMembershipActionReasonSchema,
+    }),
+    z.object({
+      action: z.literal("expire"),
+      reason: UserAdminMembershipActionReasonSchema,
+    }),
+    z.object({
+      action: z.literal("adjust_plan"),
+      planName: UserAdminMembershipPlanNameSchema,
+      reason: UserAdminMembershipActionReasonSchema,
+    }),
+  ]
+);
+
+export const UserAdminMembershipAuditEventSchema = z.object({
+  id: EntityIdSchema,
+  userId: EntityIdSchema,
+  actorId: EntityIdSchema,
+  actorRoles: z.array(UserRoleSchema).min(1),
+  action: UserAdminMembershipActionSchema,
+  reason: UserAdminMembershipActionReasonSchema,
+  before: CourseMembershipSchema,
+  after: CourseMembershipSchema,
+  createdAt: DateTimeLikeSchema,
+});
+
 export const UserAdminOrderSummarySchema = z.object({
   id: EntityIdSchema,
   status: OrderStatusSchema,
@@ -307,11 +357,21 @@ export const UserAdminDetailSchema = z.object({
   user: UserAdminListItemSchema,
   consents: z.array(UserAdminConsentSummarySchema),
   membership: UserAdminMembershipSummarySchema,
+  membershipAuditEvents: z
+    .array(UserAdminMembershipAuditEventSchema)
+    .default([]),
   courseAccess: UserAdminCourseAccessSummarySchema,
   counseling: UserAdminCounselingSummarySchema,
   risk: UserAdminRiskSummarySchema,
   privacyNotice: z.string().min(1),
   generatedAt: DateTimeLikeSchema,
+});
+
+export const UserAdminMembershipMutationResultSchema = z.object({
+  detail: UserAdminDetailSchema,
+  auditEvent: UserAdminMembershipAuditEventSchema,
+  auditEvents: z.array(UserAdminMembershipAuditEventSchema),
+  serverTime: DateTimeLikeSchema,
 });
 
 export type UserRole = z.infer<typeof UserRoleSchema>;
@@ -326,7 +386,19 @@ export type WechatLoginRequest = z.infer<typeof WechatLoginRequestSchema>;
 export type UserAdminMembershipStatus = z.infer<
   typeof UserAdminMembershipStatusSchema
 >;
+export type UserAdminMembershipAction = z.infer<
+  typeof UserAdminMembershipActionSchema
+>;
+export type UserAdminMembershipActionRequest = z.infer<
+  typeof UserAdminMembershipActionRequestSchema
+>;
+export type UserAdminMembershipAuditEvent = z.infer<
+  typeof UserAdminMembershipAuditEventSchema
+>;
 export type UserAdminListQuery = z.infer<typeof UserAdminListQuerySchema>;
 export type UserAdminListItem = z.infer<typeof UserAdminListItemSchema>;
 export type UserAdminListResult = z.infer<typeof UserAdminListResultSchema>;
 export type UserAdminDetail = z.infer<typeof UserAdminDetailSchema>;
+export type UserAdminMembershipMutationResult = z.infer<
+  typeof UserAdminMembershipMutationResultSchema
+>;

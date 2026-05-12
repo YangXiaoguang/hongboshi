@@ -5,6 +5,8 @@ import {
   UserAdminDetailSchema,
   UserAdminListQuerySchema,
   UserAdminListResultSchema,
+  UserAdminMembershipActionRequestSchema,
+  UserAdminMembershipMutationResultSchema,
 } from "./user";
 
 describe("user admin domain contract", () => {
@@ -104,6 +106,7 @@ describe("user admin domain contract", () => {
         expiresAt: "2027-05-10T10:00:00+08:00",
         activeNow: true,
       },
+      membershipAuditEvents: [],
       courseAccess: {
         ownedCourseIds: [1],
         ownedCourseCount: 1,
@@ -155,5 +158,131 @@ describe("user admin domain contract", () => {
     });
 
     expect(parsed.risk.recentEvents[0]).not.toHaveProperty("signal");
+  });
+
+  it("validates membership admin actions and audit mutation results", () => {
+    const action = UserAdminMembershipActionRequestSchema.parse({
+      action: "extend",
+      durationDays: 30,
+      reason: "客服补偿延期",
+    });
+
+    const parsed = UserAdminMembershipMutationResultSchema.parse({
+      detail: {
+        user: {
+          id: "u_member_1",
+          displayName: "测试会员",
+          roles: ["member"],
+          membershipStatus: "active",
+          ownedCourseCount: 0,
+          orderCount: 0,
+          counselingAppointmentCount: 0,
+          activeRiskCount: 0,
+          createdAt: "2026-05-10T10:00:00+08:00",
+          updatedAt: "2026-05-12T10:00:00+08:00",
+          privacyFlags: {
+            isMinor: false,
+            guardianVerified: false,
+            phoneMasked: false,
+          },
+        },
+        consents: [],
+        membership: {
+          status: "active",
+          planName: "成长会员",
+          activatedAt: "2026-05-10T10:00:00+08:00",
+          expiresAt: "2027-06-09T10:00:00+08:00",
+          activeNow: true,
+        },
+        membershipAuditEvents: [
+          {
+            id: "audit_1",
+            userId: "u_member_1",
+            actorId: "operator_1",
+            actorRoles: ["operator"],
+            action: action.action,
+            reason: action.reason,
+            before: {
+              status: "active",
+              planName: "成长会员",
+              activatedAt: "2026-05-10T10:00:00+08:00",
+              expiresAt: "2027-05-10T10:00:00+08:00",
+            },
+            after: {
+              status: "active",
+              planName: "成长会员",
+              activatedAt: "2026-05-10T10:00:00+08:00",
+              expiresAt: "2027-06-09T10:00:00+08:00",
+            },
+            createdAt: "2026-05-12T10:00:00+08:00",
+          },
+        ],
+        courseAccess: {
+          ownedCourseIds: [],
+          ownedCourseCount: 0,
+          orderCount: 0,
+          recentOrders: [],
+        },
+        counseling: {
+          totalCount: 0,
+          upcomingCount: 0,
+          recentAppointments: [],
+        },
+        risk: {
+          openCount: 0,
+          recentEvents: [],
+        },
+        privacyNotice: "用户后台仅展示运营所需摘要。",
+        generatedAt: "2026-05-12T10:00:00+08:00",
+      },
+      auditEvent: {
+        id: "audit_1",
+        userId: "u_member_1",
+        actorId: "operator_1",
+        actorRoles: ["operator"],
+        action: "extend",
+        reason: "客服补偿延期",
+        before: {
+          status: "active",
+          planName: "成长会员",
+          activatedAt: "2026-05-10T10:00:00+08:00",
+          expiresAt: "2027-05-10T10:00:00+08:00",
+        },
+        after: {
+          status: "active",
+          planName: "成长会员",
+          activatedAt: "2026-05-10T10:00:00+08:00",
+          expiresAt: "2027-06-09T10:00:00+08:00",
+        },
+        createdAt: "2026-05-12T10:00:00+08:00",
+      },
+      auditEvents: [
+        {
+          id: "audit_1",
+          userId: "u_member_1",
+          actorId: "operator_1",
+          actorRoles: ["operator"],
+          action: "extend",
+          reason: "客服补偿延期",
+          before: {
+            status: "active",
+            planName: "成长会员",
+            activatedAt: "2026-05-10T10:00:00+08:00",
+            expiresAt: "2027-05-10T10:00:00+08:00",
+          },
+          after: {
+            status: "active",
+            planName: "成长会员",
+            activatedAt: "2026-05-10T10:00:00+08:00",
+            expiresAt: "2027-06-09T10:00:00+08:00",
+          },
+          createdAt: "2026-05-12T10:00:00+08:00",
+        },
+      ],
+      serverTime: "2026-05-12T10:00:00+08:00",
+    });
+
+    expect(parsed.auditEvent.action).toBe("extend");
+    expect(parsed.auditEvents[0]?.before.status).toBe("active");
   });
 });

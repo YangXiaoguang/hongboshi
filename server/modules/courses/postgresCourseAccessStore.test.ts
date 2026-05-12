@@ -25,6 +25,13 @@ class FakeCourseAccessExecutor implements DatabaseQueryExecutor {
   ): Promise<DatabaseQueryResult<Row>> {
     this.queries.push({ text, values });
 
+    if (text.includes("FROM user_membership_audit_events")) {
+      return {
+        rows: (this.rows.auditEvents ?? []) as Row[],
+        rowCount: this.rows.auditEvents?.length ?? 0,
+      };
+    }
+
     if (text.includes("FROM course_memberships")) {
       return {
         rows: (this.rows.membership ?? []) as Row[],
@@ -208,9 +215,69 @@ describe("postgres course access store", () => {
     await store.clear();
 
     expect(db.queries.map(query => query.text.trim())).toEqual([
+      "DELETE FROM user_membership_audit_events",
       "DELETE FROM course_access_grants",
       "DELETE FROM course_memberships",
       "DELETE FROM orders",
+    ]);
+  });
+
+  it("appends and reads membership audit events", async () => {
+    const event = {
+      id: "audit_1",
+      userId: "user_1",
+      actorId: "operator_1",
+      actorRoles: ["operator" as const],
+      action: "extend" as const,
+      reason: "客服补偿延期",
+      before: {
+        status: "active" as const,
+        planName: "成长会员",
+        expiresAt: "2027-05-01T10:00:00.000Z",
+      },
+      after: {
+        status: "active" as const,
+        planName: "成长会员",
+        expiresAt: "2027-05-31T10:00:00.000Z",
+      },
+      createdAt: "2026-05-12T10:00:00.000Z",
+    };
+    const writeDb = new FakeCourseAccessExecutor();
+    const writeStore = new PostgresCourseAccessStore(writeDb);
+
+    await writeStore.appendMembershipAuditEvent(event);
+
+    const insertQuery = writeDb.queries.find(query =>
+      query.text.includes("INSERT INTO user_membership_audit_events")
+    );
+    expect(insertQuery?.values?.slice(0, 6)).toEqual([
+      "audit_1",
+      "user_1",
+      "operator_1",
+      ["operator"],
+      "extend",
+      "客服补偿延期",
+    ]);
+
+    const readDb = new FakeCourseAccessExecutor({
+      auditEvents: [
+        {
+          id: "audit_1",
+          user_id: "user_1",
+          actor_id: "operator_1",
+          actor_roles: ["operator"],
+          action: "extend",
+          reason: "客服补偿延期",
+          before_membership: event.before,
+          after_membership: event.after,
+          created_at: new Date("2026-05-12T10:00:00.000Z"),
+        },
+      ],
+    });
+    const readStore = new PostgresCourseAccessStore(readDb);
+
+    expect(await readStore.listMembershipAuditEvents("user_1")).toEqual([
+      event,
     ]);
   });
 });

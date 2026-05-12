@@ -7,10 +7,10 @@
 - 最后更新时间：2026-05-12 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
-- 最近已知基线提交：上一阶段 `6210893 Add course catalog permissions`，本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M3-B 会员权益操作与审计`
-- 当前状态：`M3-A 用户与会员管理只读台` 已完成，下一轮应进入会员权益后台动作、审计和权限细化。
-- 本轮完成后下一步：执行 `M3-B 会员权益操作与审计`
+- 最近已知基线提交：上一阶段 `477a6dd Add admin user member console`，本轮提交后以 Git 历史最新提交为准
+- 当前阶段：`M4-A 统一订单管理只读台`
+- 当前状态：`M3-B 会员权益操作与审计` 已完成，下一轮应进入统一订单后台的只读聚合、筛选和详情视图。
+- 本轮完成后下一步：执行 `M4-A 统一订单管理只读台`
 
 ## 已完成关键能力
 
@@ -56,60 +56,62 @@
 - `/admin/courses` 根据权限显示或隐藏编辑、内容、审核、上下架和改价动作；服务端仍作为最终权限边界。
 - 课程详情素材占位已预留资料 ID、资料地址、上传人、上传时间、下载开关和合规审核状态，为后续真实文件管理留出稳定契约。
 - 建立 `user:read` 后台读取权限，`operator` 与 `admin` 可读取用户会员后台。
+- 建立 `user:membership` 会员操作权限，`operator` 与 `admin` 可执行会员权益后台动作。
 - 建立用户会员后台共享契约 `UserAdminListResultSchema` 与 `UserAdminDetailSchema`，统一描述用户列表、会员摘要、课程权益、订单摘要、咨询预约摘要和风险摘要。
+- 建立会员后台动作契约 `UserAdminMembershipActionRequestSchema`、会员操作审计事件和会员操作返回契约。
 - 建立 `server/modules/users/userAdminApi.ts`，从 auth 用户目录、课程权益、咨询预约和风险事件 Store 聚合用户会员只读数据，并在缺少真实用户目录时提供开发期 fallback 用户。
-- 新增 `/admin/users` 用户会员只读台，支持关键词、角色、会员状态筛选、分页、列表和详情摘要。
+- 新增 `/api/users/admin/users/:userId/membership`，支持开通、延期、标记到期和调整计划，并写入会员操作审计。
+- 新增 `/admin/users` 用户会员后台，支持关键词、角色、会员状态筛选、分页、列表、详情摘要、会员动作入口和审计列表。
 - 用户会员详情保持隐私最小化：手机号仅使用脱敏值，不返回咨询说明、测评答案和风险信号原文。
+- 课程权益 Store 已保存会员操作审计事件，JSON 文件 Store 和 PostgreSQL Store 均支持读取与追加；新增 `user_membership_audit_events` 数据库迁移表。
 
 ## 最近完成阶段
 
-M3-A 用户与会员管理只读台已交付：
+M3-B 会员权益操作与审计已交付：
 
-- `shared/domain/user.ts`：新增 `user:read` 权限、`USER_ADMIN_PERMISSIONS` 和用户后台列表/详情聚合契约。
-- `server/modules/auth/authSessionStore.ts` 与 PostgreSQL 实现：新增用户目录列表能力，供后台用户聚合读取。
-- `server/modules/courses/courseAccessStore.ts` 与 PostgreSQL 实现：新增用户课程权益快照列表能力。
-- `server/modules/counseling/counselingAppointmentStore.ts` 与 PostgreSQL 实现：新增全量预约读取能力，供后台聚合候选用户。
-- `server/modules/users/userAdminApi.ts`：新增 `/api/users/admin/users` 与 `/api/users/admin/users/:userId`，使用 `user:read` 权限读取用户会员列表和隐私最小化详情。
-- `client/src/features/users/api/httpAdminUserRepository.ts`：新增前端用户后台 repository 与响应解析。
-- `client/src/pages/admin/UserMembers.tsx`：新增 `/admin/users` 页面，支持搜索、角色/会员筛选、分页、详情摘要、loading、empty 和 error 状态。
-- `client/src/features/admin/adminNavigation.ts` 与 `client/src/App.tsx`：用户会员模块从规划切换为可用，并接入统一后台路由。
-- README、数据库说明、领域契约、产品路线和后台路线图同步了用户会员后台只读边界。
+- `shared/domain/user.ts`：新增 `user:membership` 权限、会员开通/延期/到期标记/计划调整请求契约、会员操作审计事件契约和会员操作返回契约。
+- `server/modules/courses/courseAccessStore.ts` 与 PostgreSQL 实现：新增会员操作审计事件读取与追加能力，JSON 文件 Store 会与课程权益状态一起持久化。
+- `server/db/migrations/0009_user_membership_audit_events.sql` 与 `server/db/schema.ts`：新增会员操作审计表、用户/操作者时间索引和核心表契约。
+- `server/modules/users/userAdminApi.ts`：新增 `/api/users/admin/users/:userId/membership`，服务端校验 `user:membership`、校验原因、计算会员到期时间、保存最新权益并写入审计。
+- `client/src/features/users/api/httpAdminUserRepository.ts`：新增会员操作 repository 与响应解析。
+- `client/src/pages/admin/UserMembers.tsx`：详情区新增会员动作入口和会员操作审计列表，动作完成后刷新列表与详情。
+- README、数据库说明、领域契约、产品路线、后台路线图和本文件同步了用户会员后台从只读聚合升级到受控操作的边界。
 
-M3-A 验收结果：
+M3-B 验收结果：
 
-- 运营/管理员可进入 `/admin/users` 查看用户列表和隐私最小化详情。
-- 用户详情可以解释会员状态、课程权益、订单摘要、咨询预约摘要和风险摘要来源。
-- 非后台账号不能读取用户会员后台接口。
-- 页面具备 loading、empty、error 状态，不影响现有后台模块。
+- 运营/管理员可对用户执行会员开通、延期、标记到期和计划调整。
+- 会员动作写入审计事件，包含操作者、角色、原因、前后会员状态和时间。
+- 无 `user:membership` 权限的账号不能调用会员操作接口，前端不会展示操作入口。
+- 动作完成后 `/admin/users` 列表与详情可同步看到最新会员状态和审计记录。
 - `pnpm run ci` 已通过。
 
 ## 下一步任务包
 
-### M3-B: 会员权益操作与审计
+### M4-A: 统一订单管理只读台
 
 业务目标：
 
-在 M3-A 只读台基础上，建立可审计的会员权益后台动作，让运营可以在受控范围内为用户开通、延期、标记到期或调整会员权益，同时保留完整操作原因和前后状态。
+把课程订单、会员订单和咨询预约订单纳入统一后台视图，让运营可以按用户、订单状态、商品类型和时间范围检索订单，并在详情中看清订单金额、明细、支付状态、履约对象和关联业务状态。M4-A 先做只读聚合，不开放关闭、退款或异常处理动作。
 
 实施范围：
 
-- 在 `shared/domain` 新增会员后台动作契约，例如开通/延期/到期/调整、原因、操作者、前后会员状态和审计事件。
-- 为用户后台新增 `user:membership` 或更细的会员操作权限；先让 `operator/admin` 拥有，暂不新增客服角色。
-- 扩展课程权益 Store 或新增用户会员 Store，保存会员操作审计事件；PostgreSQL 路径可先落在现有 `course_memberships` 和新增审计表，若改表需新增迁移。
-- 新增后台 API：会员开通、延期、标记到期或调整计划；服务端必须校验权限、校验原因、计算到期时间并返回最新用户详情。
-- `/admin/users` 详情中增加会员动作入口，仅对有操作权限账号展示；只读账号仍只能查看。
-- 不处理退款、订单补偿或真实支付渠道，涉及财务闭环的动作只记录为后台人工调整并进入审计。
+- 在 `shared/domain` 新增订单后台列表、详情、查询、汇总和时间线契约；优先复用已有 `OrderSchema`、`OrderItemSchema`、`OrderStatusSchema` 和商品类型枚举。
+- 新增 `order:read` 后台读取权限，先让 `operator/admin` 拥有；前端后台导航新增订单管理入口。
+- 新增 `server/modules/orders` 后台聚合 API：从课程权益订单、咨询预约记录、支付回调收据和用户目录中组装统一订单列表与详情。
+- `/admin/orders` 新增订单管理只读台，支持关键词、订单状态、商品类型、时间排序、分页、列表和详情。
+- 详情中展示订单明细、金额、支付时间、关联用户、关联咨询预约/课程/会员对象、支付回调摘要和只读时间线。
+- 不实现关闭待支付、退款、补偿、手工改状态；这些动作留给 M4-B/M5，并必须走服务端状态机和审计。
 - 更新 README、`docs/database-schema.md`、`docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
-- 增加 domain、server API、Store 和前端 repository/page 关键测试。
+- 增加 domain、server API、前端 repository/page 关键测试；如需要 Store 扩展，只扩展读取聚合能力。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add membership admin actions`。
+- 提交并推送，建议 commit message：`Add admin order console`。
 
 验收标准：
 
-- 具备会员操作权限的账号可以对用户会员状态执行受控动作。
-- 会员动作写入审计事件，包含操作者、原因、前后状态和时间。
-- 无权限账号不能看到或调用会员动作。
-- 动作完成后 `/admin/users` 列表与详情同步刷新。
+- 运营/管理员可进入 `/admin/orders` 查看统一订单列表和详情。
+- 订单列表可区分课程、会员、咨询服务等商品类型，并展示订单状态、金额、用户和创建/支付时间。
+- 订单详情可以解释订单与支付、咨询预约或课程/会员权益之间的只读关联。
+- 非后台账号不能读取订单后台接口。
 - CI 通过。
 
 ## 执行不变量
@@ -129,4 +131,4 @@ M3-A 验收结果：
 
 - 课程详情章节/素材是否要从 JSONB 拆成独立表。建议 M2-G 先用 JSONB 保持可维护速度，等学习记录、资料下载和素材真实文件管理进入后再拆表。
 - 真实支付渠道优先接微信支付还是支付宝。建议先把渠道适配接口稳定，再选择一个渠道试点。
-- 用户后台是否需要独立客服角色，例如 `support_operator`。M3-A 已先用 `user:read` 解决只读入口；M3-B 会员动作建议继续用权限能力表达，角色命名等真实组织分工确认后再细化。
+- 订单后台是否先用现有 `OrderSchema` 聚合，还是提前引入更完整的订单履约/支付/退款投影视图。建议 M4-A 先做只读投影，M4-B 再补状态机动作。

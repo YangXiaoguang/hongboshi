@@ -200,6 +200,23 @@ export const coreDatabaseTables = [
     ],
   },
   {
+    name: "user_membership_audit_events",
+    domain: "audit",
+    purpose:
+      "Append-only audit events for manual user membership entitlement operations.",
+    requiredColumns: [
+      "id",
+      "user_id",
+      "actor_id",
+      "actor_roles",
+      "action",
+      "reason",
+      "before_membership",
+      "after_membership",
+      "created_at",
+    ],
+  },
+  {
     name: "assessment_reports",
     domain: "assessment",
     purpose: "Generated assessment report, scores and recommendations.",
@@ -344,6 +361,8 @@ export const requiredDatabaseIndexes = [
   "idx_course_product_contents_updated_at",
   "idx_course_product_audit_events_product_created_at",
   "idx_course_product_audit_events_created_at",
+  "idx_user_membership_audit_events_user_created_at",
+  "idx_user_membership_audit_events_actor_created_at",
   "idx_assessment_reports_user_id_created_at",
   "idx_counseling_slots_counselor_starts_at",
   "idx_counseling_appointments_user_id_created_at",

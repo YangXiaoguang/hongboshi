@@ -14,6 +14,7 @@ import {
   activateCourseMembership,
   grantPurchasedCourseAccess,
   type CourseAccessState,
+  type UserAdminMembershipAuditEvent,
 } from "../../../shared/domain";
 import {
   createDefaultCourseAccessStore,
@@ -127,6 +128,16 @@ export function saveCourseAccessState(
   state: CourseAccessState
 ) {
   return Promise.resolve(courseAccessStore.save(userId, state));
+}
+
+export function listMembershipAuditEvents(userId: string) {
+  return Promise.resolve(courseAccessStore.listMembershipAuditEvents(userId));
+}
+
+export function appendMembershipAuditEvent(
+  event: UserAdminMembershipAuditEvent
+) {
+  return Promise.resolve(courseAccessStore.appendMembershipAuditEvent(event));
 }
 
 export async function purchaseCoursePayload(

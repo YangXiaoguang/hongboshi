@@ -27,6 +27,7 @@ import { setRiskEventStore, saveRiskEvent } from "../risk/riskEventStore";
 import {
   getAdminUserDetailPayload,
   getAdminUserListPayload,
+  updateAdminUserMembershipPayload,
 } from "./userAdminApi";
 
 const operator = { id: "operator_1", roles: ["operator" as const] };
@@ -58,6 +59,27 @@ describe("user admin api payloads", () => {
     expect((await getAdminUserListPayload(operator, {})).status).toBe(200);
   });
 
+  it("requires membership operation permission for manual member actions", async () => {
+    expect(
+      (
+        await updateAdminUserMembershipPayload(null, "u_demo_active_member", {
+          action: "extend",
+          durationDays: 30,
+          reason: "客服补偿延期",
+        })
+      ).status
+    ).toBe(401);
+    expect(
+      (
+        await updateAdminUserMembershipPayload(member, "u_demo_active_member", {
+          action: "extend",
+          durationDays: 30,
+          reason: "客服补偿延期",
+        })
+      ).status
+    ).toBe(403);
+  });
+
   it("returns development fallback users with masked phone data", async () => {
     const payload = await getAdminUserListPayload(
       operator,
@@ -69,7 +91,9 @@ describe("user admin api payloads", () => {
     expect(payload.body.ok).toBe(true);
     if (payload.body.ok) {
       expect(payload.body.data.items.length).toBeGreaterThan(0);
-      expect(payload.body.data.summary.activeMembershipCount).toBeGreaterThan(0);
+      expect(payload.body.data.summary.activeMembershipCount).toBeGreaterThan(
+        0
+      );
       expect(payload.body.data.items[0]?.phoneMasked).toContain("****");
       expect(JSON.stringify(payload.body.data)).not.toContain("13800132049");
     }
@@ -192,6 +216,62 @@ describe("user admin api payloads", () => {
       expect(detail.body.data.risk.highestRiskLevel).toBe("high");
       expect(JSON.stringify(detail.body.data)).not.toContain(
         "测试风险原文不应出现在用户后台详情"
+      );
+    }
+  });
+
+  it("updates fallback user membership and records audit events", async () => {
+    const now = "2026-05-12T10:00:00.000Z";
+    const payload = await updateAdminUserMembershipPayload(
+      operator,
+      "u_demo_active_member",
+      {
+        action: "extend",
+        durationDays: 30,
+        reason: "客服补偿延期",
+      },
+      now
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (payload.body.ok) {
+      expect(payload.body.data.auditEvent).toMatchObject({
+        userId: "u_demo_active_member",
+        actorId: "operator_1",
+        action: "extend",
+        reason: "客服补偿延期",
+        before: {
+          status: "active",
+          expiresAt: "2027-05-01T09:10:00+08:00",
+        },
+        after: {
+          status: "active",
+          expiresAt: "2027-05-31T01:10:00.000Z",
+        },
+      });
+      expect(payload.body.data.detail.membershipAuditEvents[0]).toMatchObject({
+        action: "extend",
+        reason: "客服补偿延期",
+      });
+    }
+
+    const storedState = await courseAccessStore.load("u_demo_active_member");
+    expect(storedState.membership).toMatchObject({
+      status: "active",
+      expiresAt: "2027-05-31T01:10:00.000Z",
+    });
+
+    const detail = await getAdminUserDetailPayload(
+      operator,
+      "u_demo_active_member",
+      now
+    );
+    expect(detail.status).toBe(200);
+    expect(detail.body.ok).toBe(true);
+    if (detail.body.ok) {
+      expect(detail.body.data.membershipAuditEvents[0]?.actorRoles).toContain(
+        "operator"
       );
     }
   });

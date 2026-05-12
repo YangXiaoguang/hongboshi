@@ -1,22 +1,30 @@
 import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
+import { randomUUID } from "crypto";
 import { URL } from "url";
 import {
   ApiResponseSchema,
   CourseAccessStateSchema,
+  UserAdminMembershipActionRequestSchema,
+  UserAdminMembershipAuditEventSchema,
   UserAdminDetailSchema,
   UserAdminListItemSchema,
   UserAdminListQuerySchema,
   UserAdminListResultSchema,
+  UserAdminMembershipMutationResultSchema,
   USER_ADMIN_PERMISSIONS,
   hasActiveCourseMembership,
   userCan,
+  type AuthPermission,
   type CourseAccessState,
+  type CourseMembership,
   type LoginSession,
   type UserAdminDetail,
   type UserAdminListItem,
   type UserAdminListQuery,
   type UserAdminListResult,
+  type UserAdminMembershipActionRequest,
+  type UserAdminMembershipAuditEvent,
   type UserConsent,
   type UserProfile,
 } from "../../../shared/domain";
@@ -26,8 +34,11 @@ import {
   listAuthUsers,
 } from "../auth/authSessionApi";
 import {
+  appendMembershipAuditEvent,
+  listMembershipAuditEvents,
   listCourseAccessUserStates,
   loadCourseAccessState,
+  saveCourseAccessState,
 } from "../courses/courseAccessApi";
 import {
   listCounselingAppointmentRecords,
@@ -42,8 +53,13 @@ type DirectoryUser = {
   seedConsents?: UserConsent[];
 };
 
-const UserAdminListResponseSchema = ApiResponseSchema(UserAdminListResultSchema);
+const UserAdminListResponseSchema = ApiResponseSchema(
+  UserAdminListResultSchema
+);
 const UserAdminDetailResponseSchema = ApiResponseSchema(UserAdminDetailSchema);
+const UserAdminMembershipMutationResponseSchema = ApiResponseSchema(
+  UserAdminMembershipMutationResultSchema
+);
 
 const activeRiskStatuses = new Set(["open", "reviewing", "escalated"]);
 const riskRank = {
@@ -169,6 +185,9 @@ const fallbackUsers: DirectoryUser[] = [
     }),
   },
 ];
+const fallbackUsersById = new Map(
+  fallbackUsers.map(user => [user.profile.id, user])
+);
 
 function sendJson(
   res: Response | ServerResponse,
@@ -181,7 +200,12 @@ function sendJson(
 }
 
 function errorPayload(
-  code: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "INTERNAL_ERROR",
+  code:
+    | "BAD_REQUEST"
+    | "UNAUTHORIZED"
+    | "FORBIDDEN"
+    | "NOT_FOUND"
+    | "INTERNAL_ERROR",
   message: string
 ) {
   return {
@@ -194,7 +218,8 @@ function errorPayload(
 }
 
 function denyUnauthorizedActor(
-  actor: AdminUserActor | null | undefined
+  actor: AdminUserActor | null | undefined,
+  permission: AuthPermission = USER_ADMIN_PERMISSIONS.read
 ):
   | {
       status: 401 | 403;
@@ -204,14 +229,24 @@ function denyUnauthorizedActor(
   if (!actor) {
     return {
       status: 401,
-      body: errorPayload("UNAUTHORIZED", "请先登录后查看用户会员"),
+      body: errorPayload(
+        "UNAUTHORIZED",
+        permission === USER_ADMIN_PERMISSIONS.membership
+          ? "请先登录后操作用户会员"
+          : "请先登录后查看用户会员"
+      ),
     };
   }
 
-  if (!userCan(actor, USER_ADMIN_PERMISSIONS.read)) {
+  if (!userCan(actor, permission)) {
     return {
       status: 403,
-      body: errorPayload("FORBIDDEN", "当前账号暂无用户会员读取权限"),
+      body: errorPayload(
+        "FORBIDDEN",
+        permission === USER_ADMIN_PERMISSIONS.membership
+          ? "当前账号暂无用户会员操作权限"
+          : "当前账号暂无用户会员读取权限"
+      ),
     };
   }
 
@@ -237,7 +272,9 @@ function effectiveMembershipStatus(
   now: string
 ): UserAdminListItem["membershipStatus"] {
   if (state.membership.status !== "active") return state.membership.status;
-  return hasActiveCourseMembership(state.membership, now) ? "active" : "expired";
+  return hasActiveCourseMembership(state.membership, now)
+    ? "active"
+    : "expired";
 }
 
 function createSyntheticUser(userId: string, now: string): UserProfile {
@@ -276,21 +313,35 @@ async function listDirectoryUsers(now: string): Promise<DirectoryUser[]> {
 
   const users = new Map<string, DirectoryUser>();
   for (const profile of authUsers) {
-    users.set(profile.id, { profile });
+    const fallback = fallbackUsersById.get(profile.id);
+    users.set(profile.id, {
+      profile,
+      seedCourseAccess: fallback?.seedCourseAccess,
+      seedConsents: fallback?.seedConsents,
+    });
   }
 
   for (const item of courseAccessUsers) {
     const current = users.get(item.userId);
+    const fallback = fallbackUsersById.get(item.userId);
     users.set(item.userId, {
-      profile: current?.profile ?? createSyntheticUser(item.userId, now),
-      seedCourseAccess: current?.seedCourseAccess,
-      seedConsents: current?.seedConsents,
+      profile:
+        current?.profile ??
+        fallback?.profile ??
+        createSyntheticUser(item.userId, now),
+      seedCourseAccess: current?.seedCourseAccess ?? fallback?.seedCourseAccess,
+      seedConsents: current?.seedConsents ?? fallback?.seedConsents,
     });
   }
 
   for (const userId of counselingUserIds) {
     if (!users.has(userId)) {
-      users.set(userId, { profile: createSyntheticUser(userId, now) });
+      const fallback = fallbackUsersById.get(userId);
+      users.set(userId, {
+        profile: fallback?.profile ?? createSyntheticUser(userId, now),
+        seedCourseAccess: fallback?.seedCourseAccess,
+        seedConsents: fallback?.seedConsents,
+      });
     }
   }
 
@@ -375,7 +426,10 @@ function userMatchesQuery(user: UserAdminListItem, query: UserAdminListQuery) {
   ].some(value => value?.toLowerCase().includes(keyword));
 }
 
-function sortUsers(users: UserAdminListItem[], sort: UserAdminListQuery["sort"]) {
+function sortUsers(
+  users: UserAdminListItem[],
+  sort: UserAdminListQuery["sort"]
+) {
   return [...users].sort((a, b) => {
     if (sort === "created_desc") {
       return Date.parse(b.createdAt) - Date.parse(a.createdAt);
@@ -468,17 +522,101 @@ function recentOrders(courseAccess: CourseAccessState) {
     }));
 }
 
+function addDays(dateTime: string, days: number) {
+  return new Date(
+    Date.parse(dateTime) + days * 24 * 60 * 60 * 1000
+  ).toISOString();
+}
+
+function applyMembershipAction(
+  membership: CourseMembership,
+  request: UserAdminMembershipActionRequest,
+  now: string
+): CourseMembership {
+  if (request.action === "activate") {
+    return {
+      status: "active",
+      planName: request.planName,
+      activatedAt: now,
+      expiresAt: addDays(now, request.durationDays),
+    };
+  }
+
+  if (request.action === "extend") {
+    const baseDate =
+      hasActiveCourseMembership(membership, now) && membership.expiresAt
+        ? membership.expiresAt
+        : now;
+
+    return {
+      status: "active",
+      planName: membership.planName ?? "成长会员",
+      activatedAt: membership.activatedAt ?? now,
+      expiresAt: addDays(baseDate, request.durationDays),
+    };
+  }
+
+  if (request.action === "expire") {
+    return {
+      status: "expired",
+      planName: membership.planName,
+      activatedAt: membership.activatedAt,
+      expiresAt: now,
+    };
+  }
+
+  return {
+    ...membership,
+    status:
+      membership.status === "active" &&
+      !hasActiveCourseMembership(membership, now)
+        ? "expired"
+        : membership.status,
+    planName: request.planName,
+  };
+}
+
+function createMembershipAuditEvent({
+  userId,
+  actor,
+  request,
+  before,
+  after,
+  now,
+}: {
+  userId: string;
+  actor: AdminUserActor;
+  request: UserAdminMembershipActionRequest;
+  before: CourseMembership;
+  after: CourseMembership;
+  now: string;
+}): UserAdminMembershipAuditEvent {
+  return UserAdminMembershipAuditEventSchema.parse({
+    id: `user_membership_audit_${Date.parse(now)}_${randomUUID().slice(0, 8)}`,
+    userId,
+    actorId: actor.id,
+    actorRoles: actor.roles,
+    action: request.action,
+    reason: request.reason,
+    before,
+    after,
+    createdAt: now,
+  });
+}
+
 async function buildUserDetail(
   directoryUser: DirectoryUser,
   now: string
 ): Promise<UserAdminDetail> {
   const user = await buildUserListItem(directoryUser, now);
-  const [courseAccess, counseling, risks, consents] = await Promise.all([
-    resolveCourseAccessForUser(user.id, directoryUser.seedCourseAccess),
-    listCounselingAppointmentRecords(user.id, now),
-    listRiskEventsByUser(user.id),
-    getUserConsents(user.id),
-  ]);
+  const [courseAccess, counseling, risks, consents, auditEvents] =
+    await Promise.all([
+      resolveCourseAccessForUser(user.id, directoryUser.seedCourseAccess),
+      listCounselingAppointmentRecords(user.id, now),
+      listRiskEventsByUser(user.id),
+      getUserConsents(user.id),
+      listMembershipAuditEvents(user.id),
+    ]);
   const activeRisks = risks.filter(risk => activeRiskStatuses.has(risk.status));
   const highestRisk = [...activeRisks].sort(
     (a, b) => riskRank[b.riskLevel] - riskRank[a.riskLevel]
@@ -511,6 +649,7 @@ async function buildUserDetail(
       expiresAt: courseAccess.membership.expiresAt,
       activeNow: hasActiveCourseMembership(courseAccess.membership, now),
     },
+    membershipAuditEvents: auditEvents.slice(0, 10),
     courseAccess: {
       ownedCourseIds: courseAccess.ownedCourseIds,
       ownedCourseCount: courseAccess.ownedCourseIds.length,
@@ -600,6 +739,102 @@ export async function getAdminUserDetailPayload(
   } as const;
 }
 
+export async function updateAdminUserMembershipPayload(
+  actor: AdminUserActor | null | undefined,
+  userId: string,
+  rawBody: unknown,
+  now = new Date().toISOString()
+) {
+  const denied = denyUnauthorizedActor(
+    actor,
+    USER_ADMIN_PERMISSIONS.membership
+  );
+  if (denied) return denied;
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后操作用户会员"),
+    } as const;
+  }
+
+  const requestResult =
+    UserAdminMembershipActionRequestSchema.safeParse(rawBody);
+  if (!requestResult.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "用户会员操作参数不合法"),
+    } as const;
+  }
+
+  const directoryUser = (await listDirectoryUsers(now)).find(
+    user => user.profile.id === userId
+  );
+  if (!directoryUser) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "用户不存在或暂未进入后台目录"),
+    } as const;
+  }
+
+  const currentState = await resolveCourseAccessForUser(
+    userId,
+    directoryUser.seedCourseAccess
+  );
+  const before = currentState.membership;
+  const after = applyMembershipAction(before, requestResult.data, now);
+  const nextState = CourseAccessStateSchema.parse({
+    ...currentState,
+    membership: after,
+  });
+
+  await saveCourseAccessState(userId, nextState);
+  const auditEvent = await appendMembershipAuditEvent(
+    createMembershipAuditEvent({
+      userId,
+      actor,
+      request: requestResult.data,
+      before,
+      after,
+      now,
+    })
+  );
+  const detail = await buildUserDetail(directoryUser, now);
+
+  return {
+    status: 200,
+    body: UserAdminMembershipMutationResponseSchema.parse({
+      ok: true,
+      data: {
+        detail,
+        auditEvent,
+        auditEvents: detail.membershipAuditEvents,
+        serverTime: now,
+      },
+    }),
+  } as const;
+}
+
+function readRequestBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise(resolve => {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        resolve(undefined);
+      }
+    });
+  });
+}
+
 function queryFromExpress(req: Request) {
   return queryFromRecord(req.query as Record<string, unknown>);
 }
@@ -652,6 +887,19 @@ export function registerUserAdminApi(app: Express) {
       sendJson(res, payload.status, payload.body);
     }
   );
+
+  app.patch(
+    "/api/users/admin/users/:userId/membership",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await updateAdminUserMembershipPayload(
+        session?.user,
+        req.params.userId,
+        req.body
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
 }
 
 export function handleUserAdminApiRequest(
@@ -671,13 +919,21 @@ export function handleUserAdminApiRequest(
       );
       sendJson(res, payload.status, payload.body);
     })().catch(err => {
-      console.error(err instanceof Error ? err.message : "用户会员列表读取失败");
-      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "用户会员列表读取失败"));
+      console.error(
+        err instanceof Error ? err.message : "用户会员列表读取失败"
+      );
+      sendJson(
+        res,
+        500,
+        errorPayload("INTERNAL_ERROR", "用户会员列表读取失败")
+      );
     });
     return true;
   }
 
-  const detailMatch = url.pathname.match(/^\/api\/users\/admin\/users\/([^/]+)$/);
+  const detailMatch = url.pathname.match(
+    /^\/api\/users\/admin\/users\/([^/]+)$/
+  );
   if (req.method === "GET" && detailMatch?.[1]) {
     void (async () => {
       const session = await getLoginSessionFromRequest(req);
@@ -687,8 +943,33 @@ export function handleUserAdminApiRequest(
       );
       sendJson(res, payload.status, payload.body);
     })().catch(err => {
-      console.error(err instanceof Error ? err.message : "用户会员详情读取失败");
-      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "用户会员详情读取失败"));
+      console.error(
+        err instanceof Error ? err.message : "用户会员详情读取失败"
+      );
+      sendJson(
+        res,
+        500,
+        errorPayload("INTERNAL_ERROR", "用户会员详情读取失败")
+      );
+    });
+    return true;
+  }
+
+  const membershipActionMatch = url.pathname.match(
+    /^\/api\/users\/admin\/users\/([^/]+)\/membership$/
+  );
+  if (req.method === "PATCH" && membershipActionMatch?.[1]) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await updateAdminUserMembershipPayload(
+        session?.user,
+        decodeURIComponent(membershipActionMatch[1]),
+        await readRequestBody(req)
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "用户会员操作失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "用户会员操作失败"));
     });
     return true;
   }
