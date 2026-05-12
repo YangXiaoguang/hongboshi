@@ -3,10 +3,14 @@ import path from "path";
 import { z } from "zod";
 import {
   CourseAccessStateSchema,
+  OrderAdminAuditEventSchema,
+  OrderAdminExceptionFlagSchema,
   UserAdminMembershipAuditEventSchema,
   createEmptyCourseAccessState,
   normalizeCourseAccessState,
   type CourseAccessState,
+  type OrderAdminAuditEvent,
+  type OrderAdminExceptionFlag,
   type UserAdminMembershipAuditEvent,
 } from "../../../shared/domain";
 import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
@@ -19,6 +23,12 @@ const CourseAccessStoreFileSchema = z.object({
   users: z.record(z.string().min(1), CourseAccessStateSchema).default({}),
   membershipAuditEvents: z
     .record(z.string().min(1), z.array(UserAdminMembershipAuditEventSchema))
+    .default({}),
+  orderAdminAuditEvents: z
+    .record(z.string().min(1), z.array(OrderAdminAuditEventSchema))
+    .default({}),
+  orderAdminExceptionFlags: z
+    .record(z.string().min(1), OrderAdminExceptionFlagSchema)
     .default({}),
 });
 
@@ -39,6 +49,16 @@ export interface CourseAccessStore {
   appendMembershipAuditEvent(
     event: UserAdminMembershipAuditEvent
   ): MaybePromise<UserAdminMembershipAuditEvent>;
+  listOrderAdminAuditEvents(
+    orderId: string
+  ): MaybePromise<OrderAdminAuditEvent[]>;
+  appendOrderAdminAuditEvent(
+    event: OrderAdminAuditEvent
+  ): MaybePromise<OrderAdminAuditEvent>;
+  listOrderAdminExceptionFlags(): MaybePromise<OrderAdminExceptionFlag[]>;
+  saveOrderAdminExceptionFlag(
+    flag: OrderAdminExceptionFlag
+  ): MaybePromise<OrderAdminExceptionFlag>;
   reset(userId: string, state?: CourseAccessState): MaybePromise<void>;
   clear(): MaybePromise<void>;
 }
@@ -48,6 +68,8 @@ function emptyStoreFile(): CourseAccessStoreFile {
     version: 1,
     users: {},
     membershipAuditEvents: {},
+    orderAdminAuditEvents: {},
+    orderAdminExceptionFlags: {},
   };
 }
 
@@ -71,6 +93,34 @@ function sortMembershipAuditEvents(
   );
 }
 
+function cloneOrderAdminAuditEvent(
+  event: OrderAdminAuditEvent
+): OrderAdminAuditEvent {
+  return OrderAdminAuditEventSchema.parse(JSON.parse(JSON.stringify(event)));
+}
+
+function sortOrderAdminAuditEvents(
+  events: OrderAdminAuditEvent[]
+): OrderAdminAuditEvent[] {
+  return [...events].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+  );
+}
+
+function cloneOrderAdminExceptionFlag(
+  flag: OrderAdminExceptionFlag
+): OrderAdminExceptionFlag {
+  return OrderAdminExceptionFlagSchema.parse(JSON.parse(JSON.stringify(flag)));
+}
+
+function sortOrderAdminExceptionFlags(
+  flags: OrderAdminExceptionFlag[]
+): OrderAdminExceptionFlag[] {
+  return [...flags].sort(
+    (a, b) => Date.parse(b.markedAt) - Date.parse(a.markedAt)
+  );
+}
+
 function normalizeStoreFile(payload: unknown): CourseAccessStoreFile {
   const parsed = CourseAccessStoreFileSchema.safeParse(payload);
   if (!parsed.success) return emptyStoreFile();
@@ -91,6 +141,19 @@ function normalizeStoreFile(payload: unknown): CourseAccessStoreFile {
         ]
       )
     ),
+    orderAdminAuditEvents: Object.fromEntries(
+      Object.entries(parsed.data.orderAdminAuditEvents).map(
+        ([orderId, events]) => [
+          orderId,
+          sortOrderAdminAuditEvents(events.map(cloneOrderAdminAuditEvent)),
+        ]
+      )
+    ),
+    orderAdminExceptionFlags: Object.fromEntries(
+      Object.entries(parsed.data.orderAdminExceptionFlags).map(
+        ([orderId, flag]) => [orderId, cloneOrderAdminExceptionFlag(flag)]
+      )
+    ),
   };
 }
 
@@ -100,6 +163,8 @@ export class InMemoryCourseAccessStore implements CourseAccessStore {
     string,
     UserAdminMembershipAuditEvent[]
   >();
+  private orderAdminAuditEvents = new Map<string, OrderAdminAuditEvent[]>();
+  private orderAdminExceptionFlags = new Map<string, OrderAdminExceptionFlag>();
 
   load(userId: string): CourseAccessState {
     const state = this.states.get(userId);
@@ -137,6 +202,38 @@ export class InMemoryCourseAccessStore implements CourseAccessStore {
     return cloneMembershipAuditEvent(normalized);
   }
 
+  listOrderAdminAuditEvents(orderId: string): OrderAdminAuditEvent[] {
+    return sortOrderAdminAuditEvents(
+      this.orderAdminAuditEvents.get(orderId) ?? []
+    ).map(cloneOrderAdminAuditEvent);
+  }
+
+  appendOrderAdminAuditEvent(
+    event: OrderAdminAuditEvent
+  ): OrderAdminAuditEvent {
+    const normalized = cloneOrderAdminAuditEvent(event);
+    const events = this.orderAdminAuditEvents.get(event.orderId) ?? [];
+    this.orderAdminAuditEvents.set(event.orderId, [
+      normalized,
+      ...events.map(cloneOrderAdminAuditEvent),
+    ]);
+    return cloneOrderAdminAuditEvent(normalized);
+  }
+
+  listOrderAdminExceptionFlags(): OrderAdminExceptionFlag[] {
+    return sortOrderAdminExceptionFlags(
+      Array.from(this.orderAdminExceptionFlags.values())
+    ).map(cloneOrderAdminExceptionFlag);
+  }
+
+  saveOrderAdminExceptionFlag(
+    flag: OrderAdminExceptionFlag
+  ): OrderAdminExceptionFlag {
+    const normalized = cloneOrderAdminExceptionFlag(flag);
+    this.orderAdminExceptionFlags.set(flag.orderId, normalized);
+    return cloneOrderAdminExceptionFlag(normalized);
+  }
+
   reset(userId: string, state = createEmptyCourseAccessState()) {
     this.save(userId, state);
   }
@@ -144,6 +241,8 @@ export class InMemoryCourseAccessStore implements CourseAccessStore {
   clear() {
     this.states.clear();
     this.membershipAuditEvents.clear();
+    this.orderAdminAuditEvents.clear();
+    this.orderAdminExceptionFlags.clear();
   }
 }
 
@@ -191,6 +290,44 @@ export class JsonFileCourseAccessStore implements CourseAccessStore {
     ]);
     this.writeFile(file);
     return cloneMembershipAuditEvent(normalized);
+  }
+
+  listOrderAdminAuditEvents(orderId: string): OrderAdminAuditEvent[] {
+    const file = this.readFile();
+    return sortOrderAdminAuditEvents(
+      file.orderAdminAuditEvents[orderId] ?? []
+    ).map(cloneOrderAdminAuditEvent);
+  }
+
+  appendOrderAdminAuditEvent(
+    event: OrderAdminAuditEvent
+  ): OrderAdminAuditEvent {
+    const normalized = cloneOrderAdminAuditEvent(event);
+    const file = this.readFile();
+    const events = file.orderAdminAuditEvents[event.orderId] ?? [];
+    file.orderAdminAuditEvents[event.orderId] = sortOrderAdminAuditEvents([
+      normalized,
+      ...events,
+    ]);
+    this.writeFile(file);
+    return cloneOrderAdminAuditEvent(normalized);
+  }
+
+  listOrderAdminExceptionFlags(): OrderAdminExceptionFlag[] {
+    const file = this.readFile();
+    return sortOrderAdminExceptionFlags(
+      Object.values(file.orderAdminExceptionFlags)
+    ).map(cloneOrderAdminExceptionFlag);
+  }
+
+  saveOrderAdminExceptionFlag(
+    flag: OrderAdminExceptionFlag
+  ): OrderAdminExceptionFlag {
+    const normalized = cloneOrderAdminExceptionFlag(flag);
+    const file = this.readFile();
+    file.orderAdminExceptionFlags[normalized.orderId] = normalized;
+    this.writeFile(file);
+    return cloneOrderAdminExceptionFlag(normalized);
   }
 
   reset(userId: string, state = createEmptyCourseAccessState()) {

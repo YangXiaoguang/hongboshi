@@ -73,4 +73,53 @@ describe("course access JSON store", () => {
     );
     expect(reloadedStore.listMembershipAuditEvents("u_20001")).toEqual([]);
   });
+
+  it("persists order admin audit events and exception flags", () => {
+    const store = createTempStore();
+    store.saveOrderAdminExceptionFlag({
+      orderId: "order_1",
+      status: "open",
+      severity: "warning",
+      reason: "待核查支付回调",
+      markedBy: "operator_1",
+      markedAt: "2026-05-12T10:00:00+08:00",
+    });
+    store.appendOrderAdminAuditEvent({
+      id: "order_audit_1",
+      orderId: "order_1",
+      userId: "u_10001",
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      action: "mark_exception",
+      reason: "待核查支付回调",
+      before: { status: "paid" },
+      after: {
+        status: "paid",
+        exception: {
+          orderId: "order_1",
+          status: "open",
+          severity: "warning",
+          reason: "待核查支付回调",
+          markedBy: "operator_1",
+          markedAt: "2026-05-12T10:00:00+08:00",
+        },
+      },
+      createdAt: "2026-05-12T10:00:01+08:00",
+    });
+
+    const reloadedStore = new JsonFileCourseAccessStore(
+      path.join(tempDirs[0], "course-access.json")
+    );
+
+    expect(reloadedStore.listOrderAdminExceptionFlags()[0]).toMatchObject({
+      orderId: "order_1",
+      status: "open",
+    });
+    expect(reloadedStore.listOrderAdminAuditEvents("order_1")[0]).toMatchObject(
+      {
+        id: "order_audit_1",
+        action: "mark_exception",
+      }
+    );
+  });
 });

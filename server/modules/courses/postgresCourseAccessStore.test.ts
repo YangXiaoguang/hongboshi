@@ -25,6 +25,20 @@ class FakeCourseAccessExecutor implements DatabaseQueryExecutor {
   ): Promise<DatabaseQueryResult<Row>> {
     this.queries.push({ text, values });
 
+    if (text.includes("FROM order_admin_audit_events")) {
+      return {
+        rows: (this.rows.orderAdminAuditEvents ?? []) as Row[],
+        rowCount: this.rows.orderAdminAuditEvents?.length ?? 0,
+      };
+    }
+
+    if (text.includes("FROM order_admin_exception_flags")) {
+      return {
+        rows: (this.rows.orderAdminExceptionFlags ?? []) as Row[],
+        rowCount: this.rows.orderAdminExceptionFlags?.length ?? 0,
+      };
+    }
+
     if (text.includes("FROM user_membership_audit_events")) {
       return {
         rows: (this.rows.auditEvents ?? []) as Row[],
@@ -215,6 +229,8 @@ describe("postgres course access store", () => {
     await store.clear();
 
     expect(db.queries.map(query => query.text.trim())).toEqual([
+      "DELETE FROM order_admin_audit_events",
+      "DELETE FROM order_admin_exception_flags",
       "DELETE FROM user_membership_audit_events",
       "DELETE FROM course_access_grants",
       "DELETE FROM course_memberships",
@@ -278,6 +294,97 @@ describe("postgres course access store", () => {
 
     expect(await readStore.listMembershipAuditEvents("user_1")).toEqual([
       event,
+    ]);
+  });
+
+  it("appends and reads order admin audit events and exception flags", async () => {
+    const exception = {
+      orderId: "order_1",
+      status: "open" as const,
+      severity: "critical" as const,
+      reason: "支付金额需人工核查",
+      markedBy: "operator_1",
+      markedAt: "2026-05-12T10:00:00.000Z",
+    };
+    const auditEvent = {
+      id: "order_audit_1",
+      orderId: "order_1",
+      userId: "user_1",
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      action: "mark_exception" as const,
+      reason: "支付金额需人工核查",
+      before: { status: "paid" as const },
+      after: {
+        status: "paid" as const,
+        exception,
+      },
+      createdAt: "2026-05-12T10:00:01.000Z",
+    };
+    const writeDb = new FakeCourseAccessExecutor();
+    const writeStore = new PostgresCourseAccessStore(writeDb);
+
+    await writeStore.saveOrderAdminExceptionFlag(exception);
+    await writeStore.appendOrderAdminAuditEvent(auditEvent);
+
+    const flagQuery = writeDb.queries.find(query =>
+      query.text.includes("INSERT INTO order_admin_exception_flags")
+    );
+    expect(flagQuery?.values?.slice(0, 6)).toEqual([
+      "order_1",
+      "open",
+      "critical",
+      "支付金额需人工核查",
+      "operator_1",
+      "2026-05-12T10:00:00.000Z",
+    ]);
+
+    const auditQuery = writeDb.queries.find(query =>
+      query.text.includes("INSERT INTO order_admin_audit_events")
+    );
+    expect(auditQuery?.values?.slice(0, 7)).toEqual([
+      "order_audit_1",
+      "order_1",
+      "user_1",
+      "operator_1",
+      ["operator"],
+      "mark_exception",
+      "支付金额需人工核查",
+    ]);
+
+    const readDb = new FakeCourseAccessExecutor({
+      orderAdminExceptionFlags: [
+        {
+          order_id: "order_1",
+          status: "open",
+          severity: "critical",
+          reason: "支付金额需人工核查",
+          marked_by: "operator_1",
+          marked_at: new Date("2026-05-12T10:00:00.000Z"),
+          cleared_by: null,
+          cleared_at: null,
+        },
+      ],
+      orderAdminAuditEvents: [
+        {
+          id: "order_audit_1",
+          order_id: "order_1",
+          user_id: "user_1",
+          actor_id: "operator_1",
+          actor_roles: ["operator"],
+          action: "mark_exception",
+          reason: "支付金额需人工核查",
+          before_snapshot: auditEvent.before,
+          after_snapshot: auditEvent.after,
+          created_at: new Date("2026-05-12T10:00:01.000Z"),
+        },
+      ],
+    });
+    const readStore = new PostgresCourseAccessStore(readDb);
+
+    expect(await readStore.listOrderAdminExceptionFlags()).toEqual([exception]);
+    expect(await readStore.listOrderAdminAuditEvents("order_1")).toEqual([
+      auditEvent,
     ]);
   });
 });

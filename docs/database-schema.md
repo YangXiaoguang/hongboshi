@@ -14,6 +14,7 @@
 - `server/db/migrations/0007_course_product_contents.sql`：课程商品详情内容表，使用 JSONB 保存适合人群、章节和素材占位。
 - `server/db/migrations/0008_catalog_permissions.sql`：扩展 `user_roles` 角色约束，支持课程商品只读与课程商品运营角色。
 - `server/db/migrations/0009_user_membership_audit_events.sql`：用户会员权益后台操作审计表，记录操作者、原因和前后会员状态。
+- `server/db/migrations/0010_order_admin_operations.sql`：订单后台异常标记表与订单操作审计表，记录待支付关闭、异常标记和解除异常的前后状态。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
@@ -36,22 +37,22 @@
 - 测评分数、推荐结果这类强业务结构先用 `JSONB` 存储，保持与报告生成引擎同步；当运营查询变复杂后再拆维度表。
 - 咨询时段和预约单分表，`uniq_active_counseling_slot` 防止同一时段被多个有效预约占用；咨询预约通过 `order_id` 关联 `orders`，用于支付确认、超时关闭和后续退款流转。
 - 风险事件独立建表，测评报告和咨询预约通过 `risk_event_id` 关联，咨询预约同时保留 `assessment_report_id`，方便咨询师在服务前回看用户授权带入的测评上下文。
-- 审计日志只追加，不作为业务状态来源；咨询运营审计单独保留规则快照、履约状态前后值和操作者角色，会员操作审计保留前后会员状态、操作原因和操作者角色，便于后台追溯。
+- 审计日志只追加，不作为业务状态来源；咨询运营审计单独保留规则快照、履约状态前后值和操作者角色，会员操作审计保留前后会员状态、订单操作审计保留订单状态和异常标记前后快照、操作原因和操作者角色，便于后台追溯。
 
 ## 初始核心表
 
-| 领域           | 表                                                                                                                                                        |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                                                                                                   |
-| 课程权益与订单 | `course_memberships`, `course_access_grants`, `course_products`, `course_product_contents`, `orders`, `order_items`, `payments`, `payment_webhook_events` |
-| 测评           | `assessment_reports`                                                                                                                                      |
-| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`, `counseling_operation_settings`                                                              |
-| 风险与审计     | `risk_events`, `audit_logs`, `course_product_audit_events`, `counseling_operation_audit_events`, `user_membership_audit_events`                           |
+| 领域           | 表                                                                                                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                                                                                                                                    |
+| 课程权益与订单 | `course_memberships`, `course_access_grants`, `course_products`, `course_product_contents`, `orders`, `order_items`, `payments`, `payment_webhook_events`                                  |
+| 测评           | `assessment_reports`                                                                                                                                                                       |
+| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`, `counseling_operation_settings`                                                                                               |
+| 风险与审计     | `risk_events`, `audit_logs`, `course_product_audit_events`, `counseling_operation_audit_events`, `user_membership_audit_events`, `order_admin_exception_flags`, `order_admin_audit_events` |
 
 ## 后续接入顺序
 
 1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
-2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、课程商品、课程商品详情内容、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，且已能支撑用户会员后台与统一订单后台聚合；后续接入 ORM/迁移工具统一管理。
+2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、课程商品、课程商品详情内容、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，且已能支撑用户会员后台与统一订单后台聚合；后续接入 ORM/迁移工具统一管理。
 3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
 4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
 5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。
@@ -66,7 +67,7 @@
 
 `server/modules/counseling/postgresCounselingOperationStore.ts` 已实现取消规则配置、规则变更审计、履约审计读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COUNSELING_OPERATION_STORE=postgres` 时，咨询运营配置与审计会写入 PostgreSQL。
 
-`server/modules/courses/postgresCourseAccessStore.ts` 已实现课程会员、课程授权、订单、订单明细和会员操作审计事件的保存、单用户读取与后台聚合所需的用户权益快照列表能力。开发期默认仍可使用 JSON Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 时，课程权益和会员操作审计会写入 PostgreSQL。
+`server/modules/courses/postgresCourseAccessStore.ts` 已实现课程会员、课程授权、订单、订单明细、会员操作审计、订单异常标记和订单操作审计事件的保存、单用户读取与后台聚合所需的用户权益快照列表能力。开发期默认仍可使用 JSON Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 时，课程权益、会员操作审计和订单操作审计会写入 PostgreSQL。
 
 `server/modules/auth/postgresAuthSessionStore.ts` 已实现用户、角色、协议同意和登录会话的保存、读取、注销与用户目录列表能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_AUTH_SESSION_STORE=postgres` 时，登录会话会写入 PostgreSQL，并只保存 session token 的哈希值。
 
@@ -80,4 +81,4 @@
 
 `server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节和素材占位；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
 
-当前实现已覆盖登录会话、课程权益、会员操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作和 `/admin/orders` 统一订单只读聚合。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+当前实现已覆盖登录会话、课程权益、会员操作审计、订单异常标记、订单操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作和 `/admin/orders` 统一订单聚合及受控订单动作。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

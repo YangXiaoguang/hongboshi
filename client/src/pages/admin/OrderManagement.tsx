@@ -4,17 +4,22 @@ import { motion } from "framer-motion";
 import {
   AlertTriangle,
   CalendarClock,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
   CreditCard,
   FileText,
+  Flag,
+  History,
   Loader2,
   PackageCheck,
   ReceiptText,
   RefreshCw,
   Search,
+  Send,
   ShieldCheck,
+  ShieldAlert,
   UserRound,
   type LucideIcon,
 } from "lucide-react";
@@ -25,6 +30,8 @@ import {
   ORDER_ADMIN_PERMISSIONS,
   PurchasableTypeSchema,
   userCan,
+  type OrderAdminAction,
+  type OrderAdminActionRequest,
   type OrderAdminDetail,
   type OrderAdminListItem,
   type OrderAdminListQuery,
@@ -56,6 +63,17 @@ const receiptStatusCopy = {
   processed: "已处理",
   failed: "失败",
 } satisfies Record<PaymentWebhookReceiptStatus, string>;
+
+const orderActionCopy = {
+  close_pending: "关闭待支付",
+  mark_exception: "标记异常",
+  clear_exception: "解除异常",
+} satisfies Record<OrderAdminAction, string>;
+
+const exceptionSeverityCopy = {
+  warning: "需关注",
+  critical: "严重异常",
+} satisfies Record<"warning" | "critical", string>;
 
 const sortOptions: {
   value: OrderAdminListQuery["sort"];
@@ -109,6 +127,11 @@ function receiptClass(status?: PaymentWebhookReceiptStatus) {
   if (status === "failed") return "bg-[#FBEAE7] text-[#9B3B2F]";
   if (status === "processing") return "bg-[#FFF7E5] text-[#8F6B1C]";
   return "bg-[#EEF2F7] text-[#536783]";
+}
+
+function exceptionClass(severity?: "warning" | "critical") {
+  if (severity === "critical") return "bg-[#FBEAE7] text-[#9B3B2F]";
+  return "bg-[#FFF7E5] text-[#8F6B1C]";
 }
 
 function itemTypeOptionsFromResult(
@@ -185,6 +208,16 @@ function OrderRow({
             <span className="mt-0.5 block truncate text-xs text-[#8A8176]">
               {order.id}
             </span>
+            {order.exception ? (
+              <span
+                className={`mt-1 inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${exceptionClass(
+                  order.exception.severity
+                )}`}
+              >
+                <Flag className="h-3 w-3" />
+                {exceptionSeverityCopy[order.exception.severity]}
+              </span>
+            ) : null}
           </span>
         </span>
       </span>
@@ -228,11 +261,72 @@ function OrderDetailPanel({
   detail,
   loading,
   error,
+  canOperate,
+  actionSubmitting,
+  actionError,
+  onSubmitAction,
 }: {
   detail?: OrderAdminDetail;
   loading: boolean;
   error?: string;
+  canOperate: boolean;
+  actionSubmitting: boolean;
+  actionError?: string;
+  onSubmitAction: (request: OrderAdminActionRequest) => Promise<boolean>;
 }) {
+  const [selectedAction, setSelectedAction] =
+    useState<OrderAdminAction>("mark_exception");
+  const [severity, setSeverity] = useState<"warning" | "critical">("warning");
+  const [reason, setReason] = useState("");
+
+  const availableActions = detail
+    ? ([
+        ...(detail.order.status === "created" ||
+        detail.order.status === "pending_payment"
+          ? (["close_pending"] as const)
+          : []),
+        "mark_exception",
+        ...(detail.order.exception ? (["clear_exception"] as const) : []),
+      ] satisfies OrderAdminAction[])
+    : ([] satisfies OrderAdminAction[]);
+
+  useEffect(() => {
+    if (!availableActions.length) return;
+    if (!availableActions.includes(selectedAction)) {
+      setSelectedAction(availableActions[0]);
+    }
+  }, [
+    availableActions,
+    detail?.order.exception?.status,
+    detail?.order.id,
+    detail?.order.status,
+    selectedAction,
+  ]);
+
+  async function submitAction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedReason = reason.trim();
+    const request: OrderAdminActionRequest =
+      selectedAction === "mark_exception"
+        ? {
+            action: selectedAction,
+            severity,
+            reason: trimmedReason,
+          }
+        : {
+            action: selectedAction,
+            reason: trimmedReason,
+          };
+
+    const ok = await onSubmitAction(request);
+    if (ok) {
+      setReason("");
+      if (request.action === "clear_exception") {
+        setSelectedAction("mark_exception");
+      }
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[420px] items-center justify-center text-sm text-[#6F7771]">
@@ -277,13 +371,25 @@ function OrderDetailPanel({
               {detail.order.id}
             </p>
           </div>
-          <span
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(
-              detail.order.status
-            )}`}
-          >
-            {orderStatusCopy[detail.order.status]}
-          </span>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(
+                detail.order.status
+              )}`}
+            >
+              {orderStatusCopy[detail.order.status]}
+            </span>
+            {detail.order.exception ? (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${exceptionClass(
+                  detail.order.exception.severity
+                )}`}
+              >
+                <Flag className="h-3 w-3" />
+                {exceptionSeverityCopy[detail.order.exception.severity]}
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="mt-4 grid grid-cols-3 border-y border-[#E8DED0] text-center text-sm">
@@ -305,6 +411,96 @@ function OrderDetailPanel({
           </div>
         </div>
       </div>
+
+      {canOperate ? (
+        <DetailSection title="订单操作">
+          {detail.order.exception ? (
+            <div
+              className={`mb-3 rounded-lg px-3 py-2 text-sm ${exceptionClass(
+                detail.order.exception.severity
+              )}`}
+            >
+              <div className="flex items-center gap-2 font-semibold">
+                <ShieldAlert className="h-4 w-4" />
+                {exceptionSeverityCopy[detail.order.exception.severity]}
+              </div>
+              <p className="mt-1 leading-5">{detail.order.exception.reason}</p>
+              <p className="mt-1 text-xs opacity-80">
+                {formatDate(detail.order.exception.markedAt)}
+              </p>
+            </div>
+          ) : null}
+
+          <form onSubmit={submitAction} className="grid gap-3">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="grid gap-1 text-xs font-semibold text-[#8A8176]">
+                动作
+                <select
+                  value={selectedAction}
+                  onChange={event =>
+                    setSelectedAction(event.target.value as OrderAdminAction)
+                  }
+                  className="h-10 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm font-medium text-[#243B35] outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
+                >
+                  {availableActions.map(action => (
+                    <option key={action} value={action}>
+                      {orderActionCopy[action]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1 text-xs font-semibold text-[#8A8176]">
+                级别
+                <select
+                  value={severity}
+                  onChange={event =>
+                    setSeverity(event.target.value as "warning" | "critical")
+                  }
+                  disabled={selectedAction !== "mark_exception"}
+                  className="h-10 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm font-medium text-[#243B35] outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15 disabled:bg-[#F8F3EA] disabled:text-[#9A8F82]"
+                >
+                  <option value="warning">需关注</option>
+                  <option value="critical">严重异常</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="grid gap-1 text-xs font-semibold text-[#8A8176]">
+              原因
+              <textarea
+                value={reason}
+                onChange={event => setReason(event.target.value)}
+                rows={3}
+                placeholder="记录本次操作原因"
+                className="min-h-24 resize-none rounded-lg border border-[#DCCDBB] bg-white px-3 py-2 text-sm font-medium text-[#243B35] outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
+              />
+            </label>
+
+            {actionError ? (
+              <p className="rounded-lg bg-[#FBEAE7] px-3 py-2 text-xs font-semibold text-[#9B3B2F]">
+                {actionError}
+              </p>
+            ) : null}
+
+            <button
+              disabled={actionSubmitting || reason.trim().length < 2}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              {actionSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : selectedAction === "clear_exception" ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : selectedAction === "mark_exception" ? (
+                <Flag className="h-4 w-4" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              提交
+            </button>
+          </form>
+        </DetailSection>
+      ) : null}
 
       <DetailSection title="用户摘要">
         <div className="flex items-center gap-3 text-sm">
@@ -425,6 +621,37 @@ function OrderDetailPanel({
         )}
       </DetailSection>
 
+      <DetailSection title="操作审计">
+        {detail.auditEvents.length === 0 ? (
+          <p className="text-sm text-[#8A8176]">暂无订单后台操作记录</p>
+        ) : (
+          <div className="space-y-3">
+            {detail.auditEvents.map(event => (
+              <div key={event.id} className="rounded-lg bg-[#F8F3EA] px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                      <History className="h-4 w-4 text-[#6F8F83]" />
+                      {orderActionCopy[event.action]}
+                    </p>
+                    <p className="mt-1 text-xs text-[#8A8176]">
+                      {event.actorId} · {formatDate(event.createdAt)}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-[#53675D]">
+                    {orderStatusCopy[event.before.status]} -&gt;{" "}
+                    {orderStatusCopy[event.after.status]}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-5 text-[#5F6B64]">
+                  {event.reason}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </DetailSection>
+
       <DetailSection title="状态时间线">
         <div className="space-y-3">
           {detail.timeline.map((event, index) => (
@@ -456,6 +683,9 @@ function OrderDetailPanel({
 export default function OrderManagement() {
   const { user } = useAuth();
   const canRead = Boolean(user && userCan(user, ORDER_ADMIN_PERMISSIONS.read));
+  const canOperate = Boolean(
+    user && userCan(user, ORDER_ADMIN_PERMISSIONS.operate)
+  );
   const [query, setQuery] = useState<OrderAdminListQuery>({
     keyword: "",
     status: ALL_ORDER_ADMIN_STATUS,
@@ -470,37 +700,41 @@ export default function OrderManagement() {
   const [detail, setDetail] = useState<OrderAdminDetail>();
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [actionSubmitting, setActionSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const [detailError, setDetailError] = useState<string>();
+  const [actionError, setActionError] = useState<string>();
 
-  const loadOrders = useCallback(() => {
-    if (!canRead) return;
+  const loadOrders = useCallback(async () => {
+    if (!canRead) return undefined;
 
     setLoading(true);
     setError(undefined);
-    httpAdminOrderRepository
-      .loadOrders(query)
-      .then(nextResult => {
-        setResult(nextResult);
-        setSelectedOrderId(current => {
-          if (current && nextResult.items.some(item => item.id === current)) {
-            return current;
-          }
-          return nextResult.items[0]?.id;
-        });
-      })
-      .catch(err => {
-        setError(err instanceof Error ? err.message : "订单列表暂时不可用");
-        setResult(undefined);
-      })
-      .finally(() => setLoading(false));
+    try {
+      const nextResult = await httpAdminOrderRepository.loadOrders(query);
+      setResult(nextResult);
+      setSelectedOrderId(current => {
+        if (current && nextResult.items.some(item => item.id === current)) {
+          return current;
+        }
+        return nextResult.items[0]?.id;
+      });
+      return nextResult;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "订单列表暂时不可用");
+      setResult(undefined);
+      return undefined;
+    } finally {
+      setLoading(false);
+    }
   }, [canRead, query]);
 
   useEffect(() => {
-    loadOrders();
+    void loadOrders();
   }, [loadOrders]);
 
   useEffect(() => {
+    setActionError(undefined);
     if (!canRead || !selectedOrderId) {
       setDetail(undefined);
       return;
@@ -519,6 +753,32 @@ export default function OrderManagement() {
       })
       .finally(() => setDetailLoading(false));
   }, [canRead, selectedOrderId]);
+
+  const submitOrderAction = useCallback(
+    async (request: OrderAdminActionRequest) => {
+      if (!selectedOrderId) return false;
+
+      setActionSubmitting(true);
+      setActionError(undefined);
+      try {
+        const mutation = await httpAdminOrderRepository.updateOrder(
+          selectedOrderId,
+          request
+        );
+        setDetail(mutation.detail);
+        await loadOrders();
+        return true;
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "订单操作暂时不可用"
+        );
+        return false;
+      } finally {
+        setActionSubmitting(false);
+      }
+    },
+    [loadOrders, selectedOrderId]
+  );
 
   const itemTypeOptions = useMemo(
     () => itemTypeOptionsFromResult(result),
@@ -575,11 +835,11 @@ export default function OrderManagement() {
             统一订单台
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            聚合课程、会员和咨询订单，提供只读检索、支付回调和履约关联视图。
+            聚合课程、会员和咨询订单，提供检索、支付回调、履约关联、异常标记和待支付关闭动作。
           </p>
         </div>
         <button
-          onClick={loadOrders}
+          onClick={() => void loadOrders()}
           disabled={loading}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-70"
         >
@@ -798,6 +1058,10 @@ export default function OrderManagement() {
             detail={detail}
             loading={detailLoading}
             error={detailError}
+            canOperate={canOperate}
+            actionSubmitting={actionSubmitting}
+            actionError={actionError}
+            onSubmitAction={submitOrderAction}
           />
         </aside>
       </section>

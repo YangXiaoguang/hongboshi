@@ -1,11 +1,15 @@
 import {
   ApiResponseSchema,
+  OrderAdminActionRequestSchema,
   OrderAdminDetailSchema,
   OrderAdminListQuerySchema,
   OrderAdminListResultSchema,
+  OrderAdminMutationResultSchema,
+  type OrderAdminActionRequest,
   type OrderAdminDetail,
   type OrderAdminListQuery,
   type OrderAdminListResult,
+  type OrderAdminMutationResult,
 } from "@shared/domain";
 
 const OrderAdminListResponseSchema = ApiResponseSchema(
@@ -13,6 +17,9 @@ const OrderAdminListResponseSchema = ApiResponseSchema(
 );
 const OrderAdminDetailResponseSchema = ApiResponseSchema(
   OrderAdminDetailSchema
+);
+const OrderAdminMutationResponseSchema = ApiResponseSchema(
+  OrderAdminMutationResultSchema
 );
 const API_BASE = "/api/orders/admin";
 
@@ -40,6 +47,14 @@ export function parseAdminOrderDetailResponse(
   return parsed.data;
 }
 
+export function parseAdminOrderMutationResponse(
+  payload: unknown
+): OrderAdminMutationResult {
+  const parsed = OrderAdminMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = OrderAdminListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -49,6 +64,11 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   const detailParsed = OrderAdminDetailResponseSchema.safeParse(payload);
   if (detailParsed.success && !detailParsed.data.ok) {
     return detailParsed.data.error.message;
+  }
+
+  const mutationParsed = OrderAdminMutationResponseSchema.safeParse(payload);
+  if (mutationParsed.success && !mutationParsed.data.ok) {
+    return mutationParsed.data.error.message;
   }
 
   return fallback;
@@ -102,5 +122,30 @@ export const httpAdminOrderRepository = {
       throw new Error(extractErrorMessage(payload, "订单详情暂时不可用"));
     }
     return parseAdminOrderDetailResponse(payload);
+  },
+
+  async updateOrder(
+    orderId: string,
+    request: OrderAdminActionRequest
+  ): Promise<OrderAdminMutationResult> {
+    const normalized = OrderAdminActionRequestSchema.parse(request);
+    const response = await fetch(
+      `${API_BASE}/orders/${encodeURIComponent(orderId)}/actions`,
+      {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify(normalized),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "订单操作暂时不可用"));
+    }
+    return parseAdminOrderMutationResponse(payload);
   },
 };

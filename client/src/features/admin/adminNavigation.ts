@@ -100,13 +100,13 @@ export const adminNavigationItems = [
   {
     key: "orders",
     title: "订单管理",
-    description: "课程、咨询和会员订单的只读聚合与履约追踪。",
+    description: "课程、咨询和会员订单聚合、状态动作和异常审计。",
     href: "/admin/orders",
     icon: ClipboardList,
     permission: ORDER_ADMIN_PERMISSIONS.read,
     status: "available",
     group: "business",
-    milestone: "M4-A",
+    milestone: "M4-B",
   },
   {
     key: "transactions",
@@ -117,7 +117,7 @@ export const adminNavigationItems = [
     permission: "admin:manage",
     status: "planned",
     group: "business",
-    milestone: "M5",
+    milestone: "M5-A",
   },
   {
     key: "finance",

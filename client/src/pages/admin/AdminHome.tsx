@@ -38,8 +38,9 @@ const implementationRows = [
     "用户检索、会员权益摘要、账号状态和隐私边界",
   ],
   ["M3-B", "会员权益操作", "已完成", "会员开通、延期、到期处理和审计记录"],
-  ["M4-A", "订单只读台", "下一步", "课程、咨询和会员订单的统一只读视图"],
-  ["M5", "交易与退款管理", "规划中", "支付流水、退款申请和异常处理"],
+  ["M4-A", "订单只读台", "已完成", "课程、咨询和会员订单的统一只读视图"],
+  ["M4-B", "订单状态动作", "已完成", "待支付关闭、异常标记和操作审计"],
+  ["M5-A", "交易与退款管理", "下一步", "支付流水、退款申请和异常处理"],
 ] as const;
 
 const overviewMetrics: {
@@ -48,7 +49,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "M4-A", icon: GitBranch },
+  { label: "下一阶段", value: "M5-A", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -186,7 +187,7 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经指向 M4-A 统一订单管理只读台。
+              当前连续执行状态已经进入 M5-A 交易与退款管理准备。
             </p>
           </div>
           <div className="overflow-x-auto">

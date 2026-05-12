@@ -1,12 +1,16 @@
 import { createHash } from "crypto";
 import {
   CourseAccessStateSchema,
+  OrderAdminAuditEventSchema,
+  OrderAdminExceptionFlagSchema,
   UserAdminMembershipAuditEventSchema,
   createEmptyCourseAccessState,
   normalizeCourseAccessState,
   type CourseAccessState,
   type CourseMembership,
   type Order,
+  type OrderAdminAuditEvent,
+  type OrderAdminExceptionFlag,
   type OrderItem,
   type UserAdminMembershipAuditEvent,
 } from "../../../shared/domain";
@@ -54,6 +58,30 @@ type MembershipAuditEventRow = {
   before_membership: unknown;
   after_membership: unknown;
   created_at: string | Date;
+};
+
+type OrderAdminAuditEventRow = {
+  id: string;
+  order_id: string;
+  user_id: string;
+  actor_id: string;
+  actor_roles: string[];
+  action: OrderAdminAuditEvent["action"];
+  reason: string;
+  before_snapshot: unknown;
+  after_snapshot: unknown;
+  created_at: string | Date;
+};
+
+type OrderAdminExceptionFlagRow = {
+  order_id: string;
+  status: OrderAdminExceptionFlag["status"];
+  severity: OrderAdminExceptionFlag["severity"];
+  reason: string;
+  marked_by: string;
+  marked_at: string | Date;
+  cleared_by: string | null;
+  cleared_at: string | Date | null;
 };
 
 function toDateTimeLike(value: string | Date | null | undefined) {
@@ -132,6 +160,38 @@ function membershipAuditEventRowToDomain(
     before: row.before_membership,
     after: row.after_membership,
     createdAt: toDateTimeLike(row.created_at) ?? new Date(0).toISOString(),
+  });
+}
+
+function orderAdminAuditEventRowToDomain(
+  row: OrderAdminAuditEventRow
+): OrderAdminAuditEvent {
+  return OrderAdminAuditEventSchema.parse({
+    id: row.id,
+    orderId: row.order_id,
+    userId: row.user_id,
+    actorId: row.actor_id,
+    actorRoles: row.actor_roles,
+    action: row.action,
+    reason: row.reason,
+    before: row.before_snapshot,
+    after: row.after_snapshot,
+    createdAt: toDateTimeLike(row.created_at) ?? new Date(0).toISOString(),
+  });
+}
+
+function orderAdminExceptionFlagRowToDomain(
+  row: OrderAdminExceptionFlagRow
+): OrderAdminExceptionFlag {
+  return OrderAdminExceptionFlagSchema.parse({
+    orderId: row.order_id,
+    status: row.status,
+    severity: row.severity,
+    reason: row.reason,
+    markedBy: row.marked_by,
+    markedAt: toDateTimeLike(row.marked_at) ?? new Date(0).toISOString(),
+    clearedBy: row.cleared_by ?? undefined,
+    clearedAt: toDateTimeLike(row.cleared_at),
   });
 }
 
@@ -466,6 +526,131 @@ export class PostgresCourseAccessStore {
     return normalized;
   }
 
+  async listOrderAdminAuditEvents(
+    orderId: string
+  ): Promise<OrderAdminAuditEvent[]> {
+    const result = await this.db.query<OrderAdminAuditEventRow>(
+      `
+        SELECT
+          id,
+          order_id,
+          user_id,
+          actor_id,
+          actor_roles,
+          action,
+          reason,
+          before_snapshot,
+          after_snapshot,
+          created_at
+        FROM order_admin_audit_events
+        WHERE order_id = $1
+        ORDER BY created_at DESC, id DESC
+      `,
+      [orderId]
+    );
+
+    return result.rows.map(orderAdminAuditEventRowToDomain);
+  }
+
+  async appendOrderAdminAuditEvent(
+    event: OrderAdminAuditEvent
+  ): Promise<OrderAdminAuditEvent> {
+    const normalized = OrderAdminAuditEventSchema.parse(event);
+    await this.db.query(
+      `
+        INSERT INTO order_admin_audit_events (
+          id,
+          order_id,
+          user_id,
+          actor_id,
+          actor_roles,
+          action,
+          reason,
+          before_snapshot,
+          after_snapshot,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10)
+        ON CONFLICT (id) DO NOTHING
+      `,
+      [
+        normalized.id,
+        normalized.orderId,
+        normalized.userId,
+        normalized.actorId,
+        normalized.actorRoles,
+        normalized.action,
+        normalized.reason,
+        JSON.stringify(normalized.before),
+        JSON.stringify(normalized.after),
+        normalized.createdAt,
+      ]
+    );
+
+    return normalized;
+  }
+
+  async listOrderAdminExceptionFlags(): Promise<OrderAdminExceptionFlag[]> {
+    const result = await this.db.query<OrderAdminExceptionFlagRow>(
+      `
+        SELECT
+          order_id,
+          status,
+          severity,
+          reason,
+          marked_by,
+          marked_at,
+          cleared_by,
+          cleared_at
+        FROM order_admin_exception_flags
+        ORDER BY marked_at DESC, order_id ASC
+      `
+    );
+
+    return result.rows.map(orderAdminExceptionFlagRowToDomain);
+  }
+
+  async saveOrderAdminExceptionFlag(
+    flag: OrderAdminExceptionFlag
+  ): Promise<OrderAdminExceptionFlag> {
+    const normalized = OrderAdminExceptionFlagSchema.parse(flag);
+    await this.db.query(
+      `
+        INSERT INTO order_admin_exception_flags (
+          order_id,
+          status,
+          severity,
+          reason,
+          marked_by,
+          marked_at,
+          cleared_by,
+          cleared_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (order_id) DO UPDATE SET
+          status = EXCLUDED.status,
+          severity = EXCLUDED.severity,
+          reason = EXCLUDED.reason,
+          marked_by = EXCLUDED.marked_by,
+          marked_at = EXCLUDED.marked_at,
+          cleared_by = EXCLUDED.cleared_by,
+          cleared_at = EXCLUDED.cleared_at
+      `,
+      [
+        normalized.orderId,
+        normalized.status,
+        normalized.severity,
+        normalized.reason,
+        normalized.markedBy,
+        normalized.markedAt,
+        normalized.clearedBy ?? null,
+        normalized.clearedAt ?? null,
+      ]
+    );
+
+    return normalized;
+  }
+
   async reset(
     userId: string,
     state = createEmptyCourseAccessState()
@@ -474,6 +659,8 @@ export class PostgresCourseAccessStore {
   }
 
   async clear(): Promise<void> {
+    await this.db.query("DELETE FROM order_admin_audit_events");
+    await this.db.query("DELETE FROM order_admin_exception_flags");
     await this.db.query("DELETE FROM user_membership_audit_events");
     await this.db.query("DELETE FROM course_access_grants");
     await this.db.query("DELETE FROM course_memberships");

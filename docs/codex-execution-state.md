@@ -7,10 +7,10 @@
 - 最后更新时间：2026-05-12 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
-- 最近已知基线提交：上一阶段 `4374c53 Add membership admin actions`，本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M4-B 订单状态动作与审计`
-- 当前状态：`M4-A 统一订单管理只读台` 已完成，下一轮应进入待支付订单关闭、异常标记和订单操作审计。
-- 本轮完成后下一步：执行 `M4-B 订单状态动作与审计`
+- 最近已知基线提交：上一阶段 `40a7db0 Add admin order console`，本轮提交后以 Git 历史最新提交为准
+- 当前阶段：`M5-A 交易与退款管理只读台`
+- 当前状态：`M4-B 订单状态动作与审计` 已完成，下一轮应进入交易流水、退款流水和支付异常聚合的只读管理台。
+- 本轮完成后下一步：执行 `M5-A 交易与退款管理只读台`
 
 ## 已完成关键能力
 
@@ -68,54 +68,61 @@
 - 建立订单后台共享契约 `OrderAdminListResultSchema` 与 `OrderAdminDetailSchema`，统一描述订单列表、订单详情、金额、支付回调摘要、关联履约对象和只读状态时间线。
 - 建立 `server/modules/orders/orderAdminApi.ts`，从课程权益订单、咨询预约记录、支付回调收据和 auth 用户目录聚合订单后台数据，并在缺少真实订单时提供开发期 fallback 订单。
 - 新增 `/admin/orders` 统一订单只读台，支持关键词、订单状态、商品类型、排序、分页、列表和详情摘要。
+- 建立 `order:operate` 后台操作权限，`operator` 与 `admin` 可执行订单后台写动作。
+- 建立订单后台动作契约、异常标记契约、操作审计契约和订单动作返回契约。
+- 课程权益 Store 已保存订单异常标记和订单操作审计事件，JSON 文件 Store 和 PostgreSQL Store 均支持读取与追加；新增 `order_admin_exception_flags` 与 `order_admin_audit_events` 数据库迁移表。
+- 新增 `/api/orders/admin/orders/:orderId/actions`，支持关闭待支付订单、标记异常和解除异常，服务端校验权限、原因和订单状态机。
+- `/admin/orders` 详情面板已加入订单操作入口、异常标记展示和操作审计列表，动作完成后刷新列表与详情。
 
 ## 最近完成阶段
 
-M4-A 统一订单管理只读台已交付：
+M4-B 订单状态动作与审计已交付：
 
-- `shared/domain/order.ts`：新增订单后台查询、列表、详情、汇总、支付回调摘要、关联对象和时间线契约。
-- `shared/domain/user.ts`：新增 `order:read` 后台读取权限，`operator/admin` 默认拥有。
-- `server/modules/orders/orderAdminApi.ts`：新增 `/api/orders/admin/orders` 与 `/api/orders/admin/orders/:orderId`，聚合课程权益订单、咨询预约关系、支付回调收据和用户脱敏摘要。
-- `client/src/features/orders/api/httpAdminOrderRepository.ts`：新增前端订单后台 repository 与响应解析。
-- `client/src/pages/admin/OrderManagement.tsx`：新增 `/admin/orders` 页面，支持搜索、订单状态/商品类型筛选、排序、分页、详情、支付回调和状态时间线。
-- `client/src/features/admin/adminNavigation.ts` 与 `client/src/App.tsx`：订单管理模块从规划切换为可用，并接入统一后台路由。
-- README、数据库说明、领域契约、产品路线、后台路线图和本文件同步了统一订单只读台边界。
+- `shared/domain/order.ts`：新增订单后台动作、异常标记、操作审计快照和动作返回契约。
+- `shared/domain/user.ts`：新增 `order:operate` 后台操作权限，`operator/admin` 默认拥有。
+- `server/modules/courses/courseAccessStore.ts` 与 `server/modules/courses/postgresCourseAccessStore.ts`：新增订单异常标记和订单操作审计存储，JSON 文件 Store 与 PostgreSQL Store 均可持久化。
+- `server/db/migrations/0010_order_admin_operations.sql`：新增 `order_admin_exception_flags` 与 `order_admin_audit_events`。
+- `server/modules/orders/orderAdminApi.ts`：新增 `/api/orders/admin/orders/:orderId/actions`，支持关闭待支付、标记异常和解除异常，复用订单状态机并返回最新详情。
+- `client/src/features/orders/api/httpAdminOrderRepository.ts`：新增订单动作提交和响应解析。
+- `client/src/pages/admin/OrderManagement.tsx`：详情面板新增订单动作入口、异常标记展示和操作审计列表。
+- README、数据库说明、领域契约、产品路线、后台路线图和本文件同步了订单操作边界。
 
-M4-A 验收结果：
+M4-B 验收结果：
 
-- 运营/管理员可进入 `/admin/orders` 查看统一订单列表和详情。
-- 订单列表可区分课程、会员和咨询服务，并展示状态、金额、用户和创建/支付时间。
-- 订单详情可以解释订单与支付回调、咨询预约或课程/会员权益之间的只读关联。
-- 非后台账号不能读取订单后台接口。
+- 具备订单操作权限的账号可以关闭待支付订单，并看到最新 `closed` 状态。
+- 订单异常标记和解除异常可追溯，包含操作者、原因、前后状态和时间。
+- 无权限账号不能调用订单动作；订单读取仍由 `order:read` 控制。
+- 动作完成后 `/admin/orders` 列表与详情同步刷新。
 - `pnpm run ci` 已通过。
 
 ## 下一步任务包
 
-### M4-B: 订单状态动作与审计
+### M5-A: 交易与退款管理只读台
 
 业务目标：
 
-在 M4-A 只读台基础上，建立订单后台的第一组受控写动作：运营可以关闭待支付订单、标记订单异常或解除异常标记，同时记录完整操作原因、操作者和前后状态。退款、补偿和真实支付渠道仍留给 M5，不在本阶段处理。
+在订单后台之后，建立面向交易运营的只读管理台，统一查看支付流水、退款流水、回调收据、关联订单和业务对象状态，为后续退款申请、支付异常处理工单和真实渠道适配打基础。本阶段不发起真实退款，也不接微信/支付宝商户配置。
 
 实施范围：
 
-- 在 `shared/domain` 新增订单后台动作契约、订单异常标记摘要和订单操作审计事件契约。
-- 新增 `order:operate` 或更细的订单操作权限，先让 `operator/admin` 拥有；`order:read` 账号仍只能查看。
-- 扩展课程权益 Store 或新增订单审计 Store，保存订单操作审计事件；PostgreSQL 若需要新增表，必须新增迁移。
-- 新增后台 API：关闭待支付订单、标记异常、解除异常；服务端必须校验权限、校验原因、复用订单状态机函数并返回最新订单详情。
-- `/admin/orders` 详情中增加订单动作入口，仅对有操作权限账号展示；只读账号仍只能查看。
-- 不处理已支付退款、财务补偿或真实支付渠道；这些动作进入 M5 交易退款管理。
+- 在 `shared/domain` 新增交易后台列表、详情、筛选、流水摘要、退款摘要和关联订单摘要契约。
+- 新增 `transaction:read` 交易读取权限，先让 `operator/admin` 拥有；后续退款动作再拆 `transaction:refund` 或更细权限。
+- 新增 `server/modules/transactions` 或等价模块，聚合支付回调收据、课程权益订单、咨询预约快照和订单异常标记。
+- 新增后台 API：交易/退款流水列表与详情，支持关键词、渠道、流水类型、处理状态、日期范围和分页。
+- 新增 `/admin/transactions` 页面或将交易管理从规划切换为可用，展示流水列表、详情、订单/业务对象关联和异常摘要。
+- 保持 `/admin/payments` 支付对账页面可用；若新页面复用其数据结构，必须避免破坏现有对账视图。
+- 不发起真实退款、不修改订单退款状态、不接真实支付渠道密钥；这些动作进入 M5-B/M5-C。
 - 更新 README、`docs/database-schema.md`、`docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
-- 增加 domain、server API、Store 和前端 repository/page 关键测试。
+- 增加 domain、server API、前端 repository/page 关键测试。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add order admin actions`。
+- 提交并推送，建议 commit message：`Add transaction admin console`。
 
 验收标准：
 
-- 具备订单操作权限的账号可以关闭待支付订单，并看到最新状态。
-- 订单异常标记可追溯，包含操作者、原因、前后状态和时间。
-- 无权限账号不能看到或调用订单动作。
-- 动作完成后 `/admin/orders` 列表与详情同步刷新。
+- 运营/管理员可以查看支付成功、退款成功、处理中和失败回调收据的统一流水列表。
+- 交易详情可以解释流水关联的订单、商品类型、咨询预约或课程/会员权益。
+- 权限不足账号不能读取交易后台接口或进入页面。
+- 当前阶段只读，不提供退款申请或渠道补偿动作。
 - CI 通过。
 
 ## 执行不变量
@@ -135,4 +142,4 @@ M4-A 验收结果：
 
 - 课程详情章节/素材是否要从 JSONB 拆成独立表。建议 M2-G 先用 JSONB 保持可维护速度，等学习记录、资料下载和素材真实文件管理进入后再拆表。
 - 真实支付渠道优先接微信支付还是支付宝。建议先把渠道适配接口稳定，再选择一个渠道试点。
-- 订单异常是否需要独立状态还是以审计/标签形式表达。建议 M4-B 先用审计事件和异常标记摘要，不改动现有 `OrderStatusSchema`，等退款/财务进入后再评估是否扩展状态机。
+- 订单异常当前以审计事件和异常标记摘要表达，不改动现有 `OrderStatusSchema`；进入 M5 后需要评估支付异常工单、退款异常和财务异常是否统一到更大的异常处理模型。

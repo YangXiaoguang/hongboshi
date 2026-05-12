@@ -14,6 +14,8 @@ import {
   activateCourseMembership,
   grantPurchasedCourseAccess,
   type CourseAccessState,
+  type OrderAdminAuditEvent,
+  type OrderAdminExceptionFlag,
   type UserAdminMembershipAuditEvent,
 } from "../../../shared/domain";
 import {
@@ -138,6 +140,22 @@ export function appendMembershipAuditEvent(
   event: UserAdminMembershipAuditEvent
 ) {
   return Promise.resolve(courseAccessStore.appendMembershipAuditEvent(event));
+}
+
+export function listOrderAdminAuditEvents(orderId: string) {
+  return Promise.resolve(courseAccessStore.listOrderAdminAuditEvents(orderId));
+}
+
+export function appendOrderAdminAuditEvent(event: OrderAdminAuditEvent) {
+  return Promise.resolve(courseAccessStore.appendOrderAdminAuditEvent(event));
+}
+
+export function listOrderAdminExceptionFlags() {
+  return Promise.resolve(courseAccessStore.listOrderAdminExceptionFlags());
+}
+
+export function saveOrderAdminExceptionFlag(flag: OrderAdminExceptionFlag) {
+  return Promise.resolve(courseAccessStore.saveOrderAdminExceptionFlag(flag));
 }
 
 export async function purchaseCoursePayload(

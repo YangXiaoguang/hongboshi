@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_ORDER_ADMIN_ITEM_TYPE,
   ALL_ORDER_ADMIN_STATUS,
+  OrderAdminActionRequestSchema,
+  OrderAdminAuditEventSchema,
   OrderAdminDetailSchema,
+  OrderAdminExceptionFlagSchema,
   OrderAdminListQuerySchema,
   OrderAdminListResultSchema,
+  OrderAdminMutationResultSchema,
 } from "./order";
 
 const listItem = {
@@ -120,8 +124,72 @@ describe("order admin domain contract", () => {
     });
 
     expect(parsed.paymentReceipts[0]?.status).toBe("processed");
+    expect(parsed.auditEvents).toEqual([]);
     expect(parsed.timeline.map(event => event.type)).toContain(
       "payment_succeeded"
     );
+  });
+
+  it("validates order admin action and audit contracts", () => {
+    const exception = OrderAdminExceptionFlagSchema.parse({
+      orderId: "order_1",
+      status: "open",
+      severity: "critical",
+      reason: "支付回调失败需人工核查",
+      markedBy: "operator_1",
+      markedAt: "2026-05-12T10:00:00+08:00",
+    });
+    const auditEvent = OrderAdminAuditEventSchema.parse({
+      id: "order_audit_1",
+      orderId: "order_1",
+      userId: "u_member_1",
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      action: "mark_exception",
+      reason: "支付回调失败需人工核查",
+      before: { status: "paid" },
+      after: { status: "paid", exception },
+      createdAt: "2026-05-12T10:00:00+08:00",
+    });
+
+    expect(
+      OrderAdminActionRequestSchema.parse({
+        action: "mark_exception",
+        reason: "支付回调失败需人工核查",
+      }).severity
+    ).toBe("warning");
+    expect(
+      OrderAdminMutationResultSchema.parse({
+        detail: {
+          order: { ...listItem, exception },
+          items: [
+            {
+              type: "course",
+              targetId: "1",
+              title: "情绪管理入门",
+              unitPrice: 199,
+              quantity: 1,
+            },
+          ],
+          subtotal: 199,
+          discountAmount: 0,
+          payableAmount: 199,
+          paymentReceipts: [],
+          relatedObjects: [
+            {
+              type: "course",
+              targetId: "1",
+              title: "情绪管理入门",
+            },
+          ],
+          timeline: [],
+          auditEvents: [auditEvent],
+          privacyNotice: "订单后台仅展示履约和对账所需信息。",
+          generatedAt: "2026-05-12T10:00:00+08:00",
+        },
+        auditEvent,
+        serverTime: "2026-05-12T10:00:00+08:00",
+      }).auditEvent.action
+    ).toBe("mark_exception");
   });
 });

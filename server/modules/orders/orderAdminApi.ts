@@ -1,23 +1,35 @@
 import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
+import { randomUUID } from "crypto";
 import { URL } from "url";
 import {
   ApiResponseSchema,
   CourseAccessStateSchema,
   ORDER_ADMIN_PERMISSIONS,
+  OrderAdminActionRequestSchema,
+  OrderAdminAuditEventSchema,
   OrderAdminDetailSchema,
+  OrderAdminExceptionFlagSchema,
   OrderAdminListItemSchema,
   OrderAdminListQuerySchema,
   OrderAdminListResultSchema,
+  OrderAdminMutationResultSchema,
   OrderAdminPaymentReceiptSummarySchema,
+  closeUnpaidOrder,
+  upsertCourseAccessOrder,
   userCan,
+  type AuthPermission,
   type CourseAccessState,
   type LoginSession,
   type Order,
+  type OrderAdminActionRequest,
+  type OrderAdminAuditSnapshot,
   type OrderAdminDetail,
+  type OrderAdminExceptionFlag,
   type OrderAdminListItem,
   type OrderAdminListQuery,
   type OrderAdminListResult,
+  type OrderAdminMutationResult,
   type OrderAdminPaymentReceiptSummary,
   type OrderAdminRelatedObject,
   type OrderAdminTimelineEvent,
@@ -29,7 +41,14 @@ import {
   getLoginSessionFromRequest,
   listAuthUsers,
 } from "../auth/authSessionApi";
-import { listCourseAccessUserStates } from "../courses/courseAccessApi";
+import {
+  appendOrderAdminAuditEvent,
+  listCourseAccessUserStates,
+  listOrderAdminAuditEvents,
+  listOrderAdminExceptionFlags,
+  saveCourseAccessState,
+  saveOrderAdminExceptionFlag,
+} from "../courses/courseAccessApi";
 import {
   listCounselingAppointmentRecords,
   listCounselingAppointmentUserIds,
@@ -49,6 +68,7 @@ type OrderProjection = {
   paymentReceipts: OrderAdminPaymentReceiptSummary[];
   relatedObjects: OrderAdminRelatedObject[];
   timeline: OrderAdminTimelineEvent[];
+  exception?: OrderAdminExceptionFlag;
 };
 
 const OrderAdminListResponseSchema = ApiResponseSchema(
@@ -56,6 +76,9 @@ const OrderAdminListResponseSchema = ApiResponseSchema(
 );
 const OrderAdminDetailResponseSchema = ApiResponseSchema(
   OrderAdminDetailSchema
+);
+const OrderAdminMutationResponseSchema = ApiResponseSchema(
+  OrderAdminMutationResultSchema
 );
 
 const fallbackProfiles = new Map<string, DirectoryProfile>([
@@ -202,6 +225,7 @@ function errorPayload(
     | "UNAUTHORIZED"
     | "FORBIDDEN"
     | "NOT_FOUND"
+    | "CONFLICT"
     | "INTERNAL_ERROR",
   message: string
 ) {
@@ -214,22 +238,56 @@ function errorPayload(
   } as const;
 }
 
-function denyUnauthorizedActor(actor: OrderAdminActor | null | undefined) {
+function denyUnauthorizedActor(
+  actor: OrderAdminActor | null | undefined,
+  permission: AuthPermission = ORDER_ADMIN_PERMISSIONS.read
+) {
   if (!actor) {
     return {
       status: 401,
-      body: errorPayload("UNAUTHORIZED", "请先登录后查看订单后台"),
+      body: errorPayload(
+        "UNAUTHORIZED",
+        permission === ORDER_ADMIN_PERMISSIONS.operate
+          ? "请先登录后操作订单后台"
+          : "请先登录后查看订单后台"
+      ),
     } as const;
   }
 
-  if (!userCan(actor, ORDER_ADMIN_PERMISSIONS.read)) {
+  if (!userCan(actor, permission)) {
     return {
       status: 403,
-      body: errorPayload("FORBIDDEN", "当前账号暂无订单后台读取权限"),
+      body: errorPayload(
+        "FORBIDDEN",
+        permission === ORDER_ADMIN_PERMISSIONS.operate
+          ? "当前账号暂无订单后台操作权限"
+          : "当前账号暂无订单后台读取权限"
+      ),
     } as const;
   }
 
   return undefined;
+}
+
+function readRequestBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise(resolve => {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        resolve(undefined);
+      }
+    });
+  });
 }
 
 function createSyntheticUser(userId: string): OrderAdminUserSummary {
@@ -366,6 +424,7 @@ function listItemFromProjection(
     paidAt: projection.order.paidAt,
     latestReceiptStatus: latestReceipt?.status,
     relatedObjectStatus: relatedObjectStatus || undefined,
+    exception: projection.exception,
   });
 }
 
@@ -508,11 +567,13 @@ function paginateItems(
 }
 
 async function buildOrderProjections(now: string): Promise<OrderProjection[]> {
-  const [profiles, courseAccessUsers, receipts] = await Promise.all([
-    buildDirectoryProfiles(now),
-    listCourseAccessUserStates(),
-    getPaymentWebhookEventStore().listRecent(100),
-  ]);
+  const [profiles, courseAccessUsers, receipts, exceptionFlags] =
+    await Promise.all([
+      buildDirectoryProfiles(now),
+      listCourseAccessUserStates(),
+      getPaymentWebhookEventStore().listRecent(100),
+      listOrderAdminExceptionFlags(),
+    ]);
   const sourceUsers = courseAccessUsers.some(
     item => item.state.orders.length > 0
   )
@@ -532,6 +593,12 @@ async function buildOrderProjections(now: string): Promise<OrderProjection[]> {
       ...current,
       receiptToSummary(receipt),
     ]);
+  }
+  const openExceptionByOrderId = new Map<string, OrderAdminExceptionFlag>();
+  for (const flag of exceptionFlags) {
+    if (flag.status === "open") {
+      openExceptionByOrderId.set(flag.orderId, flag);
+    }
   }
 
   const projections: OrderProjection[] = [];
@@ -566,6 +633,7 @@ async function buildOrderProjections(now: string): Promise<OrderProjection[]> {
           receipts: paymentReceipts,
           relatedObjects,
         }),
+        exception: openExceptionByOrderId.get(order.id),
       });
     }
   }
@@ -601,6 +669,7 @@ async function buildOrderDetail(
     item => item.order.id === orderId
   );
   if (!projection) return undefined;
+  const auditEvents = await listOrderAdminAuditEvents(orderId);
 
   return OrderAdminDetailSchema.parse({
     order: listItemFromProjection(projection),
@@ -611,10 +680,181 @@ async function buildOrderDetail(
     paymentReceipts: projection.paymentReceipts,
     relatedObjects: projection.relatedObjects,
     timeline: projection.timeline,
+    auditEvents,
     privacyNotice:
       "订单后台仅展示履约和对账所需信息：用户身份使用脱敏摘要，不展示咨询说明、测评答案和风险信号原文。",
     generatedAt: now,
   });
+}
+
+async function findOrderSource(orderId: string) {
+  const courseAccessUsers = await listCourseAccessUserStates();
+  const sourceUsers = courseAccessUsers.some(
+    item => item.state.orders.length > 0
+  )
+    ? courseAccessUsers
+    : fallbackCourseAccessUsers;
+
+  for (const source of sourceUsers) {
+    const order = source.state.orders.find(item => item.id === orderId);
+    if (order) {
+      return {
+        userId: source.userId,
+        state: source.state,
+        order,
+      };
+    }
+  }
+
+  return undefined;
+}
+
+async function loadStoredExceptionFlag(orderId: string) {
+  const flags = await listOrderAdminExceptionFlags();
+  return flags.find(flag => flag.orderId === orderId);
+}
+
+function activeExceptionFlag(flag: OrderAdminExceptionFlag | undefined) {
+  return flag?.status === "open" ? flag : undefined;
+}
+
+function auditSnapshot(
+  order: Order,
+  exception?: OrderAdminExceptionFlag
+): OrderAdminAuditSnapshot {
+  return {
+    status: order.status,
+    exception,
+  };
+}
+
+function orderActionConflictMessage(
+  action: OrderAdminActionRequest["action"],
+  err?: unknown
+) {
+  if (
+    err instanceof Error &&
+    err.message === "INVALID_ORDER_CLOSE_TRANSITION"
+  ) {
+    return "当前订单状态不支持关闭，已支付、退款中或已退款订单需进入交易退款流程。";
+  }
+
+  if (action === "clear_exception") {
+    return "当前订单没有开放的异常标记。";
+  }
+
+  return "当前订单状态暂不支持该操作。";
+}
+
+async function applyAdminOrderAction({
+  actor,
+  orderId,
+  request,
+  now,
+}: {
+  actor: OrderAdminActor;
+  orderId: string;
+  request: OrderAdminActionRequest;
+  now: string;
+}) {
+  const source = await findOrderSource(orderId);
+  if (!source) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "订单不存在或暂未进入后台目录"),
+    } as const;
+  }
+
+  const storedException = await loadStoredExceptionFlag(orderId);
+  const beforeException = activeExceptionFlag(storedException);
+  const before = auditSnapshot(source.order, beforeException);
+  let nextOrder = source.order;
+  let afterException = beforeException;
+
+  if (request.action === "close_pending") {
+    try {
+      nextOrder = closeUnpaidOrder(source.order);
+    } catch (err) {
+      return {
+        status: 409,
+        body: errorPayload(
+          "CONFLICT",
+          orderActionConflictMessage(request.action, err)
+        ),
+      } as const;
+    }
+
+    await saveCourseAccessState(
+      source.userId,
+      upsertCourseAccessOrder(source.state, nextOrder)
+    );
+  }
+
+  if (request.action === "mark_exception") {
+    afterException = OrderAdminExceptionFlagSchema.parse({
+      orderId,
+      status: "open",
+      severity: request.severity,
+      reason: request.reason,
+      markedBy: actor.id,
+      markedAt: now,
+    });
+    await saveOrderAdminExceptionFlag(afterException);
+  }
+
+  if (request.action === "clear_exception") {
+    if (!beforeException) {
+      return {
+        status: 409,
+        body: errorPayload(
+          "CONFLICT",
+          orderActionConflictMessage(request.action)
+        ),
+      } as const;
+    }
+
+    afterException = OrderAdminExceptionFlagSchema.parse({
+      ...beforeException,
+      status: "cleared",
+      clearedBy: actor.id,
+      clearedAt: now,
+    });
+    await saveOrderAdminExceptionFlag(afterException);
+  }
+
+  const auditEvent = OrderAdminAuditEventSchema.parse({
+    id: `order_audit_${randomUUID()}`,
+    orderId,
+    userId: nextOrder.userId,
+    actorId: actor.id,
+    actorRoles: actor.roles,
+    action: request.action,
+    reason: request.reason,
+    before,
+    after: auditSnapshot(nextOrder, afterException),
+    createdAt: now,
+  });
+  await appendOrderAdminAuditEvent(auditEvent);
+
+  const detail = await buildOrderDetail(orderId, now);
+  if (!detail) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "订单动作已保存但详情暂不可读"),
+    } as const;
+  }
+
+  return {
+    status: 200,
+    body: OrderAdminMutationResponseSchema.parse({
+      ok: true,
+      data: {
+        detail,
+        auditEvent,
+        serverTime: now,
+      } satisfies OrderAdminMutationResult,
+    }),
+  } as const;
 }
 
 export async function getAdminOrderListPayload(
@@ -665,6 +905,31 @@ export async function getAdminOrderDetailPayload(
       data: detail,
     }),
   } as const;
+}
+
+export async function updateAdminOrderActionPayload(
+  actor: OrderAdminActor | null | undefined,
+  orderId: string,
+  body: unknown,
+  now = new Date().toISOString()
+) {
+  const denied = denyUnauthorizedActor(actor, ORDER_ADMIN_PERMISSIONS.operate);
+  if (denied) return denied;
+
+  const parsed = OrderAdminActionRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "订单操作参数不合法"),
+    } as const;
+  }
+
+  return applyAdminOrderAction({
+    actor: actor as OrderAdminActor,
+    orderId,
+    request: parsed.data,
+    now,
+  });
 }
 
 function queryFromExpress(req: Request) {
@@ -719,6 +984,19 @@ export function registerOrderAdminApi(app: Express) {
       sendJson(res, payload.status, payload.body);
     }
   );
+
+  app.patch(
+    "/api/orders/admin/orders/:orderId/actions",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await updateAdminOrderActionPayload(
+        session?.user,
+        req.params.orderId,
+        req.body
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
 }
 
 export function handleOrderAdminApiRequest(
@@ -758,6 +1036,28 @@ export function handleOrderAdminApiRequest(
     })().catch(err => {
       console.error(err instanceof Error ? err.message : "订单详情读取失败");
       sendJson(res, 500, errorPayload("INTERNAL_ERROR", "订单详情读取失败"));
+    });
+    return true;
+  }
+
+  const actionMatch = url.pathname.match(
+    /^\/api\/orders\/admin\/orders\/([^/]+)\/actions$/
+  );
+  if (req.method === "PATCH" && actionMatch?.[1]) {
+    void (async () => {
+      const [session, body] = await Promise.all([
+        getLoginSessionFromRequest(req),
+        readRequestBody(req),
+      ]);
+      const payload = await updateAdminOrderActionPayload(
+        session?.user,
+        decodeURIComponent(actionMatch[1]),
+        body
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "订单操作失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "订单操作失败"));
     });
     return true;
   }

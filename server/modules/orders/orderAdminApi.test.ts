@@ -27,6 +27,7 @@ import {
 import {
   getAdminOrderDetailPayload,
   getAdminOrderListPayload,
+  updateAdminOrderActionPayload,
 } from "./orderAdminApi";
 
 const operator = { id: "operator_1", roles: ["operator" as const] };
@@ -58,6 +59,35 @@ describe("order admin api payloads", () => {
     expect((await getAdminOrderListPayload(operator, {})).status).toBe(200);
   });
 
+  it("requires order operate permission for admin actions", async () => {
+    expect(
+      (
+        await updateAdminOrderActionPayload(
+          null,
+          "order_counseling_demo_pending",
+          {
+            action: "close_pending",
+            reason: "用户主动放弃支付",
+          },
+          "2026-05-12T10:00:00.000Z"
+        )
+      ).status
+    ).toBe(401);
+    expect(
+      (
+        await updateAdminOrderActionPayload(
+          member,
+          "order_counseling_demo_pending",
+          {
+            action: "close_pending",
+            reason: "用户主动放弃支付",
+          },
+          "2026-05-12T10:00:00.000Z"
+        )
+      ).status
+    ).toBe(403);
+  });
+
   it("returns development fallback orders", async () => {
     const payload = await getAdminOrderListPayload(
       operator,
@@ -75,6 +105,112 @@ describe("order admin api payloads", () => {
       });
       expect(payload.body.data.items[0]?.user.phoneMasked).toContain("****");
     }
+  });
+
+  it("closes pending orders through the order state machine and writes audit", async () => {
+    const payload = await updateAdminOrderActionPayload(
+      operator,
+      "order_counseling_demo_pending",
+      {
+        action: "close_pending",
+        reason: "用户主动放弃支付",
+      },
+      "2026-05-12T10:00:00.000Z"
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (payload.body.ok) {
+      expect(payload.body.data.detail.order.status).toBe("closed");
+      expect(payload.body.data.auditEvent).toMatchObject({
+        action: "close_pending",
+        before: { status: "pending_payment" },
+        after: { status: "closed" },
+      });
+      expect(payload.body.data.detail.auditEvents[0]).toMatchObject({
+        action: "close_pending",
+      });
+    }
+
+    const stored = await courseAccessStore.load("u_demo_counseling_pending");
+    expect(stored.orders[0]).toMatchObject({
+      id: "order_counseling_demo_pending",
+      status: "closed",
+    });
+  });
+
+  it("marks and clears order exceptions with auditable snapshots", async () => {
+    const marked = await updateAdminOrderActionPayload(
+      operator,
+      "order_demo_membership_1",
+      {
+        action: "mark_exception",
+        severity: "critical",
+        reason: "支付渠道回调与人工核账不一致",
+      },
+      "2026-05-12T10:00:00.000Z"
+    );
+
+    expect(marked.status).toBe(200);
+    expect(marked.body.ok).toBe(true);
+    if (marked.body.ok) {
+      expect(marked.body.data.detail.order.exception).toMatchObject({
+        status: "open",
+        severity: "critical",
+      });
+      expect(marked.body.data.auditEvent.after.exception).toMatchObject({
+        status: "open",
+      });
+    }
+
+    const list = await getAdminOrderListPayload(
+      operator,
+      { keyword: "order_demo_membership_1" },
+      "2026-05-12T10:00:01.000Z"
+    );
+    expect(list.body.ok).toBe(true);
+    if (list.body.ok) {
+      expect(list.body.data.items[0]?.exception).toMatchObject({
+        severity: "critical",
+      });
+    }
+
+    const cleared = await updateAdminOrderActionPayload(
+      operator,
+      "order_demo_membership_1",
+      {
+        action: "clear_exception",
+        reason: "人工核账已确认无异常",
+      },
+      "2026-05-12T10:05:00.000Z"
+    );
+
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.ok).toBe(true);
+    if (cleared.body.ok) {
+      expect(cleared.body.data.detail.order.exception).toBeUndefined();
+      expect(cleared.body.data.auditEvent.after.exception).toMatchObject({
+        status: "cleared",
+      });
+      expect(
+        cleared.body.data.detail.auditEvents.map(event => event.action)
+      ).toEqual(["clear_exception", "mark_exception"]);
+    }
+  });
+
+  it("rejects closing paid orders from the order admin action endpoint", async () => {
+    const payload = await updateAdminOrderActionPayload(
+      operator,
+      "order_demo_membership_1",
+      {
+        action: "close_pending",
+        reason: "测试关闭已支付订单",
+      },
+      "2026-05-12T10:00:00.000Z"
+    );
+
+    expect(payload.status).toBe(409);
+    expect(payload.body.ok).toBe(false);
   });
 
   it("aggregates real orders with counseling relation and payment receipts", async () => {

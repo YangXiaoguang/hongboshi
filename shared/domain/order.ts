@@ -241,6 +241,64 @@ export const OrderAdminPaymentReceiptSummarySchema = z.object({
   errorMessage: z.string().min(1).optional(),
 });
 
+export const OrderAdminActionReasonSchema = z.string().trim().min(2).max(240);
+
+export const OrderAdminExceptionSeveritySchema = z.enum([
+  "warning",
+  "critical",
+]);
+
+export const OrderAdminExceptionFlagSchema = z.object({
+  orderId: EntityIdSchema,
+  status: z.enum(["open", "cleared"]),
+  severity: OrderAdminExceptionSeveritySchema,
+  reason: OrderAdminActionReasonSchema,
+  markedBy: EntityIdSchema,
+  markedAt: DateTimeLikeSchema,
+  clearedBy: EntityIdSchema.optional(),
+  clearedAt: DateTimeLikeSchema.optional(),
+});
+
+export const OrderAdminActionSchema = z.enum([
+  "close_pending",
+  "mark_exception",
+  "clear_exception",
+]);
+
+export const OrderAdminActionRequestSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("close_pending"),
+    reason: OrderAdminActionReasonSchema,
+  }),
+  z.object({
+    action: z.literal("mark_exception"),
+    severity: OrderAdminExceptionSeveritySchema.default("warning"),
+    reason: OrderAdminActionReasonSchema,
+  }),
+  z.object({
+    action: z.literal("clear_exception"),
+    reason: OrderAdminActionReasonSchema,
+  }),
+]);
+
+export const OrderAdminAuditSnapshotSchema = z.object({
+  status: OrderStatusSchema,
+  exception: OrderAdminExceptionFlagSchema.optional(),
+});
+
+export const OrderAdminAuditEventSchema = z.object({
+  id: EntityIdSchema,
+  orderId: EntityIdSchema,
+  userId: EntityIdSchema,
+  actorId: EntityIdSchema,
+  actorRoles: z.array(z.string().min(1)).min(1),
+  action: OrderAdminActionSchema,
+  reason: OrderAdminActionReasonSchema,
+  before: OrderAdminAuditSnapshotSchema,
+  after: OrderAdminAuditSnapshotSchema,
+  createdAt: DateTimeLikeSchema,
+});
+
 export const OrderAdminListItemSchema = z.object({
   id: EntityIdSchema,
   user: OrderAdminUserSummarySchema,
@@ -253,6 +311,7 @@ export const OrderAdminListItemSchema = z.object({
   paidAt: DateTimeLikeSchema.optional(),
   latestReceiptStatus: PaymentWebhookReceiptStatusSchema.optional(),
   relatedObjectStatus: z.string().min(1).optional(),
+  exception: OrderAdminExceptionFlagSchema.optional(),
 });
 
 export const OrderAdminSummarySchema = z.object({
@@ -288,8 +347,15 @@ export const OrderAdminDetailSchema = z.object({
   paymentReceipts: z.array(OrderAdminPaymentReceiptSummarySchema),
   relatedObjects: z.array(OrderAdminRelatedObjectSchema),
   timeline: z.array(OrderAdminTimelineEventSchema),
+  auditEvents: z.array(OrderAdminAuditEventSchema).default([]),
   privacyNotice: z.string().min(1),
   generatedAt: DateTimeLikeSchema,
+});
+
+export const OrderAdminMutationResultSchema = z.object({
+  detail: OrderAdminDetailSchema,
+  auditEvent: OrderAdminAuditEventSchema,
+  serverTime: DateTimeLikeSchema,
 });
 
 export const PaymentWebhookProcessingResultSchema = z.object({
@@ -580,10 +646,27 @@ export type OrderAdminRelatedObject = z.infer<
 export type OrderAdminPaymentReceiptSummary = z.infer<
   typeof OrderAdminPaymentReceiptSummarySchema
 >;
+export type OrderAdminExceptionSeverity = z.infer<
+  typeof OrderAdminExceptionSeveritySchema
+>;
+export type OrderAdminExceptionFlag = z.infer<
+  typeof OrderAdminExceptionFlagSchema
+>;
+export type OrderAdminAction = z.infer<typeof OrderAdminActionSchema>;
+export type OrderAdminActionRequest = z.infer<
+  typeof OrderAdminActionRequestSchema
+>;
+export type OrderAdminAuditSnapshot = z.infer<
+  typeof OrderAdminAuditSnapshotSchema
+>;
+export type OrderAdminAuditEvent = z.infer<typeof OrderAdminAuditEventSchema>;
 export type OrderAdminListItem = z.infer<typeof OrderAdminListItemSchema>;
 export type OrderAdminSummary = z.infer<typeof OrderAdminSummarySchema>;
 export type OrderAdminListResult = z.infer<typeof OrderAdminListResultSchema>;
 export type OrderAdminDetail = z.infer<typeof OrderAdminDetailSchema>;
+export type OrderAdminMutationResult = z.infer<
+  typeof OrderAdminMutationResultSchema
+>;
 export type PaymentWebhookProcessingResult = z.infer<
   typeof PaymentWebhookProcessingResultSchema
 >;

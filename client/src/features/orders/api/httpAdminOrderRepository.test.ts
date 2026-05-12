@@ -3,6 +3,7 @@ import {
   httpAdminOrderRepository,
   parseAdminOrderDetailResponse,
   parseAdminOrderListResponse,
+  parseAdminOrderMutationResponse,
 } from "./httpAdminOrderRepository";
 
 const listItem = {
@@ -93,6 +94,42 @@ const detailData = {
   generatedAt: "2026-05-12T10:00:00+08:00",
 };
 
+const auditEvent = {
+  id: "order_audit_1",
+  orderId: "order_1",
+  userId: "u_member_1",
+  actorId: "operator_1",
+  actorRoles: ["operator"],
+  action: "mark_exception",
+  reason: "支付回调失败需人工核查",
+  before: { status: "paid" },
+  after: {
+    status: "paid",
+    exception: {
+      orderId: "order_1",
+      status: "open",
+      severity: "warning",
+      reason: "支付回调失败需人工核查",
+      markedBy: "operator_1",
+      markedAt: "2026-05-12T10:00:00+08:00",
+    },
+  },
+  createdAt: "2026-05-12T10:00:00+08:00",
+};
+
+const mutationData = {
+  detail: {
+    ...detailData,
+    order: {
+      ...listItem,
+      exception: auditEvent.after.exception,
+    },
+    auditEvents: [auditEvent],
+  },
+  auditEvent,
+  serverTime: "2026-05-12T10:00:00+08:00",
+};
+
 describe("http admin order repository", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -127,6 +164,16 @@ describe("http admin order repository", () => {
     });
 
     expect(parsed.paymentReceipts[0]?.status).toBe("processed");
+  });
+
+  it("parses admin order mutation responses", () => {
+    const parsed = parseAdminOrderMutationResponse({
+      ok: true,
+      data: mutationData,
+    });
+
+    expect(parsed.auditEvent.action).toBe("mark_exception");
+    expect(parsed.detail.order.exception?.status).toBe("open");
   });
 
   it("loads orders from the admin endpoint with filters", async () => {
@@ -174,6 +221,36 @@ describe("http admin order repository", () => {
       "/api/orders/admin/orders/order_1",
       expect.objectContaining({
         cache: "no-store",
+      })
+    );
+  });
+
+  it("updates an order through the admin action endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: mutationData,
+        })
+      )
+    );
+
+    const result = await httpAdminOrderRepository.updateOrder("order_1", {
+      action: "mark_exception",
+      reason: "支付回调失败需人工核查",
+    });
+
+    expect(result.detail.order.exception?.severity).toBe("warning");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/orders/admin/orders/order_1/actions",
+      expect.objectContaining({
+        method: "PATCH",
+        credentials: "same-origin",
+        body: JSON.stringify({
+          action: "mark_exception",
+          severity: "warning",
+          reason: "支付回调失败需人工核查",
+        }),
       })
     );
   });
