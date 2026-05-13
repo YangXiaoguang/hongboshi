@@ -38,6 +38,13 @@ const auditEvent: TransactionAdminAuditEvent = {
     orderStatus: "paid",
     workOrder,
   },
+  refundProviderResult: {
+    provider: "manual",
+    status: "failed",
+    message: "退款渠道临时不可用",
+    handledAt: "2026-05-12T10:00:01.000Z",
+    retryable: true,
+  },
   createdAt: "2026-05-12T10:00:01.000Z",
 };
 
@@ -90,6 +97,9 @@ describe("transaction operation store", () => {
     });
     expect(readStore.listAuditEvents("evt_payment_1")[0]).toMatchObject({
       id: "transaction_audit_1",
+      refundProviderResult: {
+        status: "failed",
+      },
     });
   });
 });

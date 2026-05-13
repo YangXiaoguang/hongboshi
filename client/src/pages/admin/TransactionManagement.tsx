@@ -49,6 +49,8 @@ import {
   type TransactionAdminListQuery,
   type TransactionAdminSeverity,
   type TransactionAdminWorkOrder,
+  type TransactionRefundProvider,
+  type TransactionRefundProviderStatus,
 } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpTransactionAdminRepository } from "@/features/transactions";
@@ -100,6 +102,17 @@ const orderStatusCopy = {
   refunding: "退款中",
   refunded: "已退款",
 } satisfies Record<OrderStatus, string>;
+
+const refundProviderCopy = {
+  manual: "人工退款通道",
+  simulated: "模拟退款通道",
+} satisfies Record<TransactionRefundProvider, string>;
+
+const refundProviderStatusCopy = {
+  accepted: "已受理",
+  rejected: "已拒绝",
+  failed: "受理失败",
+} satisfies Record<TransactionRefundProviderStatus, string>;
 
 const itemTypeCopy = {
   course: "课程",
@@ -161,6 +174,12 @@ function flowClass(type: TransactionAdminFlowType) {
   return type === "refund"
     ? "bg-[#EAF0F7] text-[#4A647E]"
     : "bg-[#E5ECE1] text-[#41675A]";
+}
+
+function refundProviderStatusClass(status: TransactionRefundProviderStatus) {
+  if (status === "accepted") return "bg-[#E7EFE8] text-[#41675A]";
+  if (status === "rejected") return "bg-[#FFF7E5] text-[#8F6B1C]";
+  return "bg-[#FFF0EA] text-[#AD503A]";
 }
 
 function itemTypeOptionsFromResult(
@@ -575,6 +594,25 @@ function TransactionAuditList({
             </span>
           </div>
           <p className="mt-2 leading-6 text-[#5F6B64]">{event.reason}</p>
+          {event.refundProviderResult ? (
+            <div
+              className={`mt-2 rounded-lg px-3 py-2 text-xs leading-5 ${refundProviderStatusClass(
+                event.refundProviderResult.status
+              )}`}
+            >
+              <p className="font-semibold">
+                {refundProviderCopy[event.refundProviderResult.provider]} ·{" "}
+                {refundProviderStatusCopy[event.refundProviderResult.status]}
+              </p>
+              <p className="mt-1">{event.refundProviderResult.message}</p>
+              <p className="mt-1 opacity-80">
+                {formatDate(event.refundProviderResult.handledAt)}
+                {event.refundProviderResult.requestId
+                  ? ` · ${event.refundProviderResult.requestId}`
+                  : ""}
+              </p>
+            </div>
+          ) : null}
           <p className="mt-2 text-xs text-[#8A8176]">
             {event.before.orderStatus
               ? orderStatusCopy[event.before.orderStatus]

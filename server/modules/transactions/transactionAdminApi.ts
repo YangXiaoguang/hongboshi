@@ -16,6 +16,7 @@ import {
   TransactionAdminMutationResultSchema,
   TransactionAdminRelatedOrderSchema,
   TransactionAdminWorkOrderSchema,
+  TransactionRefundProviderResultSchema,
   requestOrderRefund,
   upsertCourseAccessOrder,
   userCan,
@@ -39,6 +40,7 @@ import {
   type TransactionAdminRelatedOrder,
   type TransactionAdminTimelineEvent,
   type TransactionAdminWorkOrder,
+  type TransactionRefundProviderResult,
   type UserProfile,
 } from "../../../shared/domain";
 import {
@@ -61,6 +63,10 @@ import {
   getTransactionOperationStore,
   type TransactionOperationStore,
 } from "./transactionOperationStore";
+import {
+  getTransactionRefundProvider,
+  type TransactionRefundProvider,
+} from "./transactionRefundProvider";
 
 type TransactionAdminActor = Pick<LoginSession["user"], "id" | "roles">;
 type DirectoryProfile = OrderAdminUserSummary & {
@@ -1051,6 +1057,50 @@ function auditSnapshot(
   };
 }
 
+function refundProviderErrorMessage(error: unknown) {
+  const message =
+    error instanceof Error && error.message.trim()
+      ? error.message.trim()
+      : "退款渠道受理失败，请稍后重试。";
+
+  return message.slice(0, 240);
+}
+
+function buildTransactionAuditEvent({
+  actor,
+  item,
+  request,
+  before,
+  nextOrder,
+  afterWorkOrder,
+  refundProviderResult,
+  now,
+}: {
+  actor: TransactionAdminActor;
+  item: TransactionAdminListItem;
+  request: TransactionAdminActionRequest;
+  before: TransactionAdminAuditSnapshot;
+  nextOrder: Order | undefined;
+  afterWorkOrder: TransactionAdminWorkOrder | undefined;
+  refundProviderResult?: TransactionRefundProviderResult;
+  now: string;
+}) {
+  return TransactionAdminAuditEventSchema.parse({
+    id: `transaction_audit_${randomUUID()}`,
+    transactionId: item.id,
+    orderId: item.orderId,
+    userId: nextOrder?.userId ?? item.relatedOrder?.user.id ?? "unknown_user",
+    actorId: actor.id,
+    actorRoles: actor.roles,
+    action: request.action,
+    reason: request.reason,
+    before,
+    after: auditSnapshot(nextOrder, afterWorkOrder),
+    refundProviderResult,
+    createdAt: now,
+  });
+}
+
 function refundRequestConflict(
   item: TransactionAdminListItem,
   source: Awaited<ReturnType<typeof findOrderSource>> | undefined
@@ -1093,6 +1143,7 @@ async function applyAdminTransactionAction({
   now,
   store,
   operationStore,
+  refundProvider,
 }: {
   actor: TransactionAdminActor;
   transactionId: string;
@@ -1100,6 +1151,7 @@ async function applyAdminTransactionAction({
   now: string;
   store: PaymentWebhookEventStore;
   operationStore: TransactionOperationStore;
+  refundProvider: TransactionRefundProvider;
 }) {
   const item = (await buildTransactionItems(store, operationStore)).find(
     transaction => transaction.id === transactionId
@@ -1116,6 +1168,7 @@ async function applyAdminTransactionAction({
   const before = auditSnapshot(source?.order, beforeWorkOrder);
   let nextOrder = source?.order;
   let afterWorkOrder = beforeWorkOrder;
+  let refundProviderResult: TransactionRefundProviderResult | undefined;
 
   if (request.action === "request_refund") {
     const conflict = refundRequestConflict(item, source);
@@ -1126,6 +1179,48 @@ async function applyAdminTransactionAction({
           "CONFLICT",
           conflict ?? "订单当前状态不支持退款申请。"
         ),
+      } as const;
+    }
+
+    try {
+      refundProviderResult = TransactionRefundProviderResultSchema.parse(
+        await refundProvider.requestRefund({
+          transactionId,
+          orderId: item.orderId,
+          userId: source.order.userId,
+          channel: item.channel,
+          amount: item.amount,
+          reason: request.reason,
+          requestedBy: actor.id,
+          requestedAt: now,
+        })
+      );
+    } catch (error) {
+      refundProviderResult = TransactionRefundProviderResultSchema.parse({
+        provider: refundProvider.providerName ?? "manual",
+        status: "failed",
+        message: refundProviderErrorMessage(error),
+        handledAt: now,
+        retryable: true,
+      });
+    }
+
+    if (refundProviderResult.status !== "accepted") {
+      const auditEvent = buildTransactionAuditEvent({
+        actor,
+        item,
+        request,
+        before,
+        nextOrder: source.order,
+        afterWorkOrder,
+        refundProviderResult,
+        now,
+      });
+      await operationStore.appendAuditEvent(auditEvent);
+
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", refundProviderResult.message),
       } as const;
     }
 
@@ -1183,18 +1278,15 @@ async function applyAdminTransactionAction({
     await operationStore.saveWorkOrder(afterWorkOrder);
   }
 
-  const auditEvent = TransactionAdminAuditEventSchema.parse({
-    id: `transaction_audit_${randomUUID()}`,
-    transactionId,
-    orderId: item.orderId,
-    userId: nextOrder?.userId ?? item.relatedOrder?.user.id ?? "unknown_user",
-    actorId: actor.id,
-    actorRoles: actor.roles,
-    action: request.action,
-    reason: request.reason,
+  const auditEvent = buildTransactionAuditEvent({
+    actor,
+    item,
+    request,
     before,
-    after: auditSnapshot(nextOrder, afterWorkOrder),
-    createdAt: now,
+    nextOrder,
+    afterWorkOrder,
+    refundProviderResult,
+    now,
   });
   await operationStore.appendAuditEvent(auditEvent);
 
@@ -1295,7 +1387,8 @@ export async function updateAdminTransactionActionPayload(
   body: unknown,
   now = new Date().toISOString(),
   store: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
-  operationStore: TransactionOperationStore = getTransactionOperationStore()
+  operationStore: TransactionOperationStore = getTransactionOperationStore(),
+  refundProvider: TransactionRefundProvider = getTransactionRefundProvider()
 ) {
   const denied = denyUnauthorizedActor(
     actor,
@@ -1318,6 +1411,7 @@ export async function updateAdminTransactionActionPayload(
     now,
     store,
     operationStore,
+    refundProvider,
   });
 }
 

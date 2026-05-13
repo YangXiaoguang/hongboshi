@@ -418,6 +418,23 @@ export const TransactionAdminWorkOrderSchema = z.object({
   resolution: TransactionAdminActionReasonSchema.optional(),
 });
 
+export const TransactionRefundProviderSchema = z.enum(["manual", "simulated"]);
+
+export const TransactionRefundProviderStatusSchema = z.enum([
+  "accepted",
+  "rejected",
+  "failed",
+]);
+
+export const TransactionRefundProviderResultSchema = z.object({
+  provider: TransactionRefundProviderSchema,
+  status: TransactionRefundProviderStatusSchema,
+  requestId: EntityIdSchema.optional(),
+  message: z.string().min(1).max(240),
+  handledAt: DateTimeLikeSchema,
+  retryable: z.boolean().default(false),
+});
+
 export const TransactionAdminAuditSnapshotSchema = z.object({
   orderStatus: OrderStatusSchema.optional(),
   workOrder: TransactionAdminWorkOrderSchema.optional(),
@@ -434,6 +451,7 @@ export const TransactionAdminAuditEventSchema = z.object({
   reason: TransactionAdminActionReasonSchema,
   before: TransactionAdminAuditSnapshotSchema,
   after: TransactionAdminAuditSnapshotSchema,
+  refundProviderResult: TransactionRefundProviderResultSchema.optional(),
   createdAt: DateTimeLikeSchema,
 });
 
@@ -967,6 +985,15 @@ export type TransactionAdminActionRequest = z.infer<
 >;
 export type TransactionAdminWorkOrder = z.infer<
   typeof TransactionAdminWorkOrderSchema
+>;
+export type TransactionRefundProvider = z.infer<
+  typeof TransactionRefundProviderSchema
+>;
+export type TransactionRefundProviderStatus = z.infer<
+  typeof TransactionRefundProviderStatusSchema
+>;
+export type TransactionRefundProviderResult = z.infer<
+  typeof TransactionRefundProviderResultSchema
 >;
 export type TransactionAdminAuditSnapshot = z.infer<
   typeof TransactionAdminAuditSnapshotSchema

@@ -84,8 +84,8 @@ export const persistenceStoreSpecs = [
     envName: "HONGBOSHI_TRANSACTION_OPERATION_STORE",
     label: "交易操作工单与审计",
     fallbackMode: "file",
-    autoPostgresWithDatabaseUrl: false,
-    supportedModes: ["memory", "file"],
+    autoPostgresWithDatabaseUrl: true,
+    supportedModes: ["memory", "file", "postgres"],
   },
 ] as const satisfies readonly PersistenceStoreSpec[];
 

@@ -36,6 +36,7 @@ import {
   setTransactionOperationStore,
   type TransactionOperationStore,
 } from "./transactionOperationStore";
+import type { TransactionRefundProvider } from "./transactionRefundProvider";
 
 const operator = { id: "operator_1", roles: ["operator" as const] };
 const member = { id: "member_1", roles: ["member" as const] };
@@ -186,9 +187,16 @@ describe("transaction admin api payloads", () => {
         action: "request_refund",
         before: { orderStatus: "paid" },
         after: { orderStatus: "refunding" },
+        refundProviderResult: {
+          provider: "manual",
+          status: "accepted",
+        },
       });
       expect(payload.body.data.auditEvents[0]).toMatchObject({
         action: "request_refund",
+        refundProviderResult: {
+          status: "accepted",
+        },
       });
     }
 
@@ -197,6 +205,70 @@ describe("transaction admin api payloads", () => {
       id: "order_demo_membership_1",
       status: "refunding",
     });
+  });
+
+  it("keeps orders paid when the refund provider rejects acceptance", async () => {
+    const rejectingRefundProvider: TransactionRefundProvider = {
+      providerName: "manual",
+      requestRefund: request => ({
+        provider: "manual",
+        status: "rejected",
+        message: "退款渠道拒绝受理：缺少财务复核单号",
+        handledAt: request.requestedAt,
+        retryable: false,
+      }),
+    };
+
+    const payload = await updateAdminTransactionActionPayload(
+      operator,
+      "evt_payment_order_demo_membership_1",
+      {
+        action: "request_refund",
+        reason: "用户提交退款申请并确认权益回收",
+      },
+      "2026-05-12T10:00:00.000Z",
+      paymentStore,
+      transactionOperationStore,
+      rejectingRefundProvider
+    );
+
+    expect(payload.status).toBe(409);
+    expect(payload.body.ok).toBe(false);
+    if (!payload.body.ok) {
+      expect(payload.body.error.message).toBe(
+        "退款渠道拒绝受理：缺少财务复核单号"
+      );
+    }
+
+    const detail = await getAdminTransactionDetailPayload(
+      operator,
+      "evt_payment_order_demo_membership_1",
+      now,
+      paymentStore,
+      transactionOperationStore
+    );
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.ok).toBe(true);
+    if (detail.body.ok) {
+      expect(detail.body.data.relatedOrder).toMatchObject({
+        id: "order_demo_membership_1",
+        status: "paid",
+      });
+      expect(detail.body.data.auditEvents[0]).toMatchObject({
+        action: "request_refund",
+        before: { orderStatus: "paid" },
+        after: { orderStatus: "paid" },
+        refundProviderResult: {
+          provider: "manual",
+          status: "rejected",
+          message: "退款渠道拒绝受理：缺少财务复核单号",
+        },
+      });
+    }
+
+    const stored = await courseAccessStore.load("u_demo_active_member");
+    expect(stored.orders).toEqual([]);
   });
 
   it("rejects refund requests for unsafe transaction states", async () => {

@@ -7,10 +7,10 @@
 - 最后更新时间：2026-05-13 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
-- 最近已知基线提交：上一阶段 `fa4428d Add transaction admin console`，本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M5-C 交易操作数据库化与渠道适配接口`
-- 当前状态：`M5-B 退款申请与异常工单动作` 已完成，下一轮应把交易操作 Store 接入 PostgreSQL，并为真实支付渠道退款适配预留稳定接口。
-- 本轮完成后下一步：执行 `M5-C 交易操作数据库化与渠道适配接口`
+- 最近已知基线提交：上一阶段 `116bb8f Add transaction refund actions`，本轮提交后以 Git 历史最新提交为准
+- 当前阶段：`M6-A 财务管理只读台与财务口径契约`
+- 当前状态：`M5-C 交易操作数据库化与渠道适配接口` 已完成，下一轮应进入财务管理基础建设。
+- 本轮完成后下一步：执行 `M6-A 财务管理只读台与财务口径契约`
 
 ## 已完成关键能力
 
@@ -85,58 +85,63 @@
 - 新增 `/api/transactions/admin/transactions/:transactionId/actions`，支持 `request_refund`、`mark_exception`、`resolve_exception`，服务端校验权限、原因、流水状态、订单状态和异常状态。
 - 退款申请只把允许的已支付订单推进到 `refunding`，不直接写入 `refunded`，退款完成仍由 `refund.succeeded` 回调驱动。
 - `/admin/transactions` 详情面板已加入交易操作入口、异常工单状态和交易操作审计列表，动作完成后刷新列表与详情。
+- 建立 `transaction_admin_work_orders` 与 `transaction_admin_audit_events` 迁移表，并把交易操作 Store 接入 PostgreSQL。
+- `HONGBOSHI_TRANSACTION_OPERATION_STORE` 已支持 `memory/file/postgres`，配置 `DATABASE_URL` 时可自动选择 PostgreSQL。
+- 建立退款渠道适配接口 `TransactionRefundProvider`，首版支持人工与模拟受理，只返回受理摘要，不制造退款成功态。
+- `request_refund` 会先调用退款渠道适配器；渠道拒绝或失败会写入审计且不修改订单，渠道受理成功后才把订单推进到 `refunding`。
+- `/admin/transactions` 操作审计列表已展示退款渠道受理、拒绝或失败摘要，便于客服和财务排查。
 
 ## 最近完成阶段
 
-M5-B 退款申请与异常工单动作已交付：
+M5-C 交易操作数据库化与渠道适配接口已交付：
 
-- `shared/domain/order.ts`：新增交易后台动作请求、异常工单、操作审计、动作返回契约，并把交易工单纳入流水详情。
-- `shared/domain/user.ts`：新增 `transaction:operate` 后台操作权限，`operator/admin` 默认拥有。
-- `server/modules/transactions/transactionOperationStore.ts`：新增交易操作 Store，支持内存和 JSON 文件持久化。
-- `server/modules/transactions/transactionAdminApi.ts`：新增交易动作 API，支持退款申请、标记异常和解决异常，所有动作写入交易审计。
-- `client/src/features/transactions/api/httpTransactionAdminRepository.ts`：新增交易动作 PATCH 调用与 mutation 响应解析。
-- `client/src/pages/admin/TransactionManagement.tsx`：交易详情新增操作表单、异常工单卡片和操作审计列表。
-- `.env.example` 与 `server/db/runtimeConfig.ts`：登记交易操作 Store 的开发期持久化配置。
-- README、数据库说明、领域契约、产品路线、后台路线图和本文件同步了交易操作边界。
+- `shared/domain/order.ts`：新增退款渠道受理结果契约，并把受理摘要纳入交易操作审计。
+- `server/db/migrations/0011_transaction_admin_operations.sql` 与 `server/db/schema.ts`：新增交易异常工单表、交易操作审计表和关键索引。
+- `server/modules/transactions/postgresTransactionOperationStore.ts`：新增 PostgreSQL 版交易操作 Store，支持工单 upsert、审计追加、列表读取和清空。
+- `server/modules/transactions/transactionOperationStore.ts`：接入 `HONGBOSHI_TRANSACTION_OPERATION_STORE=postgres`，并在配置 `DATABASE_URL` 时可自动选择 PostgreSQL。
+- `server/modules/transactions/transactionRefundProvider.ts`：新增人工/模拟退款受理适配器，稳定“受理结果”和“退款成功回调”之间的边界。
+- `server/modules/transactions/transactionAdminApi.ts`：`request_refund` 先调用退款适配器；渠道拒绝或失败只写审计，不修改订单；渠道受理成功后才进入 `refunding`。
+- `client/src/pages/admin/TransactionManagement.tsx`：交易审计列表展示退款渠道受理、拒绝或失败摘要。
+- `.env.example`、README、数据库说明、领域契约、产品路线、后台路线图和本文件同步了交易操作 PostgreSQL 与退款适配边界。
 
-M5-B 验收结果：
+M5-C 验收结果：
 
-- 具备 `transaction:operate` 的账号可以对允许的已支付订单发起退款申请，订单进入 `refunding`，并能在详情看到审计记录。
-- 处理中、失败、金额不一致、退款流水、未匹配订单或订单状态不合规的退款申请会被服务端拒绝。
-- 交易异常工单可标记和解决，记录操作者、原因、前后快照和时间。
-- 无权限账号不能调用交易动作；交易读取仍由 `transaction:read` 控制。
-- 当前阶段不调用真实渠道退款接口，不把退款直接置为完成，退款完成仍由回调驱动。
-- `pnpm check` 与交易/领域相关测试已通过；最终提交前仍需运行 `pnpm run ci`。
+- 交易操作工单和审计可以在 PostgreSQL Store 下保存、读取和清空，迁移契约覆盖核心表、字段和索引。
+- `HONGBOSHI_TRANSACTION_OPERATION_STORE=file|memory|postgres` 配置行为明确，`db:doctor` 可检查不合法配置。
+- 退款申请的渠道受理结果可追溯；渠道拒绝或失败不会把订单推进到退款中。
+- 即使渠道受理成功，也不直接完成退款，完成态仍由 `refund.succeeded` 回调或受控模拟事件驱动。
+- M5-B 退款申请、异常工单、操作审计行为不回退。
+- `pnpm check`、相关测试和 `pnpm run ci` 已通过。
 
 ## 下一步任务包
 
-### M5-C: 交易操作数据库化与渠道适配接口
+### M6-A: 财务管理只读台与财务口径契约
 
 业务目标：
 
-把 M5-B 的交易操作工单和审计从开发期 JSON Store 推进到可生产替换的 PostgreSQL Store，并建立退款渠道适配接口。该阶段仍不直接接真实微信/支付宝退款，但要把“后台申请退款 -> 渠道适配器受控受理 -> 等待退款成功回调”的工程边界稳定下来。
+在已有订单、支付回调和交易流水基础上建立财务管理的第一版只读能力。先明确收入、退款、净收款、待处理退款和异常金额等口径，再提供运营/财务可浏览的聚合看板与明细，为后续导出、账期、手续费和结算打基础。
 
 实施范围：
 
-- 新增数据库迁移，保存交易异常工单与交易操作审计事件，字段与 `TransactionAdminWorkOrderSchema`、`TransactionAdminAuditEventSchema` 对齐。
-- 新增 `PostgresTransactionOperationStore`，实现 `TransactionOperationStore` 接口，并纳入 `HONGBOSHI_TRANSACTION_OPERATION_STORE=postgres` 配置。
-- 更新 `server/db/runtimeConfig.ts`、`.env.example`、`docs/database-schema.md` 和 DB schema 测试，明确 `memory/file/postgres` 支持边界。
-- 新增退款渠道适配接口，例如 `TransactionRefundProvider`，首版提供 `manual`/`simulated` 实现，只返回受理结果，不制造 `refund.succeeded` 成功态。
-- `request_refund` 动作调用适配接口记录受理摘要，失败时不得修改订单状态；成功受理后仍只进入 `refunding`。
-- 在交易详情展示退款受理摘要或失败原因，为客服和财务排查留痕。
-- 保持 `/admin/transactions`、`/admin/orders`、`/admin/payments` 现有能力可用。
-- 更新 README、`docs/database-schema.md`、`docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
-- 增加 PostgreSQL Store、迁移契约、退款适配器、server API 和前端展示关键测试。
+- 在 `shared/domain` 新增财务后台只读契约，例如财务查询、汇总指标、渠道/业务类型聚合、财务明细行和口径说明。
+- 新增 `finance:read` 权限，默认由 `operator/admin` 拥有；前后端均按权限控制财务后台入口。
+- 新增 `server/modules/finance/financeAdminApi.ts`，从支付回调收据、订单、交易操作审计和用户目录聚合财务只读数据。
+- 新增 `/api/finance/admin/overview` 或同等 REST 接口，支持日期范围、渠道、业务类型和关键词筛选。
+- 新增 `/admin/finance` 财务管理只读页面，展示收入、退款、净收款、退款中金额、异常金额、渠道分布和明细列表。
+- 后台导航接入财务管理模块，保持 `/admin/transactions`、`/admin/orders`、`/admin/payments` 现有能力可用。
+- 明确财务口径：支付成功计入收入，退款成功计入退款，`refunding` 计入待退款，失败/异常流水只进入异常提示，不直接影响实收。
+- 更新 README、`docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
+- 增加 shared domain、server API、repository、导航和页面关键测试。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add transaction operation persistence`。
+- 提交并推送，建议 commit message：`Add finance admin overview`。
 
 验收标准：
 
-- 交易操作工单和审计可以在 PostgreSQL Store 下保存、读取和清空，CI 覆盖迁移契约。
-- `HONGBOSHI_TRANSACTION_OPERATION_STORE=file|memory|postgres` 配置行为明确，`db:doctor` 能检查不合法配置。
-- 退款申请的渠道受理结果可追溯；渠道受理失败不会把订单推进到退款中。
-- 即使渠道受理成功，也不直接完成退款，完成态仍由 `refund.succeeded` 回调或受控模拟事件驱动。
-- 现有 M5-B 退款申请、异常工单、操作审计行为不回退。
+- 具备 `finance:read` 的账号可以进入财务只读台，普通会员不可访问。
+- 财务汇总、渠道/业务类型聚合和明细列表均来自 server 聚合，不在页面临时推导核心口径。
+- 支付成功、退款成功、退款中、失败/异常流水分别进入正确财务口径。
+- 财务明细只展示对账和财务需要的脱敏摘要，不暴露咨询说明、测评答案或风险信号原文。
+- 现有交易、订单、支付对账后台能力不回退。
 - CI 通过。
 
 ## 执行不变量
@@ -155,5 +160,6 @@ M5-B 验收结果：
 ## 待决策问题
 
 - 课程详情章节/素材是否要从 JSONB 拆成独立表。建议 M2-G 先用 JSONB 保持可维护速度，等学习记录、资料下载和素材真实文件管理进入后再拆表。
-- 真实支付渠道优先接微信支付还是支付宝。建议 M5-C 先完成适配接口和受理摘要，再选择一个渠道试点。
-- 交易操作 Store 当前已独立于订单异常标记；下一步需要决定交易操作 PostgreSQL 表是独立迁移，还是后续并入统一审计中心视图。建议先独立落表，M9 再做跨模块审计聚合。
+- 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务口径稳定后选择一个渠道试点。
+- 财务管理第一版是否需要导出 CSV。建议 M6-A 先做只读看板和明细，M6-B 再做带筛选条件和生成时间的导出。
+- 交易操作 Store 已独立落表；后续是否并入统一审计中心视图建议放到 M9 跨模块审计聚合处理。

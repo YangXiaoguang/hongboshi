@@ -127,6 +127,14 @@ const auditEvent = {
   after: {
     orderStatus: "refunding",
   },
+  refundProviderResult: {
+    provider: "manual",
+    status: "accepted",
+    requestId: "manual_refund_1",
+    message: "人工退款通道已受理申请，等待退款成功回调。",
+    handledAt: "2026-05-12T10:01:00+08:00",
+    retryable: false,
+  },
   createdAt: "2026-05-12T10:01:00+08:00",
 };
 
@@ -195,6 +203,7 @@ describe("http transaction admin repository", () => {
     });
 
     expect(parsed.auditEvent.action).toBe("request_refund");
+    expect(parsed.auditEvent.refundProviderResult?.status).toBe("accepted");
     expect(parsed.detail.relatedOrder?.status).toBe("refunding");
   });
 

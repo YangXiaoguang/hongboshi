@@ -422,6 +422,14 @@ describe("domain contracts", () => {
       after: {
         orderStatus: "refunding",
       },
+      refundProviderResult: {
+        provider: "manual",
+        status: "accepted",
+        requestId: "manual_refund_1",
+        message: "人工退款通道已受理申请，等待退款成功回调。",
+        handledAt: "2026-05-10T08:12:00.000Z",
+        retryable: false,
+      },
       createdAt: "2026-05-10T08:12:00.000Z",
     };
 

@@ -7,6 +7,8 @@ import {
   type TransactionAdminAuditEvent,
   type TransactionAdminWorkOrder,
 } from "../../../shared/domain";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
+import { PostgresTransactionOperationStore } from "./postgresTransactionOperationStore";
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -238,6 +240,14 @@ export function createDefaultTransactionOperationStore(): TransactionOperationSt
     process.env.HONGBOSHI_TRANSACTION_OPERATION_STORE === "memory"
   ) {
     return new InMemoryTransactionOperationStore();
+  }
+
+  if (
+    process.env.HONGBOSHI_TRANSACTION_OPERATION_STORE === "postgres" ||
+    (process.env.HONGBOSHI_TRANSACTION_OPERATION_STORE !== "file" &&
+      getDatabaseUrl())
+  ) {
+    return new PostgresTransactionOperationStore(getSharedPostgresPool());
   }
 
   return new JsonFileTransactionOperationStore();
