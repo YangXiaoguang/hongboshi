@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：上一阶段 `116bb8f Add transaction refund actions`，本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M6-A 财务管理只读台与财务口径契约`
-- 当前状态：`M5-C 交易操作数据库化与渠道适配接口` 已完成，下一轮应进入财务管理基础建设。
-- 本轮完成后下一步：执行 `M6-A 财务管理只读台与财务口径契约`
+- 当前阶段：`M6-B 财务导出与账期口径预留`
+- 当前状态：`M6-A 财务管理只读台与财务口径契约` 已完成，下一轮应进入财务导出、生成时间、筛选条件快照和账期/手续费预留。
+- 本轮完成后下一步：执行 `M6-B 财务导出与账期口径预留`
 
 ## 已完成关键能力
 
@@ -90,58 +90,63 @@
 - 建立退款渠道适配接口 `TransactionRefundProvider`，首版支持人工与模拟受理，只返回受理摘要，不制造退款成功态。
 - `request_refund` 会先调用退款渠道适配器；渠道拒绝或失败会写入审计且不修改订单，渠道受理成功后才把订单推进到 `refunding`。
 - `/admin/transactions` 操作审计列表已展示退款渠道受理、拒绝或失败摘要，便于客服和财务排查。
+- 建立 `finance:read` 后台读取权限，`operator` 与 `admin` 可读取财务管理后台。
+- 建立财务后台共享契约 `FinanceAdminOverviewSchema`，统一描述收入、退款、净收款、退款中金额、异常金额、渠道/业务类型分布、财务明细和口径说明。
+- 建立 `server/modules/finance/financeAdminApi.ts`，从支付回调收据、课程/会员/咨询订单、交易异常工单和 auth 用户目录聚合财务只读数据。
+- 新增 `/api/finance/admin/overview`，支持关键词、渠道、业务类型、日期范围、排序和分页。
+- 新增 `/admin/finance` 财务管理只读台，展示收入、退款、净收款、退款中金额、异常金额、渠道净额、业务类型结构、脱敏明细和财务口径。
+- 后台导航已将财务管理从“规划”切换为“可用”，仍保留 `/admin/orders`、`/admin/transactions` 和 `/admin/payments` 的既有能力。
+- 财务口径已明确：支付成功计入收入，退款成功计入退款，`refunding` 计入待退款，失败/异常流水和开放交易异常工单只进入异常提示，不直接影响净收款。
 
 ## 最近完成阶段
 
-M5-C 交易操作数据库化与渠道适配接口已交付：
+M6-A 财务管理只读台与财务口径契约已交付：
 
-- `shared/domain/order.ts`：新增退款渠道受理结果契约，并把受理摘要纳入交易操作审计。
-- `server/db/migrations/0011_transaction_admin_operations.sql` 与 `server/db/schema.ts`：新增交易异常工单表、交易操作审计表和关键索引。
-- `server/modules/transactions/postgresTransactionOperationStore.ts`：新增 PostgreSQL 版交易操作 Store，支持工单 upsert、审计追加、列表读取和清空。
-- `server/modules/transactions/transactionOperationStore.ts`：接入 `HONGBOSHI_TRANSACTION_OPERATION_STORE=postgres`，并在配置 `DATABASE_URL` 时可自动选择 PostgreSQL。
-- `server/modules/transactions/transactionRefundProvider.ts`：新增人工/模拟退款受理适配器，稳定“受理结果”和“退款成功回调”之间的边界。
-- `server/modules/transactions/transactionAdminApi.ts`：`request_refund` 先调用退款适配器；渠道拒绝或失败只写审计，不修改订单；渠道受理成功后才进入 `refunding`。
-- `client/src/pages/admin/TransactionManagement.tsx`：交易审计列表展示退款渠道受理、拒绝或失败摘要。
-- `.env.example`、README、数据库说明、领域契约、产品路线、后台路线图和本文件同步了交易操作 PostgreSQL 与退款适配边界。
+- `shared/domain/finance.ts`：新增财务后台查询、汇总指标、渠道/业务类型分布、财务明细和口径说明契约。
+- `shared/domain/user.ts`：新增 `finance:read` 权限，默认授予 `operator` 和 `admin`。
+- `server/modules/finance/financeAdminApi.ts`：新增财务后台只读聚合服务和 `/api/finance/admin/overview` 接口。
+- `client/src/features/finance/api/httpFinanceAdminRepository.ts`：新增财务概览 repository，统一校验 query 和响应契约。
+- `client/src/pages/admin/FinanceManagement.tsx`：新增 `/admin/finance` 财务管理只读页面。
+- `client/src/features/admin/adminNavigation.ts` 与 `client/src/App.tsx`：接入财务后台导航和路由。
+- README、领域契约、产品路线、后台路线图和本文件同步了财务只读台、权限和核算口径。
 
-M5-C 验收结果：
+M6-A 验收结果：
 
-- 交易操作工单和审计可以在 PostgreSQL Store 下保存、读取和清空，迁移契约覆盖核心表、字段和索引。
-- `HONGBOSHI_TRANSACTION_OPERATION_STORE=file|memory|postgres` 配置行为明确，`db:doctor` 可检查不合法配置。
-- 退款申请的渠道受理结果可追溯；渠道拒绝或失败不会把订单推进到退款中。
-- 即使渠道受理成功，也不直接完成退款，完成态仍由 `refund.succeeded` 回调或受控模拟事件驱动。
-- M5-B 退款申请、异常工单、操作审计行为不回退。
+- `operator` 和 `admin` 可通过 `finance:read` 进入财务只读台，普通会员会被拒绝。
+- 财务汇总、渠道/业务类型分布和明细列表均由服务端聚合，页面不临时推导核心财务口径。
+- 支付成功、退款成功、退款中、失败/异常流水和开放交易异常工单分别进入正确口径。
+- 财务明细只展示对账和财务需要的脱敏摘要，不暴露咨询说明、测评答案或风险信号原文。
+- 现有订单、交易退款、支付对账后台能力不回退。
 - `pnpm check`、相关测试和 `pnpm run ci` 已通过。
 
 ## 下一步任务包
 
-### M6-A: 财务管理只读台与财务口径契约
+### M6-B: 财务导出与账期口径预留
 
 业务目标：
 
-在已有订单、支付回调和交易流水基础上建立财务管理的第一版只读能力。先明确收入、退款、净收款、待处理退款和异常金额等口径，再提供运营/财务可浏览的聚合看板与明细，为后续导出、账期、手续费和结算打基础。
+在 M6-A 财务只读台基础上补齐可交付给财务人员的导出能力。导出应复用同一套服务端财务口径，记录生成时间和筛选条件，并为后续账期、手续费、结算批次和发票模块预留稳定字段。
 
 实施范围：
 
-- 在 `shared/domain` 新增财务后台只读契约，例如财务查询、汇总指标、渠道/业务类型聚合、财务明细行和口径说明。
-- 新增 `finance:read` 权限，默认由 `operator/admin` 拥有；前后端均按权限控制财务后台入口。
-- 新增 `server/modules/finance/financeAdminApi.ts`，从支付回调收据、订单、交易操作审计和用户目录聚合财务只读数据。
-- 新增 `/api/finance/admin/overview` 或同等 REST 接口，支持日期范围、渠道、业务类型和关键词筛选。
-- 新增 `/admin/finance` 财务管理只读页面，展示收入、退款、净收款、退款中金额、异常金额、渠道分布和明细列表。
-- 后台导航接入财务管理模块，保持 `/admin/transactions`、`/admin/orders`、`/admin/payments` 现有能力可用。
-- 明确财务口径：支付成功计入收入，退款成功计入退款，`refunding` 计入待退款，失败/异常流水只进入异常提示，不直接影响实收。
+- 在 `shared/domain/finance.ts` 增加财务导出契约，例如导出请求、导出元数据、稳定 CSV 字段、生成时间和筛选条件快照。
+- 新增 `/api/finance/admin/export` 或同等接口，复用 `finance:read` 权限和 M6-A 聚合逻辑。
+- 导出范围支持当前筛选条件，导出字段至少包含发生时间、事项类型、订单 ID、用户脱敏摘要、商品类型、商品标题、渠道、金额、来源状态、异常等级和财务备注。
+- 导出元数据包含生成时间、操作者、筛选条件、汇总金额和口径版本。
+- 前端 `/admin/finance` 增加导出入口、导出中/失败/成功状态和字段口径提示。
+- 预留账期、手续费、渠道结算单、发票状态字段，但不在本阶段接入真实结算。
 - 更新 README、`docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
-- 增加 shared domain、server API、repository、导航和页面关键测试。
+- 增加 shared domain、server API、repository 和页面关键测试。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add finance admin overview`。
+- 提交并推送，建议 commit message：`Add finance admin export foundation`。
 
 验收标准：
 
-- 具备 `finance:read` 的账号可以进入财务只读台，普通会员不可访问。
-- 财务汇总、渠道/业务类型聚合和明细列表均来自 server 聚合，不在页面临时推导核心口径。
-- 支付成功、退款成功、退款中、失败/异常流水分别进入正确财务口径。
-- 财务明细只展示对账和财务需要的脱敏摘要，不暴露咨询说明、测评答案或风险信号原文。
-- 现有交易、订单、支付对账后台能力不回退。
+- 具备 `finance:read` 的账号可以按当前筛选条件导出财务明细，普通会员不可访问。
+- 导出数据与财务只读台使用同一口径，不出现前后端重复计算或口径分叉。
+- 导出文件包含生成时间、筛选条件、汇总金额和口径版本，便于后续复核。
+- 导出字段稳定，后续接账期、手续费和结算批次时可以向后兼容。
+- 现有财务只读台、交易、订单、支付对账后台能力不回退。
 - CI 通过。
 
 ## 执行不变量
@@ -160,6 +165,6 @@ M5-C 验收结果：
 ## 待决策问题
 
 - 课程详情章节/素材是否要从 JSONB 拆成独立表。建议 M2-G 先用 JSONB 保持可维护速度，等学习记录、资料下载和素材真实文件管理进入后再拆表。
-- 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务口径稳定后选择一个渠道试点。
-- 财务管理第一版是否需要导出 CSV。建议 M6-A 先做只读看板和明细，M6-B 再做带筛选条件和生成时间的导出。
+- 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务导出和账期基础稳定后选择一个渠道试点。
+- 财务导出第一版采用 CSV 还是 XLSX。建议 M6-B 先做 CSV，保持服务端字段稳定，后续有财务模板要求时再补 XLSX。
 - 交易操作 Store 已独立落表；后续是否并入统一审计中心视图建议放到 M9 跨模块审计聚合处理。

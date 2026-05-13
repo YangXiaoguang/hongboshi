@@ -14,6 +14,7 @@ import CounselingOperations from "./pages/CounselingOperations";
 import CounselorWorkbench from "./pages/CounselorWorkbench";
 import CourseDetail from "./pages/CourseDetail";
 import CourseProducts from "./pages/admin/CourseProducts";
+import FinanceManagement from "./pages/admin/FinanceManagement";
 import Home from "./pages/Home";
 import MyCourses from "./pages/MyCourses";
 import OrderManagement from "./pages/admin/OrderManagement";
@@ -56,6 +57,11 @@ function Router() {
       <Route path={"/admin/transactions"}>
         <AdminLayout>
           <TransactionManagement />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/finance"}>
+        <AdminLayout>
+          <FinanceManagement />
         </AdminLayout>
       </Route>
       <Route path={"/admin"}>

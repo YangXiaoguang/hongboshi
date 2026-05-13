@@ -10,6 +10,7 @@ import { handleCatalogApiRequest } from "./server/modules/catalog/catalogApi";
 import { handleCounselingApiRequest } from "./server/modules/counseling/counselingApi";
 import { handleCourseAccessApiRequest } from "./server/modules/courses/courseAccessApi";
 import { handleCourseApiRequest } from "./server/modules/courses/courseApi";
+import { handleFinanceAdminApiRequest } from "./server/modules/finance/financeAdminApi";
 import { handleGrowthProfileApiRequest } from "./server/modules/growth/growthProfileApi";
 import { handleOrderAdminApiRequest } from "./server/modules/orders/orderAdminApi";
 import { handlePaymentApiRequest } from "./server/modules/payments/paymentApi";
@@ -116,6 +117,7 @@ function vitePluginManusDebugCollector(): Plugin {
         if (handleCounselingApiRequest(req, res)) return;
         if (handleCourseAccessApiRequest(req, res)) return;
         if (handleCourseApiRequest(req, res)) return;
+        if (handleFinanceAdminApiRequest(req, res)) return;
         if (handleGrowthProfileApiRequest(req, res)) return;
         if (handleOrderAdminApiRequest(req, res)) return;
         if (handlePaymentApiRequest(req, res)) return;

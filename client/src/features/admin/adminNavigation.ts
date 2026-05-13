@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import {
   COURSE_CATALOG_PERMISSIONS,
+  FINANCE_ADMIN_PERMISSIONS,
   ORDER_ADMIN_PERMISSIONS,
   TRANSACTION_ADMIN_PERMISSIONS,
   USER_ADMIN_PERMISSIONS,
@@ -123,13 +124,13 @@ export const adminNavigationItems = [
   {
     key: "finance",
     title: "财务管理",
-    description: "收入、退款、实收口径和财务导出。",
+    description: "收入、退款、净收款和异常金额只读口径。",
     href: "/admin/finance",
     icon: BadgeDollarSign,
-    permission: "admin:manage",
-    status: "planned",
+    permission: FINANCE_ADMIN_PERMISSIONS.read,
+    status: "available",
     group: "governance",
-    milestone: "M6",
+    milestone: "M6-A",
   },
   {
     key: "risk",
