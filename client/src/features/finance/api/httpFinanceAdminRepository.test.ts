@@ -138,4 +138,71 @@ describe("http finance admin repository", () => {
       })
     );
   });
+
+  it("exports finance CSV with current filters", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("metadata_key,metadata_value\nrowCount,1", {
+        status: 200,
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition":
+            'attachment; filename="hongboshi-finance-20260512100000.csv"',
+          "X-Hongboshi-Finance-Export-Id": "finance_export_20260512100000000",
+        },
+      })
+    );
+
+    const result = await httpFinanceAdminRepository.exportCsv({
+      keyword: "会员",
+      channel: "manual",
+      itemType: "membership",
+      page: 2,
+    });
+
+    expect(result).toMatchObject({
+      filename: "hongboshi-finance-20260512100000.csv",
+      contentType: "text/csv; charset=utf-8",
+      exportId: "finance_export_20260512100000000",
+    });
+    expect(result.content).toContain("metadata_key");
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toContain("/api/finance/admin/export?");
+    expect(String(url)).toContain("keyword=%E4%BC%9A%E5%91%98");
+    expect(String(url)).toContain("channel=manual");
+    expect(String(url)).toContain("itemType=membership");
+    expect(String(url)).not.toContain("page=2");
+    expect(init).toEqual(
+      expect.objectContaining({
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: {
+          Accept: "text/csv",
+        },
+      })
+    );
+  });
+
+  it("throws finance CSV export API errors", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error: {
+            code: "FORBIDDEN",
+            message: "当前账号暂无财务管理导出权限",
+          },
+        }),
+        {
+          status: 403,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      )
+    );
+
+    await expect(httpFinanceAdminRepository.exportCsv()).rejects.toThrow(
+      "当前账号暂无财务管理导出权限"
+    );
+  });
 });

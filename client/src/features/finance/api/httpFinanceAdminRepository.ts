@@ -1,5 +1,6 @@
 import {
   ApiResponseSchema,
+  FinanceAdminExportQuerySchema,
   FinanceAdminOverviewSchema,
   FinanceAdminQuerySchema,
   type FinanceAdminOverview,
@@ -10,6 +11,13 @@ const FinanceAdminOverviewResponseSchema = ApiResponseSchema(
   FinanceAdminOverviewSchema
 );
 const API_BASE = "/api/finance/admin";
+
+export type FinanceAdminCsvDownload = {
+  filename: string;
+  content: string;
+  contentType: string;
+  exportId?: string;
+};
 
 async function readJson(response: Response): Promise<unknown> {
   try {
@@ -36,9 +44,7 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   return fallback;
 }
 
-function queryStringFromFinanceAdminQuery(
-  query: Partial<FinanceAdminQuery>
-) {
+function queryStringFromFinanceAdminQuery(query: Partial<FinanceAdminQuery>) {
   const params = new URLSearchParams();
   const normalized = FinanceAdminQuerySchema.partial().parse(query);
   Object.entries(normalized).forEach(([key, value]) => {
@@ -47,6 +53,26 @@ function queryStringFromFinanceAdminQuery(
   });
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
+}
+
+function queryStringFromFinanceAdminExportQuery(
+  query: Partial<FinanceAdminQuery>
+) {
+  const params = new URLSearchParams();
+  const normalized = FinanceAdminExportQuerySchema.partial().parse(query);
+  Object.entries(normalized).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    params.set(key, String(value));
+  });
+  const queryString = params.toString();
+  return queryString ? `?${queryString}` : "";
+}
+
+function filenameFromContentDisposition(value: string | null) {
+  if (!value) return undefined;
+  const encoded = value.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) return decodeURIComponent(encoded);
+  return value.match(/filename="?([^";]+)"?/i)?.[1];
 }
 
 export const httpFinanceAdminRepository = {
@@ -68,5 +94,37 @@ export const httpFinanceAdminRepository = {
       throw new Error(extractErrorMessage(payload, "财务管理暂时不可用"));
     }
     return parseFinanceAdminOverviewResponse(payload);
+  },
+
+  async exportCsv(
+    query: Partial<FinanceAdminQuery> = {}
+  ): Promise<FinanceAdminCsvDownload> {
+    const response = await fetch(
+      `${API_BASE}/export${queryStringFromFinanceAdminExportQuery(query)}`,
+      {
+        headers: {
+          Accept: "text/csv",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    if (!response.ok) {
+      const payload = await readJson(response);
+      throw new Error(extractErrorMessage(payload, "财务导出暂时不可用"));
+    }
+
+    const content = await response.text();
+    return {
+      filename:
+        filenameFromContentDisposition(
+          response.headers.get("Content-Disposition")
+        ) ?? "hongboshi-finance-export.csv",
+      content,
+      contentType:
+        response.headers.get("Content-Type") ?? "text/csv; charset=utf-8",
+      exportId:
+        response.headers.get("X-Hongboshi-Finance-Export-Id") ?? undefined,
+    };
   },
 };

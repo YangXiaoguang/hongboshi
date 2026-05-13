@@ -43,7 +43,9 @@ const implementationRows = [
   ["M5-A", "交易流水只读台", "已完成", "支付/退款流水、回调状态和异常摘要"],
   ["M5-B", "退款申请动作", "已完成", "退款申请、异常工单和操作审计"],
   ["M5-C", "交易操作数据库化", "已完成", "PostgreSQL Store 和渠道适配接口"],
-  ["M6-A", "财务只读台", "下一步", "财务口径、收入退款汇总和明细"],
+  ["M6-A", "财务只读台", "已完成", "财务口径、收入退款汇总和明细"],
+  ["M6-B", "财务导出基础", "已完成", "CSV 导出、生成时间、筛选快照和预留字段"],
+  ["M6-C", "账期手续费规则", "下一步", "账期规则、渠道手续费和结算预览"],
 ] as const;
 
 const overviewMetrics: {
@@ -52,7 +54,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "M6-A", icon: GitBranch },
+  { label: "下一阶段", value: "M6-C", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -76,11 +78,11 @@ export default function AdminHome() {
             业务运营总览
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            当前后台已接入咨询运营、支付对账、课程商品、用户会员、订单管理、交易退款和财务只读能力，后续按财务导出和风险复核逐步扩展。
+            当前后台已接入咨询运营、支付对账、课程商品、用户会员、订单管理、交易退款、财务只读和财务导出能力，后续按账期手续费和风险复核逐步扩展。
           </p>
         </div>
         <button
-          onClick={() => navigate("/admin/orders")}
+          onClick={() => navigate("/admin/finance")}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
         >
           进入可用模块
@@ -190,7 +192,7 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经进入 M6-A 财务管理基础建设。
+              当前连续执行状态已经进入 M6-C 财务账期与手续费规则基础建设。
             </p>
           </div>
           <div className="overflow-x-auto">

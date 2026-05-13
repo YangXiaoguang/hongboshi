@@ -8,7 +8,9 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  CheckCircle2,
   CreditCard,
+  Download,
   FileWarning,
   Loader2,
   ReceiptText,
@@ -102,13 +104,17 @@ function severityDot(entry: FinanceAdminEntry) {
   return "bg-[#6F8F83]";
 }
 
-function channelOptionsFromOverview(overview: FinanceAdminOverview | undefined) {
+function channelOptionsFromOverview(
+  overview: FinanceAdminOverview | undefined
+) {
   return overview?.filters.channels.length
     ? overview.filters.channels
     : PaymentChannelSchema.options;
 }
 
-function itemTypeOptionsFromOverview(overview: FinanceAdminOverview | undefined) {
+function itemTypeOptionsFromOverview(
+  overview: FinanceAdminOverview | undefined
+) {
   return overview?.filters.itemTypes.length
     ? overview.filters.itemTypes
     : PurchasableTypeSchema.options;
@@ -209,6 +215,9 @@ export default function FinanceManagement() {
   const [overview, setOverview] = useState<FinanceAdminOverview>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string>();
+  const [exportSuccess, setExportSuccess] = useState<string>();
 
   const loadOverview = useCallback(async () => {
     if (!canRead) return undefined;
@@ -232,6 +241,11 @@ export default function FinanceManagement() {
     void loadOverview();
   }, [loadOverview]);
 
+  useEffect(() => {
+    setExportError(undefined);
+    setExportSuccess(undefined);
+  }, [query]);
+
   const channelOptions = useMemo(
     () => channelOptionsFromOverview(overview),
     [overview]
@@ -254,6 +268,33 @@ export default function FinanceManagement() {
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     updateQuery({ keyword: keywordDraft.trim() });
+  }
+
+  async function exportCsv() {
+    if (!canRead || exporting) return;
+
+    setExporting(true);
+    setExportError(undefined);
+    setExportSuccess(undefined);
+    try {
+      const result = await httpFinanceAdminRepository.exportCsv(query);
+      const blob = new Blob([result.content], {
+        type: result.contentType,
+      });
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = result.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(href);
+      setExportSuccess(`已生成 ${result.filename}`);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "财务导出暂时不可用");
+    } finally {
+      setExporting(false);
+    }
   }
 
   if (!canRead) {
@@ -282,15 +323,46 @@ export default function FinanceManagement() {
             按服务端财务口径汇总收入、退款、净收款、退款中和异常金额。
           </p>
         </div>
-        <button
-          onClick={() => void loadOverview()}
-          disabled={loading}
-          className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-70"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          刷新
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => void exportCsv()}
+            disabled={exporting}
+            className="inline-flex h-10 w-fit items-center gap-2 rounded-lg border border-[#DCCDBB] bg-[#FFFDF8] px-4 text-sm font-semibold text-[#53675D] transition hover:bg-[#F8F3EA] disabled:cursor-wait disabled:opacity-70"
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            导出 CSV
+          </button>
+          <button
+            onClick={() => void loadOverview()}
+            disabled={loading}
+            className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-70"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            刷新
+          </button>
+        </div>
       </section>
+
+      {(exportError || exportSuccess) && (
+        <div
+          className={`mt-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm ${
+            exportError
+              ? "border-[#F0C7B7] bg-[#FFF0EA] text-[#AD503A]"
+              : "border-[#C9DDC8] bg-[#F2F8EF] text-[#41675A]"
+          }`}
+        >
+          {exportError ? (
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+          ) : (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          )}
+          <span>{exportError ?? exportSuccess}</span>
+        </div>
+      )}
 
       <motion.section
         initial={{ opacity: 0, y: 10 }}
@@ -555,10 +627,21 @@ export default function FinanceManagement() {
           </div>
 
           <div className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5">
+            <h2 className="text-sm font-semibold">导出口径</h2>
+            <p className="mt-3 text-xs leading-5 text-[#8A8176]">
+              CSV
+              含生成时间、筛选条件、汇总金额、口径版本；账期、手续费、结算批次和发票状态为预留字段。
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5">
             <h2 className="text-sm font-semibold">财务口径</h2>
             <div className="mt-4 space-y-3">
               {overview?.policies.map(policy => (
-                <div key={policy.key} className="border-t border-[#E8DED0] pt-3 first:border-t-0 first:pt-0">
+                <div
+                  key={policy.key}
+                  className="border-t border-[#E8DED0] pt-3 first:border-t-0 first:pt-0"
+                >
                   <p className="text-sm font-semibold text-[#243B35]">
                     {policy.label}
                   </p>

@@ -6,12 +6,19 @@ import {
   ALL_FINANCE_ADMIN_ITEM_TYPE,
   ApiResponseSchema,
   FINANCE_ADMIN_PERMISSIONS,
+  FINANCE_ADMIN_EXPORT_FIELDS,
+  FINANCE_ADMIN_EXPORT_POLICY_VERSION,
   FinanceAdminEntrySchema,
+  FinanceAdminExportQuerySchema,
+  FinanceAdminExportSchema,
   FinanceAdminOverviewSchema,
   FinanceAdminQuerySchema,
   userCan,
   type CourseAccessState,
   type FinanceAdminEntry,
+  type FinanceAdminExport,
+  type FinanceAdminExportQuery,
+  type FinanceAdminExportRow,
   type FinanceAdminOverview,
   type FinanceAdminQuery,
   type LoginSession,
@@ -45,10 +52,15 @@ type OrderIndexItem = {
   order: Order;
   userId: string;
 };
+type FinanceAdminFilterQuery = Pick<
+  FinanceAdminQuery,
+  "keyword" | "channel" | "itemType" | "fromDate" | "toDate" | "sort"
+>;
 
 const FinanceAdminOverviewResponseSchema = ApiResponseSchema(
   FinanceAdminOverviewSchema
 );
+const FINANCE_ADMIN_CSV_CONTENT_TYPE = "text/csv; charset=utf-8" as const;
 
 const itemTypeCopy = {
   course: "课程",
@@ -133,6 +145,21 @@ function sendJson(
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload));
+}
+
+function sendCsv(
+  res: Response | ServerResponse,
+  status: number,
+  payload: FinanceAdminExport
+) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", payload.contentType);
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${payload.filename}"`
+  );
+  res.setHeader("X-Hongboshi-Finance-Export-Id", payload.metadata.exportId);
+  res.end(`\uFEFF${payload.csv}`);
 }
 
 function errorPayload(
@@ -233,11 +260,7 @@ async function entryFromReceipt({
       : "course";
   const isProcessed = receipt.status === "processed";
   const isPayment = event.type === "payment.succeeded";
-  const type = isProcessed
-    ? isPayment
-      ? "payment"
-      : "refund"
-    : "exception";
+  const type = isProcessed ? (isPayment ? "payment" : "refund") : "exception";
 
   return FinanceAdminEntrySchema.parse({
     id: `finance_${receipt.id}`,
@@ -256,7 +279,7 @@ async function entryFromReceipt({
       ? isPayment
         ? "支付成功回调已处理"
         : "退款成功回调已处理"
-      : receipt.errorMessage ?? "回调尚未完成处理",
+      : (receipt.errorMessage ?? "回调尚未完成处理"),
     severity: isProcessed
       ? "ok"
       : receipt.status === "failed"
@@ -484,7 +507,10 @@ function entryMatchesKeyword(entry: FinanceAdminEntry, keyword: string) {
   ].some(value => value?.toLowerCase().includes(normalized));
 }
 
-function filterEntries(entries: FinanceAdminEntry[], query: FinanceAdminQuery) {
+function filterEntries(
+  entries: FinanceAdminEntry[],
+  query: FinanceAdminFilterQuery
+) {
   return entries.filter(entry => {
     if (!entryMatchesKeyword(entry, query.keyword)) return false;
     if (
@@ -505,7 +531,7 @@ function filterEntries(entries: FinanceAdminEntry[], query: FinanceAdminQuery) {
 
 function sortEntries(
   entries: FinanceAdminEntry[],
-  sort: FinanceAdminQuery["sort"]
+  sort: FinanceAdminFilterQuery["sort"]
 ) {
   return [...entries].sort((a, b) => {
     if (sort === "amount_desc") return b.amount - a.amount;
@@ -615,12 +641,11 @@ function metaFor(total: number, page: number, pageSize: number) {
   };
 }
 
-async function buildFinanceOverview(
-  query: FinanceAdminQuery,
+async function collectFinanceEntries(
   now: string,
   paymentStore: PaymentWebhookEventStore,
   operationStore: TransactionOperationStore
-): Promise<FinanceAdminOverview> {
+): Promise<FinanceAdminEntry[]> {
   const [users, sources, receipts, workOrders] = await Promise.all([
     listAuthUsers(),
     listCourseAccessUserStates(),
@@ -641,11 +666,39 @@ async function buildFinanceOverview(
   const entries = [
     ...receiptEntries,
     ...pendingRefundEntries({ orderIndex, profiles, receipts }),
-    ...workOrderExceptionEntries({ workOrders, orderIndex, profiles, receipts }),
+    ...workOrderExceptionEntries({
+      workOrders,
+      orderIndex,
+      profiles,
+      receipts,
+    }),
   ];
-  const sourceEntries = entries.length ? entries : fallbackFinanceEntries(now);
+  return entries.length ? entries : fallbackFinanceEntries(now);
+}
+
+function sortedFinanceEntries(
+  sourceEntries: FinanceAdminEntry[],
+  query: FinanceAdminFilterQuery
+) {
   const filtered = filterEntries(sourceEntries, query);
-  const sorted = sortEntries(filtered, query.sort);
+  return {
+    filtered,
+    sorted: sortEntries(filtered, query.sort),
+  };
+}
+
+async function buildFinanceOverview(
+  query: FinanceAdminQuery,
+  now: string,
+  paymentStore: PaymentWebhookEventStore,
+  operationStore: TransactionOperationStore
+): Promise<FinanceAdminOverview> {
+  const sourceEntries = await collectFinanceEntries(
+    now,
+    paymentStore,
+    operationStore
+  );
+  const { filtered, sorted } = sortedFinanceEntries(sourceEntries, query);
   const pageItems = paginate(sorted, query.page, query.pageSize);
 
   return FinanceAdminOverviewSchema.parse({
@@ -658,6 +711,139 @@ async function buildFinanceOverview(
     filters: buildFilterOptions(sourceEntries),
     query,
     serverTime: now,
+  });
+}
+
+function accountingPeriodFromDateTime(value: string) {
+  const match = value.match(/^(\d{4}-\d{2})/);
+  return match?.[1] ?? new Date(value).toISOString().slice(0, 7);
+}
+
+function exportRowFromEntry(entry: FinanceAdminEntry): FinanceAdminExportRow {
+  return {
+    occurredAt: entry.occurredAt,
+    entryType: entry.type,
+    orderId: entry.orderId,
+    userId: entry.user.id,
+    userDisplayName: entry.user.displayName,
+    userPhoneMasked: entry.user.phoneMasked,
+    itemTypes: entry.itemTypes,
+    primaryTitle: entry.primaryTitle,
+    channel: entry.channel,
+    amount: entry.amount,
+    sourceStatus: entry.sourceStatus,
+    severity: entry.severity,
+    transactionId: entry.transactionId,
+    receiptId: entry.receiptId,
+    reason: entry.reason,
+    accountingPeriod: accountingPeriodFromDateTime(entry.occurredAt),
+    feeAmount: 0,
+    settlementBatchId: "",
+    invoiceStatus: "not_requested",
+  };
+}
+
+function csvCell(value: unknown) {
+  const raw = Array.isArray(value) ? value.join(" / ") : String(value ?? "");
+  const normalized = raw.replace(/\r?\n/g, " ");
+  if (/[",\n]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  return normalized;
+}
+
+function csvLine(values: unknown[]) {
+  return values.map(csvCell).join(",");
+}
+
+function metadataRows(metadata: FinanceAdminExport["metadata"]) {
+  return [
+    ["metadata_key", "metadata_value"],
+    ["exportId", metadata.exportId],
+    ["generatedAt", metadata.generatedAt],
+    ["generatedBy", metadata.generatedBy.id],
+    ["policyVersion", metadata.policyVersion],
+    ["query", JSON.stringify(metadata.query)],
+    ["rowCount", metadata.rowCount],
+    ["grossRevenueAmount", metadata.summary.grossRevenueAmount],
+    ["refundAmount", metadata.summary.refundAmount],
+    ["netRevenueAmount", metadata.summary.netRevenueAmount],
+    ["pendingRefundAmount", metadata.summary.pendingRefundAmount],
+    ["exceptionAmount", metadata.summary.exceptionAmount],
+  ];
+}
+
+function valueForExportField(
+  row: FinanceAdminExportRow,
+  key: FinanceAdminExport["metadata"]["fields"][number]["key"]
+) {
+  return row[key];
+}
+
+function csvFromExport(
+  metadata: FinanceAdminExport["metadata"],
+  rows: FinanceAdminExportRow[]
+) {
+  const lines = [
+    ...metadataRows(metadata).map(csvLine),
+    "",
+    csvLine(metadata.fields.map(field => field.label)),
+    ...rows.map(row =>
+      csvLine(metadata.fields.map(field => valueForExportField(row, field.key)))
+    ),
+  ];
+  return lines.join("\n");
+}
+
+function exportIdFromNow(now: string) {
+  return `finance_export_${now.replace(/\D/g, "").slice(0, 17)}`;
+}
+
+function filenameFromNow(now: string) {
+  return `hongboshi-finance-${now.replace(/\D/g, "").slice(0, 14)}.csv`;
+}
+
+async function buildFinanceExport(
+  actor: FinanceAdminActor,
+  query: FinanceAdminExportQuery,
+  now: string,
+  paymentStore: PaymentWebhookEventStore,
+  operationStore: TransactionOperationStore
+): Promise<FinanceAdminExport> {
+  const sourceEntries = await collectFinanceEntries(
+    now,
+    paymentStore,
+    operationStore
+  );
+  const { filtered, sorted } = sortedFinanceEntries(sourceEntries, query);
+  const rows = sorted.map(exportRowFromEntry);
+  const filename = filenameFromNow(now);
+  const metadata = {
+    exportId: exportIdFromNow(now),
+    format: "csv",
+    filename,
+    generatedAt: now,
+    generatedBy: {
+      id: actor.id,
+      roles: [...actor.roles],
+    },
+    query,
+    summary: buildSummary(filtered),
+    rowCount: rows.length,
+    policyVersion: FINANCE_ADMIN_EXPORT_POLICY_VERSION,
+    fields: FINANCE_ADMIN_EXPORT_FIELDS.map(field => ({
+      ...field,
+      reserved: Boolean("reserved" in field && field.reserved),
+    })),
+  } satisfies FinanceAdminExport["metadata"];
+  const csv = csvFromExport(metadata, rows);
+
+  return FinanceAdminExportSchema.parse({
+    metadata,
+    rows,
+    csv,
+    filename,
+    contentType: FINANCE_ADMIN_CSV_CONTENT_TYPE,
   });
 }
 
@@ -737,6 +923,47 @@ export async function getFinanceAdminOverviewPayload(
   } as const;
 }
 
+export async function getFinanceAdminExportPayload(
+  actor: FinanceAdminActor | null | undefined,
+  rawQuery: Record<string, unknown>,
+  now = new Date().toISOString(),
+  paymentStore: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
+  operationStore: TransactionOperationStore = getTransactionOperationStore()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后导出财务数据"),
+    } as const;
+  }
+
+  if (!userCan(actor, FINANCE_ADMIN_PERMISSIONS.read)) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无财务管理导出权限"),
+    } as const;
+  }
+
+  const query = FinanceAdminExportQuerySchema.safeParse(rawQuery);
+  if (!query.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "财务导出参数不合法"),
+    } as const;
+  }
+
+  return {
+    status: 200,
+    body: await buildFinanceExport(
+      actor,
+      query.data,
+      now,
+      paymentStore,
+      operationStore
+    ),
+  } as const;
+}
+
 export function registerFinanceAdminApi(app: Express) {
   app.get(
     "/api/finance/admin/overview",
@@ -749,6 +976,19 @@ export function registerFinanceAdminApi(app: Express) {
       sendJson(res, payload.status, payload.body);
     }
   );
+
+  app.get("/api/finance/admin/export", async (req: Request, res: Response) => {
+    const session = await getLoginSessionFromRequest(req);
+    const payload = await getFinanceAdminExportPayload(
+      session?.user,
+      queryFromExpress(req)
+    );
+    if ("csv" in payload.body) {
+      sendCsv(res, payload.status, payload.body);
+      return;
+    }
+    sendJson(res, payload.status, payload.body);
+  });
 }
 
 export function handleFinanceAdminApiRequest(
@@ -758,10 +998,26 @@ export function handleFinanceAdminApiRequest(
   if (!req.url || !req.url.startsWith("/api/finance/admin")) return false;
 
   const url = new URL(req.url, "http://localhost");
-  if (
-    req.method === "GET" &&
-    url.pathname === "/api/finance/admin/overview"
-  ) {
+  if (req.method === "GET" && url.pathname === "/api/finance/admin/export") {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getFinanceAdminExportPayload(
+        session?.user,
+        queryFromSearchParams(url.searchParams)
+      );
+      if ("csv" in payload.body) {
+        sendCsv(res, payload.status, payload.body);
+        return;
+      }
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "财务导出失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "财务导出失败"));
+    });
+    return true;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/finance/admin/overview") {
     void (async () => {
       const session = await getLoginSessionFromRequest(req);
       const payload = await getFinanceAdminOverviewPayload(

@@ -18,6 +18,7 @@ import {
 export const FINANCE_ADMIN_PAGE_SIZE = 12;
 export const ALL_FINANCE_ADMIN_CHANNEL = ALL_TRANSACTION_ADMIN_CHANNEL;
 export const ALL_FINANCE_ADMIN_ITEM_TYPE = ALL_TRANSACTION_ADMIN_ITEM_TYPE;
+export const FINANCE_ADMIN_EXPORT_POLICY_VERSION = "finance-admin-csv-v1";
 
 export const FinanceAdminEntryTypeSchema = z.enum([
   "payment",
@@ -26,11 +27,7 @@ export const FinanceAdminEntryTypeSchema = z.enum([
   "exception",
 ]);
 
-export const FinanceAdminSeveritySchema = z.enum([
-  "ok",
-  "warning",
-  "critical",
-]);
+export const FinanceAdminSeveritySchema = z.enum(["ok", "warning", "critical"]);
 
 export const FinanceAdminChannelFilterSchema = z.union([
   PaymentChannelSchema,
@@ -42,28 +39,18 @@ export const FinanceAdminItemTypeFilterSchema = z.union([
   z.literal(ALL_FINANCE_ADMIN_ITEM_TYPE),
 ]);
 
-export const FinanceAdminSortSchema = z.enum([
-  "occurred_desc",
-  "amount_desc",
-]);
+export const FinanceAdminSortSchema = z.enum(["occurred_desc", "amount_desc"]);
 
 export const FinanceAdminQuerySchema = PaginationQuerySchema.extend({
   keyword: z.string().trim().max(80).default(""),
-  channel: FinanceAdminChannelFilterSchema.default(
-    ALL_FINANCE_ADMIN_CHANNEL
-  ),
+  channel: FinanceAdminChannelFilterSchema.default(ALL_FINANCE_ADMIN_CHANNEL),
   itemType: FinanceAdminItemTypeFilterSchema.default(
     ALL_FINANCE_ADMIN_ITEM_TYPE
   ),
   fromDate: ISODateSchema.optional(),
   toDate: ISODateSchema.optional(),
   sort: FinanceAdminSortSchema.default("occurred_desc"),
-  pageSize: z
-    .number()
-    .int()
-    .min(1)
-    .max(50)
-    .default(FINANCE_ADMIN_PAGE_SIZE),
+  pageSize: z.number().int().min(1).max(50).default(FINANCE_ADMIN_PAGE_SIZE),
 });
 
 export const FinanceAdminEntrySchema = z.object({
@@ -133,11 +120,210 @@ export const FinanceAdminOverviewSchema = z.object({
   serverTime: DateTimeLikeSchema,
 });
 
-export type FinanceAdminEntryType = z.infer<
-  typeof FinanceAdminEntryTypeSchema
->;
+export const FinanceAdminExportFormatSchema = z.literal("csv");
+
+export const FinanceAdminExportQuerySchema = FinanceAdminQuerySchema.omit({
+  page: true,
+  pageSize: true,
+}).extend({
+  format: FinanceAdminExportFormatSchema.default("csv"),
+});
+
+export const FinanceAdminExportFieldKeySchema = z.enum([
+  "occurredAt",
+  "entryType",
+  "orderId",
+  "userId",
+  "userDisplayName",
+  "userPhoneMasked",
+  "itemTypes",
+  "primaryTitle",
+  "channel",
+  "amount",
+  "sourceStatus",
+  "severity",
+  "transactionId",
+  "receiptId",
+  "reason",
+  "accountingPeriod",
+  "feeAmount",
+  "settlementBatchId",
+  "invoiceStatus",
+]);
+
+export const FINANCE_ADMIN_EXPORT_FIELDS = [
+  {
+    key: "occurredAt",
+    label: "发生时间",
+    description: "财务事项对应的支付、退款或异常发生时间。",
+  },
+  {
+    key: "entryType",
+    label: "事项类型",
+    description: "收入、退款、退款中或异常。",
+  },
+  {
+    key: "orderId",
+    label: "订单ID",
+    description: "关联业务订单 ID。",
+  },
+  {
+    key: "userId",
+    label: "用户ID",
+    description: "脱敏财务核查所需用户 ID。",
+  },
+  {
+    key: "userDisplayName",
+    label: "用户名称",
+    description: "用户展示名。",
+  },
+  {
+    key: "userPhoneMasked",
+    label: "脱敏手机号",
+    description: "仅输出脱敏手机号。",
+  },
+  {
+    key: "itemTypes",
+    label: "业务类型",
+    description: "课程、会员、咨询或测评。",
+  },
+  {
+    key: "primaryTitle",
+    label: "商品标题",
+    description: "订单主商品标题。",
+  },
+  {
+    key: "channel",
+    label: "支付渠道",
+    description: "支付或退款渠道。",
+  },
+  {
+    key: "amount",
+    label: "金额",
+    description: "当前财务事项金额。",
+  },
+  {
+    key: "sourceStatus",
+    label: "来源状态",
+    description: "支付回调、订单或工单来源状态。",
+  },
+  {
+    key: "severity",
+    label: "异常等级",
+    description: "正常、提醒或严重。",
+  },
+  {
+    key: "transactionId",
+    label: "交易号",
+    description: "渠道或模拟交易号。",
+  },
+  {
+    key: "receiptId",
+    label: "回调收据ID",
+    description: "支付回调收据 ID。",
+  },
+  {
+    key: "reason",
+    label: "财务备注",
+    description: "财务口径或异常说明。",
+  },
+  {
+    key: "accountingPeriod",
+    label: "账期",
+    description: "按发生时间预留的 YYYY-MM 账期。",
+    reserved: true,
+  },
+  {
+    key: "feeAmount",
+    label: "手续费",
+    description: "渠道手续费预留字段，当前默认为 0。",
+    reserved: true,
+  },
+  {
+    key: "settlementBatchId",
+    label: "结算批次",
+    description: "渠道结算批次预留字段。",
+    reserved: true,
+  },
+  {
+    key: "invoiceStatus",
+    label: "发票状态",
+    description: "发票流转预留字段。",
+    reserved: true,
+  },
+] as const;
+
+export const FinanceAdminExportFieldSchema = z.object({
+  key: FinanceAdminExportFieldKeySchema,
+  label: z.string().min(1),
+  description: z.string().min(1),
+  reserved: z.boolean().default(false),
+});
+
+export const FinanceAdminInvoiceStatusSchema = z.enum([
+  "not_requested",
+  "pending",
+  "issued",
+  "voided",
+]);
+
+export const FinanceAdminExportRowSchema = z.object({
+  occurredAt: DateTimeLikeSchema,
+  entryType: FinanceAdminEntryTypeSchema,
+  orderId: EntityIdSchema,
+  userId: EntityIdSchema,
+  userDisplayName: z.string().min(1),
+  userPhoneMasked: z.string().optional(),
+  itemTypes: z.array(PurchasableTypeSchema).min(1),
+  primaryTitle: z.string().min(1),
+  channel: PaymentChannelSchema.optional(),
+  amount: MoneyAmountSchema,
+  sourceStatus: z.string().min(1),
+  severity: FinanceAdminSeveritySchema,
+  transactionId: z.string().min(1).optional(),
+  receiptId: EntityIdSchema.optional(),
+  reason: z.string().min(1).optional(),
+  accountingPeriod: z.string().regex(/^\d{4}-\d{2}$/),
+  feeAmount: MoneyAmountSchema.default(0),
+  settlementBatchId: z.string().default(""),
+  invoiceStatus: FinanceAdminInvoiceStatusSchema.default("not_requested"),
+});
+
+export const FinanceAdminExportMetadataSchema = z.object({
+  exportId: EntityIdSchema,
+  format: FinanceAdminExportFormatSchema,
+  filename: z.string().min(1),
+  generatedAt: DateTimeLikeSchema,
+  generatedBy: z.object({
+    id: EntityIdSchema,
+    roles: z.array(z.string().min(1)).min(1),
+  }),
+  query: FinanceAdminExportQuerySchema,
+  summary: FinanceAdminSummarySchema,
+  rowCount: z.number().int().nonnegative(),
+  policyVersion: z.literal(FINANCE_ADMIN_EXPORT_POLICY_VERSION),
+  fields: z.array(FinanceAdminExportFieldSchema).min(1),
+});
+
+export const FinanceAdminExportSchema = z.object({
+  metadata: FinanceAdminExportMetadataSchema,
+  rows: z.array(FinanceAdminExportRowSchema),
+  csv: z.string().min(1),
+  filename: z.string().min(1),
+  contentType: z.literal("text/csv; charset=utf-8"),
+});
+
+export type FinanceAdminEntryType = z.infer<typeof FinanceAdminEntryTypeSchema>;
 export type FinanceAdminSeverity = z.infer<typeof FinanceAdminSeveritySchema>;
 export type FinanceAdminQuery = z.infer<typeof FinanceAdminQuerySchema>;
 export type FinanceAdminEntry = z.infer<typeof FinanceAdminEntrySchema>;
 export type FinanceAdminSummary = z.infer<typeof FinanceAdminSummarySchema>;
 export type FinanceAdminOverview = z.infer<typeof FinanceAdminOverviewSchema>;
+export type FinanceAdminExportQuery = z.infer<
+  typeof FinanceAdminExportQuerySchema
+>;
+export type FinanceAdminExportRow = z.infer<typeof FinanceAdminExportRowSchema>;
+export type FinanceAdminExportMetadata = z.infer<
+  typeof FinanceAdminExportMetadataSchema
+>;
+export type FinanceAdminExport = z.infer<typeof FinanceAdminExportSchema>;

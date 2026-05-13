@@ -26,7 +26,10 @@ import {
   setTransactionOperationStore,
   type TransactionOperationStore,
 } from "../transactions/transactionOperationStore";
-import { getFinanceAdminOverviewPayload } from "./financeAdminApi";
+import {
+  getFinanceAdminExportPayload,
+  getFinanceAdminOverviewPayload,
+} from "./financeAdminApi";
 
 const operator = { id: "operator_1", roles: ["operator" as const] };
 const member = { id: "member_1", roles: ["member" as const] };
@@ -90,9 +93,9 @@ describe("finance admin api payloads", () => {
   it("requires finance read permission", async () => {
     expect((await getFinanceAdminOverviewPayload(null, {})).status).toBe(401);
     expect((await getFinanceAdminOverviewPayload(member, {})).status).toBe(403);
-    expect((await getFinanceAdminOverviewPayload(operator, {}, now)).status).toBe(
-      200
-    );
+    expect(
+      (await getFinanceAdminOverviewPayload(operator, {}, now)).status
+    ).toBe(200);
   });
 
   it("aggregates processed payments, refunds, pending refunds and exceptions", async () => {
@@ -266,5 +269,85 @@ describe("finance admin api payloads", () => {
         itemTypes: ["membership"],
       });
     }
+  });
+
+  it("exports filtered finance entries as CSV with metadata", async () => {
+    const membershipOrder = order({
+      id: "order_finance_export_membership",
+      status: "paid",
+      amount: 399,
+      title: "成长会员年卡",
+      type: "membership",
+    });
+    await courseAccessStore.save(
+      "finance_user_1",
+      CourseAccessStateSchema.parse({
+        ownedCourseIds: [],
+        membership: { status: "active", planName: "成长会员" },
+        orders: [membershipOrder],
+      })
+    );
+    const event = createSimulatedPaymentSucceededEvent({
+      order: membershipOrder,
+      now: "2026-05-12T09:02:00.000Z",
+    });
+    await paymentStore.begin(event, "2026-05-12T09:02:01.000Z");
+    await paymentStore.markProcessed(
+      event.id,
+      200,
+      { ok: true },
+      "2026-05-12T09:02:02.000Z"
+    );
+
+    const payload = await getFinanceAdminExportPayload(
+      operator,
+      {
+        keyword: "会员",
+        itemType: "membership",
+        page: 9,
+      },
+      now,
+      paymentStore,
+      transactionOperationStore
+    );
+
+    expect(payload.status).toBe(200);
+    expect("csv" in payload.body).toBe(true);
+    if (!("csv" in payload.body)) throw new Error("expected CSV export");
+
+    expect(payload.body.filename).toBe("hongboshi-finance-20260512100000.csv");
+    expect(payload.body.contentType).toBe("text/csv; charset=utf-8");
+    expect(payload.body.metadata).toMatchObject({
+      generatedAt: now,
+      generatedBy: {
+        id: "operator_1",
+        roles: ["operator"],
+      },
+      rowCount: 1,
+      policyVersion: "finance-admin-csv-v1",
+    });
+    expect(payload.body.metadata.query).toMatchObject({
+      keyword: "会员",
+      itemType: "membership",
+      format: "csv",
+    });
+    expect(payload.body.metadata.query).not.toHaveProperty("page");
+    expect(payload.body.metadata.summary.netRevenueAmount).toBe(399);
+    expect(payload.body.rows[0]).toMatchObject({
+      orderId: "order_finance_export_membership",
+      accountingPeriod: "2026-05",
+      feeAmount: 0,
+      settlementBatchId: "",
+      invoiceStatus: "not_requested",
+    });
+    expect(payload.body.csv).toContain("metadata_key,metadata_value");
+    expect(payload.body.csv).toContain("policyVersion,finance-admin-csv-v1");
+    expect(payload.body.csv).toContain("发生时间,事项类型,订单ID");
+    expect(payload.body.csv).toContain("成长会员年卡");
+  });
+
+  it("requires finance read permission for CSV export", async () => {
+    expect((await getFinanceAdminExportPayload(null, {})).status).toBe(401);
+    expect((await getFinanceAdminExportPayload(member, {})).status).toBe(403);
   });
 });
