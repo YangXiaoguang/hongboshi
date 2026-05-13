@@ -3,6 +3,7 @@ import {
   httpTransactionAdminRepository,
   parseTransactionAdminDetailResponse,
   parseTransactionAdminListResponse,
+  parseTransactionAdminMutationResponse,
 } from "./httpTransactionAdminRepository";
 
 const transaction = {
@@ -111,6 +112,45 @@ const detailData = {
   generatedAt: "2026-05-12T10:00:00+08:00",
 };
 
+const auditEvent = {
+  id: "transaction_audit_1",
+  transactionId: "evt_payment_1",
+  orderId: "order_1",
+  userId: "u_member_1",
+  actorId: "operator_1",
+  actorRoles: ["operator"],
+  action: "request_refund",
+  reason: "用户提交退款申请",
+  before: {
+    orderStatus: "paid",
+  },
+  after: {
+    orderStatus: "refunding",
+  },
+  createdAt: "2026-05-12T10:01:00+08:00",
+};
+
+const mutationData = {
+  detail: {
+    ...detailData,
+    transaction: {
+      ...transaction,
+      relatedOrder: {
+        ...transaction.relatedOrder,
+        status: "refunding",
+      },
+    },
+    relatedOrder: {
+      ...transaction.relatedOrder,
+      status: "refunding",
+    },
+    auditEvents: [auditEvent],
+  },
+  auditEvent,
+  auditEvents: [auditEvent],
+  serverTime: "2026-05-12T10:01:00+08:00",
+};
+
 describe("http transaction admin repository", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -146,6 +186,16 @@ describe("http transaction admin repository", () => {
 
     expect(parsed.receipt.transactionId).toBe("tx_1");
     expect(parsed.businessObjects[0]?.status).toBe("已开课");
+  });
+
+  it("parses transaction mutation responses", () => {
+    const parsed = parseTransactionAdminMutationResponse({
+      ok: true,
+      data: mutationData,
+    });
+
+    expect(parsed.auditEvent.action).toBe("request_refund");
+    expect(parsed.detail.relatedOrder?.status).toBe("refunding");
   });
 
   it("loads transaction list from the admin endpoint with filters", async () => {
@@ -195,13 +245,48 @@ describe("http transaction admin repository", () => {
     );
 
     const detail =
-      await httpTransactionAdminRepository.loadTransactionDetail("evt_payment_1");
+      await httpTransactionAdminRepository.loadTransactionDetail(
+        "evt_payment_1"
+      );
 
     expect(detail.transaction.id).toBe("evt_payment_1");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/transactions/admin/transactions/evt_payment_1",
       expect.objectContaining({
         cache: "no-store",
+      })
+    );
+  });
+
+  it("updates transaction actions through the admin endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: mutationData,
+        })
+      )
+    );
+
+    const result = await httpTransactionAdminRepository.updateTransaction(
+      "evt_payment_1",
+      {
+        action: "request_refund",
+        reason: "用户提交退款申请",
+      }
+    );
+
+    expect(result.auditEvent.action).toBe("request_refund");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/transactions/admin/transactions/evt_payment_1/actions",
+      expect.objectContaining({
+        method: "PATCH",
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify({
+          action: "request_refund",
+          reason: "用户提交退款申请",
+        }),
       })
     );
   });

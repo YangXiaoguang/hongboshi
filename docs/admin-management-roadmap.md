@@ -13,19 +13,19 @@
 - 前端使用 React、TypeScript、Vite、Tailwind CSS。
 - 后端使用 Express 模块化 API。
 - `shared/domain` 已承载前后端共享 Zod 契约。
-- 已建立 `visitor`、`member`、`counselor`、`catalog_viewer`、`catalog_operator`、`operator`、`admin` 角色和 `admin:manage`、`counseling:fulfill`、`catalog:*`、`user:read`、`user:membership`、`order:read`、`order:operate` 等权限能力。
+- 已建立 `visitor`、`member`、`counselor`、`catalog_viewer`、`catalog_operator`、`operator`、`admin` 角色和 `admin:manage`、`counseling:fulfill`、`catalog:*`、`user:read`、`user:membership`、`order:read`、`order:operate`、`transaction:read`、`transaction:operate` 等权限能力。
 - 咨询运营配置页面 `/admin/counseling` 已可管理取消规则并查看履约审计。
 - 支付对账页面 `/admin/payments` 已可对比支付回调收据、业务订单和咨询预约状态。
 - 课程商品列表 `/admin/courses` 已接入统一后台，可读取课程商品契约、搜索、状态筛选、分类筛选、排序、分页、基础信息编辑、详情内容编辑、内容质量校验、审核动作、上下架、改价、资源级权限和最近审计；状态与详情内容均可写入 JSON Store 或 PostgreSQL，并已联动前台课程列表/详情。
 - 用户会员后台 `/admin/users` 已接入统一后台，可按关键词、角色和会员状态筛选用户，聚合账号、会员、课程权益、订单、咨询预约和风险摘要，并支持会员开通、延期、到期标记、计划调整和审计追溯。
 - 订单管理后台 `/admin/orders` 已接入统一后台，可按关键词、订单状态和商品类型筛选课程、会员与咨询订单，并展示订单详情、支付回调摘要、关联履约对象、状态时间线、待支付订单关闭、异常标记和操作审计。
-- 交易退款后台 `/admin/transactions` 已接入统一后台，可按关键词、流水类型、渠道、处理状态、业务类型和日期范围筛选支付/退款流水，并展示关联订单、业务对象、异常提示和处理时间线；当前阶段只读。
+- 交易退款后台 `/admin/transactions` 已接入统一后台，可按关键词、流水类型、渠道、处理状态、业务类型和日期范围筛选支付/退款流水，并展示关联订单、业务对象、异常提示和处理时间线；已支持受控退款申请、交易异常工单和操作审计。
 - 咨询预约、支付回调、风险事件、测评结果、课程权益等模块已开始使用 Store 接口，并具备 PostgreSQL 实现或迁移基础。
 
 主要缺口：
 
 - 课程商品当前仍缺少真实素材文件上传/对象存储和学习资料下载履约，内容运营闭环还需要继续收口。
-- 订单后台已具备首批受控写动作，交易后台已具备只读流水台；退款申请、财务账务和支付异常处理工单还需要继续建设。
+- 订单后台已具备首批受控写动作，交易后台已具备退款申请和异常工单动作；交易操作 PostgreSQL 持久化、财务账务和真实支付渠道适配还需要继续建设。
 - 风控审核和跨模块审计中心还没有形成独立模块。
 - 订单、财务、风控等后台权限仍需按课程商品样板继续拆分到资源级和动作级。
 
@@ -149,7 +149,7 @@
 
 - M4-A 已完成：`order:read` 权限、订单后台列表/详情契约、`/api/orders/admin/orders` 列表/详情、课程权益订单/咨询预约/支付回调收据聚合、前端 `/admin/orders` 只读台和后台导航接入。
 - M4-B 已完成：`order:operate` 权限、订单动作契约、待支付订单关闭、异常标记/解除、JSON/PostgreSQL 订单操作审计和前端订单详情动作入口。
-- M4 已完成，M5-A 交易流水只读台已完成，下一步进入 M5-B 退款申请与异常工单动作。
+- M4 已完成，M5-A 交易流水只读台与 M5-B 退款申请/异常工单动作已完成，下一步进入 M5-C 交易操作数据库化与渠道适配接口。
 
 ## M5: 交易与退款管理
 
@@ -171,7 +171,8 @@
 当前状态：
 
 - M5-A 已完成：`transaction:read` 权限、交易后台列表/详情契约、`/api/transactions/admin/transactions` 列表/详情、支付/退款回调收据、课程/会员/咨询订单、业务对象和订单异常标记聚合，以及前端 `/admin/transactions` 只读台。
-- 下一步 M5-B：建立退款申请和支付异常处理动作，但仍保持服务端状态机、权限、原因和审计先行，不直接绕过回调修改业务完成态。
+- M5-B 已完成：`transaction:operate` 权限、退款申请、交易异常工单、交易操作审计、内存/JSON 交易操作 Store 和前端交易详情动作入口；退款申请只进入 `refunding`，完成态仍由 `refund.succeeded` 回调驱动。
+- 下一步 M5-C：建立交易操作 PostgreSQL Store 和退款渠道适配接口，但仍不直接绕过回调修改业务完成态。
 
 ## M6: 财务管理
 

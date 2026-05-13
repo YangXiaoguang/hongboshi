@@ -1,16 +1,23 @@
 import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
+import { randomUUID } from "crypto";
 import { URL } from "url";
 import {
   ApiResponseSchema,
   CourseAccessStateSchema,
   PaymentWebhookReceiptSnapshotSchema,
   TRANSACTION_ADMIN_PERMISSIONS,
+  TransactionAdminActionRequestSchema,
+  TransactionAdminAuditEventSchema,
   TransactionAdminDetailSchema,
   TransactionAdminListItemSchema,
   TransactionAdminListQuerySchema,
   TransactionAdminListResultSchema,
+  TransactionAdminMutationResultSchema,
   TransactionAdminRelatedOrderSchema,
+  TransactionAdminWorkOrderSchema,
+  requestOrderRefund,
+  upsertCourseAccessOrder,
   userCan,
   type AuthPermission,
   type CourseAccessState,
@@ -20,14 +27,18 @@ import {
   type OrderAdminUserSummary,
   type PaymentWebhookReceiptSnapshot,
   type PurchasableType,
+  type TransactionAdminActionRequest,
+  type TransactionAdminAuditSnapshot,
   type TransactionAdminBusinessObject,
   type TransactionAdminDetail,
   type TransactionAdminIssue,
   type TransactionAdminListItem,
   type TransactionAdminListQuery,
   type TransactionAdminListResult,
+  type TransactionAdminMutationResult,
   type TransactionAdminRelatedOrder,
   type TransactionAdminTimelineEvent,
+  type TransactionAdminWorkOrder,
   type UserProfile,
 } from "../../../shared/domain";
 import {
@@ -37,6 +48,7 @@ import {
 import {
   listCourseAccessUserStates,
   listOrderAdminExceptionFlags,
+  saveCourseAccessState,
 } from "../courses/courseAccessApi";
 import { getCounselingPaymentOrderSnapshot } from "../counseling/counselingApi";
 import {
@@ -45,6 +57,10 @@ import {
   type PaymentWebhookReceipt,
   type PaymentWebhookEventStore,
 } from "../payments/paymentWebhookEventStore";
+import {
+  getTransactionOperationStore,
+  type TransactionOperationStore,
+} from "./transactionOperationStore";
 
 type TransactionAdminActor = Pick<LoginSession["user"], "id" | "roles">;
 type DirectoryProfile = OrderAdminUserSummary & {
@@ -65,6 +81,9 @@ const TransactionAdminListResponseSchema = ApiResponseSchema(
 );
 const TransactionAdminDetailResponseSchema = ApiResponseSchema(
   TransactionAdminDetailSchema
+);
+const TransactionAdminMutationResponseSchema = ApiResponseSchema(
+  TransactionAdminMutationResultSchema
 );
 
 const fallbackProfiles = new Map<string, DirectoryProfile>([
@@ -328,6 +347,7 @@ function errorPayload(
     | "UNAUTHORIZED"
     | "FORBIDDEN"
     | "NOT_FOUND"
+    | "CONFLICT"
     | "INTERNAL_ERROR",
   message: string
 ) {
@@ -347,18 +367,49 @@ function denyUnauthorizedActor(
   if (!actor) {
     return {
       status: 401,
-      body: errorPayload("UNAUTHORIZED", "请先登录后查看交易后台"),
+      body: errorPayload(
+        "UNAUTHORIZED",
+        permission === TRANSACTION_ADMIN_PERMISSIONS.operate
+          ? "请先登录后操作交易后台"
+          : "请先登录后查看交易后台"
+      ),
     } as const;
   }
 
   if (!userCan(actor, permission)) {
     return {
       status: 403,
-      body: errorPayload("FORBIDDEN", "当前账号暂无交易后台读取权限"),
+      body: errorPayload(
+        "FORBIDDEN",
+        permission === TRANSACTION_ADMIN_PERMISSIONS.operate
+          ? "当前账号暂无交易后台操作权限"
+          : "当前账号暂无交易后台读取权限"
+      ),
     } as const;
   }
 
   return undefined;
+}
+
+function readRequestBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise(resolve => {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        resolve(undefined);
+      }
+    });
+  });
 }
 
 function createSyntheticUser(userId: string): OrderAdminUserSummary {
@@ -499,8 +550,7 @@ async function businessObjectsFromOrder(
     domain: item.type === "counseling_session" ? "counseling" : "course_access",
     type: item.type,
     targetId:
-      item.type === "counseling_session" &&
-      counselingSnapshot?.appointmentId
+      item.type === "counseling_session" && counselingSnapshot?.appointmentId
         ? counselingSnapshot.appointmentId
         : item.targetId,
     title: item.title,
@@ -554,7 +604,8 @@ function issue(
 
 function buildIssues(
   receipt: PaymentWebhookReceipt,
-  context: OrderContext | undefined
+  context: OrderContext | undefined,
+  workOrder: TransactionAdminWorkOrder | undefined
 ) {
   const issues: TransactionAdminIssue[] = [];
   const event = receipt.eventPayload;
@@ -577,68 +628,81 @@ function buildIssues(
     issues.push(
       issue("order_missing", "critical", "未找到该流水关联的业务订单")
     );
-    return issues;
-  }
+  } else {
+    if (context.order.payableAmount !== event.amount) {
+      issues.push(
+        issue(
+          "order_amount_mismatch",
+          "critical",
+          "流水金额与订单应付金额不一致"
+        )
+      );
+    }
 
-  if (context.order.payableAmount !== event.amount) {
-    issues.push(
-      issue("order_amount_mismatch", "critical", "流水金额与订单应付金额不一致")
-    );
-  }
+    if (
+      receipt.status === "processed" &&
+      event.type === "payment.succeeded" &&
+      !["paid", "refunding", "refunded"].includes(context.order.status)
+    ) {
+      issues.push(
+        issue(
+          "order_status_not_settled",
+          "critical",
+          "支付成功后订单尚未进入已支付或后续退款状态"
+        )
+      );
+    }
 
-  if (
-    receipt.status === "processed" &&
-    event.type === "payment.succeeded" &&
-    !["paid", "refunding", "refunded"].includes(context.order.status)
-  ) {
-    issues.push(
-      issue(
-        "order_status_not_settled",
-        "critical",
-        "支付成功后订单尚未进入已支付或后续退款状态"
+    if (
+      receipt.status === "processed" &&
+      event.type === "refund.succeeded" &&
+      context.order.status !== "refunded"
+    ) {
+      issues.push(
+        issue(
+          "refund_order_not_completed",
+          "critical",
+          "退款成功后订单尚未进入已退款状态"
+        )
+      );
+    }
+
+    if (
+      receipt.status === "processed" &&
+      event.type === "refund.succeeded" &&
+      context.businessObjects.some(
+        object =>
+          object.domain === "counseling" &&
+          object.status &&
+          object.status !== "refunded"
       )
-    );
+    ) {
+      issues.push(
+        issue(
+          "refund_business_not_completed",
+          "critical",
+          "退款成功后关联咨询预约尚未进入已退款状态"
+        )
+      );
+    }
+
+    if (context.relatedOrder.exception) {
+      issues.push(
+        issue(
+          "order_exception_open",
+          context.relatedOrder.exception.severity,
+          `订单存在开放异常：${context.relatedOrder.exception.reason}`
+        )
+      );
+    }
   }
 
-  if (
-    receipt.status === "processed" &&
-    event.type === "refund.succeeded" &&
-    context.order.status !== "refunded"
-  ) {
+  if (workOrder?.status === "open") {
     issues.push(
       issue(
-        "refund_order_not_completed",
-        "critical",
-        "退款成功后订单尚未进入已退款状态"
-      )
-    );
-  }
-
-  if (
-    receipt.status === "processed" &&
-    event.type === "refund.succeeded" &&
-    context.businessObjects.some(
-      object =>
-        object.domain === "counseling" &&
-        object.status &&
-        object.status !== "refunded"
-    )
-  ) {
-    issues.push(
-      issue(
-        "refund_business_not_completed",
-        "critical",
-        "退款成功后关联咨询预约尚未进入已退款状态"
-      )
-    );
-  }
-
-  if (context.relatedOrder.exception) {
-    issues.push(
-      issue(
-        "order_exception_open",
-        context.relatedOrder.exception.severity,
-        `订单存在开放异常：${context.relatedOrder.exception.reason}`
+        "transaction_work_order_open",
+        workOrder.severity,
+        `交易存在开放异常工单：${workOrder.reason}`
       )
     );
   }
@@ -654,10 +718,11 @@ function severityFromIssues(issues: TransactionAdminIssue[]) {
 
 function transactionItemFromReceipt(
   receipt: PaymentWebhookReceipt,
-  context: OrderContext | undefined
+  context: OrderContext | undefined,
+  workOrder: TransactionAdminWorkOrder | undefined
 ) {
   const snapshot = receiptToSnapshot(receipt);
-  const issues = buildIssues(receipt, context);
+  const issues = buildIssues(receipt, context, workOrder);
   const relatedOrder = context?.relatedOrder;
 
   return TransactionAdminListItemSchema.parse({
@@ -678,7 +743,9 @@ function transactionItemFromReceipt(
     relatedOrder,
     businessObjects: context?.businessObjects ?? [],
     itemTypes: relatedOrder?.itemTypes ?? [],
-    primaryTitle: relatedOrder?.primaryTitle ?? `未匹配订单 ${snapshot.orderId}`,
+    primaryTitle:
+      relatedOrder?.primaryTitle ?? `未匹配订单 ${snapshot.orderId}`,
+    workOrder,
     severity: severityFromIssues(issues),
     issues,
   });
@@ -784,28 +851,41 @@ function buildFilters(items: TransactionAdminListItem[]) {
     types: Array.from(new Set(items.map(item => item.type))).sort(),
     channels: Array.from(new Set(items.map(item => item.channel))).sort(),
     statuses: Array.from(new Set(items.map(item => item.status))).sort(),
-    itemTypes: Array.from(new Set(items.flatMap(item => item.itemTypes))).sort(),
+    itemTypes: Array.from(
+      new Set(items.flatMap(item => item.itemTypes))
+    ).sort(),
   };
 }
 
 async function buildTransactionItems(
-  store: PaymentWebhookEventStore = getPaymentWebhookEventStore()
+  store: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
+  operationStore: TransactionOperationStore = getTransactionOperationStore()
 ) {
-  const [receipts, orderContexts] = await Promise.all([
+  const [receipts, orderContexts, workOrders] = await Promise.all([
     listReceipts(store),
     buildOrderContextMap(),
+    operationStore.listWorkOrders(),
   ]);
+  const workOrdersByTransactionId = new Map(
+    workOrders.map(workOrder => [workOrder.transactionId, workOrder])
+  );
+
   return receipts.map(receipt =>
-    transactionItemFromReceipt(receipt, orderContexts.get(receipt.orderId))
+    transactionItemFromReceipt(
+      receipt,
+      orderContexts.get(receipt.orderId),
+      workOrdersByTransactionId.get(receipt.id)
+    )
   );
 }
 
 async function buildTransactionListResult(
   query: TransactionAdminListQuery,
   now: string,
-  store: PaymentWebhookEventStore = getPaymentWebhookEventStore()
+  store: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
+  operationStore: TransactionOperationStore = getTransactionOperationStore()
 ): Promise<TransactionAdminListResult> {
-  const items = await buildTransactionItems(store);
+  const items = await buildTransactionItems(store, operationStore);
   const filtered = items.filter(item => matchesQuery(item, query));
   const sorted = sortItems(filtered, query.sort);
   const page = paginateItems(sorted, query);
@@ -839,7 +919,8 @@ function timelineFromTransaction(
             ? "等待回调处理完成"
             : "回调已完成处理",
       occurredAt: item.processedAt ?? item.receivedAt,
-      detail: item.errorMessage ?? `响应状态 ${item.responseStatus ?? "未返回"}`,
+      detail:
+        item.errorMessage ?? `响应状态 ${item.responseStatus ?? "未返回"}`,
     },
   ];
 
@@ -871,6 +952,23 @@ function timelineFromTransaction(
     });
   }
 
+  if (item.workOrder) {
+    events.push({
+      type: "transaction_work_order",
+      label: "交易异常工单",
+      occurredAt: item.workOrder.markedAt,
+      detail: `${item.workOrder.status} · ${item.workOrder.reason}`,
+    });
+    if (item.workOrder.resolvedAt) {
+      events.push({
+        type: "transaction_work_order",
+        label: "交易异常已处理",
+        occurredAt: item.workOrder.resolvedAt,
+        detail: item.workOrder.resolution,
+      });
+    }
+  }
+
   return events.sort(
     (a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt)
   );
@@ -878,7 +976,8 @@ function timelineFromTransaction(
 
 function detailFromItem(
   item: TransactionAdminListItem,
-  now: string
+  now: string,
+  auditEvents: TransactionAdminMutationResult["auditEvents"] = []
 ): TransactionAdminDetail {
   return TransactionAdminDetailSchema.parse({
     transaction: item,
@@ -905,6 +1004,7 @@ function detailFromItem(
       receivedAt: item.receivedAt,
       processedAt: item.processedAt,
     }),
+    auditEvents,
     privacyNotice:
       "交易后台仅展示对账、履约排障和客服核查所需信息，不展示咨询说明、测评答案和风险信号原文。",
     generatedAt: now,
@@ -914,20 +1014,223 @@ function detailFromItem(
 async function buildTransactionDetail(
   transactionId: string,
   now: string,
-  store: PaymentWebhookEventStore = getPaymentWebhookEventStore()
+  store: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
+  operationStore: TransactionOperationStore = getTransactionOperationStore()
 ) {
-  const item = (await buildTransactionItems(store)).find(
+  const item = (await buildTransactionItems(store, operationStore)).find(
     transaction => transaction.id === transactionId
   );
   if (!item) return undefined;
-  return detailFromItem(item, now);
+  const auditEvents = await operationStore.listAuditEvents(transactionId);
+  return detailFromItem(item, now, auditEvents);
+}
+
+async function findOrderSource(orderId: string) {
+  const sources = await listOrderSources();
+  for (const source of sources) {
+    const order = source.state.orders.find(item => item.id === orderId);
+    if (order) {
+      return {
+        userId: source.userId,
+        state: source.state,
+        order,
+      };
+    }
+  }
+
+  return undefined;
+}
+
+function auditSnapshot(
+  order: Order | undefined,
+  workOrder: TransactionAdminWorkOrder | undefined
+): TransactionAdminAuditSnapshot {
+  return {
+    orderStatus: order?.status,
+    workOrder,
+  };
+}
+
+function refundRequestConflict(
+  item: TransactionAdminListItem,
+  source: Awaited<ReturnType<typeof findOrderSource>> | undefined
+) {
+  if (item.type !== "payment") {
+    return "退款申请必须从支付流水发起。";
+  }
+
+  if (item.status !== "processed") {
+    return "只有已处理成功的支付流水可以发起退款申请。";
+  }
+
+  if (!source || !item.relatedOrder) {
+    return "未匹配业务订单，不能发起退款申请，请先标记异常工单。";
+  }
+
+  if (item.issues.length > 0) {
+    return "存在未处理的交易异常，需完成核查后再发起退款。";
+  }
+
+  if (source.order.status === "refunding") {
+    return "订单已处于退款中，请等待退款成功回调。";
+  }
+
+  if (source.order.status === "refunded") {
+    return "订单已完成退款，不能重复申请。";
+  }
+
+  if (source.order.status !== "paid") {
+    return "订单当前状态不支持退款申请。";
+  }
+
+  return undefined;
+}
+
+async function applyAdminTransactionAction({
+  actor,
+  transactionId,
+  request,
+  now,
+  store,
+  operationStore,
+}: {
+  actor: TransactionAdminActor;
+  transactionId: string;
+  request: TransactionAdminActionRequest;
+  now: string;
+  store: PaymentWebhookEventStore;
+  operationStore: TransactionOperationStore;
+}) {
+  const item = (await buildTransactionItems(store, operationStore)).find(
+    transaction => transaction.id === transactionId
+  );
+  if (!item) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "交易流水不存在或暂未进入后台目录"),
+    } as const;
+  }
+
+  const source = await findOrderSource(item.orderId);
+  const beforeWorkOrder = await operationStore.getWorkOrder(transactionId);
+  const before = auditSnapshot(source?.order, beforeWorkOrder);
+  let nextOrder = source?.order;
+  let afterWorkOrder = beforeWorkOrder;
+
+  if (request.action === "request_refund") {
+    const conflict = refundRequestConflict(item, source);
+    if (conflict || !source) {
+      return {
+        status: 409,
+        body: errorPayload(
+          "CONFLICT",
+          conflict ?? "订单当前状态不支持退款申请。"
+        ),
+      } as const;
+    }
+
+    try {
+      nextOrder = requestOrderRefund(source.order);
+    } catch {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "订单当前状态不支持退款申请。"),
+      } as const;
+    }
+
+    await saveCourseAccessState(
+      source.userId,
+      upsertCourseAccessOrder(source.state, nextOrder)
+    );
+  }
+
+  if (request.action === "mark_exception") {
+    if (beforeWorkOrder?.status === "open") {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "该交易已有开放异常工单。"),
+      } as const;
+    }
+
+    afterWorkOrder = TransactionAdminWorkOrderSchema.parse({
+      id: `transaction_work_${randomUUID()}`,
+      transactionId,
+      orderId: item.orderId,
+      status: "open",
+      severity: request.severity,
+      reason: request.reason,
+      markedBy: actor.id,
+      markedAt: now,
+    });
+    await operationStore.saveWorkOrder(afterWorkOrder);
+  }
+
+  if (request.action === "resolve_exception") {
+    if (!beforeWorkOrder || beforeWorkOrder.status !== "open") {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "当前交易没有开放异常工单。"),
+      } as const;
+    }
+
+    afterWorkOrder = TransactionAdminWorkOrderSchema.parse({
+      ...beforeWorkOrder,
+      status: "resolved",
+      resolvedBy: actor.id,
+      resolvedAt: now,
+      resolution: request.reason,
+    });
+    await operationStore.saveWorkOrder(afterWorkOrder);
+  }
+
+  const auditEvent = TransactionAdminAuditEventSchema.parse({
+    id: `transaction_audit_${randomUUID()}`,
+    transactionId,
+    orderId: item.orderId,
+    userId: nextOrder?.userId ?? item.relatedOrder?.user.id ?? "unknown_user",
+    actorId: actor.id,
+    actorRoles: actor.roles,
+    action: request.action,
+    reason: request.reason,
+    before,
+    after: auditSnapshot(nextOrder, afterWorkOrder),
+    createdAt: now,
+  });
+  await operationStore.appendAuditEvent(auditEvent);
+
+  const detail = await buildTransactionDetail(
+    transactionId,
+    now,
+    store,
+    operationStore
+  );
+  if (!detail) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "交易动作已保存但详情暂不可读"),
+    } as const;
+  }
+
+  return {
+    status: 200,
+    body: TransactionAdminMutationResponseSchema.parse({
+      ok: true,
+      data: {
+        detail,
+        auditEvent,
+        auditEvents: detail.auditEvents,
+        serverTime: now,
+      } satisfies TransactionAdminMutationResult,
+    }),
+  } as const;
 }
 
 export async function getAdminTransactionListPayload(
   actor: TransactionAdminActor | null | undefined,
   rawQuery: Record<string, unknown>,
   now = new Date().toISOString(),
-  store: PaymentWebhookEventStore = getPaymentWebhookEventStore()
+  store: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
+  operationStore: TransactionOperationStore = getTransactionOperationStore()
 ) {
   const denied = denyUnauthorizedActor(actor);
   if (denied) return denied;
@@ -944,7 +1247,12 @@ export async function getAdminTransactionListPayload(
     status: 200,
     body: TransactionAdminListResponseSchema.parse({
       ok: true,
-      data: await buildTransactionListResult(queryResult.data, now, store),
+      data: await buildTransactionListResult(
+        queryResult.data,
+        now,
+        store,
+        operationStore
+      ),
     }),
   } as const;
 }
@@ -953,12 +1261,18 @@ export async function getAdminTransactionDetailPayload(
   actor: TransactionAdminActor | null | undefined,
   transactionId: string,
   now = new Date().toISOString(),
-  store: PaymentWebhookEventStore = getPaymentWebhookEventStore()
+  store: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
+  operationStore: TransactionOperationStore = getTransactionOperationStore()
 ) {
   const denied = denyUnauthorizedActor(actor);
   if (denied) return denied;
 
-  const detail = await buildTransactionDetail(transactionId, now, store);
+  const detail = await buildTransactionDetail(
+    transactionId,
+    now,
+    store,
+    operationStore
+  );
   if (!detail) {
     return {
       status: 404,
@@ -973,6 +1287,38 @@ export async function getAdminTransactionDetailPayload(
       data: detail,
     }),
   } as const;
+}
+
+export async function updateAdminTransactionActionPayload(
+  actor: TransactionAdminActor | null | undefined,
+  transactionId: string,
+  body: unknown,
+  now = new Date().toISOString(),
+  store: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
+  operationStore: TransactionOperationStore = getTransactionOperationStore()
+) {
+  const denied = denyUnauthorizedActor(
+    actor,
+    TRANSACTION_ADMIN_PERMISSIONS.operate
+  );
+  if (denied) return denied;
+
+  const parsed = TransactionAdminActionRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "交易操作参数不合法"),
+    } as const;
+  }
+
+  return applyAdminTransactionAction({
+    actor: actor as TransactionAdminActor,
+    transactionId,
+    request: parsed.data,
+    now,
+    store,
+    operationStore,
+  });
 }
 
 function queryFromExpress(req: Request) {
@@ -1034,6 +1380,19 @@ export function registerTransactionAdminApi(app: Express) {
       sendJson(res, payload.status, payload.body);
     }
   );
+
+  app.patch(
+    "/api/transactions/admin/transactions/:transactionId/actions",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await updateAdminTransactionActionPayload(
+        session?.user,
+        req.params.transactionId,
+        req.body
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
 }
 
 export function handleTransactionAdminApiRequest(
@@ -1078,6 +1437,28 @@ export function handleTransactionAdminApiRequest(
     })().catch(err => {
       console.error(err instanceof Error ? err.message : "交易详情读取失败");
       sendJson(res, 500, errorPayload("INTERNAL_ERROR", "交易详情读取失败"));
+    });
+    return true;
+  }
+
+  const actionMatch = url.pathname.match(
+    /^\/api\/transactions\/admin\/transactions\/([^/]+)\/actions$/
+  );
+  if (req.method === "PATCH" && actionMatch?.[1]) {
+    void (async () => {
+      const [session, body] = await Promise.all([
+        getLoginSessionFromRequest(req),
+        readRequestBody(req),
+      ]);
+      const payload = await updateAdminTransactionActionPayload(
+        session?.user,
+        decodeURIComponent(actionMatch[1]),
+        body
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "交易操作失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "交易操作失败"));
     });
     return true;
   }

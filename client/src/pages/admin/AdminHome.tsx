@@ -41,7 +41,8 @@ const implementationRows = [
   ["M4-A", "订单只读台", "已完成", "课程、咨询和会员订单的统一只读视图"],
   ["M4-B", "订单状态动作", "已完成", "待支付关闭、异常标记和操作审计"],
   ["M5-A", "交易流水只读台", "已完成", "支付/退款流水、回调状态和异常摘要"],
-  ["M5-B", "退款申请动作", "下一步", "退款申请、异常工单和操作审计"],
+  ["M5-B", "退款申请动作", "已完成", "退款申请、异常工单和操作审计"],
+  ["M5-C", "交易操作数据库化", "下一步", "PostgreSQL Store 和渠道适配接口"],
 ] as const;
 
 const overviewMetrics: {
@@ -50,7 +51,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "M5-B", icon: GitBranch },
+  { label: "下一阶段", value: "M5-C", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -74,7 +75,7 @@ export default function AdminHome() {
             业务运营总览
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            当前后台已接入咨询运营、支付对账、课程商品、用户会员、订单管理和交易流水，后续按退款动作、财务和风险复核逐步扩展。
+            当前后台已接入咨询运营、支付对账、课程商品、用户会员、订单管理和交易退款动作，后续按交易数据库化、财务和风险复核逐步扩展。
           </p>
         </div>
         <button
@@ -188,7 +189,7 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经进入 M5-B 退款申请与异常工单准备。
+              当前连续执行状态已经进入 M5-C 交易操作数据库化准备。
             </p>
           </div>
           <div className="overflow-x-auto">

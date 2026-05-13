@@ -7,15 +7,20 @@ import {
   ArrowUpRight,
   BadgeCheck,
   CalendarDays,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  ClipboardCheck,
   CreditCard,
   FileWarning,
   Flag,
+  History,
   Loader2,
   RefreshCw,
   Search,
+  Send,
+  ShieldAlert,
   ShieldCheck,
   WalletCards,
   type LucideIcon,
@@ -35,11 +40,15 @@ import {
   type PaymentChannel,
   type PaymentWebhookReceiptStatus,
   type PurchasableType,
+  type TransactionAdminAction,
+  type TransactionAdminActionRequest,
+  type TransactionAdminAuditEvent,
   type TransactionAdminDetail,
   type TransactionAdminFlowType,
   type TransactionAdminListItem,
   type TransactionAdminListQuery,
   type TransactionAdminSeverity,
+  type TransactionAdminWorkOrder,
 } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpTransactionAdminRepository } from "@/features/transactions";
@@ -66,6 +75,22 @@ const severityCopy = {
   warning: "关注",
   critical: "异常",
 } satisfies Record<TransactionAdminSeverity, string>;
+
+const exceptionSeverityCopy = {
+  warning: "关注",
+  critical: "严重",
+} satisfies Record<TransactionAdminWorkOrder["severity"], string>;
+
+const workOrderStatusCopy = {
+  open: "处理中",
+  resolved: "已处理",
+} satisfies Record<TransactionAdminWorkOrder["status"], string>;
+
+const transactionActionCopy = {
+  request_refund: "申请退款",
+  mark_exception: "标记异常",
+  resolve_exception: "解决异常",
+} satisfies Record<TransactionAdminAction, string>;
 
 const orderStatusCopy = {
   created: "已创建",
@@ -209,8 +234,7 @@ function TransactionRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const FlowIcon =
-    transaction.type === "refund" ? ArrowDownLeft : ArrowUpRight;
+  const FlowIcon = transaction.type === "refund" ? ArrowDownLeft : ArrowUpRight;
 
   return (
     <button
@@ -244,6 +268,12 @@ function TransactionRow({
                 <Flag className="h-3 w-3" />
                 {severityCopy[transaction.severity]} ·{" "}
                 {transaction.issues.length} 项
+              </span>
+            ) : null}
+            {transaction.workOrder?.status === "open" ? (
+              <span className="ml-1 mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-[#FFF7E5] px-2 py-0.5 text-[11px] font-semibold text-[#8F6B1C]">
+                <ClipboardCheck className="h-3 w-3" />
+                工单处理中
               </span>
             ) : null}
           </span>
@@ -291,14 +321,291 @@ function TransactionRow({
   );
 }
 
+function activeWorkOrder(transaction: TransactionAdminListItem) {
+  return transaction.workOrder?.status === "open"
+    ? transaction.workOrder
+    : undefined;
+}
+
+function actionIcon(action: TransactionAdminAction) {
+  if (action === "request_refund") return Send;
+  if (action === "resolve_exception") return CheckCircle2;
+  return ShieldAlert;
+}
+
+function availableTransactionActions(detail: TransactionAdminDetail) {
+  const transaction = detail.transaction;
+  const openWorkOrder = activeWorkOrder(transaction);
+  const actions: Array<{
+    value: TransactionAdminAction;
+    label: string;
+    icon: LucideIcon;
+  }> = [];
+
+  const canRequestRefund =
+    transaction.type === "payment" &&
+    transaction.status === "processed" &&
+    detail.relatedOrder?.status === "paid" &&
+    transaction.severity === "ok" &&
+    !openWorkOrder;
+
+  if (canRequestRefund) {
+    actions.push({
+      value: "request_refund",
+      label: transactionActionCopy.request_refund,
+      icon: actionIcon("request_refund"),
+    });
+  }
+
+  if (openWorkOrder) {
+    actions.push({
+      value: "resolve_exception",
+      label: transactionActionCopy.resolve_exception,
+      icon: actionIcon("resolve_exception"),
+    });
+  } else {
+    actions.push({
+      value: "mark_exception",
+      label: transactionActionCopy.mark_exception,
+      icon: actionIcon("mark_exception"),
+    });
+  }
+
+  return actions;
+}
+
+function TransactionActionPanel({
+  detail,
+  canOperate,
+  submitting,
+  error,
+  onSubmitAction,
+}: {
+  detail: TransactionAdminDetail;
+  canOperate: boolean;
+  submitting: boolean;
+  error?: string;
+  onSubmitAction: (request: TransactionAdminActionRequest) => Promise<boolean>;
+}) {
+  const actions = useMemo(() => availableTransactionActions(detail), [detail]);
+  const [action, setAction] = useState<TransactionAdminAction>(
+    actions[0]?.value ?? "mark_exception"
+  );
+  const [severity, setSeverity] =
+    useState<TransactionAdminWorkOrder["severity"]>("warning");
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    if (!actions.some(item => item.value === action)) {
+      setAction(actions[0]?.value ?? "mark_exception");
+    }
+  }, [action, actions]);
+
+  const selected = actions.find(item => item.value === action) ?? actions[0];
+  const SelectedIcon = selected ? selected.icon : ClipboardCheck;
+  const reasonReady = reason.trim().length >= 4;
+  const disabled = !canOperate || !selected || submitting || !reasonReady;
+
+  async function submitAction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected || disabled) return;
+
+    const request: TransactionAdminActionRequest =
+      action === "mark_exception"
+        ? {
+            action,
+            severity,
+            reason: reason.trim(),
+          }
+        : {
+            action,
+            reason: reason.trim(),
+          };
+
+    const ok = await onSubmitAction(request);
+    if (ok) setReason("");
+  }
+
+  return (
+    <form onSubmit={submitAction} className="space-y-3">
+      <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2">
+        <select
+          value={action}
+          onChange={event =>
+            setAction(event.target.value as TransactionAdminAction)
+          }
+          disabled={!canOperate || submitting}
+          className="h-10 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15 disabled:cursor-not-allowed disabled:opacity-55"
+        >
+          {actions.map(item => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+
+        {action === "mark_exception" ? (
+          <select
+            value={severity}
+            onChange={event =>
+              setSeverity(
+                event.target.value as TransactionAdminWorkOrder["severity"]
+              )
+            }
+            disabled={!canOperate || submitting}
+            className="h-10 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15 disabled:cursor-not-allowed disabled:opacity-55"
+          >
+            <option value="warning">{exceptionSeverityCopy.warning}</option>
+            <option value="critical">{exceptionSeverityCopy.critical}</option>
+          </select>
+        ) : (
+          <span className="inline-flex h-10 items-center justify-center rounded-lg bg-[#EEF2F7] px-3 text-xs font-semibold text-[#536783]">
+            {selected?.label ?? "操作"}
+          </span>
+        )}
+      </div>
+
+      <textarea
+        value={reason}
+        onChange={event => setReason(event.target.value)}
+        rows={3}
+        disabled={!canOperate || submitting}
+        placeholder="处理原因"
+        className="w-full resize-none rounded-lg border border-[#DCCDBB] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition placeholder:text-[#A99B8C] focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15 disabled:cursor-not-allowed disabled:opacity-55"
+      />
+
+      {error ? (
+        <p className="rounded-lg bg-[#FFF0EA] px-3 py-2 text-sm leading-6 text-[#AD503A]">
+          {error}
+        </p>
+      ) : null}
+
+      {!canOperate ? (
+        <p className="rounded-lg bg-[#F8F3EA] px-3 py-2 text-sm leading-6 text-[#8A8176]">
+          当前账号暂无交易后台操作权限。
+        </p>
+      ) : null}
+
+      <button
+        disabled={disabled}
+        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-55"
+      >
+        {submitting ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <SelectedIcon className="h-4 w-4" />
+        )}
+        {selected?.label ?? "提交"}
+      </button>
+    </form>
+  );
+}
+
+function TransactionWorkOrderCard({
+  workOrder,
+}: {
+  workOrder?: TransactionAdminWorkOrder;
+}) {
+  if (!workOrder) {
+    return (
+      <p className="inline-flex items-center gap-2 text-sm text-[#527266]">
+        <BadgeCheck className="h-4 w-4" />
+        暂无交易异常工单
+      </p>
+    );
+  }
+
+  return (
+    <div className="rounded-lg bg-[#F8F3EA] px-3 py-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold text-[#243B35]">
+          {workOrderStatusCopy[workOrder.status]}
+        </span>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+            workOrder.severity === "critical"
+              ? "bg-[#FBEAE7] text-[#9B3B2F]"
+              : "bg-[#FFF7E5] text-[#8F6B1C]"
+          }`}
+        >
+          {exceptionSeverityCopy[workOrder.severity]}
+        </span>
+      </div>
+      <p className="mt-2 leading-6 text-[#5F6B64]">{workOrder.reason}</p>
+      <p className="mt-2 text-xs text-[#8A8176]">
+        {formatDate(workOrder.markedAt)}
+        {workOrder.resolvedAt ? ` · ${formatDate(workOrder.resolvedAt)}` : ""}
+      </p>
+      {workOrder.resolution ? (
+        <p className="mt-2 rounded-lg bg-white px-3 py-2 leading-6 text-[#527266]">
+          {workOrder.resolution}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function TransactionAuditList({
+  events,
+}: {
+  events: TransactionAdminAuditEvent[];
+}) {
+  if (!events.length) {
+    return (
+      <p className="inline-flex items-center gap-2 text-sm text-[#8A8176]">
+        <History className="h-4 w-4" />
+        暂无交易操作记录
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {events.map(event => (
+        <div
+          key={event.id}
+          className="rounded-lg border border-[#E8DED0] bg-white px-3 py-3 text-sm"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-semibold text-[#243B35]">
+              {transactionActionCopy[event.action]}
+            </span>
+            <span className="text-xs text-[#8A8176]">
+              {formatDate(event.createdAt)}
+            </span>
+          </div>
+          <p className="mt-2 leading-6 text-[#5F6B64]">{event.reason}</p>
+          <p className="mt-2 text-xs text-[#8A8176]">
+            {event.before.orderStatus
+              ? orderStatusCopy[event.before.orderStatus]
+              : "未匹配订单"}
+            {" -> "}
+            {event.after.orderStatus
+              ? orderStatusCopy[event.after.orderStatus]
+              : "未匹配订单"}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TransactionDetailPanel({
   detail,
   loading,
   error,
+  canOperate,
+  actionSubmitting,
+  actionError,
+  onSubmitAction,
 }: {
   detail?: TransactionAdminDetail;
   loading: boolean;
   error?: string;
+  canOperate: boolean;
+  actionSubmitting: boolean;
+  actionError?: string;
+  onSubmitAction: (request: TransactionAdminActionRequest) => Promise<boolean>;
 }) {
   if (loading) {
     return (
@@ -451,9 +758,7 @@ function TransactionDetailPanel({
             ))}
           </div>
         ) : (
-          <p className="text-sm leading-6 text-[#8A8176]">
-            暂无关联业务对象。
-          </p>
+          <p className="text-sm leading-6 text-[#8A8176]">暂无关联业务对象。</p>
         )}
       </DetailSection>
 
@@ -481,10 +786,31 @@ function TransactionDetailPanel({
         )}
       </DetailSection>
 
+      <DetailSection title="交易操作">
+        <TransactionActionPanel
+          detail={detail}
+          canOperate={canOperate}
+          submitting={actionSubmitting}
+          error={actionError}
+          onSubmitAction={onSubmitAction}
+        />
+      </DetailSection>
+
+      <DetailSection title="异常工单">
+        <TransactionWorkOrderCard workOrder={transaction.workOrder} />
+      </DetailSection>
+
+      <DetailSection title="操作审计">
+        <TransactionAuditList events={detail.auditEvents} />
+      </DetailSection>
+
       <DetailSection title="处理时间线">
         <div className="space-y-3">
           {detail.timeline.map(event => (
-            <div key={`${event.type}_${event.occurredAt}`} className="flex gap-3">
+            <div
+              key={`${event.type}_${event.occurredAt}`}
+              className="flex gap-3"
+            >
               <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#6F8F83]" />
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-[#243B35]">
@@ -511,6 +837,9 @@ export default function TransactionManagement() {
   const canRead = Boolean(
     user && userCan(user, TRANSACTION_ADMIN_PERMISSIONS.read)
   );
+  const canOperate = Boolean(
+    user && userCan(user, TRANSACTION_ADMIN_PERMISSIONS.operate)
+  );
   const [query, setQuery] = useState<TransactionAdminListQuery>({
     keyword: "",
     type: ALL_TRANSACTION_ADMIN_TYPE,
@@ -529,6 +858,8 @@ export default function TransactionManagement() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [detailError, setDetailError] = useState<string>();
+  const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [actionError, setActionError] = useState<string>();
 
   const loadTransactions = useCallback(async () => {
     if (!canRead) return undefined;
@@ -604,6 +935,32 @@ export default function TransactionManagement() {
     event.preventDefault();
     updateQuery({ keyword: keywordDraft.trim() });
   }
+
+  const submitTransactionAction = useCallback(
+    async (request: TransactionAdminActionRequest) => {
+      if (!selectedTransactionId) return false;
+
+      setActionSubmitting(true);
+      setActionError(undefined);
+      try {
+        const result = await httpTransactionAdminRepository.updateTransaction(
+          selectedTransactionId,
+          request
+        );
+        setDetail(result.detail);
+        await loadTransactions();
+        return true;
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "交易操作暂时不可用"
+        );
+        return false;
+      } finally {
+        setActionSubmitting(false);
+      }
+    },
+    [loadTransactions, selectedTransactionId]
+  );
 
   if (!canRead) {
     return (
@@ -696,7 +1053,7 @@ export default function TransactionManagement() {
       <section className="mt-6 rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-4 shadow-sm shadow-[#243B35]/5">
         <form
           onSubmit={submitSearch}
-          className="grid gap-3 xl:grid-cols-[minmax(220px,1fr)_120px_140px_140px_140px_140px_140px_150px_auto]"
+          className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_repeat(4,minmax(120px,140px))]"
         >
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9A8F82]" />
@@ -726,8 +1083,8 @@ export default function TransactionManagement() {
             value={query.status}
             onChange={event =>
               updateQuery({
-                status:
-                  event.target.value as TransactionAdminListQuery["status"],
+                status: event.target
+                  .value as TransactionAdminListQuery["status"],
               })
             }
             className="h-10 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
@@ -744,8 +1101,8 @@ export default function TransactionManagement() {
             value={query.channel}
             onChange={event =>
               updateQuery({
-                channel:
-                  event.target.value as TransactionAdminListQuery["channel"],
+                channel: event.target
+                  .value as TransactionAdminListQuery["channel"],
               })
             }
             className="h-10 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
@@ -762,8 +1119,8 @@ export default function TransactionManagement() {
             value={query.itemType}
             onChange={event =>
               updateQuery({
-                itemType:
-                  event.target.value as TransactionAdminListQuery["itemType"],
+                itemType: event.target
+                  .value as TransactionAdminListQuery["itemType"],
               })
             }
             className="h-10 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
@@ -902,6 +1259,10 @@ export default function TransactionManagement() {
             detail={detail}
             loading={detailLoading}
             error={detailError}
+            canOperate={canOperate}
+            actionSubmitting={actionSubmitting}
+            actionError={actionError}
+            onSubmitAction={submitTransactionAction}
           />
         </aside>
       </section>

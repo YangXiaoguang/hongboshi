@@ -1,11 +1,15 @@
 import {
   ApiResponseSchema,
+  TransactionAdminActionRequestSchema,
   TransactionAdminDetailSchema,
   TransactionAdminListQuerySchema,
   TransactionAdminListResultSchema,
+  TransactionAdminMutationResultSchema,
+  type TransactionAdminActionRequest,
   type TransactionAdminDetail,
   type TransactionAdminListQuery,
   type TransactionAdminListResult,
+  type TransactionAdminMutationResult,
 } from "@shared/domain";
 
 const TransactionAdminListResponseSchema = ApiResponseSchema(
@@ -13,6 +17,9 @@ const TransactionAdminListResponseSchema = ApiResponseSchema(
 );
 const TransactionAdminDetailResponseSchema = ApiResponseSchema(
   TransactionAdminDetailSchema
+);
+const TransactionAdminMutationResponseSchema = ApiResponseSchema(
+  TransactionAdminMutationResultSchema
 );
 const API_BASE = "/api/transactions/admin";
 
@@ -40,6 +47,14 @@ export function parseTransactionAdminDetailResponse(
   return parsed.data;
 }
 
+export function parseTransactionAdminMutationResponse(
+  payload: unknown
+): TransactionAdminMutationResult {
+  const parsed = TransactionAdminMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = TransactionAdminListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -49,6 +64,12 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   const detailParsed = TransactionAdminDetailResponseSchema.safeParse(payload);
   if (detailParsed.success && !detailParsed.data.ok) {
     return detailParsed.data.error.message;
+  }
+
+  const mutationParsed =
+    TransactionAdminMutationResponseSchema.safeParse(payload);
+  if (mutationParsed.success && !mutationParsed.data.ok) {
+    return mutationParsed.data.error.message;
   }
 
   return fallback;
@@ -106,5 +127,30 @@ export const httpTransactionAdminRepository = {
       throw new Error(extractErrorMessage(payload, "交易详情暂时不可用"));
     }
     return parseTransactionAdminDetailResponse(payload);
+  },
+
+  async updateTransaction(
+    transactionId: string,
+    request: TransactionAdminActionRequest
+  ): Promise<TransactionAdminMutationResult> {
+    const normalized = TransactionAdminActionRequestSchema.parse(request);
+    const response = await fetch(
+      `${API_BASE}/transactions/${encodeURIComponent(transactionId)}/actions`,
+      {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify(normalized),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "交易操作暂时不可用"));
+    }
+    return parseTransactionAdminMutationResponse(payload);
   },
 };

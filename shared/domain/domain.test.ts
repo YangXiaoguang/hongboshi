@@ -18,6 +18,7 @@ import {
   PaymentReconciliationConsoleSchema,
   TransactionAdminDetailSchema,
   TransactionAdminListResultSchema,
+  TransactionAdminMutationResultSchema,
   requestOrderRefund,
   upsertCourseAccessOrder,
   UserProfileSchema,
@@ -113,11 +114,13 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["member"] }, "order:read")).toBe(false);
     expect(userCan({ roles: ["member"] }, "order:operate")).toBe(false);
     expect(userCan({ roles: ["member"] }, "transaction:read")).toBe(false);
+    expect(userCan({ roles: ["member"] }, "transaction:operate")).toBe(false);
     expect(userCan({ roles: ["operator"] }, "user:read")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "user:membership")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "order:read")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "order:operate")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "transaction:read")).toBe(true);
+    expect(userCan({ roles: ["operator"] }, "transaction:operate")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "admin:manage")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "catalog:publish")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "user:read")).toBe(true);
@@ -125,6 +128,7 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["admin"] }, "order:read")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "order:operate")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "transaction:read")).toBe(true);
+    expect(userCan({ roles: ["admin"] }, "transaction:operate")).toBe(true);
   });
 
   it("captures consent records in login sessions", () => {
@@ -400,6 +404,63 @@ describe("domain contracts", () => {
         },
         privacyNotice: "交易后台仅展示对账和履约排障必要信息。",
         generatedAt: "2026-05-10T08:11:00.000Z",
+      }).success
+    ).toBe(true);
+
+    const auditEvent = {
+      id: "transaction_audit_1",
+      transactionId: "evt_payment_1",
+      orderId: "order_counseling_appointment_1",
+      userId: "user_1",
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      action: "request_refund",
+      reason: "用户提交退款申请",
+      before: {
+        orderStatus: "paid",
+      },
+      after: {
+        orderStatus: "refunding",
+      },
+      createdAt: "2026-05-10T08:12:00.000Z",
+    };
+
+    expect(
+      TransactionAdminMutationResultSchema.safeParse({
+        detail: {
+          transaction: {
+            ...transaction,
+            relatedOrder: {
+              ...transaction.relatedOrder,
+              status: "refunding",
+            },
+          },
+          relatedOrder: {
+            ...transaction.relatedOrder,
+            status: "refunding",
+          },
+          businessObjects: transaction.businessObjects,
+          timeline: [],
+          receipt: {
+            id: "evt_payment_1",
+            type: "payment.succeeded",
+            orderId: "order_counseling_appointment_1",
+            channel: "manual",
+            status: "processed",
+            amount: 399,
+            transactionId: "tx_1",
+            occurredAt: "2026-05-10T08:10:00.000Z",
+            receivedAt: "2026-05-10T08:10:01.000Z",
+            processedAt: "2026-05-10T08:10:02.000Z",
+            responseStatus: 200,
+          },
+          auditEvents: [auditEvent],
+          privacyNotice: "交易后台仅展示对账和履约排障必要信息。",
+          generatedAt: "2026-05-10T08:12:00.000Z",
+        },
+        auditEvent,
+        auditEvents: [auditEvent],
+        serverTime: "2026-05-10T08:12:00.000Z",
       }).success
     ).toBe(true);
   });

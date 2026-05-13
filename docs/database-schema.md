@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计和订单操作审计均已完成开发期 Store、专用 PostgreSQL 表与 Store。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计和订单操作审计均已完成开发期 Store、专用 PostgreSQL 表与 Store。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-B 交易退款动作新增独立 `TransactionOperationStore`，开发期先使用内存/JSON 文件保存交易异常工单和操作审计，M5-C 再补 PostgreSQL 表与 Store。
 
 ## 文件位置
 
@@ -22,7 +22,7 @@
 ## 初始化命令
 
 1. 配置 `DATABASE_URL`。
-2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_COURSE_PRODUCT_STORE`、`HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE` 设置为 `postgres`。
+2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_COURSE_PRODUCT_STORE`、`HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE` 设置为 `postgres`。`HONGBOSHI_TRANSACTION_OPERATION_STORE` 当前支持 `file` 和 `memory`，PostgreSQL 支持进入 M5-C。
 3. 运行 `pnpm db:doctor` 检查 Store 配置与数据库连接。
 4. 运行 `pnpm db:migrate` 应用 `server/db/migrations/*.sql`。
 
@@ -38,7 +38,7 @@
 - 咨询时段和预约单分表，`uniq_active_counseling_slot` 防止同一时段被多个有效预约占用；咨询预约通过 `order_id` 关联 `orders`，用于支付确认、超时关闭和后续退款流转。
 - 风险事件独立建表，测评报告和咨询预约通过 `risk_event_id` 关联，咨询预约同时保留 `assessment_report_id`，方便咨询师在服务前回看用户授权带入的测评上下文。
 - 审计日志只追加，不作为业务状态来源；咨询运营审计单独保留规则快照、履约状态前后值和操作者角色，会员操作审计保留前后会员状态、订单操作审计保留订单状态和异常标记前后快照、操作原因和操作者角色，便于后台追溯。
-- 交易流水只读台不新增业务状态来源；支付/退款流水以 `payment_webhook_events` 为准，订单和业务对象状态分别来自订单、课程权益和咨询预约 Store。后续退款申请或异常工单动作进入 M5-B 时再新增专门表和审计事件。
+- 交易流水以 `payment_webhook_events` 为准，订单和业务对象状态分别来自订单、课程权益和咨询预约 Store。交易退款动作的开发期状态来源是 `TransactionOperationStore`，默认 JSON 文件为 `.hongboshi-data/transaction-operations.json`，保存交易异常工单和交易操作审计；PostgreSQL 表将在 M5-C 独立落地。
 
 ## 初始核心表
 
@@ -53,7 +53,7 @@
 ## 后续接入顺序
 
 1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
-2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、课程商品、课程商品详情内容、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，且已能支撑用户会员后台、统一订单后台和交易流水只读台聚合；后续接入 ORM/迁移工具统一管理。
+2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、课程商品、课程商品详情内容、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，且已能支撑用户会员后台、统一订单后台和交易流水聚合；下一步优先补齐交易操作工单与审计的 PostgreSQL Store。
 3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
 4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
 5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。
@@ -74,6 +74,8 @@
 
 `server/modules/payments/postgresPaymentWebhookEventStore.ts` 已实现支付回调事件的登记、重复事件读取、处理结果保存和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_PAYMENT_WEBHOOK_STORE=postgres` 时，支付回调收据会写入 PostgreSQL，避免服务重启后重复处理同一支付事件。
 
+`server/modules/transactions/transactionOperationStore.ts` 已实现交易异常工单和交易操作审计的内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/transaction-operations.json` 保存退款申请、异常标记、异常解决等交易后台动作产生的工单和审计事件；当设置 `HONGBOSHI_TRANSACTION_OPERATION_STORE=memory` 时可临时切回内存。PostgreSQL Store 将在 M5-C 补齐。
+
 `server/modules/catalog/courseProductStore.ts` 已实现课程商品内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/course-products.json` 保存课程商品状态、价格和审计事件；当设置 `HONGBOSHI_COURSE_PRODUCT_STORE=memory` 时可临时切回内存。
 
 `server/modules/catalog/postgresCourseProductStore.ts` 已实现 `course_products` 与 `course_product_audit_events` 的保存、读取、初始化 seed、基础信息/价格/审核/状态更新承载和审计事件读取能力。当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 时，课程商品会写入 PostgreSQL。
@@ -82,4 +84,4 @@
 
 `server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节和素材占位；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
 
-当前实现已覆盖登录会话、课程权益、会员操作审计、订单异常标记、订单操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作、`/admin/orders` 统一订单聚合及受控订单动作，以及 `/admin/transactions` 交易流水只读聚合。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+当前实现已覆盖登录会话、课程权益、会员操作审计、订单异常标记、订单操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作、`/admin/orders` 统一订单聚合及受控订单动作，以及 `/admin/transactions` 交易流水聚合、退款申请和异常工单动作。交易操作当前仍是 JSON/内存 Store，下一步补齐 PostgreSQL 版；这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

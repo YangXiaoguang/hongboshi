@@ -80,6 +80,13 @@ export const persistenceStoreSpecs = [
     autoPostgresWithDatabaseUrl: true,
     supportedModes: ["memory", "postgres"],
   },
+  {
+    envName: "HONGBOSHI_TRANSACTION_OPERATION_STORE",
+    label: "交易操作工单与审计",
+    fallbackMode: "file",
+    autoPostgresWithDatabaseUrl: false,
+    supportedModes: ["memory", "file"],
+  },
 ] as const satisfies readonly PersistenceStoreSpec[];
 
 function normalizeRawMode(value: string | undefined) {

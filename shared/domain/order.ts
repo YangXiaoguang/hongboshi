@@ -359,12 +359,82 @@ export const TransactionAdminIssueCodeSchema = z.enum([
   "refund_order_not_completed",
   "refund_business_not_completed",
   "order_exception_open",
+  "transaction_work_order_open",
 ]);
 
 export const TransactionAdminIssueSchema = z.object({
   code: TransactionAdminIssueCodeSchema,
   severity: TransactionAdminSeveritySchema.exclude(["ok"]),
   message: z.string().min(1),
+});
+
+export const TransactionAdminActionReasonSchema = z
+  .string()
+  .trim()
+  .min(4)
+  .max(240);
+
+export const TransactionAdminWorkOrderStatusSchema = z.enum([
+  "open",
+  "resolved",
+]);
+
+export const TransactionAdminActionSchema = z.enum([
+  "request_refund",
+  "mark_exception",
+  "resolve_exception",
+]);
+
+export const TransactionAdminActionRequestSchema = z.discriminatedUnion(
+  "action",
+  [
+    z.object({
+      action: z.literal("request_refund"),
+      reason: TransactionAdminActionReasonSchema,
+    }),
+    z.object({
+      action: z.literal("mark_exception"),
+      severity: OrderAdminExceptionSeveritySchema.default("warning"),
+      reason: TransactionAdminActionReasonSchema,
+    }),
+    z.object({
+      action: z.literal("resolve_exception"),
+      reason: TransactionAdminActionReasonSchema,
+    }),
+  ]
+);
+
+export const TransactionAdminWorkOrderSchema = z.object({
+  id: EntityIdSchema,
+  transactionId: EntityIdSchema,
+  orderId: EntityIdSchema,
+  status: TransactionAdminWorkOrderStatusSchema,
+  severity: OrderAdminExceptionSeveritySchema,
+  reason: TransactionAdminActionReasonSchema,
+  markedBy: EntityIdSchema,
+  markedAt: DateTimeLikeSchema,
+  resolvedBy: EntityIdSchema.optional(),
+  resolvedAt: DateTimeLikeSchema.optional(),
+  resolution: TransactionAdminActionReasonSchema.optional(),
+});
+
+export const TransactionAdminAuditSnapshotSchema = z.object({
+  orderStatus: OrderStatusSchema.optional(),
+  workOrder: TransactionAdminWorkOrderSchema.optional(),
+});
+
+export const TransactionAdminAuditEventSchema = z.object({
+  id: EntityIdSchema,
+  transactionId: EntityIdSchema,
+  orderId: EntityIdSchema,
+  userId: EntityIdSchema,
+  actorId: EntityIdSchema,
+  actorRoles: z.array(z.string().min(1)).min(1),
+  action: TransactionAdminActionSchema,
+  reason: TransactionAdminActionReasonSchema,
+  before: TransactionAdminAuditSnapshotSchema,
+  after: TransactionAdminAuditSnapshotSchema,
+  createdAt: DateTimeLikeSchema,
 });
 
 export const TransactionAdminListItemSchema = z.object({
@@ -386,6 +456,7 @@ export const TransactionAdminListItemSchema = z.object({
   businessObjects: z.array(TransactionAdminBusinessObjectSchema).default([]),
   itemTypes: z.array(PurchasableTypeSchema).default([]),
   primaryTitle: z.string().min(1),
+  workOrder: TransactionAdminWorkOrderSchema.optional(),
   severity: TransactionAdminSeveritySchema,
   issues: z.array(TransactionAdminIssueSchema),
 });
@@ -427,6 +498,7 @@ export const TransactionAdminTimelineEventTypeSchema = z.enum([
   "order_status",
   "business_status",
   "order_exception",
+  "transaction_work_order",
 ]);
 
 export const TransactionAdminTimelineEventSchema = z.object({
@@ -442,8 +514,16 @@ export const TransactionAdminDetailSchema = z.object({
   businessObjects: z.array(TransactionAdminBusinessObjectSchema),
   timeline: z.array(TransactionAdminTimelineEventSchema),
   receipt: PaymentWebhookReceiptSnapshotSchema,
+  auditEvents: z.array(TransactionAdminAuditEventSchema).default([]),
   privacyNotice: z.string().min(1),
   generatedAt: DateTimeLikeSchema,
+});
+
+export const TransactionAdminMutationResultSchema = z.object({
+  detail: TransactionAdminDetailSchema,
+  auditEvent: TransactionAdminAuditEventSchema,
+  auditEvents: z.array(TransactionAdminAuditEventSchema),
+  serverTime: DateTimeLikeSchema,
 });
 
 export const OrderAdminActionSchema = z.enum([
@@ -872,8 +952,27 @@ export type TransactionAdminSeverity = z.infer<
 export type TransactionAdminIssueCode = z.infer<
   typeof TransactionAdminIssueCodeSchema
 >;
-export type TransactionAdminIssue = z.infer<
-  typeof TransactionAdminIssueSchema
+export type TransactionAdminIssue = z.infer<typeof TransactionAdminIssueSchema>;
+export type TransactionAdminActionReason = z.infer<
+  typeof TransactionAdminActionReasonSchema
+>;
+export type TransactionAdminWorkOrderStatus = z.infer<
+  typeof TransactionAdminWorkOrderStatusSchema
+>;
+export type TransactionAdminAction = z.infer<
+  typeof TransactionAdminActionSchema
+>;
+export type TransactionAdminActionRequest = z.infer<
+  typeof TransactionAdminActionRequestSchema
+>;
+export type TransactionAdminWorkOrder = z.infer<
+  typeof TransactionAdminWorkOrderSchema
+>;
+export type TransactionAdminAuditSnapshot = z.infer<
+  typeof TransactionAdminAuditSnapshotSchema
+>;
+export type TransactionAdminAuditEvent = z.infer<
+  typeof TransactionAdminAuditEventSchema
 >;
 export type TransactionAdminListItem = z.infer<
   typeof TransactionAdminListItemSchema
@@ -895,6 +994,9 @@ export type TransactionAdminTimelineEvent = z.infer<
 >;
 export type TransactionAdminDetail = z.infer<
   typeof TransactionAdminDetailSchema
+>;
+export type TransactionAdminMutationResult = z.infer<
+  typeof TransactionAdminMutationResultSchema
 >;
 export type OrderAdminAction = z.infer<typeof OrderAdminActionSchema>;
 export type OrderAdminActionRequest = z.infer<

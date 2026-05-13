@@ -29,7 +29,13 @@ import {
 import {
   getAdminTransactionDetailPayload,
   getAdminTransactionListPayload,
+  updateAdminTransactionActionPayload,
 } from "./transactionAdminApi";
+import {
+  InMemoryTransactionOperationStore,
+  setTransactionOperationStore,
+  type TransactionOperationStore,
+} from "./transactionOperationStore";
 
 const operator = { id: "operator_1", roles: ["operator" as const] };
 const member = { id: "member_1", roles: ["member" as const] };
@@ -39,17 +45,20 @@ let authStore: AuthSessionStore;
 let courseAccessStore: CourseAccessStore;
 let counselingStore: CounselingAppointmentStore;
 let paymentStore: PaymentWebhookEventStore;
+let transactionOperationStore: TransactionOperationStore;
 
 beforeEach(() => {
   authStore = new InMemoryAuthSessionStore();
   courseAccessStore = new InMemoryCourseAccessStore();
   counselingStore = new InMemoryCounselingAppointmentStore(new Date(now));
   paymentStore = new InMemoryPaymentWebhookEventStore();
+  transactionOperationStore = new InMemoryTransactionOperationStore();
 
   setAuthSessionStore(authStore);
   setCourseAccessStore(courseAccessStore);
   setCounselingAppointmentStore(counselingStore);
   setPaymentWebhookEventStore(paymentStore);
+  setTransactionOperationStore(transactionOperationStore);
 });
 
 describe("transaction admin api payloads", () => {
@@ -59,6 +68,35 @@ describe("transaction admin api payloads", () => {
     expect((await getAdminTransactionListPayload(operator, {})).status).toBe(
       200
     );
+  });
+
+  it("requires transaction operate permission for admin actions", async () => {
+    expect(
+      (
+        await updateAdminTransactionActionPayload(
+          null,
+          "evt_payment_order_demo_membership_1",
+          {
+            action: "request_refund",
+            reason: "用户提交退款申请",
+          },
+          now
+        )
+      ).status
+    ).toBe(401);
+    expect(
+      (
+        await updateAdminTransactionActionPayload(
+          member,
+          "evt_payment_order_demo_membership_1",
+          {
+            action: "request_refund",
+            reason: "用户提交退款申请",
+          },
+          now
+        )
+      ).status
+    ).toBe(403);
   });
 
   it("returns development fallback transactions across statuses and flow types", async () => {
@@ -123,6 +161,183 @@ describe("transaction admin api payloads", () => {
       expect(detail.body.data.timeline.map(event => event.type)).toContain(
         "business_status"
       );
+    }
+  });
+
+  it("requests refunds through the order state machine and writes transaction audit", async () => {
+    const payload = await updateAdminTransactionActionPayload(
+      operator,
+      "evt_payment_order_demo_membership_1",
+      {
+        action: "request_refund",
+        reason: "用户提交退款申请并确认权益回收",
+      },
+      "2026-05-12T10:00:00.000Z"
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (payload.body.ok) {
+      expect(payload.body.data.detail.relatedOrder).toMatchObject({
+        id: "order_demo_membership_1",
+        status: "refunding",
+      });
+      expect(payload.body.data.auditEvent).toMatchObject({
+        action: "request_refund",
+        before: { orderStatus: "paid" },
+        after: { orderStatus: "refunding" },
+      });
+      expect(payload.body.data.auditEvents[0]).toMatchObject({
+        action: "request_refund",
+      });
+    }
+
+    const stored = await courseAccessStore.load("u_demo_active_member");
+    expect(stored.orders[0]).toMatchObject({
+      id: "order_demo_membership_1",
+      status: "refunding",
+    });
+  });
+
+  it("rejects refund requests for unsafe transaction states", async () => {
+    const failed = await updateAdminTransactionActionPayload(
+      operator,
+      "evt_payment_order_demo_course_3_failed",
+      {
+        action: "request_refund",
+        reason: "测试失败流水申请退款",
+      },
+      now
+    );
+    expect(failed.status).toBe(409);
+
+    const processing = await updateAdminTransactionActionPayload(
+      operator,
+      "evt_payment_order_counseling_demo_pending",
+      {
+        action: "request_refund",
+        reason: "测试处理中流水申请退款",
+      },
+      now
+    );
+    expect(processing.status).toBe(409);
+
+    const refundFlow = await updateAdminTransactionActionPayload(
+      operator,
+      "evt_refund_order_demo_refund_course_2",
+      {
+        action: "request_refund",
+        reason: "测试退款流水重复申请",
+      },
+      now
+    );
+    expect(refundFlow.status).toBe(409);
+
+    const userId = "u_mismatch_transaction";
+    const order: Order = {
+      id: "order_mismatch_payment_1",
+      userId,
+      status: "paid",
+      items: [
+        {
+          type: "course",
+          targetId: "3",
+          title: "亲密关系沟通课",
+          unitPrice: 199,
+          quantity: 1,
+        },
+      ],
+      subtotal: 199,
+      discountAmount: 0,
+      payableAmount: 199,
+      createdAt: "2026-05-12T09:00:00.000Z",
+      paidAt: "2026-05-12T09:02:00.000Z",
+    };
+    await courseAccessStore.save(
+      userId,
+      CourseAccessStateSchema.parse({
+        ownedCourseIds: [3],
+        membership: { status: "none" },
+        orders: [order],
+      })
+    );
+    const mismatchEvent = {
+      ...createSimulatedPaymentSucceededEvent({
+        order,
+        channel: "manual",
+        now: "2026-05-12T09:02:00.000Z",
+      }),
+      amount: 188,
+    };
+    await paymentStore.begin(mismatchEvent, "2026-05-12T09:02:01.000Z");
+    await paymentStore.markProcessed(
+      mismatchEvent.id,
+      200,
+      { ok: true },
+      "2026-05-12T09:02:02.000Z"
+    );
+
+    const mismatch = await updateAdminTransactionActionPayload(
+      operator,
+      mismatchEvent.id,
+      {
+        action: "request_refund",
+        reason: "测试金额不一致流水申请退款",
+      },
+      now
+    );
+    expect(mismatch.status).toBe(409);
+  });
+
+  it("marks and resolves transaction exception work orders with audit", async () => {
+    const marked = await updateAdminTransactionActionPayload(
+      operator,
+      "evt_payment_order_demo_course_3_failed",
+      {
+        action: "mark_exception",
+        severity: "critical",
+        reason: "课程回调失败后需要人工核查权益发放",
+      },
+      "2026-05-12T10:00:00.000Z"
+    );
+
+    expect(marked.status).toBe(200);
+    expect(marked.body.ok).toBe(true);
+    if (marked.body.ok) {
+      expect(marked.body.data.detail.transaction.workOrder).toMatchObject({
+        status: "open",
+        severity: "critical",
+      });
+      expect(marked.body.data.detail.transaction.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "transaction_work_order_open" }),
+        ])
+      );
+      expect(marked.body.data.auditEvent.after.workOrder).toMatchObject({
+        status: "open",
+      });
+    }
+
+    const resolved = await updateAdminTransactionActionPayload(
+      operator,
+      "evt_payment_order_demo_course_3_failed",
+      {
+        action: "resolve_exception",
+        reason: "人工复核后确认权益已补发完成",
+      },
+      "2026-05-12T10:05:00.000Z"
+    );
+
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.ok).toBe(true);
+    if (resolved.body.ok) {
+      expect(resolved.body.data.detail.transaction.workOrder).toMatchObject({
+        status: "resolved",
+        resolution: "人工复核后确认权益已补发完成",
+      });
+      expect(
+        resolved.body.data.detail.auditEvents.map(event => event.action)
+      ).toEqual(["resolve_exception", "mark_exception"]);
     }
   });
 

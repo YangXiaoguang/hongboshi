@@ -20,6 +20,7 @@ describe("database runtime persistence config", () => {
       HONGBOSHI_COURSE_PRODUCT_STORE: "file",
       HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE: "file",
       HONGBOSHI_RISK_EVENT_STORE: "memory",
+      HONGBOSHI_TRANSACTION_OPERATION_STORE: "file",
     });
     expect(config.issues).toEqual([]);
   });
