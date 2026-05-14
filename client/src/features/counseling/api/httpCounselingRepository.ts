@@ -2,6 +2,9 @@ import {
   ApiResponseSchema,
   CounselingAppointmentActionRequestSchema,
   CounselingAppointmentActionResultSchema,
+  CounselingAdminScheduleActionRequestSchema,
+  CounselingAdminScheduleConsoleSchema,
+  CounselingAdminScheduleMutationResultSchema,
   CounselingAppointmentCreateRequestSchema,
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
@@ -13,6 +16,9 @@ import {
   type CounselingAppointmentAction,
   type CounselingAppointmentActionRequest,
   type CounselingAppointmentActionResult,
+  type CounselingAdminScheduleActionRequest,
+  type CounselingAdminScheduleConsole,
+  type CounselingAdminScheduleMutationResult,
   type CounselingAppointmentCreateRequest,
   type CounselingAppointmentCreateResult,
   type CounselingAppointmentList,
@@ -37,6 +43,12 @@ const CounselingWorkbenchResponseSchema = ApiResponseSchema(
 );
 const CounselingOperationsConsoleResponseSchema = ApiResponseSchema(
   CounselingOperationsConsoleSchema
+);
+const CounselingAdminScheduleConsoleResponseSchema = ApiResponseSchema(
+  CounselingAdminScheduleConsoleSchema
+);
+const CounselingAdminScheduleMutationResponseSchema = ApiResponseSchema(
+  CounselingAdminScheduleMutationResultSchema
 );
 const CounselingCancellationPolicyUpdateResponseSchema = ApiResponseSchema(
   CounselingCancellationPolicyUpdateResultSchema
@@ -104,6 +116,22 @@ export function parseCounselingOperationsConsoleResponse(
   return parsed.data;
 }
 
+export function parseCounselingAdminScheduleConsoleResponse(
+  payload: unknown
+): CounselingAdminScheduleConsole {
+  const parsed = CounselingAdminScheduleConsoleResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCounselingAdminScheduleMutationResponse(
+  payload: unknown
+): CounselingAdminScheduleMutationResult {
+  const parsed = CounselingAdminScheduleMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 export function parseCounselingCancellationPolicyUpdateResponse(
   payload: unknown
 ): CounselingCancellationPolicyUpdateResult {
@@ -145,6 +173,18 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     CounselingOperationsConsoleResponseSchema.safeParse(payload);
   if (operationsParsed.success && !operationsParsed.data.ok) {
     return operationsParsed.data.error.message;
+  }
+
+  const scheduleParsed =
+    CounselingAdminScheduleConsoleResponseSchema.safeParse(payload);
+  if (scheduleParsed.success && !scheduleParsed.data.ok) {
+    return scheduleParsed.data.error.message;
+  }
+
+  const scheduleMutationParsed =
+    CounselingAdminScheduleMutationResponseSchema.safeParse(payload);
+  if (scheduleMutationParsed.success && !scheduleMutationParsed.data.ok) {
+    return scheduleMutationParsed.data.error.message;
   }
 
   const policyParsed =
@@ -213,6 +253,41 @@ export const httpCounselingRepository = {
       throw new Error(extractErrorMessage(payload, "咨询运营配置暂时不可用"));
     }
     return parseCounselingOperationsConsoleResponse(payload);
+  },
+
+  async loadAdminSchedules(): Promise<CounselingAdminScheduleConsole> {
+    const response = await fetch(`${API_BASE}/admin/schedules`, {
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "咨询排班暂时不可用"));
+    }
+    return parseCounselingAdminScheduleConsoleResponse(payload);
+  },
+
+  async updateAdminSchedule(
+    request: CounselingAdminScheduleActionRequest
+  ): Promise<CounselingAdminScheduleMutationResult> {
+    const body = CounselingAdminScheduleActionRequestSchema.parse(request);
+    const response = await fetch(`${API_BASE}/admin/schedules`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "咨询排班暂时无法保存"));
+    }
+    return parseCounselingAdminScheduleMutationResponse(payload);
   },
 
   async updateCancellationPolicy(

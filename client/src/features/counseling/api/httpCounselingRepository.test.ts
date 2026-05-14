@@ -3,6 +3,8 @@ import {
   parseCounselingAppointmentActionResponse,
   parseCounselingAppointmentCreateResponse,
   parseCounselingAppointmentListResponse,
+  parseCounselingAdminScheduleConsoleResponse,
+  parseCounselingAdminScheduleMutationResponse,
   parseCounselingAvailabilityResponse,
   parseCounselingCancellationPolicyUpdateResponse,
   parseCounselingOperationsConsoleResponse,
@@ -242,6 +244,69 @@ describe("http counseling repository parsing", () => {
         },
       }).cancellationPolicy.allowPendingPaymentCancellation
     ).toBe(false);
+  });
+
+  it("parses admin schedule console and mutation responses", () => {
+    const scheduleConsole = {
+      counselors: [
+        {
+          counselor,
+          serviceStatus: "active",
+          nextAvailableAt: slot.startsAt,
+          summary: {
+            availableCount: 1,
+            lockedCount: 0,
+            scheduledCount: 0,
+            closedCount: 1,
+          },
+          slots: [
+            {
+              ...slot,
+              counselorName: counselor.name,
+              status: "available",
+            },
+            {
+              ...slot,
+              id: "slot_closed",
+              counselorName: counselor.name,
+              status: "closed",
+              conflictHint: "该时段已关闭",
+            },
+          ],
+        },
+      ],
+      windowStart: "2026-05-10T00:00:00.000Z",
+      windowEnd: "2026-06-09T00:00:00.000Z",
+      serverTime: "2026-05-10T00:00:00.000Z",
+    };
+    const auditEvent = {
+      id: "audit_schedule_1",
+      action: "schedule_slot_added",
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      counselorId: counselor.id,
+      note: "新增可预约时段 slot_1",
+      createdAt: "2026-05-10T00:00:00.000Z",
+    };
+
+    expect(
+      parseCounselingAdminScheduleConsoleResponse({
+        ok: true,
+        data: scheduleConsole,
+      }).counselors[0]?.serviceStatus
+    ).toBe("active");
+
+    expect(
+      parseCounselingAdminScheduleMutationResponse({
+        ok: true,
+        data: {
+          scheduleConsole,
+          slot: scheduleConsole.counselors[0].slots[0],
+          auditEvent,
+          serverTime: "2026-05-10T00:01:00.000Z",
+        },
+      }).auditEvent?.action
+    ).toBe("schedule_slot_added");
   });
 
   it("throws on error response", () => {

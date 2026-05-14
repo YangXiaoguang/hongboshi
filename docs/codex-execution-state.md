@@ -7,10 +7,10 @@
 - 最后更新时间：2026-05-14 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
-- 最近已知基线提交：上一阶段 `bd2b6dd Add finance admin export foundation`，本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M7-A 咨询排班运营基础`
-- 当前状态：`M6-C 财务账期与手续费规则基础` 已完成，下一轮应进入咨询运营增强，先补咨询师排班与服务状态管理基础。
-- 本轮完成后下一步：执行 `M7-A 咨询排班运营基础`
+- 最近已知基线提交：上一阶段 `ea0be14 Add finance rule foundation`，本轮提交后以 Git 历史最新提交为准
+- 当前阶段：`M7-B 咨询履约异常与服务记录基础`
+- 当前状态：`M7-A 咨询排班运营基础` 已完成，咨询运营页已具备未来排班管理、服务状态、冲突保护和排班审计。
+- 本轮完成后下一步：执行 `M7-B 咨询履约异常与服务记录基础`
 
 ## 已完成关键能力
 
@@ -107,58 +107,63 @@
 - 新增 `/api/finance/admin/rules`，支持读取财务规则、维护渠道手续费规则和基于服务端财务明细生成结算预览。
 - `/admin/finance` 已加入账期与手续费工作区，展示当前规则版本、渠道费率、固定手续费、最低手续费、自然月账期、预计手续费、预计结算金额、退款中金额和异常未结算金额。
 - 结算预览复用财务只读台同一套收入/退款/待退款/异常口径，不修改订单、支付回调或交易状态。
+- 建立咨询排班运营共享契约 `CounselingAdminScheduleConsoleSchema` 和 `CounselingAdminScheduleMutationResultSchema`，统一描述咨询师服务状态、未来时段、可预约/锁定/已预约/已关闭状态和排班动作结果。
+- 新增 `/api/counseling/admin/schedules`，运营/管理员可读取排班控制台、添加可预约时段、关闭未预约时段和恢复已关闭时段。
+- 咨询排班复用 `counselingAppointmentStore` 的 slot 数据，关闭时段表示为 `available=false` 且无活跃预约，避免产生第二套排班真相源。
+- 排班服务端动作会校验时间范围、重叠时段、咨询师存在性和时段状态；锁定或已预约时段不能被关闭或覆盖。
+- `/admin/counseling` 已加入排班管理区，支持新增时段、查看咨询师服务状态、未来排班和冲突提示，并可关闭/恢复可操作时段。
+- 咨询运营审计已扩展 `schedule_slot_added`、`schedule_slot_closed` 和 `schedule_slot_restored`，数据库迁移 `0012_counseling_schedule_audit_actions.sql` 已补充审计动作约束。
 
 ## 最近完成阶段
 
-M6-C 财务账期与手续费规则基础已交付：
+M7-A 咨询排班运营基础已交付：
 
-- `shared/domain/finance.ts`：新增财务账期、渠道手续费规则、规则更新请求、结算预览和规则控制台契约。
-- `shared/domain/user.ts`：新增 `finance:manage` 权限，当前仅 `admin` 拥有规则维护能力。
-- `server/modules/finance/financeRuleStore.ts`：新增财务规则 Store，支持内存与 JSON 文件持久化，并生成中国业务时间自然月账期。
-- `server/modules/finance/financeAdminApi.ts`：新增 `/api/finance/admin/rules` GET/PUT，读取规则、保存规则并复用财务明细生成预计手续费、预计结算金额和异常未结算金额。
-- `client/src/features/finance/api/httpFinanceAdminRepository.ts`：新增 `loadRules` 和 `updateRules` repository，统一解析规则控制台和规则更新响应。
-- `client/src/pages/admin/FinanceManagement.tsx`：新增账期与手续费工作区，支持规则展示、管理员轻量维护和结算预览。
-- `.env.example` 与 `server/db/runtimeConfig.ts`：新增 `HONGBOSHI_FINANCE_RULE_STORE` 和 `HONGBOSHI_FINANCE_RULE_FILE` 配置，当前支持 `memory/file`。
-- README、领域契约、产品路线、后台路线图和本文件同步了财务规则、权限、Store 和后续边界。
+- `shared/domain/counseling.ts`：新增咨询排班控制台、咨询师服务状态、排班时段状态、排班动作请求和排班动作返回契约。
+- `server/modules/counseling/counselingApi.ts`：新增 `/api/counseling/admin/schedules` GET/POST，复用 `admin:manage` 权限和现有咨询预约 slot Store。
+- 排班状态由 slot 可用性和活跃预约派生：`available`、`locked`、`scheduled`、`closed`；关闭时段不新增独立表。
+- 服务端支持新增可预约时段、关闭未预约时段、恢复已关闭时段，并校验时间范围、重叠冲突、咨询师存在性和危险状态覆盖。
+- `CounselingOperationAuditEventSchema` 已扩展排班审计动作，新增数据库迁移 `0012_counseling_schedule_audit_actions.sql`。
+- `client/src/features/counseling/api/httpCounselingRepository.ts`：新增排班控制台和排班动作解析/请求方法。
+- `client/src/pages/CounselingOperations.tsx`：新增排班管理区，展示未来排班、咨询师服务状态、状态汇总、冲突提示和时段操作入口。
+- README、领域契约、数据库说明、产品路线、后台路线图和本文件同步了排班运营边界。
 
-M6-C 验收结果：
+M7-A 验收结果：
 
-- 具备 `finance:read` 的后台账号可以查看当前自然月账期、规则版本、渠道手续费规则和结算预览，普通会员会被拒绝。
-- 仅具备 `finance:manage` 的管理员可以保存手续费规则，运营账号默认只读。
-- 规则配置包含版本、生效时间、渠道费率、固定手续费和最低手续费，开发期可重启恢复。
-- 结算预览来自服务端财务明细和同一套收入/退款口径，不在页面临时计算核心金额。
-- 手续费和结算预览不会修改订单、支付回调或交易状态。
-- 财务只读台、CSV 导出、交易、订单、支付对账后台能力不回退。
-- `pnpm run ci` 已通过。
+- 运营/管理员可以查看咨询师未来排班和服务状态，普通咨询师/会员不可访问后台排班接口。
+- 新增、关闭、恢复时段均由服务端校验；锁定或已预约时段不会被直接关闭或覆盖。
+- 排班动作会记录操作者、咨询师、时段、动作和原因到咨询运营审计。
+- 前台咨询可用时段继续以服务端 slot 状态为准，后台关闭/恢复会影响后续可预约结果。
+- 现有咨询预约、咨询师工作台、咨询运营配置、订单和支付回调能力不回退。
+- `pnpm run ci` 已通过：类型检查、66 个测试文件 / 293 个测试和生产构建均完成。
 
 ## 下一步任务包
 
-### M7-A: 咨询排班运营基础
+### M7-B: 咨询履约异常与服务记录基础
 
 业务目标：
 
-在现有咨询预约、咨询师工作台和咨询运营配置基础上，把咨询师排班从 seed 可用时段升级为可运营的排班管理基础。先让运营能查看咨询师服务状态、排班窗口和时段状态，并可维护可预约时段，为后续咨询师档案、服务记录、履约异常统计和规则版本化打基础。
+在排班可运营之后，补齐咨询服务交付过程的运营视图。运营需要能快速看到已完成、未到访、退款中、待支付过期释放、临近开始仍未确认等履约异常和服务记录，支持客服、咨询师管理和后续财务/风控联动。
 
 实施范围：
 
-- 在 `shared/domain/counseling.ts` 增加咨询师运营排班契约，例如咨询师服务状态、排班时段、可预约/锁定/已预约/停诊状态、排班更新请求和操作结果。
-- 新增或扩展服务端咨询排班 Store/API，优先复用 `server/modules/counseling/counselingAppointmentStore.ts` 的时段数据，必要时新增轻量 Store 保存运营覆盖配置。
-- 新增 `/api/counseling/admin/schedules` 或同等接口，复用 `admin:manage` 或拆分 `counseling:manage` 写权限；读取仍需后台运营权限。
-- 排班维护动作至少支持新增可预约时段、关闭未被预约时段和恢复可预约时段；已被预约或锁定的时段不能被危险覆盖。
-- 前端 `/admin/counseling` 或新 `/admin/counselors` 增加排班管理区，展示咨询师列表、服务状态、未来时段、冲突提示和排班动作入口。
-- 不在本阶段修改咨询师完整资质档案，不做真实日历同步，不处理复杂重复排班模板。
+- 在 `shared/domain/counseling.ts` 增加咨询服务记录和履约异常摘要契约，例如服务记录行、异常类型、筛选条件、汇总指标和返回结果。
+- 新增 `/api/counseling/admin/service-records` 或同等接口，读取现有预约、订单、时段、咨询师、风险事件和运营审计，形成只读履约运营视图。
+- 异常类型至少覆盖：待支付锁定临近/过期、退款中、未到访、已取消待退款、预约开始前临近未确认；不要暴露咨询说明、测评答案或风险信号原文。
+- 可选扩展履约动作请求，允许咨询师/运营在标记完成或未到访时提交非敏感运营备注，写入审计而不是临床记录。
+- 前端 `/admin/counseling` 增加服务记录/异常区，支持按咨询师、状态、异常类型筛选，展示汇总指标和最近异常列表。
+- 不在本阶段做临床咨询记录、会谈笔记、咨询师薪酬结算或复杂质检流程。
 - 更新 README、`docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
-- 增加 shared domain、server API/Store、repository 和页面关键测试。
+- 增加 shared domain、server API、repository 和页面关键测试。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add counseling schedule foundation`。
+- 提交并推送，建议 commit message：`Add counseling service records foundation`。
 
 验收标准：
 
-- 运营/管理员可以查看咨询师未来排班和服务状态，普通会员不可访问后台排班。
-- 新增、关闭、恢复时段均由服务端校验，已预约或锁定时段不会被直接覆盖。
-- 排班动作留下审计或操作记录，至少能追踪操作者、咨询师、时段、动作和原因。
-- 前台咨询可用时段读取继续以服务端状态为准，后台排班变更能影响后续可预约结果。
-- 现有咨询预约、咨询师工作台、咨询运营配置、订单和支付回调能力不回退。
+- 运营/管理员可以查看咨询服务记录和履约异常摘要，普通会员不可访问。
+- 服务记录来自服务端聚合，不在页面临时拼状态；敏感咨询内容继续最小化展示。
+- 异常类型、筛选条件和汇总指标通过共享契约校验。
+- 如新增运营备注，备注必须有权限校验、长度限制和审计记录。
+- 现有排班、预约、工作台、取消规则、订单和支付回调能力不回退。
 - CI 通过。
 
 ## 执行不变量

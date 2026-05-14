@@ -58,7 +58,7 @@ export const adminNavigationItems = [
   {
     key: "counseling",
     title: "咨询运营",
-    description: "取消规则、履约审计和咨询服务运营配置。",
+    description: "排班维护、取消规则、履约审计和咨询服务运营配置。",
     href: "/admin/counseling",
     icon: SlidersHorizontal,
     permission: "admin:manage",

@@ -198,6 +198,7 @@
 - M6-A 已完成：`finance:read` 权限、财务后台共享契约、`/api/finance/admin/overview` 只读聚合、`/admin/finance` 财务页面、后台导航接入和财务口径说明。
 - M6-B 已完成：`FinanceAdminExportSchema`、`/api/finance/admin/export`、CSV 文件元数据、筛选条件快照、导出字段稳定性、前端导出入口和账期/手续费/结算/发票预留字段。
 - M6-C 已完成：`FinanceAdminRuleConfigSchema`、`FinanceRuleStore`、`/api/finance/admin/rules`、`finance:manage` 权限、自然月账期、渠道费率/固定手续费/最低手续费和服务端结算预览。
+- M7-A 已完成：`CounselingAdminScheduleConsoleSchema`、`/api/counseling/admin/schedules`、`/admin/counseling` 排班管理区和排班动作审计，运营可维护可预约时段且不能覆盖锁定/已预约时段。
 
 ## M7: 咨询运营增强
 
@@ -205,16 +206,16 @@
 
 交付内容：
 
-- 咨询师排班管理。
+- 咨询师排班管理。M7-A 已完成基础版：未来 30 天排班、服务状态、新增/关闭/恢复时段和冲突保护。
 - 咨询师资质和服务状态管理。
 - 履约异常、未到访、改期、取消原因统计。
 - 取消规则版本化和灰度配置预留。
 
 验收标准：
 
-- 咨询师服务能力可以被运营配置。
-- 排班变更和规则变更可追溯。
-- 已有关联预约的时段不能被危险修改。
+- 咨询师服务能力可以被运营配置，当前已支持可预约时段维护。
+- 排班变更和规则变更可追溯，当前排班动作进入咨询运营审计。
+- 已有关联预约的时段不能被危险修改，当前服务端会拦截锁定/已预约时段关闭或覆盖。
 
 ## M8: 风险复核台
 

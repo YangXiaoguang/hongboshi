@@ -3,12 +3,14 @@ import {
   createCounselingAppointmentPayload,
   expireOverdueCounselingPayments,
   fulfillCounselingAppointmentPayload,
+  getCounselingAdminSchedulesPayload,
   getCounselingOperationsConsolePayload,
   getCounselingAvailabilityPayload,
   listCounselingAppointmentsPayload,
   listCounselingWorkbenchPayload,
   processCounselingRefundWebhookEvent,
   resetCounselingAppointmentStore,
+  updateCounselingAdminSchedulePayload,
   updateCounselingCancellationPolicyPayload,
   updateCounselingAppointmentPayload,
 } from "./counselingApi";
@@ -420,6 +422,138 @@ describe("counseling api payloads", () => {
         scheduledRefundCutoffMinutesBeforeStart: 120,
         allowPendingPaymentCancellation: false,
       });
+    }
+  });
+
+  it("lets operators manage counselor schedule slots safely", async () => {
+    const forbidden = await getCounselingAdminSchedulesPayload(
+      { id: "counselor_lin", roles: ["counselor"] },
+      fixedNow.toISOString()
+    );
+    expect(forbidden.status).toBe(403);
+
+    const schedules = await getCounselingAdminSchedulesPayload(
+      { id: "operator_1", roles: ["operator"] },
+      fixedNow.toISOString()
+    );
+    expect(schedules.status).toBe(200);
+    if (!schedules.body.ok) throw new Error("expected schedule console");
+
+    const availableSlot = schedules.body.data.counselors
+      .flatMap(schedule => schedule.slots)
+      .find(slot => slot.status === "available");
+    if (!availableSlot) throw new Error("expected available slot");
+
+    const closed = await updateCounselingAdminSchedulePayload(
+      {
+        action: "close_slot",
+        slotId: availableSlot.id,
+        reason: "测试关闭时段",
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:05:00.000Z"
+    );
+    expect(closed.status).toBe(200);
+    if (!closed.body.ok) throw new Error("expected closed schedule slot");
+    expect(closed.body.data.slot.status).toBe("closed");
+    expect(closed.body.data.auditEvent.action).toBe("schedule_slot_closed");
+
+    const unavailable = await createCounselingAppointmentPayload(
+      {
+        counselorId: availableSlot.counselorId,
+        slotId: availableSlot.id,
+        channel: availableSlot.channel,
+        concernTags: ["emotion"],
+        urgency: "this_week",
+      },
+      "user_1",
+      "2026-05-10T00:06:00.000Z"
+    );
+    expect(unavailable.status).toBe(409);
+
+    const restored = await updateCounselingAdminSchedulePayload(
+      {
+        action: "restore_slot",
+        slotId: availableSlot.id,
+        reason: "测试恢复时段",
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:07:00.000Z"
+    );
+    expect(restored.status).toBe(200);
+    if (!restored.body.ok) throw new Error("expected restored schedule slot");
+    expect(restored.body.data.slot.status).toBe("available");
+
+    const locked = await createCounselingAppointmentPayload(
+      {
+        counselorId: availableSlot.counselorId,
+        slotId: availableSlot.id,
+        channel: availableSlot.channel,
+        concernTags: ["emotion"],
+        urgency: "this_week",
+      },
+      "user_2",
+      "2026-05-10T00:08:00.000Z"
+    );
+    expect(locked.status).toBe(200);
+
+    const closeLocked = await updateCounselingAdminSchedulePayload(
+      {
+        action: "close_slot",
+        slotId: availableSlot.id,
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:09:00.000Z"
+    );
+    expect(closeLocked.status).toBe(409);
+
+    const added = await updateCounselingAdminSchedulePayload(
+      {
+        action: "add_available_slot",
+        counselorId: availableSlot.counselorId,
+        startsAt: "2026-05-20T09:00:00.000Z",
+        endsAt: "2026-05-20T09:50:00.000Z",
+        channel: "video",
+        reason: "测试新增时段",
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:10:00.000Z"
+    );
+    expect(added.status).toBe(200);
+    if (!added.body.ok) throw new Error("expected added schedule slot");
+    expect(added.body.data.slot).toMatchObject({
+      counselorId: availableSlot.counselorId,
+      startsAt: "2026-05-20T09:00:00.000Z",
+      status: "available",
+    });
+    expect(
+      added.body.data.scheduleConsole.counselors
+        .flatMap(schedule => schedule.slots)
+        .some(slot => slot.id === added.body.data.slot.id)
+    ).toBe(true);
+
+    const duplicate = await updateCounselingAdminSchedulePayload(
+      {
+        action: "add_available_slot",
+        counselorId: availableSlot.counselorId,
+        startsAt: "2026-05-20T09:10:00.000Z",
+        endsAt: "2026-05-20T09:40:00.000Z",
+        channel: "video",
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:11:00.000Z"
+    );
+    expect(duplicate.status).toBe(409);
+
+    const operations = await getCounselingOperationsConsolePayload(
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:12:00.000Z"
+    );
+    expect(operations.status).toBe(200);
+    if (operations.body.ok) {
+      expect(operations.body.data.auditEvents[0]?.action).toBe(
+        "schedule_slot_added"
+      );
     }
   });
 

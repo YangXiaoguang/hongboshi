@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertCircle,
+  CalendarClock,
+  CalendarPlus,
+  CalendarX,
   CheckCircle2,
   ClipboardList,
   History,
   Loader2,
   RefreshCw,
+  RotateCcw,
   Save,
   SlidersHorizontal,
   ToggleLeft,
@@ -16,7 +20,11 @@ import { userCan } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   httpCounselingRepository,
+  type CounselingAdminScheduleActionRequest,
+  type CounselingAdminScheduleConsole,
+  type CounselingAdminScheduleSlot,
   type CounselingCancellationPolicy,
+  type CounselingChannel,
   type CounselingOperationAuditEvent,
   type CounselingOperationsConsole,
 } from "@/features/counseling";
@@ -25,7 +33,30 @@ const auditActionCopy = {
   cancellation_policy_updated: "更新取消规则",
   complete_session: "标记完成",
   mark_no_show: "标记未到访",
+  schedule_slot_added: "新增排班",
+  schedule_slot_closed: "关闭排班",
+  schedule_slot_restored: "恢复排班",
 } satisfies Record<CounselingOperationAuditEvent["action"], string>;
+
+const serviceStatusCopy = {
+  active: "可预约",
+  full: "已约满",
+  paused: "暂停接单",
+} as const;
+
+const scheduleStatusCopy = {
+  available: "可预约",
+  locked: "待支付锁定",
+  scheduled: "已预约",
+  closed: "已关闭",
+} as const;
+
+const scheduleStatusClassName = {
+  available: "border-[#BBD0C5] bg-[#EEF6F0] text-[#2F6B54]",
+  locked: "border-[#E8D2A1] bg-[#FFF8DF] text-[#8A641C]",
+  scheduled: "border-[#C9D5E7] bg-[#EFF4FB] text-[#3B5F8A]",
+  closed: "border-[#E3D3CC] bg-[#FFF1EC] text-[#9A5944]",
+} satisfies Record<CounselingAdminScheduleSlot["status"], string>;
 
 const statusCopy = {
   pending_payment: "待支付",
@@ -46,6 +77,31 @@ function formatDate(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function toDateTimeLocalValue(date: Date) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function buildDefaultScheduleDraft() {
+  const startsAt = new Date();
+  startsAt.setDate(startsAt.getDate() + 1);
+  startsAt.setHours(10, 0, 0, 0);
+  const endsAt = new Date(startsAt.getTime() + 50 * 60 * 1000);
+
+  return {
+    counselorId: "",
+    startsAt: toDateTimeLocalValue(startsAt),
+    endsAt: toDateTimeLocalValue(endsAt),
+    channel: "video" as CounselingChannel,
+    reason: "",
+  };
+}
+
+function localInputToIso(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
 function policyChanged(
@@ -82,6 +138,18 @@ function AuditMeta({ event }: { event: CounselingOperationAuditEvent }) {
     );
   }
 
+  if (event.action.startsWith("schedule_slot_")) {
+    return (
+      <p className="mt-2 text-sm leading-6 text-[#66716A]">
+        咨询师{" "}
+        <span className="font-semibold text-[#243B35]">
+          {event.counselorId ?? "未记录"}
+        </span>{" "}
+        的排班已更新。
+      </p>
+    );
+  }
+
   return (
     <p className="mt-2 text-sm leading-6 text-[#66716A]">
       预约 {event.appointmentId ?? "未记录"} 从{" "}
@@ -104,13 +172,18 @@ function AuditMeta({ event }: { event: CounselingOperationAuditEvent }) {
 export default function CounselingOperations() {
   const { user, isLoggedIn, isAuthSyncing } = useAuth();
   const [consoleData, setConsoleData] = useState<CounselingOperationsConsole>();
+  const [scheduleConsole, setScheduleConsole] =
+    useState<CounselingAdminScheduleConsole>();
   const [draftPolicy, setDraftPolicy] = useState<CounselingCancellationPolicy>({
     scheduledRefundCutoffMinutesBeforeStart: 0,
     allowPendingPaymentCancellation: true,
   });
+  const [scheduleDraft, setScheduleDraft] = useState(buildDefaultScheduleDraft);
   const [reason, setReason] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isScheduleSaving, setIsScheduleSaving] = useState(false);
+  const [scheduleActionSlotId, setScheduleActionSlotId] = useState<string>();
   const [error, setError] = useState<string>();
 
   const canManageOperations = Boolean(user && userCan(user, "admin:manage"));
@@ -118,14 +191,35 @@ export default function CounselingOperations() {
     () => policyChanged(draftPolicy, consoleData?.cancellationPolicy),
     [consoleData?.cancellationPolicy, draftPolicy]
   );
+  const scheduleTotals = useMemo(() => {
+    const schedules = scheduleConsole?.counselors ?? [];
+    return schedules.reduce(
+      (totals, schedule) => ({
+        available: totals.available + schedule.summary.availableCount,
+        locked: totals.locked + schedule.summary.lockedCount,
+        scheduled: totals.scheduled + schedule.summary.scheduledCount,
+        closed: totals.closed + schedule.summary.closedCount,
+      }),
+      { available: 0, locked: 0, scheduled: 0, closed: 0 }
+    );
+  }, [scheduleConsole?.counselors]);
 
   const loadConsole = useCallback(async () => {
     setIsLoading(true);
     setError(undefined);
     try {
-      const payload = await httpCounselingRepository.loadOperationsConsole();
+      const [payload, schedules] = await Promise.all([
+        httpCounselingRepository.loadOperationsConsole(),
+        httpCounselingRepository.loadAdminSchedules(),
+      ]);
       setConsoleData(payload);
+      setScheduleConsole(schedules);
       setDraftPolicy(payload.cancellationPolicy);
+      setScheduleDraft(previous => ({
+        ...previous,
+        counselorId:
+          previous.counselorId || schedules.counselors[0]?.counselor.id || "",
+      }));
       setReason("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "咨询运营配置暂时不可用");
@@ -172,6 +266,88 @@ export default function CounselingOperations() {
     }
   };
 
+  const syncScheduleAudit = useCallback(
+    (auditEvent?: CounselingOperationAuditEvent) => {
+      if (!auditEvent) return;
+      setConsoleData(previous =>
+        previous
+          ? {
+              ...previous,
+              auditEvents: [
+                auditEvent,
+                ...previous.auditEvents.filter(
+                  event => event.id !== auditEvent.id
+                ),
+              ],
+            }
+          : previous
+      );
+    },
+    []
+  );
+
+  const handleScheduleAction = useCallback(
+    async (
+      request: CounselingAdminScheduleActionRequest,
+      pendingSlotId = "new"
+    ) => {
+      setIsScheduleSaving(true);
+      setScheduleActionSlotId(pendingSlotId);
+      setError(undefined);
+      try {
+        const result =
+          await httpCounselingRepository.updateAdminSchedule(request);
+        setScheduleConsole(result.scheduleConsole);
+        syncScheduleAudit(result.auditEvent);
+        if (request.action === "add_available_slot") {
+          setScheduleDraft(previous => ({ ...previous, reason: "" }));
+        }
+        toast(
+          request.action === "add_available_slot"
+            ? "排班已新增"
+            : request.action === "close_slot"
+              ? "时段已关闭"
+              : "时段已恢复",
+          {
+            description: "咨询师排班状态已同步到运营看板",
+          }
+        );
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "咨询排班暂时无法保存";
+        setError(message);
+        toast("排班保存失败", { description: message });
+      } finally {
+        setIsScheduleSaving(false);
+        setScheduleActionSlotId(undefined);
+      }
+    },
+    [syncScheduleAudit]
+  );
+
+  const handleAddScheduleSlot = useCallback(() => {
+    const startsAt = localInputToIso(scheduleDraft.startsAt);
+    const endsAt = localInputToIso(scheduleDraft.endsAt);
+    if (!scheduleDraft.counselorId || !startsAt || !endsAt) {
+      const message = "请完整填写咨询师和排班时间";
+      setError(message);
+      toast("排班保存失败", { description: message });
+      return;
+    }
+
+    void handleScheduleAction(
+      {
+        action: "add_available_slot",
+        counselorId: scheduleDraft.counselorId,
+        startsAt,
+        endsAt,
+        channel: scheduleDraft.channel,
+        reason: scheduleDraft.reason.trim() || undefined,
+      },
+      "new"
+    );
+  }, [handleScheduleAction, scheduleDraft]);
+
   if (isAuthSyncing || !isLoggedIn || !canManageOperations) {
     return null;
   }
@@ -184,10 +360,10 @@ export default function CounselingOperations() {
             咨询运营配置
           </p>
           <h1 className="mt-2 text-3xl font-semibold md:text-4xl">
-            规则与审计
+            排班、规则与审计
           </h1>
           <p className="mt-3 max-w-[700px] text-sm leading-6 text-[#6F7771]">
-            配置用户取消规则，查看规则变更和履约处理记录。
+            维护咨询师可预约时段，配置取消规则，查看规则变更和履约处理记录。
           </p>
         </div>
         <button
@@ -210,6 +386,302 @@ export default function CounselingOperations() {
           <span>{error}</span>
         </div>
       )}
+
+      <section className="mt-6 grid gap-6 xl:grid-cols-[360px_1fr]">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+          className="h-fit rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+            <CalendarPlus className="h-4 w-4 text-[#6F8F83]" />
+            新增可预约时段
+          </div>
+
+          <label className="mt-5 block text-sm font-semibold text-[#40534B]">
+            咨询师
+          </label>
+          <select
+            value={scheduleDraft.counselorId}
+            onChange={event =>
+              setScheduleDraft(previous => ({
+                ...previous,
+                counselorId: event.target.value,
+              }))
+            }
+            className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+          >
+            {(scheduleConsole?.counselors ?? []).map(schedule => (
+              <option key={schedule.counselor.id} value={schedule.counselor.id}>
+                {schedule.counselor.name} ·{" "}
+                {serviceStatusCopy[schedule.serviceStatus]}
+              </option>
+            ))}
+          </select>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <label className="block text-sm font-semibold text-[#40534B]">
+              开始时间
+              <input
+                type="datetime-local"
+                value={scheduleDraft.startsAt}
+                onChange={event =>
+                  setScheduleDraft(previous => ({
+                    ...previous,
+                    startsAt: event.target.value,
+                  }))
+                }
+                className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-[#40534B]">
+              结束时间
+              <input
+                type="datetime-local"
+                value={scheduleDraft.endsAt}
+                onChange={event =>
+                  setScheduleDraft(previous => ({
+                    ...previous,
+                    endsAt: event.target.value,
+                  }))
+                }
+                className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+              />
+            </label>
+          </div>
+
+          <label className="mt-4 block text-sm font-semibold text-[#40534B]">
+            咨询渠道
+          </label>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {[
+              ["video", "视频"],
+              ["voice", "语音"],
+              ["offline", "线下"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() =>
+                  setScheduleDraft(previous => ({
+                    ...previous,
+                    channel: value as CounselingChannel,
+                  }))
+                }
+                className={`h-9 rounded-lg border text-sm font-semibold transition ${
+                  scheduleDraft.channel === value
+                    ? "border-[#6F8F83] bg-[#E5ECE1] text-[#355F51]"
+                    : "border-[#D8CDBC] bg-white text-[#66716A] hover:border-[#AAB9AF]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <label className="mt-4 block text-sm font-semibold text-[#40534B]">
+            备注
+          </label>
+          <textarea
+            value={scheduleDraft.reason}
+            onChange={event =>
+              setScheduleDraft(previous => ({
+                ...previous,
+                reason: event.target.value,
+              }))
+            }
+            maxLength={200}
+            rows={3}
+            placeholder="例如：节后新增晚间咨询窗口"
+            className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
+          />
+
+          <button
+            onClick={handleAddScheduleSlot}
+            disabled={
+              isScheduleSaving ||
+              isLoading ||
+              !scheduleDraft.counselorId ||
+              scheduleActionSlotId === "new"
+            }
+            className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
+          >
+            {isScheduleSaving && scheduleActionSlotId === "new" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CalendarPlus className="h-4 w-4" />
+            )}
+            保存时段
+          </button>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{
+            duration: 0.32,
+            delay: 0.03,
+            ease: [0.16, 1, 0.3, 1],
+          }}
+          className="min-w-0 rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E8DED0] pb-4">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <CalendarClock className="h-4 w-4 text-[#6F8F83]" />
+              未来排班
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-[#41675A]">
+                可约 {scheduleTotals.available}
+              </span>
+              <span className="rounded-full bg-[#EFF4FB] px-2.5 py-1 text-[#3B5F8A]">
+                已约 {scheduleTotals.scheduled}
+              </span>
+              <span className="rounded-full bg-[#FFF8DF] px-2.5 py-1 text-[#8A641C]">
+                锁定 {scheduleTotals.locked}
+              </span>
+              <span className="rounded-full bg-[#FFF1EC] px-2.5 py-1 text-[#9A5944]">
+                关闭 {scheduleTotals.closed}
+              </span>
+            </div>
+          </div>
+
+          {isLoading && !scheduleConsole ? (
+            <div className="flex min-h-[360px] items-center justify-center text-sm text-[#6F7771]">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              正在读取排班
+            </div>
+          ) : scheduleConsole ? (
+            <div className="mt-5 grid gap-4 2xl:grid-cols-2">
+              {scheduleConsole.counselors.map(schedule => (
+                <article
+                  key={schedule.counselor.id}
+                  className="rounded-lg border border-[#E6DDD0] bg-[#FFFCF6] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-base font-semibold text-[#243B35]">
+                          {schedule.counselor.name}
+                        </h2>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            schedule.serviceStatus === "active"
+                              ? "bg-[#E5ECE1] text-[#41675A]"
+                              : schedule.serviceStatus === "full"
+                                ? "bg-[#EFF4FB] text-[#3B5F8A]"
+                                : "bg-[#F1E9DD] text-[#8B7E6D]"
+                          }`}
+                        >
+                          {serviceStatusCopy[schedule.serviceStatus]}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-[#8A8176]">
+                        {schedule.counselor.title}
+                      </p>
+                    </div>
+                    <div className="text-right text-xs leading-5 text-[#66716A]">
+                      <p>可约 {schedule.summary.availableCount}</p>
+                      <p>
+                        锁定/已约{" "}
+                        {schedule.summary.lockedCount +
+                          schedule.summary.scheduledCount}
+                      </p>
+                    </div>
+                  </div>
+
+                  {schedule.nextAvailableAt && (
+                    <p className="mt-3 rounded-lg bg-[#F3EEE5] px-3 py-2 text-xs font-semibold text-[#5F6B64]">
+                      最近可约 {formatDate(schedule.nextAvailableAt)}
+                    </p>
+                  )}
+
+                  <div className="mt-3 grid gap-2">
+                    {schedule.slots.length ? (
+                      schedule.slots.slice(0, 8).map(slot => {
+                        const canClose = slot.status === "available";
+                        const canRestore = slot.status === "closed";
+                        const isPending = scheduleActionSlotId === slot.id;
+
+                        return (
+                          <div
+                            key={slot.id}
+                            className="rounded-lg border border-[#E8DED0] bg-white px-3 py-2"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-[#243B35]">
+                                  {formatDate(slot.startsAt)} ·{" "}
+                                  {slot.channel === "video"
+                                    ? "视频"
+                                    : slot.channel === "voice"
+                                      ? "语音"
+                                      : "线下"}
+                                </p>
+                                {slot.conflictHint && (
+                                  <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                                    {slot.conflictHint}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <span
+                                  className={`rounded-full border px-2 py-1 text-xs font-semibold ${scheduleStatusClassName[slot.status]}`}
+                                >
+                                  {scheduleStatusCopy[slot.status]}
+                                </span>
+                                {(canClose || canRestore) && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void handleScheduleAction(
+                                        canClose
+                                          ? {
+                                              action: "close_slot",
+                                              slotId: slot.id,
+                                            }
+                                          : {
+                                              action: "restore_slot",
+                                              slotId: slot.id,
+                                            },
+                                        slot.id
+                                      )
+                                    }
+                                    disabled={isScheduleSaving}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#D8CDBC] bg-[#FFFDF8] text-[#355F51] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-55"
+                                    title={canClose ? "关闭时段" : "恢复时段"}
+                                  >
+                                    {isPending ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : canClose ? (
+                                      <CalendarX className="h-4 w-4" />
+                                    ) : (
+                                      <RotateCcw className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-[#D8CDBC] px-3 py-6 text-center text-sm text-[#8A8176]">
+                        暂无未来排班
+                      </div>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="flex min-h-[360px] items-center justify-center text-sm text-[#6F7771]">
+              暂无排班数据
+            </div>
+          )}
+        </motion.div>
+      </section>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-[420px_1fr]">
         <motion.div

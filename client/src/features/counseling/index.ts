@@ -7,7 +7,14 @@ export {
 } from "@shared/domain";
 export type {
   Counselor,
+  CounselorOperationServiceStatus,
   CounselorSpecialty,
+  CounselingAdminCounselorSchedule,
+  CounselingAdminScheduleActionRequest,
+  CounselingAdminScheduleConsole,
+  CounselingAdminScheduleMutationResult,
+  CounselingAdminScheduleSlot,
+  CounselingAdminScheduleSummary,
   CounselingAppointmentAction,
   CounselingAppointmentActionResult,
   CounselingAppointmentRecord,
@@ -22,6 +29,7 @@ export type {
   CounselingConcernTag,
   CounselingOperationAuditEvent,
   CounselingOperationsConsole,
+  CounselingScheduleSlotStatus,
   CounselingSlot,
   CounselingUrgency,
   CounselingWorkbench,

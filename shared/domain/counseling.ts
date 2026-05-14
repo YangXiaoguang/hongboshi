@@ -90,6 +90,85 @@ export const CounselingAvailabilitySchema = z.object({
   serverTime: DateTimeLikeSchema,
 });
 
+export const CounselingScheduleSlotStatusSchema = z.enum([
+  "available",
+  "locked",
+  "scheduled",
+  "closed",
+]);
+
+export const CounselorOperationServiceStatusSchema = z.enum([
+  "active",
+  "full",
+  "paused",
+]);
+
+export const CounselingAdminScheduleSlotSchema = z.object({
+  id: EntityIdSchema,
+  counselorId: EntityIdSchema,
+  counselorName: z.string().min(1),
+  startsAt: DateTimeLikeSchema,
+  endsAt: DateTimeLikeSchema,
+  channel: CounselingChannelSchema,
+  status: CounselingScheduleSlotStatusSchema,
+  appointmentId: EntityIdSchema.optional(),
+  appointmentStatus: AppointmentStatusSchema.optional(),
+  conflictHint: z.string().max(200).optional(),
+});
+
+export const CounselingAdminScheduleSummarySchema = z.object({
+  availableCount: z.number().int().nonnegative(),
+  lockedCount: z.number().int().nonnegative(),
+  scheduledCount: z.number().int().nonnegative(),
+  closedCount: z.number().int().nonnegative(),
+});
+
+export const CounselingAdminCounselorScheduleSchema = z.object({
+  counselor: CounselorSchema,
+  serviceStatus: CounselorOperationServiceStatusSchema,
+  nextAvailableAt: DateTimeLikeSchema.optional(),
+  summary: CounselingAdminScheduleSummarySchema,
+  slots: z.array(CounselingAdminScheduleSlotSchema),
+});
+
+export const CounselingAdminScheduleConsoleSchema = z.object({
+  counselors: z.array(CounselingAdminCounselorScheduleSchema),
+  windowStart: DateTimeLikeSchema,
+  windowEnd: DateTimeLikeSchema,
+  serverTime: DateTimeLikeSchema,
+});
+
+export const CounselingAdminScheduleActionRequestSchema = z.discriminatedUnion(
+  "action",
+  [
+    z.object({
+      action: z.literal("add_available_slot"),
+      counselorId: EntityIdSchema,
+      startsAt: DateTimeLikeSchema,
+      endsAt: DateTimeLikeSchema,
+      channel: CounselingChannelSchema.default("video"),
+      reason: z.string().max(200).optional(),
+    }),
+    z.object({
+      action: z.literal("close_slot"),
+      slotId: EntityIdSchema,
+      reason: z.string().max(200).optional(),
+    }),
+    z.object({
+      action: z.literal("restore_slot"),
+      slotId: EntityIdSchema,
+      reason: z.string().max(200).optional(),
+    }),
+  ]
+);
+
+export const CounselingAdminScheduleMutationResultSchema = z.object({
+  scheduleConsole: CounselingAdminScheduleConsoleSchema,
+  slot: CounselingAdminScheduleSlotSchema,
+  auditEvent: z.lazy(() => CounselingOperationAuditEventSchema).optional(),
+  serverTime: DateTimeLikeSchema,
+});
+
 export const CounselingAppointmentCreateRequestSchema = z.object({
   counselorId: EntityIdSchema,
   slotId: EntityIdSchema,
@@ -205,6 +284,9 @@ export const CounselingOperationAuditActionSchema = z.enum([
   "cancellation_policy_updated",
   "complete_session",
   "mark_no_show",
+  "schedule_slot_added",
+  "schedule_slot_closed",
+  "schedule_slot_restored",
 ]);
 
 export const CounselingOperationAuditEventSchema = z.object({
@@ -466,6 +548,30 @@ export type CounselingUrgency = z.infer<typeof CounselingUrgencySchema>;
 export type CounselingAppointment = z.infer<typeof CounselingAppointmentSchema>;
 export type CounselingAvailability = z.infer<
   typeof CounselingAvailabilitySchema
+>;
+export type CounselingScheduleSlotStatus = z.infer<
+  typeof CounselingScheduleSlotStatusSchema
+>;
+export type CounselorOperationServiceStatus = z.infer<
+  typeof CounselorOperationServiceStatusSchema
+>;
+export type CounselingAdminScheduleSlot = z.infer<
+  typeof CounselingAdminScheduleSlotSchema
+>;
+export type CounselingAdminScheduleSummary = z.infer<
+  typeof CounselingAdminScheduleSummarySchema
+>;
+export type CounselingAdminCounselorSchedule = z.infer<
+  typeof CounselingAdminCounselorScheduleSchema
+>;
+export type CounselingAdminScheduleConsole = z.infer<
+  typeof CounselingAdminScheduleConsoleSchema
+>;
+export type CounselingAdminScheduleActionRequest = z.infer<
+  typeof CounselingAdminScheduleActionRequestSchema
+>;
+export type CounselingAdminScheduleMutationResult = z.infer<
+  typeof CounselingAdminScheduleMutationResultSchema
 >;
 export type CounselingAppointmentCreateRequest = z.infer<
   typeof CounselingAppointmentCreateRequestSchema

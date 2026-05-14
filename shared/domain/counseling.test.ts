@@ -3,6 +3,8 @@ import {
   applyCounselingAppointmentAction,
   applyCounselingAppointmentReschedule,
   CounselingCancellationPolicyUpdateRequestSchema,
+  CounselingAdminScheduleActionRequestSchema,
+  CounselingAdminScheduleConsoleSchema,
   CounselingOperationAuditEventSchema,
   evaluateCounselingCancellation,
   expireOverdueCounselingAppointmentPayment,
@@ -126,6 +128,77 @@ describe("counseling appointment status machine", () => {
         createdAt: "2026-05-10T11:00:00.000Z",
       }).nextAppointmentStatus
     ).toBe("completed");
+  });
+
+  it("validates admin schedule console and slot actions", () => {
+    const scheduleConsole = CounselingAdminScheduleConsoleSchema.parse({
+      counselors: [
+        {
+          counselor: {
+            id: "counselor_1",
+            name: "林若安",
+            title: "国家二级心理咨询师",
+            introduction: "擅长情绪与自我成长议题。",
+            specialties: ["emotion"],
+            licenseSummary: "执业 9 年",
+            yearsOfPractice: 9,
+            sessionPrice: 399,
+            rating: 4.9,
+          },
+          serviceStatus: "active",
+          nextAvailableAt: "2026-05-11T10:00:00.000Z",
+          summary: {
+            availableCount: 1,
+            lockedCount: 1,
+            scheduledCount: 0,
+            closedCount: 1,
+          },
+          slots: [
+            {
+              id: "slot_1",
+              counselorId: "counselor_1",
+              counselorName: "林若安",
+              startsAt: "2026-05-11T10:00:00.000Z",
+              endsAt: "2026-05-11T10:50:00.000Z",
+              channel: "video",
+              status: "available",
+            },
+            {
+              id: "slot_2",
+              counselorId: "counselor_1",
+              counselorName: "林若安",
+              startsAt: "2026-05-11T14:00:00.000Z",
+              endsAt: "2026-05-11T14:50:00.000Z",
+              channel: "voice",
+              status: "locked",
+              appointmentId: "appointment_1",
+              appointmentStatus: "pending_payment",
+              conflictHint: "待支付预约正在锁定该时段",
+            },
+          ],
+        },
+      ],
+      windowStart: "2026-05-10T00:00:00.000Z",
+      windowEnd: "2026-06-09T00:00:00.000Z",
+      serverTime: "2026-05-10T00:00:00.000Z",
+    });
+
+    expect(scheduleConsole.counselors[0]?.summary.availableCount).toBe(1);
+    expect(
+      CounselingAdminScheduleActionRequestSchema.parse({
+        action: "add_available_slot",
+        counselorId: "counselor_1",
+        startsAt: "2026-05-12T10:00:00.000Z",
+        endsAt: "2026-05-12T10:50:00.000Z",
+      }).channel
+    ).toBe("video");
+    expect(
+      CounselingAdminScheduleActionRequestSchema.parse({
+        action: "close_slot",
+        slotId: "slot_1",
+        reason: "临时会议",
+      }).reason
+    ).toBe("临时会议");
   });
 
   it("reschedules confirmed appointments to an available slot", () => {

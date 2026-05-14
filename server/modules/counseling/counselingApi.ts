@@ -14,6 +14,9 @@ import {
   COUNSELING_PAYMENT_HOLD_MINUTES,
   CounselingAppointmentActionRequestSchema,
   CounselingAppointmentActionResultSchema,
+  CounselingAdminScheduleActionRequestSchema,
+  CounselingAdminScheduleConsoleSchema,
+  CounselingAdminScheduleMutationResultSchema,
   CounselingAppointmentCreateRequestSchema,
   CounselingAppointmentCreateResultSchema,
   CounselingAppointmentListSchema,
@@ -39,6 +42,9 @@ import {
   upsertCourseAccessOrder,
   userCan,
   type CourseAccessState,
+  type CounselingAdminScheduleActionRequest,
+  type CounselingAdminScheduleConsole,
+  type CounselingAdminScheduleSlot,
   type CounselingAppointment,
   type CounselingAppointmentAction,
   type CounselingAppointmentCreateRequest,
@@ -87,6 +93,12 @@ const CounselingWorkbenchResponseSchema = ApiResponseSchema(
 );
 const CounselingOperationsConsoleResponseSchema = ApiResponseSchema(
   CounselingOperationsConsoleSchema
+);
+const CounselingAdminScheduleConsoleResponseSchema = ApiResponseSchema(
+  CounselingAdminScheduleConsoleSchema
+);
+const CounselingAdminScheduleMutationResponseSchema = ApiResponseSchema(
+  CounselingAdminScheduleMutationResultSchema
 );
 const CounselingCancellationPolicyUpdateResponseSchema = ApiResponseSchema(
   CounselingCancellationPolicyUpdateResultSchema
@@ -1003,7 +1015,9 @@ export async function listCounselingAppointmentUserIds(
 ) {
   await expireOverdueCounselingPayments(now);
   const appointments = await counselingAppointmentStore.listAppointments();
-  return Array.from(new Set(appointments.map(appointment => appointment.userId)));
+  return Array.from(
+    new Set(appointments.map(appointment => appointment.userId))
+  );
 }
 
 export async function listCounselingAppointmentsPayload(
@@ -1043,6 +1057,7 @@ function saveCounselingOperationAuditEvent({
   nextOrder,
   policyBefore,
   policyAfter,
+  counselorId,
   note,
 }: {
   action: CounselingOperationAuditAction;
@@ -1054,6 +1069,7 @@ function saveCounselingOperationAuditEvent({
   nextOrder?: Order;
   policyBefore?: CounselingCancellationPolicy;
   policyAfter?: CounselingCancellationPolicy;
+  counselorId?: string;
   note?: string;
 }): Promise<CounselingOperationAuditEvent> {
   const event = CounselingOperationAuditEventSchema.parse({
@@ -1063,7 +1079,8 @@ function saveCounselingOperationAuditEvent({
     actorRoles: actor.roles,
     appointmentId: appointment?.id ?? nextAppointment?.id,
     userId: appointment?.userId ?? nextAppointment?.userId,
-    counselorId: appointment?.counselorId ?? nextAppointment?.counselorId,
+    counselorId:
+      appointment?.counselorId ?? nextAppointment?.counselorId ?? counselorId,
     previousAppointmentStatus: appointment?.status,
     nextAppointmentStatus: nextAppointment?.status,
     previousOrderStatus: previousOrder?.status,
@@ -1075,6 +1092,512 @@ function saveCounselingOperationAuditEvent({
   });
 
   return Promise.resolve(counselingOperationStore.saveAuditEvent(event));
+}
+
+const COUNSELING_ADMIN_SCHEDULE_WINDOW_DAYS = 30;
+const COUNSELING_ADMIN_MIN_SLOT_MINUTES = 15;
+const COUNSELING_ADMIN_MAX_SLOT_MINUTES = 180;
+
+const scheduleOccupyingStatuses = new Set<CounselingAppointment["status"]>([
+  "pending_payment",
+  "scheduled",
+  "completed",
+  "no_show",
+]);
+
+function buildAppointmentBySlotId(appointments: CounselingAppointment[]) {
+  const appointmentPriority: Record<CounselingAppointment["status"], number> = {
+    pending_payment: 1,
+    scheduled: 2,
+    completed: 3,
+    no_show: 4,
+    cancelled: 5,
+    refunded: 6,
+  };
+  const appointmentsBySlotId = new Map<string, CounselingAppointment>();
+
+  appointments.forEach(appointment => {
+    if (!scheduleOccupyingStatuses.has(appointment.status)) return;
+
+    const previous = appointmentsBySlotId.get(appointment.slotId);
+    if (
+      !previous ||
+      appointmentPriority[appointment.status] <
+        appointmentPriority[previous.status]
+    ) {
+      appointmentsBySlotId.set(appointment.slotId, appointment);
+    }
+  });
+
+  return appointmentsBySlotId;
+}
+
+function getAdminScheduleSlotStatus(
+  slot: CounselingSlot,
+  appointment?: CounselingAppointment
+) {
+  if (appointment?.status === "pending_payment") return "locked" as const;
+  if (appointment && scheduleOccupyingStatuses.has(appointment.status)) {
+    return "scheduled" as const;
+  }
+
+  return slot.available ? ("available" as const) : ("closed" as const);
+}
+
+function buildScheduleConflictHint(
+  status: CounselingAdminScheduleSlot["status"],
+  appointment?: CounselingAppointment
+) {
+  if (status === "available") return undefined;
+  if (status === "locked") return "待支付预约正在锁定该时段，超时后会自动释放";
+  if (status === "scheduled") {
+    return appointment?.id
+      ? `已有预约 ${appointment.id}，不能直接关闭或覆盖`
+      : "已有预约，不能直接关闭或覆盖";
+  }
+
+  return "该时段已关闭，不会出现在用户可预约列表";
+}
+
+function toAdminScheduleSlot({
+  slot,
+  counselor,
+  appointment,
+}: {
+  slot: CounselingSlot;
+  counselor: (typeof counselorProfiles)[number];
+  appointment?: CounselingAppointment;
+}): CounselingAdminScheduleSlot {
+  const status = getAdminScheduleSlotStatus(slot, appointment);
+
+  return {
+    id: slot.id,
+    counselorId: slot.counselorId,
+    counselorName: counselor.name,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+    channel: slot.channel,
+    status,
+    appointmentId: appointment?.id,
+    appointmentStatus: appointment?.status,
+    conflictHint: buildScheduleConflictHint(status, appointment),
+  };
+}
+
+function buildCounselorServiceStatus(
+  summary: CounselingAdminScheduleConsole["counselors"][number]["summary"]
+): CounselingAdminScheduleConsole["counselors"][number]["serviceStatus"] {
+  if (summary.availableCount > 0) return "active";
+  if (summary.lockedCount + summary.scheduledCount > 0) return "full";
+  return "paused";
+}
+
+async function buildCounselingAdminScheduleConsole(
+  now = new Date().toISOString()
+): Promise<CounselingAdminScheduleConsole> {
+  const windowStartMs = Date.parse(now);
+  const safeWindowStart = Number.isNaN(windowStartMs)
+    ? new Date().toISOString()
+    : new Date(windowStartMs).toISOString();
+  const safeWindowStartMs = Date.parse(safeWindowStart);
+  const windowEnd = new Date(
+    safeWindowStartMs +
+      COUNSELING_ADMIN_SCHEDULE_WINDOW_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+  const windowEndMs = Date.parse(windowEnd);
+  const [slots, appointments] = await Promise.all([
+    counselingAppointmentStore.listSlots(new Date(safeWindowStart)),
+    counselingAppointmentStore.listAppointments(),
+  ]);
+  const appointmentsBySlotId = buildAppointmentBySlotId(appointments);
+
+  const slotsByCounselorId = new Map<string, CounselingAdminScheduleSlot[]>();
+  slots
+    .filter(slot => {
+      const startsAt = Date.parse(slot.startsAt);
+      return (
+        !Number.isNaN(startsAt) &&
+        startsAt >= safeWindowStartMs &&
+        startsAt <= windowEndMs
+      );
+    })
+    .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
+    .forEach(slot => {
+      const counselor = counselorProfiles.find(
+        item => item.id === slot.counselorId
+      );
+      if (!counselor) return;
+
+      const adminSlot = toAdminScheduleSlot({
+        slot,
+        counselor,
+        appointment: appointmentsBySlotId.get(slot.id),
+      });
+      slotsByCounselorId.set(slot.counselorId, [
+        ...(slotsByCounselorId.get(slot.counselorId) ?? []),
+        adminSlot,
+      ]);
+    });
+
+  const counselors = counselorProfiles.map(counselor => {
+    const scheduleSlots = slotsByCounselorId.get(counselor.id) ?? [];
+    const summary = {
+      availableCount: scheduleSlots.filter(slot => slot.status === "available")
+        .length,
+      lockedCount: scheduleSlots.filter(slot => slot.status === "locked")
+        .length,
+      scheduledCount: scheduleSlots.filter(slot => slot.status === "scheduled")
+        .length,
+      closedCount: scheduleSlots.filter(slot => slot.status === "closed")
+        .length,
+    };
+    const nextAvailableAt = scheduleSlots.find(
+      slot => slot.status === "available"
+    )?.startsAt;
+
+    return {
+      counselor,
+      serviceStatus: buildCounselorServiceStatus(summary),
+      nextAvailableAt,
+      summary,
+      slots: scheduleSlots,
+    };
+  });
+
+  return CounselingAdminScheduleConsoleSchema.parse({
+    counselors,
+    windowStart: safeWindowStart,
+    windowEnd,
+    serverTime: safeWindowStart,
+  });
+}
+
+function validateScheduleRange({
+  startsAt,
+  endsAt,
+  now,
+}: {
+  startsAt: string;
+  endsAt: string;
+  now: string;
+}) {
+  const startsAtMs = Date.parse(startsAt);
+  const endsAtMs = Date.parse(endsAt);
+  const nowMs = Date.parse(now);
+
+  if (
+    Number.isNaN(startsAtMs) ||
+    Number.isNaN(endsAtMs) ||
+    Number.isNaN(nowMs)
+  ) {
+    return "排班时间格式不合法";
+  }
+  if (startsAtMs < nowMs) return "不能新增过去时间的咨询时段";
+  if (endsAtMs <= startsAtMs) return "结束时间必须晚于开始时间";
+
+  const durationMinutes = (endsAtMs - startsAtMs) / 60 / 1000;
+  if (durationMinutes < COUNSELING_ADMIN_MIN_SLOT_MINUTES) {
+    return `咨询时段至少需要 ${COUNSELING_ADMIN_MIN_SLOT_MINUTES} 分钟`;
+  }
+  if (durationMinutes > COUNSELING_ADMIN_MAX_SLOT_MINUTES) {
+    return `单个咨询时段不能超过 ${COUNSELING_ADMIN_MAX_SLOT_MINUTES} 分钟`;
+  }
+
+  return undefined;
+}
+
+function scheduleSlotsOverlap(
+  slot: Pick<CounselingSlot, "startsAt" | "endsAt">,
+  startsAt: string,
+  endsAt: string
+) {
+  const slotStart = Date.parse(slot.startsAt);
+  const slotEnd = Date.parse(slot.endsAt);
+  const nextStart = Date.parse(startsAt);
+  const nextEnd = Date.parse(endsAt);
+
+  if (
+    Number.isNaN(slotStart) ||
+    Number.isNaN(slotEnd) ||
+    Number.isNaN(nextStart) ||
+    Number.isNaN(nextEnd)
+  ) {
+    return false;
+  }
+
+  return slotStart < nextEnd && nextStart < slotEnd;
+}
+
+async function findOverlappingScheduleSlot({
+  counselorId,
+  startsAt,
+  endsAt,
+  excludeSlotId,
+}: {
+  counselorId: string;
+  startsAt: string;
+  endsAt: string;
+  excludeSlotId?: string;
+}) {
+  const slots = await counselingAppointmentStore.listSlots(new Date(startsAt));
+  return slots.find(
+    slot =>
+      slot.counselorId === counselorId &&
+      slot.id !== excludeSlotId &&
+      scheduleSlotsOverlap(slot, startsAt, endsAt)
+  );
+}
+
+async function getScheduleSlotStatus(slot: CounselingSlot) {
+  const appointments = await counselingAppointmentStore.listAppointments();
+  return getAdminScheduleSlotStatus(
+    slot,
+    buildAppointmentBySlotId(appointments).get(slot.id)
+  );
+}
+
+function findScheduleSlotInConsole(
+  scheduleConsole: CounselingAdminScheduleConsole,
+  slotId: string
+) {
+  return scheduleConsole.counselors
+    .flatMap(counselor => counselor.slots)
+    .find(slot => slot.id === slotId);
+}
+
+function scheduleAuditNote({
+  action,
+  slot,
+  reason,
+}: {
+  action: CounselingAdminScheduleActionRequest["action"];
+  slot: CounselingSlot;
+  reason?: string;
+}) {
+  const actionCopy: Record<
+    CounselingAdminScheduleActionRequest["action"],
+    string
+  > = {
+    add_available_slot: "新增可预约时段",
+    close_slot: "关闭未预约时段",
+    restore_slot: "恢复可预约时段",
+  };
+  const reasonCopy = reason?.trim() ? `；原因：${reason.trim()}` : "";
+  return `${actionCopy[action]} ${slot.id}（${slot.startsAt} - ${slot.endsAt}）${reasonCopy}`;
+}
+
+export async function getCounselingAdminSchedulesPayload(
+  actor?: FulfillmentActor,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后查看咨询排班"),
+    } as const;
+  }
+
+  if (!userCan(actor, "admin:manage")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无咨询排班权限"),
+    } as const;
+  }
+
+  await expireOverdueCounselingPayments(now);
+
+  return {
+    status: 200,
+    body: CounselingAdminScheduleConsoleResponseSchema.parse({
+      ok: true,
+      data: await buildCounselingAdminScheduleConsole(now),
+    }),
+  } as const;
+}
+
+export async function updateCounselingAdminSchedulePayload(
+  body: unknown,
+  actor?: FulfillmentActor,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后维护咨询排班"),
+    } as const;
+  }
+
+  if (!userCan(actor, "admin:manage")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无咨询排班权限"),
+    } as const;
+  }
+
+  const parsed = CounselingAdminScheduleActionRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "咨询排班操作参数不合法"),
+    } as const;
+  }
+
+  await expireOverdueCounselingPayments(now);
+
+  const request = parsed.data;
+  let savedSlot: CounselingSlot;
+
+  if (request.action === "add_available_slot") {
+    const counselor = counselorProfiles.find(
+      item => item.id === request.counselorId
+    );
+    if (!counselor) {
+      return {
+        status: 404,
+        body: errorPayload("NOT_FOUND", "咨询师不存在"),
+      } as const;
+    }
+
+    const rangeError = validateScheduleRange({
+      startsAt: request.startsAt,
+      endsAt: request.endsAt,
+      now,
+    });
+    if (rangeError) {
+      return {
+        status: 400,
+        body: errorPayload("BAD_REQUEST", rangeError),
+      } as const;
+    }
+
+    const startsAt = new Date(Date.parse(request.startsAt)).toISOString();
+    const endsAt = new Date(Date.parse(request.endsAt)).toISOString();
+    const overlapping = await findOverlappingScheduleSlot({
+      counselorId: counselor.id,
+      startsAt,
+      endsAt,
+    });
+    if (overlapping) {
+      return {
+        status: 409,
+        body: errorPayload(
+          "CONFLICT",
+          overlapping.available
+            ? "该咨询师已有重叠的可预约时段"
+            : "该咨询师已有重叠时段，请先处理原时段"
+        ),
+      } as const;
+    }
+
+    savedSlot = await counselingAppointmentStore.saveSlot({
+      id: `slot_admin_${counselor.id}_${Date.parse(startsAt)}_${randomUUID().slice(
+        0,
+        8
+      )}`,
+      counselorId: counselor.id,
+      startsAt,
+      endsAt,
+      channel: request.channel,
+      available: true,
+    });
+  } else {
+    const slot = await counselingAppointmentStore.getSlot(request.slotId);
+    if (!slot) {
+      return {
+        status: 404,
+        body: errorPayload("NOT_FOUND", "咨询时段不存在"),
+      } as const;
+    }
+
+    const status = await getScheduleSlotStatus(slot);
+    if (request.action === "close_slot") {
+      if (status === "locked" || status === "scheduled") {
+        return {
+          status: 409,
+          body: errorPayload("CONFLICT", "该时段已被锁定或预约，不能直接关闭"),
+        } as const;
+      }
+      if (status === "closed") {
+        return {
+          status: 409,
+          body: errorPayload("CONFLICT", "该时段已关闭，无需重复操作"),
+        } as const;
+      }
+
+      savedSlot = await counselingAppointmentStore.saveSlot({
+        ...slot,
+        available: false,
+      });
+    } else {
+      if (status !== "closed") {
+        return {
+          status: 409,
+          body: errorPayload("CONFLICT", "只有已关闭的时段可以恢复"),
+        } as const;
+      }
+
+      const overlapping = await findOverlappingScheduleSlot({
+        counselorId: slot.counselorId,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+        excludeSlotId: slot.id,
+      });
+      if (overlapping) {
+        return {
+          status: 409,
+          body: errorPayload("CONFLICT", "存在重叠时段，暂不能恢复该排班"),
+        } as const;
+      }
+
+      savedSlot = await counselingAppointmentStore.saveSlot({
+        ...slot,
+        available: true,
+      });
+    }
+  }
+
+  try {
+    const auditEvent = await saveCounselingOperationAuditEvent({
+      action:
+        request.action === "add_available_slot"
+          ? "schedule_slot_added"
+          : request.action === "close_slot"
+            ? "schedule_slot_closed"
+            : "schedule_slot_restored",
+      actor,
+      now,
+      counselorId: savedSlot.counselorId,
+      note: scheduleAuditNote({
+        action: request.action,
+        slot: savedSlot,
+        reason: request.reason,
+      }),
+    });
+    const scheduleConsole = await buildCounselingAdminScheduleConsole(now);
+    const adminSlot = findScheduleSlotInConsole(scheduleConsole, savedSlot.id);
+    if (!adminSlot) {
+      throw new Error("COUNSELING_ADMIN_SCHEDULE_SLOT_NOT_IN_WINDOW");
+    }
+
+    return {
+      status: 200,
+      body: CounselingAdminScheduleMutationResponseSchema.parse({
+        ok: true,
+        data: {
+          scheduleConsole,
+          slot: adminSlot,
+          auditEvent,
+          serverTime: now,
+        },
+      }),
+    } as const;
+  } catch (err) {
+    reportStoreError(err);
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "咨询排班更新失败，请稍后重试"),
+    } as const;
+  }
 }
 
 export async function getCounselingOperationsConsolePayload(
@@ -1810,6 +2333,27 @@ export function registerCounselingApi(app: Express) {
     }
   );
 
+  app.get(
+    "/api/counseling/admin/schedules",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getCounselingAdminSchedulesPayload(session?.user);
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.post(
+    "/api/counseling/admin/schedules",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await updateCounselingAdminSchedulePayload(
+        req.body,
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
   app.put(
     "/api/counseling/admin/cancellation-policy",
     async (req: Request, res: Response) => {
@@ -1924,6 +2468,41 @@ export function handleCounselingApiRequest(
       reportStoreError(err);
       sendJson(res, 500, errorPayload("INTERNAL_ERROR", "运营配置读取失败"));
     });
+    return true;
+  }
+
+  if (
+    req.method === "GET" &&
+    url.pathname === "/api/counseling/admin/schedules"
+  ) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getCounselingAdminSchedulesPayload(session?.user);
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      reportStoreError(err);
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询排班读取失败"));
+    });
+    return true;
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname === "/api/counseling/admin/schedules"
+  ) {
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await updateCounselingAdminSchedulePayload(
+          body,
+          session?.user
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(err => {
+        reportStoreError(err);
+        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询排班保存失败"));
+      });
     return true;
   }
 

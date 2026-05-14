@@ -16,6 +16,7 @@
 - `server/db/migrations/0009_user_membership_audit_events.sql`：用户会员权益后台操作审计表，记录操作者、原因和前后会员状态。
 - `server/db/migrations/0010_order_admin_operations.sql`：订单后台异常标记表与订单操作审计表，记录待支付关闭、异常标记和解除异常的前后状态。
 - `server/db/migrations/0011_transaction_admin_operations.sql`：交易后台异常工单与操作审计表，记录退款申请、异常标记、异常解决及退款渠道受理摘要。
+- `server/db/migrations/0012_counseling_schedule_audit_actions.sql`：扩展咨询运营审计动作约束，允许记录排班新增、关闭和恢复。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
@@ -36,19 +37,19 @@
 - 领域契约仍以 `shared/domain` 为准，数据库字段不能绕过 Zod schema 暴露给前端。
 - 金额统一以 `*_cents` 整数存储，避免浮点金额误差；API 层再转换为领域模型里的金额数值。
 - 测评分数、推荐结果这类强业务结构先用 `JSONB` 存储，保持与报告生成引擎同步；当运营查询变复杂后再拆维度表。
-- 咨询时段和预约单分表，`uniq_active_counseling_slot` 防止同一时段被多个有效预约占用；咨询预约通过 `order_id` 关联 `orders`，用于支付确认、超时关闭和后续退款流转。
+- 咨询时段和预约单分表，`uniq_active_counseling_slot` 防止同一时段被多个有效预约占用；咨询预约通过 `order_id` 关联 `orders`，用于支付确认、超时关闭和后续退款流转。排班运营不新增第二套时段表，基础版通过 `counseling_slots.available` 与活跃预约状态派生可预约、锁定、已预约和已关闭状态。
 - 风险事件独立建表，测评报告和咨询预约通过 `risk_event_id` 关联，咨询预约同时保留 `assessment_report_id`，方便咨询师在服务前回看用户授权带入的测评上下文。
-- 审计日志只追加，不作为业务状态来源；咨询运营审计单独保留规则快照、履约状态前后值和操作者角色，会员操作审计保留前后会员状态、订单操作审计保留订单状态和异常标记前后快照、交易操作审计保留交易异常工单和退款渠道受理结果，便于后台追溯。
+- 审计日志只追加，不作为业务状态来源；咨询运营审计单独保留规则快照、排班动作、履约状态前后值和操作者角色，会员操作审计保留前后会员状态、订单操作审计保留订单状态和异常标记前后快照、交易操作审计保留交易异常工单和退款渠道受理结果，便于后台追溯。
 - 交易流水以 `payment_webhook_events` 为准，订单和业务对象状态分别来自订单、课程权益和咨询预约 Store。交易退款动作的操作记录来源是 `TransactionOperationStore`，默认 JSON 文件为 `.hongboshi-data/transaction-operations.json`，也可通过 `HONGBOSHI_TRANSACTION_OPERATION_STORE=postgres` 切换到 PostgreSQL。
 
 ## 初始核心表
 
-| 领域           | 表                                                                                                                                                                                         |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                                                                                                                                    |
-| 课程权益与订单 | `course_memberships`, `course_access_grants`, `course_products`, `course_product_contents`, `orders`, `order_items`, `payments`, `payment_webhook_events`                                  |
-| 测评           | `assessment_reports`                                                                                                                                                                       |
-| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`, `counseling_operation_settings`                                                                                               |
+| 领域           | 表                                                                                                                                                                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                                                                                                                                                                                                       |
+| 课程权益与订单 | `course_memberships`, `course_access_grants`, `course_products`, `course_product_contents`, `orders`, `order_items`, `payments`, `payment_webhook_events`                                                                                                     |
+| 测评           | `assessment_reports`                                                                                                                                                                                                                                          |
+| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`, `counseling_operation_settings`                                                                                                                                                                  |
 | 风险与审计     | `risk_events`, `audit_logs`, `course_product_audit_events`, `counseling_operation_audit_events`, `user_membership_audit_events`, `order_admin_exception_flags`, `order_admin_audit_events`, `transaction_admin_work_orders`, `transaction_admin_audit_events` |
 
 ## 后续接入顺序
@@ -67,7 +68,7 @@
 
 `server/modules/counseling/postgresCounselingAppointmentStore.ts` 已实现咨询师 seed、咨询时段 seed、预约保存、全量预约读取、按用户读取、订单关联和风险事件关联读取能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COUNSELING_APPOINTMENT_STORE=postgres` 时，咨询预约会写入 PostgreSQL。
 
-`server/modules/counseling/postgresCounselingOperationStore.ts` 已实现取消规则配置、规则变更审计、履约审计读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COUNSELING_OPERATION_STORE=postgres` 时，咨询运营配置与审计会写入 PostgreSQL。
+`server/modules/counseling/postgresCounselingOperationStore.ts` 已实现取消规则配置、规则变更审计、排班动作审计、履约审计读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COUNSELING_OPERATION_STORE=postgres` 时，咨询运营配置与审计会写入 PostgreSQL。
 
 `server/modules/courses/postgresCourseAccessStore.ts` 已实现课程会员、课程授权、订单、订单明细、会员操作审计、订单异常标记和订单操作审计事件的保存、单用户读取与后台聚合所需的用户权益快照列表能力。开发期默认仍可使用 JSON Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 时，课程权益、会员操作审计和订单操作审计会写入 PostgreSQL。
 
