@@ -3,6 +3,7 @@ import {
   createCounselingAppointmentPayload,
   expireOverdueCounselingPayments,
   fulfillCounselingAppointmentPayload,
+  getCounselingAdminServiceRecordsPayload,
   getCounselingAdminSchedulesPayload,
   getCounselingOperationsConsolePayload,
   getCounselingAvailabilityPayload,
@@ -345,6 +346,149 @@ describe("counseling api payloads", () => {
         pendingPaymentCount: 0,
       });
     }
+  });
+
+  it("builds admin service records with fulfillment anomalies and privacy guards", async () => {
+    const forbidden = await getCounselingAdminServiceRecordsPayload(
+      { id: "counselor_lin", roles: ["counselor"] },
+      {},
+      "2026-05-10T00:25:00.000Z"
+    );
+    expect(forbidden.status).toBe(403);
+
+    const availability = await getCounselingAvailabilityPayload(
+      fixedNow.toISOString()
+    );
+    if (!availability.ok) throw new Error("expected availability");
+
+    const pendingSlot = availability.data.slots[0];
+    const pending = await createCounselingAppointmentPayload(
+      {
+        counselorId: pendingSlot.counselorId,
+        slotId: pendingSlot.id,
+        channel: pendingSlot.channel,
+        concernTags: ["emotion"],
+        urgency: "within_24h",
+        noteForCounselor: "这段咨询备注不应展示给运营后台。",
+      },
+      "user_1",
+      fixedNow.toISOString()
+    );
+    if (!pending.body.ok) throw new Error("expected pending appointment");
+
+    const noShowSlot = availability.data.slots[1];
+    const noShowCreated = await createCounselingAppointmentPayload(
+      {
+        counselorId: noShowSlot.counselorId,
+        slotId: noShowSlot.id,
+        channel: noShowSlot.channel,
+        concernTags: ["sleep"],
+        urgency: "this_week",
+      },
+      "user_2",
+      "2026-05-10T00:01:00.000Z"
+    );
+    if (!noShowCreated.body.ok) throw new Error("expected no-show setup");
+
+    const confirmedNoShow = await updateCounselingAppointmentPayload(
+      noShowCreated.body.data.appointment.id,
+      { action: "confirm_payment" },
+      "user_2",
+      "2026-05-10T00:02:00.000Z"
+    );
+    expect(confirmedNoShow.status).toBe(200);
+
+    const markedNoShow = await fulfillCounselingAppointmentPayload(
+      noShowCreated.body.data.appointment.id,
+      { action: "mark_no_show" },
+      { id: noShowSlot.counselorId, roles: ["counselor"] },
+      "2026-05-10T00:03:00.000Z"
+    );
+    expect(markedNoShow.status).toBe(200);
+
+    const refundSlot = availability.data.slots[2];
+    const refundCreated = await createCounselingAppointmentPayload(
+      {
+        counselorId: refundSlot.counselorId,
+        slotId: refundSlot.id,
+        channel: refundSlot.channel,
+        concernTags: ["self_growth"],
+        urgency: "this_week",
+      },
+      "user_3",
+      "2026-05-10T00:04:00.000Z"
+    );
+    if (!refundCreated.body.ok) throw new Error("expected refund setup");
+
+    const confirmedRefund = await updateCounselingAppointmentPayload(
+      refundCreated.body.data.appointment.id,
+      { action: "confirm_payment" },
+      "user_3",
+      "2026-05-10T00:05:00.000Z"
+    );
+    expect(confirmedRefund.status).toBe(200);
+
+    const cancelledRefund = await updateCounselingAppointmentPayload(
+      refundCreated.body.data.appointment.id,
+      { action: "cancel" },
+      "user_3",
+      "2026-05-10T00:06:00.000Z"
+    );
+    expect(cancelledRefund.status).toBe(200);
+
+    const consolePayload = await getCounselingAdminServiceRecordsPayload(
+      { id: "operator_1", roles: ["operator"] },
+      {},
+      "2026-05-10T00:25:00.000Z"
+    );
+    expect(consolePayload.status).toBe(200);
+    if (!consolePayload.body.ok) throw new Error("expected service records");
+
+    const records = consolePayload.body.data.records;
+    const pendingRecord = records.find(
+      record => record.appointmentId === pending.body.data.appointment.id
+    );
+    const noShowRecord = records.find(
+      record => record.appointmentId === noShowCreated.body.data.appointment.id
+    );
+    const refundRecord = records.find(
+      record => record.appointmentId === refundCreated.body.data.appointment.id
+    );
+
+    expect(pendingRecord?.anomalies).toContain("payment_hold_expiring");
+    expect(pendingRecord?.riskLevel).toBe("medium");
+    expect(JSON.stringify(pendingRecord)).not.toContain("这段咨询备注");
+    expect(JSON.stringify(pendingRecord)).not.toContain("咨询预约前信息");
+    expect(noShowRecord?.anomalies).toContain("no_show");
+    expect(refundRecord?.anomalies).toContain("cancelled_pending_refund");
+    expect(consolePayload.body.data.summary).toMatchObject({
+      totalCount: 3,
+      anomalyCount: 3,
+      pendingPaymentCount: 1,
+      noShowCount: 1,
+      refundingCount: 1,
+      paymentHoldExpiringCount: 1,
+    });
+
+    const noShowOnly = await getCounselingAdminServiceRecordsPayload(
+      { id: "operator_1", roles: ["operator"] },
+      { anomalyType: "no_show" },
+      "2026-05-10T00:25:00.000Z"
+    );
+    expect(noShowOnly.status).toBe(200);
+    if (noShowOnly.body.ok) {
+      expect(noShowOnly.body.data.records).toHaveLength(1);
+      expect(noShowOnly.body.data.records[0]?.appointmentId).toBe(
+        noShowCreated.body.data.appointment.id
+      );
+    }
+
+    const invalid = await getCounselingAdminServiceRecordsPayload(
+      { id: "operator_1", roles: ["operator"] },
+      { anomalyType: "unknown_anomaly" },
+      "2026-05-10T00:25:00.000Z"
+    );
+    expect(invalid.status).toBe(400);
   });
 
   it("lets operators configure cancellation policy and records policy audit", async () => {

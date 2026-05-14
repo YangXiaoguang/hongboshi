@@ -25,12 +25,15 @@ import {
   CounselingCancellationPolicyUpdateResultSchema,
   CounselingOperationAuditEventSchema,
   CounselingOperationsConsoleSchema,
+  CounselingServiceRecordConsoleSchema,
+  CounselingServiceRecordFilterSchema,
   CounselingWorkbenchSchema,
   createCounselingSessionOrder,
   createSimulatedPaymentSucceededEvent,
   evaluateCounselingCancellation,
   expireOverdueCounselingAppointmentPayment,
   findCourseAccessOrder,
+  getCounselingPaymentDeadline,
   PaymentSucceededWebhookEventSchema,
   PaymentBusinessOrderSnapshotSchema,
   PaymentSchema,
@@ -53,6 +56,10 @@ import {
   type CounselingCancellationPolicy,
   type CounselingOperationAuditAction,
   type CounselingOperationAuditEvent,
+  type CounselingServiceRecord,
+  type CounselingServiceRecordAnomalyType,
+  type CounselingServiceRecordFilter,
+  type CounselingServiceRecordSummary,
   type CounselingSlot,
   type CounselingWorkbenchSummary,
   type LoginSession,
@@ -93,6 +100,9 @@ const CounselingWorkbenchResponseSchema = ApiResponseSchema(
 );
 const CounselingOperationsConsoleResponseSchema = ApiResponseSchema(
   CounselingOperationsConsoleSchema
+);
+const CounselingServiceRecordConsoleResponseSchema = ApiResponseSchema(
+  CounselingServiceRecordConsoleSchema
 );
 const CounselingAdminScheduleConsoleResponseSchema = ApiResponseSchema(
   CounselingAdminScheduleConsoleSchema
@@ -1690,6 +1700,371 @@ export async function updateCounselingCancellationPolicyPayload(
   } as const;
 }
 
+const COUNSELING_SERVICE_RECORD_DEFAULT_LIMIT = 50;
+const COUNSELING_PAYMENT_HOLD_EXPIRING_MINUTES = 10;
+const COUNSELING_UPCOMING_UNCONFIRMED_HOURS = 24;
+
+function firstStringParam(value: unknown) {
+  if (Array.isArray(value)) return firstStringParam(value[0]);
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function buildServiceRecordFilterCandidate(rawQuery: unknown) {
+  const query =
+    rawQuery && typeof rawQuery === "object"
+      ? (rawQuery as Record<string, unknown>)
+      : {};
+  const limitValue = firstStringParam(query.limit);
+  const parsedLimit = limitValue ? Number(limitValue) : undefined;
+
+  return {
+    counselorId: firstStringParam(query.counselorId),
+    appointmentStatus: firstStringParam(query.appointmentStatus),
+    anomalyType: firstStringParam(query.anomalyType),
+    keyword: firstStringParam(query.keyword),
+    limit: Number.isFinite(parsedLimit)
+      ? parsedLimit
+      : COUNSELING_SERVICE_RECORD_DEFAULT_LIMIT,
+  };
+}
+
+function uniqueAnomalies(
+  anomalies: CounselingServiceRecordAnomalyType[]
+): CounselingServiceRecordAnomalyType[] {
+  return Array.from(new Set(anomalies));
+}
+
+function buildServiceRecordAnomalies({
+  appointment,
+  slot,
+  order,
+  now,
+}: {
+  appointment: CounselingAppointment;
+  slot: CounselingSlot;
+  order?: Order;
+  now: string;
+}): CounselingServiceRecordAnomalyType[] {
+  const anomalies: CounselingServiceRecordAnomalyType[] = [];
+  const nowMs = Date.parse(now);
+  const startsAtMs = Date.parse(slot.startsAt);
+  const paymentDeadlineAt = getCounselingPaymentDeadline(appointment);
+  const paymentDeadlineMs = Date.parse(paymentDeadlineAt);
+
+  if (
+    appointment.status === "pending_payment" &&
+    !Number.isNaN(nowMs) &&
+    !Number.isNaN(paymentDeadlineMs)
+  ) {
+    const minutesUntilDeadline = Math.ceil((paymentDeadlineMs - nowMs) / 60000);
+    if (minutesUntilDeadline <= 0) {
+      anomalies.push("payment_hold_expired");
+    } else if (
+      minutesUntilDeadline <= COUNSELING_PAYMENT_HOLD_EXPIRING_MINUTES
+    ) {
+      anomalies.push("payment_hold_expiring");
+    }
+
+    if (!Number.isNaN(startsAtMs)) {
+      const hoursUntilStart = (startsAtMs - nowMs) / 60 / 60 / 1000;
+      if (
+        hoursUntilStart >= 0 &&
+        hoursUntilStart <= COUNSELING_UPCOMING_UNCONFIRMED_HOURS
+      ) {
+        anomalies.push("upcoming_unconfirmed");
+      }
+    }
+  }
+
+  if (appointment.status === "cancelled" && order?.status === "closed") {
+    const updatedAtMs = Date.parse(appointment.updatedAt);
+    if (
+      !Number.isNaN(updatedAtMs) &&
+      !Number.isNaN(paymentDeadlineMs) &&
+      updatedAtMs >= paymentDeadlineMs
+    ) {
+      anomalies.push("payment_hold_expired");
+    } else {
+      anomalies.push("payment_hold_closed");
+    }
+  }
+
+  if (appointment.status === "cancelled" && order?.status === "refunding") {
+    anomalies.push("cancelled_pending_refund");
+  } else if (order?.status === "refunding") {
+    anomalies.push("refunding");
+  }
+
+  if (appointment.status === "no_show") {
+    anomalies.push("no_show");
+  }
+
+  return uniqueAnomalies(anomalies);
+}
+
+function buildServiceRecordOperationHint(
+  anomalies: CounselingServiceRecordAnomalyType[]
+) {
+  if (anomalies.includes("no_show")) {
+    return "未到访记录需要运营确认后续补约或客服跟进。";
+  }
+  if (anomalies.includes("cancelled_pending_refund")) {
+    return "已取消并进入退款中，请关注退款回调完成情况。";
+  }
+  if (anomalies.includes("payment_hold_expired")) {
+    return "待支付锁定已关闭，可确认用户是否仍需重新预约。";
+  }
+  if (anomalies.includes("payment_hold_expiring")) {
+    return "待支付锁定即将释放，可提醒用户完成支付。";
+  }
+  if (anomalies.includes("upcoming_unconfirmed")) {
+    return "预约开始临近但仍未确认，需要运营关注。";
+  }
+  if (anomalies.includes("refunding")) {
+    return "关联订单正在退款中，请等待渠道回调。";
+  }
+  return undefined;
+}
+
+function buildLatestAuditEventByAppointmentId(
+  auditEvents: CounselingOperationAuditEvent[]
+) {
+  const eventsByAppointmentId = new Map<
+    string,
+    CounselingOperationAuditEvent
+  >();
+  auditEvents.forEach(event => {
+    if (!event.appointmentId) return;
+    const previous = eventsByAppointmentId.get(event.appointmentId);
+    if (
+      !previous ||
+      Date.parse(event.createdAt) > Date.parse(previous.createdAt)
+    ) {
+      eventsByAppointmentId.set(event.appointmentId, event);
+    }
+  });
+
+  return eventsByAppointmentId;
+}
+
+function serviceRecordMatchesFilter(
+  record: CounselingServiceRecord,
+  filters: CounselingServiceRecordFilter
+) {
+  if (filters.counselorId && record.counselorId !== filters.counselorId) {
+    return false;
+  }
+  if (
+    filters.appointmentStatus &&
+    record.appointmentStatus !== filters.appointmentStatus
+  ) {
+    return false;
+  }
+  if (filters.anomalyType && !record.anomalies.includes(filters.anomalyType)) {
+    return false;
+  }
+  if (filters.keyword) {
+    const keyword = filters.keyword.toLowerCase();
+    const searchable = [
+      record.appointmentId,
+      record.orderId,
+      record.userId,
+      record.counselorName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (!searchable.includes(keyword)) return false;
+  }
+
+  return true;
+}
+
+function buildServiceRecordSummary(
+  records: CounselingServiceRecord[]
+): CounselingServiceRecordSummary {
+  return {
+    totalCount: records.length,
+    anomalyCount: records.filter(record => record.anomalies.length > 0).length,
+    pendingPaymentCount: records.filter(
+      record => record.appointmentStatus === "pending_payment"
+    ).length,
+    scheduledCount: records.filter(
+      record => record.appointmentStatus === "scheduled"
+    ).length,
+    completedCount: records.filter(
+      record => record.appointmentStatus === "completed"
+    ).length,
+    cancelledCount: records.filter(
+      record => record.appointmentStatus === "cancelled"
+    ).length,
+    noShowCount: records.filter(
+      record => record.appointmentStatus === "no_show"
+    ).length,
+    refundingCount: records.filter(record =>
+      record.anomalies.some(anomaly =>
+        ["cancelled_pending_refund", "refunding"].includes(anomaly)
+      )
+    ).length,
+    paymentHoldExpiringCount: records.filter(record =>
+      record.anomalies.includes("payment_hold_expiring")
+    ).length,
+    paymentHoldExpiredCount: records.filter(record =>
+      record.anomalies.includes("payment_hold_expired")
+    ).length,
+    upcomingUnconfirmedCount: records.filter(record =>
+      record.anomalies.includes("upcoming_unconfirmed")
+    ).length,
+  };
+}
+
+async function appointmentToServiceRecord({
+  appointment,
+  latestAudit,
+  now,
+}: {
+  appointment: CounselingAppointment;
+  latestAudit?: CounselingOperationAuditEvent;
+  now: string;
+}): Promise<CounselingServiceRecord | undefined> {
+  const counselor = counselorProfiles.find(
+    item => item.id === appointment.counselorId
+  );
+  const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
+  if (!counselor || !slot) return undefined;
+
+  const [order, riskEvent] = await Promise.all([
+    getAppointmentOrder(appointment),
+    counselingAppointmentStore.getRiskEventForAppointment(appointment.id),
+  ]);
+  const anomalies = buildServiceRecordAnomalies({
+    appointment,
+    slot,
+    order,
+    now,
+  });
+  const startsAtMs = Date.parse(slot.startsAt);
+  const nowMs = Date.parse(now);
+  const paymentDeadlineAt = getCounselingPaymentDeadline(appointment);
+
+  return {
+    appointmentId: appointment.id,
+    userId: appointment.userId,
+    counselorId: counselor.id,
+    counselorName: counselor.name,
+    slotId: slot.id,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+    channel: slot.channel,
+    appointmentStatus: appointment.status,
+    orderId: order?.id,
+    orderStatus: order?.status,
+    payableAmount: order?.payableAmount,
+    paymentDeadlineAt:
+      appointment.status === "pending_payment" ||
+      (appointment.status === "cancelled" && order?.status === "closed")
+        ? paymentDeadlineAt
+        : undefined,
+    minutesUntilStart:
+      Number.isNaN(startsAtMs) || Number.isNaN(nowMs)
+        ? undefined
+        : Math.ceil((startsAtMs - nowMs) / 60000),
+    riskLevel: riskEvent?.riskLevel,
+    anomalies,
+    latestAuditAction: latestAudit?.action,
+    latestAuditAt: latestAudit?.createdAt,
+    operationHint: buildServiceRecordOperationHint(anomalies),
+    createdAt: appointment.createdAt,
+    updatedAt: appointment.updatedAt,
+  };
+}
+
+async function buildCounselingServiceRecordConsole({
+  filters,
+  now,
+}: {
+  filters: CounselingServiceRecordFilter;
+  now: string;
+}) {
+  const [appointments, auditEvents] = await Promise.all([
+    counselingAppointmentStore.listAppointments(),
+    counselingOperationStore.listAuditEvents(100),
+  ]);
+  const auditEventsByAppointmentId =
+    buildLatestAuditEventByAppointmentId(auditEvents);
+  const records = (
+    await Promise.all(
+      appointments.map(appointment =>
+        appointmentToServiceRecord({
+          appointment,
+          latestAudit: auditEventsByAppointmentId.get(appointment.id),
+          now,
+        })
+      )
+    )
+  ).filter((record): record is CounselingServiceRecord => Boolean(record));
+
+  const matchedRecords = records
+    .filter(record => serviceRecordMatchesFilter(record, filters))
+    .sort((a, b) => {
+      const anomalyDelta =
+        Number(b.anomalies.length > 0) - Number(a.anomalies.length > 0);
+      if (anomalyDelta !== 0) return anomalyDelta;
+      return Date.parse(b.startsAt) - Date.parse(a.startsAt);
+    });
+
+  return CounselingServiceRecordConsoleSchema.parse({
+    counselors: counselorProfiles,
+    filters,
+    records: matchedRecords.slice(0, filters.limit),
+    summary: buildServiceRecordSummary(matchedRecords),
+    serverTime: now,
+  });
+}
+
+export async function getCounselingAdminServiceRecordsPayload(
+  actor?: FulfillmentActor,
+  rawQuery?: unknown,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后查看咨询服务记录"),
+    } as const;
+  }
+
+  if (!userCan(actor, "admin:manage")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无咨询服务记录权限"),
+    } as const;
+  }
+
+  const parsedFilters = CounselingServiceRecordFilterSchema.safeParse(
+    buildServiceRecordFilterCandidate(rawQuery)
+  );
+  if (!parsedFilters.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "咨询服务记录筛选参数不合法"),
+    } as const;
+  }
+
+  await expireOverdueCounselingPayments(now);
+
+  return {
+    status: 200,
+    body: CounselingServiceRecordConsoleResponseSchema.parse({
+      ok: true,
+      data: await buildCounselingServiceRecordConsole({
+        filters: parsedFilters.data,
+        now,
+      }),
+    }),
+  } as const;
+}
+
 function buildCounselingWorkbenchSummary(
   records: CounselingAppointmentRecord[]
 ): CounselingWorkbenchSummary {
@@ -2334,6 +2709,18 @@ export function registerCounselingApi(app: Express) {
   );
 
   app.get(
+    "/api/counseling/admin/service-records",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getCounselingAdminServiceRecordsPayload(
+        session?.user,
+        req.query
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.get(
     "/api/counseling/admin/schedules",
     async (req: Request, res: Response) => {
       const session = await getLoginSessionFromRequest(req);
@@ -2467,6 +2854,24 @@ export function handleCounselingApiRequest(
     })().catch(err => {
       reportStoreError(err);
       sendJson(res, 500, errorPayload("INTERNAL_ERROR", "运营配置读取失败"));
+    });
+    return true;
+  }
+
+  if (
+    req.method === "GET" &&
+    url.pathname === "/api/counseling/admin/service-records"
+  ) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getCounselingAdminServiceRecordsPayload(
+        session?.user,
+        Object.fromEntries(url.searchParams.entries())
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      reportStoreError(err);
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "服务记录读取失败"));
     });
     return true;
   }

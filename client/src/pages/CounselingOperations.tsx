@@ -2,18 +2,22 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertCircle,
+  AlertTriangle,
   CalendarClock,
   CalendarPlus,
   CalendarX,
   CheckCircle2,
   ClipboardList,
+  FileSearch,
   History,
   Loader2,
   RefreshCw,
   RotateCcw,
   Save,
+  Search,
   SlidersHorizontal,
   ToggleLeft,
+  UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { userCan } from "@shared/domain";
@@ -27,6 +31,10 @@ import {
   type CounselingChannel,
   type CounselingOperationAuditEvent,
   type CounselingOperationsConsole,
+  type CounselingServiceRecord,
+  type CounselingServiceRecordAnomalyType,
+  type CounselingServiceRecordConsole,
+  type CounselingServiceRecordFilter,
 } from "@/features/counseling";
 
 const auditActionCopy = {
@@ -58,6 +66,19 @@ const scheduleStatusClassName = {
   closed: "border-[#E3D3CC] bg-[#FFF1EC] text-[#9A5944]",
 } satisfies Record<CounselingAdminScheduleSlot["status"], string>;
 
+type ServiceRecordStatusFilter =
+  | "all"
+  | CounselingServiceRecord["appointmentStatus"];
+
+type ServiceRecordAnomalyFilter = "all" | CounselingServiceRecordAnomalyType;
+
+type ServiceRecordFiltersDraft = {
+  counselorId: string;
+  appointmentStatus: ServiceRecordStatusFilter;
+  anomalyType: ServiceRecordAnomalyFilter;
+  keyword: string;
+};
+
 const statusCopy = {
   pending_payment: "待支付",
   scheduled: "已预约",
@@ -66,6 +87,49 @@ const statusCopy = {
   no_show: "未到访",
   refunded: "已退款",
 } as const;
+
+const orderStatusCopy = {
+  created: "已创建",
+  pending_payment: "待支付",
+  paid: "已支付",
+  closed: "已关闭",
+  refunding: "退款中",
+  refunded: "已退款",
+} as const;
+
+const anomalyCopy = {
+  payment_hold_expiring: "锁定临近释放",
+  payment_hold_expired: "锁定已过期",
+  payment_hold_closed: "待支付已关闭",
+  upcoming_unconfirmed: "临近未确认",
+  cancelled_pending_refund: "取消待退款",
+  refunding: "退款中",
+  no_show: "未到访",
+} satisfies Record<CounselingServiceRecordAnomalyType, string>;
+
+const anomalyClassName = {
+  payment_hold_expiring: "border-[#E8D2A1] bg-[#FFF8DF] text-[#8A641C]",
+  payment_hold_expired: "border-[#EDCDBF] bg-[#FFF4EF] text-[#A65F48]",
+  payment_hold_closed: "border-[#E3D3CC] bg-[#FFF1EC] text-[#9A5944]",
+  upcoming_unconfirmed: "border-[#C9D5E7] bg-[#EFF4FB] text-[#3B5F8A]",
+  cancelled_pending_refund: "border-[#E8D2A1] bg-[#FFF8DF] text-[#8A641C]",
+  refunding: "border-[#E8D2A1] bg-[#FFF8DF] text-[#8A641C]",
+  no_show: "border-[#EDCDBF] bg-[#FFF4EF] text-[#A65F48]",
+} satisfies Record<CounselingServiceRecordAnomalyType, string>;
+
+const riskLevelCopy = {
+  low: "低风险",
+  medium: "中风险",
+  high: "高风险",
+  urgent: "紧急",
+} as const;
+
+const defaultServiceRecordFilters: ServiceRecordFiltersDraft = {
+  counselorId: "all",
+  appointmentStatus: "all",
+  anomalyType: "all",
+  keyword: "",
+};
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -102,6 +166,23 @@ function buildDefaultScheduleDraft() {
 function localInputToIso(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+function toServiceRecordRequestFilters(
+  filters: ServiceRecordFiltersDraft
+): Partial<CounselingServiceRecordFilter> {
+  return {
+    counselorId:
+      filters.counselorId === "all" ? undefined : filters.counselorId,
+    appointmentStatus:
+      filters.appointmentStatus === "all"
+        ? undefined
+        : filters.appointmentStatus,
+    anomalyType:
+      filters.anomalyType === "all" ? undefined : filters.anomalyType,
+    keyword: filters.keyword.trim() || undefined,
+    limit: 50,
+  };
 }
 
 function policyChanged(
@@ -174,6 +255,11 @@ export default function CounselingOperations() {
   const [consoleData, setConsoleData] = useState<CounselingOperationsConsole>();
   const [scheduleConsole, setScheduleConsole] =
     useState<CounselingAdminScheduleConsole>();
+  const [serviceRecordConsole, setServiceRecordConsole] =
+    useState<CounselingServiceRecordConsole>();
+  const [serviceRecordFilters, setServiceRecordFilters] = useState(
+    defaultServiceRecordFilters
+  );
   const [draftPolicy, setDraftPolicy] = useState<CounselingCancellationPolicy>({
     scheduledRefundCutoffMinutesBeforeStart: 0,
     allowPendingPaymentCancellation: true,
@@ -183,6 +269,7 @@ export default function CounselingOperations() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isScheduleSaving, setIsScheduleSaving] = useState(false);
+  const [isServiceRecordsLoading, setIsServiceRecordsLoading] = useState(false);
   const [scheduleActionSlotId, setScheduleActionSlotId] = useState<string>();
   const [error, setError] = useState<string>();
 
@@ -203,6 +290,31 @@ export default function CounselingOperations() {
       { available: 0, locked: 0, scheduled: 0, closed: 0 }
     );
   }, [scheduleConsole?.counselors]);
+  const serviceRecordCounselors = useMemo(
+    () =>
+      serviceRecordConsole?.counselors ??
+      scheduleConsole?.counselors.map(schedule => schedule.counselor) ??
+      [],
+    [scheduleConsole?.counselors, serviceRecordConsole?.counselors]
+  );
+
+  const loadServiceRecords = useCallback(
+    async (filters: ServiceRecordFiltersDraft) => {
+      setIsServiceRecordsLoading(true);
+      setError(undefined);
+      try {
+        const payload = await httpCounselingRepository.loadServiceRecords(
+          toServiceRecordRequestFilters(filters)
+        );
+        setServiceRecordConsole(payload);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "咨询服务记录暂时不可用");
+      } finally {
+        setIsServiceRecordsLoading(false);
+      }
+    },
+    []
+  );
 
   const loadConsole = useCallback(async () => {
     setIsLoading(true);
@@ -231,7 +343,14 @@ export default function CounselingOperations() {
   useEffect(() => {
     if (isAuthSyncing || !isLoggedIn || !canManageOperations) return;
     void loadConsole();
-  }, [canManageOperations, isAuthSyncing, isLoggedIn, loadConsole]);
+    void loadServiceRecords(defaultServiceRecordFilters);
+  }, [
+    canManageOperations,
+    isAuthSyncing,
+    isLoggedIn,
+    loadConsole,
+    loadServiceRecords,
+  ]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -367,11 +486,14 @@ export default function CounselingOperations() {
           </p>
         </div>
         <button
-          onClick={() => void loadConsole()}
-          disabled={isLoading || isSaving}
+          onClick={() => {
+            void loadConsole();
+            void loadServiceRecords(serviceRecordFilters);
+          }}
+          disabled={isLoading || isSaving || isServiceRecordsLoading}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-lg border border-[#CFC4B5] bg-[#FFFDF8] px-4 text-sm font-semibold text-[#355F51] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isLoading ? (
+          {isLoading || isServiceRecordsLoading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <RefreshCw className="h-4 w-4" />
@@ -681,6 +803,239 @@ export default function CounselingOperations() {
             </div>
           )}
         </motion.div>
+      </section>
+
+      <section className="mt-6 rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5">
+        <div className="flex flex-col gap-4 border-b border-[#E8DED0] pb-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+              <FileSearch className="h-4 w-4 text-[#6F8F83]" />
+              服务记录与履约异常
+            </div>
+            <p className="mt-2 max-w-[720px] text-xs leading-5 text-[#7A827C]">
+              仅展示运营所需的预约、订单、风险等级和审计摘要，不展示咨询说明、测评答案或风险信号原文。
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 xl:w-[620px] xl:grid-cols-[1fr_1fr_1fr_auto]">
+            <select
+              value={serviceRecordFilters.counselorId}
+              onChange={event =>
+                setServiceRecordFilters(previous => ({
+                  ...previous,
+                  counselorId: event.target.value,
+                }))
+              }
+              className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+            >
+              <option value="all">全部咨询师</option>
+              {serviceRecordCounselors.map(counselor => (
+                <option key={counselor.id} value={counselor.id}>
+                  {counselor.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={serviceRecordFilters.appointmentStatus}
+              onChange={event =>
+                setServiceRecordFilters(previous => ({
+                  ...previous,
+                  appointmentStatus: event.target
+                    .value as ServiceRecordStatusFilter,
+                }))
+              }
+              className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+            >
+              <option value="all">全部状态</option>
+              {Object.entries(statusCopy).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={serviceRecordFilters.anomalyType}
+              onChange={event =>
+                setServiceRecordFilters(previous => ({
+                  ...previous,
+                  anomalyType: event.target.value as ServiceRecordAnomalyFilter,
+                }))
+              }
+              className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+            >
+              <option value="all">全部异常</option>
+              {Object.entries(anomalyCopy).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void loadServiceRecords(serviceRecordFilters)}
+              disabled={isServiceRecordsLoading}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              {isServiceRecordsLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+              筛选
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-[#41675A]">
+              记录 {serviceRecordConsole?.summary.totalCount ?? 0}
+            </span>
+            <span className="rounded-full bg-[#FFF4EF] px-2.5 py-1 text-[#A65F48]">
+              异常 {serviceRecordConsole?.summary.anomalyCount ?? 0}
+            </span>
+            <span className="rounded-full bg-[#FFF8DF] px-2.5 py-1 text-[#8A641C]">
+              待支付临近{" "}
+              {serviceRecordConsole?.summary.paymentHoldExpiringCount ?? 0}
+            </span>
+            <span className="rounded-full bg-[#EFF4FB] px-2.5 py-1 text-[#3B5F8A]">
+              未到访 {serviceRecordConsole?.summary.noShowCount ?? 0}
+            </span>
+            <span className="rounded-full bg-[#F1E9DD] px-2.5 py-1 text-[#7B6F61]">
+              待退款 {serviceRecordConsole?.summary.refundingCount ?? 0}
+            </span>
+          </div>
+          <label className="relative block md:w-[320px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8A8176]" />
+            <input
+              value={serviceRecordFilters.keyword}
+              onChange={event =>
+                setServiceRecordFilters(previous => ({
+                  ...previous,
+                  keyword: event.target.value,
+                }))
+              }
+              onKeyDown={event => {
+                if (event.key === "Enter") {
+                  void loadServiceRecords(serviceRecordFilters);
+                }
+              }}
+              placeholder="搜索预约、订单、用户 ID"
+              className="h-10 w-full rounded-lg border border-[#D8CDBC] bg-white pl-9 pr-3 text-sm font-semibold text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
+            />
+          </label>
+        </div>
+
+        {isServiceRecordsLoading && !serviceRecordConsole ? (
+          <div className="mt-5 flex min-h-[240px] items-center justify-center text-sm text-[#6F7771]">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            正在读取服务记录
+          </div>
+        ) : serviceRecordConsole?.records.length ? (
+          <div className="mt-5 divide-y divide-[#E8DED0]">
+            {serviceRecordConsole.records.map((record, index) => (
+              <motion.article
+                key={record.appointmentId}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.22,
+                  delay: Math.min(index * 0.02, 0.12),
+                }}
+                className="grid gap-3 py-4 xl:grid-cols-[minmax(220px,1.15fr)_minmax(260px,1.35fr)_minmax(220px,1fr)]"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#F1E9DD] text-[#6F8F83]">
+                      {record.anomalies.length ? (
+                        <AlertTriangle className="h-4 w-4" />
+                      ) : (
+                        <UserCheck className="h-4 w-4" />
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#243B35]">
+                        {record.counselorName} · {formatDate(record.startsAt)}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-[#8A8176]">
+                        {record.appointmentId} · 用户 {record.userId}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
+                      {statusCopy[record.appointmentStatus]}
+                    </span>
+                    {record.orderStatus && (
+                      <span className="rounded-full bg-[#F3EEE5] px-2.5 py-1 text-xs font-semibold text-[#6F675E]">
+                        {orderStatusCopy[record.orderStatus]}
+                      </span>
+                    )}
+                    {record.riskLevel && (
+                      <span className="rounded-full bg-[#EFF4FB] px-2.5 py-1 text-xs font-semibold text-[#3B5F8A]">
+                        {riskLevelCopy[record.riskLevel]}
+                      </span>
+                    )}
+                    {record.anomalies.map(anomaly => (
+                      <span
+                        key={anomaly}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${anomalyClassName[anomaly]}`}
+                      >
+                        {anomalyCopy[anomaly]}
+                      </span>
+                    ))}
+                  </div>
+                  {record.operationHint && (
+                    <p className="mt-2 text-xs leading-5 text-[#7A827C]">
+                      {record.operationHint}
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid gap-1 text-xs leading-5 text-[#66716A] xl:text-right">
+                  <p>
+                    渠道{" "}
+                    <span className="font-semibold text-[#243B35]">
+                      {record.channel === "video"
+                        ? "视频"
+                        : record.channel === "voice"
+                          ? "语音"
+                          : "线下"}
+                    </span>
+                  </p>
+                  {typeof record.minutesUntilStart === "number" && (
+                    <p>
+                      距开始{" "}
+                      <span className="font-semibold text-[#243B35]">
+                        {record.minutesUntilStart >= 0
+                          ? `${record.minutesUntilStart} 分钟`
+                          : "已开始"}
+                      </span>
+                    </p>
+                  )}
+                  {record.latestAuditAction && (
+                    <p>
+                      最近审计{" "}
+                      <span className="font-semibold text-[#243B35]">
+                        {auditActionCopy[record.latestAuditAction]}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              </motion.article>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-5 flex min-h-[240px] flex-col items-center justify-center px-6 text-center">
+            <FileSearch className="h-8 w-8 text-[#7C9288]" />
+            <h2 className="mt-4 text-lg font-semibold">暂无服务记录</h2>
+            <p className="mt-2 max-w-[360px] text-sm leading-6 text-[#6F7771]">
+              当前筛选条件下没有预约履约记录，调整筛选后再查看。
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-[420px_1fr]">

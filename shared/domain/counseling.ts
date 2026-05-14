@@ -319,6 +319,70 @@ export const CounselingCancellationPolicyUpdateResultSchema = z.object({
   serverTime: DateTimeLikeSchema,
 });
 
+export const CounselingServiceRecordAnomalyTypeSchema = z.enum([
+  "payment_hold_expiring",
+  "payment_hold_expired",
+  "payment_hold_closed",
+  "upcoming_unconfirmed",
+  "cancelled_pending_refund",
+  "refunding",
+  "no_show",
+]);
+
+export const CounselingServiceRecordFilterSchema = z.object({
+  counselorId: EntityIdSchema.optional(),
+  appointmentStatus: AppointmentStatusSchema.optional(),
+  anomalyType: CounselingServiceRecordAnomalyTypeSchema.optional(),
+  keyword: z.string().trim().max(80).optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+});
+
+export const CounselingServiceRecordSchema = z.object({
+  appointmentId: EntityIdSchema,
+  userId: EntityIdSchema,
+  counselorId: EntityIdSchema,
+  counselorName: z.string().min(1),
+  slotId: EntityIdSchema,
+  startsAt: DateTimeLikeSchema,
+  endsAt: DateTimeLikeSchema,
+  channel: CounselingChannelSchema,
+  appointmentStatus: AppointmentStatusSchema,
+  orderId: EntityIdSchema.optional(),
+  orderStatus: OrderSchema.shape.status.optional(),
+  payableAmount: MoneyAmountSchema.optional(),
+  paymentDeadlineAt: DateTimeLikeSchema.optional(),
+  minutesUntilStart: z.number().int().optional(),
+  riskLevel: RiskEventSchema.shape.riskLevel.optional(),
+  anomalies: z.array(CounselingServiceRecordAnomalyTypeSchema),
+  latestAuditAction: CounselingOperationAuditActionSchema.optional(),
+  latestAuditAt: DateTimeLikeSchema.optional(),
+  operationHint: z.string().max(200).optional(),
+  createdAt: DateTimeLikeSchema,
+  updatedAt: DateTimeLikeSchema,
+});
+
+export const CounselingServiceRecordSummarySchema = z.object({
+  totalCount: z.number().int().nonnegative(),
+  anomalyCount: z.number().int().nonnegative(),
+  pendingPaymentCount: z.number().int().nonnegative(),
+  scheduledCount: z.number().int().nonnegative(),
+  completedCount: z.number().int().nonnegative(),
+  cancelledCount: z.number().int().nonnegative(),
+  noShowCount: z.number().int().nonnegative(),
+  refundingCount: z.number().int().nonnegative(),
+  paymentHoldExpiringCount: z.number().int().nonnegative(),
+  paymentHoldExpiredCount: z.number().int().nonnegative(),
+  upcomingUnconfirmedCount: z.number().int().nonnegative(),
+});
+
+export const CounselingServiceRecordConsoleSchema = z.object({
+  counselors: z.array(CounselorSchema),
+  filters: CounselingServiceRecordFilterSchema,
+  records: z.array(CounselingServiceRecordSchema),
+  summary: CounselingServiceRecordSummarySchema,
+  serverTime: DateTimeLikeSchema,
+});
+
 const appointmentActionTransitions: Record<
   CounselingAppointmentAction,
   { from: AppointmentStatus[]; to: AppointmentStatus }
@@ -621,4 +685,19 @@ export type CounselingOperationsConsole = z.infer<
 >;
 export type CounselingCancellationPolicyUpdateResult = z.infer<
   typeof CounselingCancellationPolicyUpdateResultSchema
+>;
+export type CounselingServiceRecordAnomalyType = z.infer<
+  typeof CounselingServiceRecordAnomalyTypeSchema
+>;
+export type CounselingServiceRecordFilter = z.infer<
+  typeof CounselingServiceRecordFilterSchema
+>;
+export type CounselingServiceRecord = z.infer<
+  typeof CounselingServiceRecordSchema
+>;
+export type CounselingServiceRecordSummary = z.infer<
+  typeof CounselingServiceRecordSummarySchema
+>;
+export type CounselingServiceRecordConsole = z.infer<
+  typeof CounselingServiceRecordConsoleSchema
 >;

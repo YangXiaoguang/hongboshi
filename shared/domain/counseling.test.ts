@@ -6,6 +6,8 @@ import {
   CounselingAdminScheduleActionRequestSchema,
   CounselingAdminScheduleConsoleSchema,
   CounselingOperationAuditEventSchema,
+  CounselingServiceRecordConsoleSchema,
+  CounselingServiceRecordFilterSchema,
   evaluateCounselingCancellation,
   expireOverdueCounselingAppointmentPayment,
   getCounselingPaymentDeadline,
@@ -225,6 +227,84 @@ describe("counseling appointment status machine", () => {
       channel: "voice",
       updatedAt: "2026-05-10T10:20:00.000Z",
     });
+  });
+
+  it("validates service record console contracts and filters", () => {
+    expect(
+      CounselingServiceRecordFilterSchema.parse({
+        counselorId: "counselor_1",
+        appointmentStatus: "pending_payment",
+        anomalyType: "payment_hold_expiring",
+        keyword: "user_1",
+        limit: 20,
+      }).anomalyType
+    ).toBe("payment_hold_expiring");
+
+    const consolePayload = CounselingServiceRecordConsoleSchema.parse({
+      counselors: [
+        {
+          id: "counselor_1",
+          name: "林若安",
+          title: "国家二级心理咨询师",
+          introduction: "擅长情绪与自我成长议题。",
+          specialties: ["emotion"],
+          licenseSummary: "执业 9 年",
+          yearsOfPractice: 9,
+          sessionPrice: 399,
+          rating: 4.9,
+        },
+      ],
+      filters: {
+        counselorId: "counselor_1",
+        appointmentStatus: "pending_payment",
+        anomalyType: "payment_hold_expiring",
+        keyword: "user_1",
+        limit: 20,
+      },
+      records: [
+        {
+          appointmentId: "appointment_1",
+          userId: "user_1",
+          counselorId: "counselor_1",
+          counselorName: "林若安",
+          slotId: "slot_1",
+          startsAt: "2026-05-11T10:00:00.000Z",
+          endsAt: "2026-05-11T10:50:00.000Z",
+          channel: "video",
+          appointmentStatus: "pending_payment",
+          orderId: "order_1",
+          orderStatus: "pending_payment",
+          payableAmount: 399,
+          paymentDeadlineAt: "2026-05-10T10:30:00.000Z",
+          minutesUntilStart: 1440,
+          riskLevel: "medium",
+          anomalies: ["payment_hold_expiring"],
+          latestAuditAction: "schedule_slot_added",
+          latestAuditAt: "2026-05-10T10:05:00.000Z",
+          operationHint: "支付锁位即将到期，请提醒用户或释放资源。",
+          createdAt: "2026-05-10T10:00:00.000Z",
+          updatedAt: "2026-05-10T10:00:00.000Z",
+        },
+      ],
+      summary: {
+        totalCount: 1,
+        anomalyCount: 1,
+        pendingPaymentCount: 1,
+        scheduledCount: 0,
+        completedCount: 0,
+        cancelledCount: 0,
+        noShowCount: 0,
+        refundingCount: 0,
+        paymentHoldExpiringCount: 1,
+        paymentHoldExpiredCount: 0,
+        upcomingUnconfirmedCount: 0,
+      },
+      serverTime: "2026-05-10T10:25:00.000Z",
+    });
+
+    expect(consolePayload.records[0]?.anomalies).toContain(
+      "payment_hold_expiring"
+    );
   });
 
   it("marks cancelled appointments as refunded", () => {

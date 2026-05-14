@@ -12,6 +12,8 @@ import {
   CounselingCancellationPolicyUpdateRequestSchema,
   CounselingCancellationPolicyUpdateResultSchema,
   CounselingOperationsConsoleSchema,
+  CounselingServiceRecordConsoleSchema,
+  CounselingServiceRecordFilterSchema,
   CounselingWorkbenchSchema,
   type CounselingAppointmentAction,
   type CounselingAppointmentActionRequest,
@@ -26,6 +28,8 @@ import {
   type CounselingCancellationPolicyUpdateRequest,
   type CounselingCancellationPolicyUpdateResult,
   type CounselingOperationsConsole,
+  type CounselingServiceRecordConsole,
+  type CounselingServiceRecordFilter,
   type CounselingWorkbench,
 } from "@shared/domain";
 
@@ -43,6 +47,9 @@ const CounselingWorkbenchResponseSchema = ApiResponseSchema(
 );
 const CounselingOperationsConsoleResponseSchema = ApiResponseSchema(
   CounselingOperationsConsoleSchema
+);
+const CounselingServiceRecordConsoleResponseSchema = ApiResponseSchema(
+  CounselingServiceRecordConsoleSchema
 );
 const CounselingAdminScheduleConsoleResponseSchema = ApiResponseSchema(
   CounselingAdminScheduleConsoleSchema
@@ -116,6 +123,14 @@ export function parseCounselingOperationsConsoleResponse(
   return parsed.data;
 }
 
+export function parseCounselingServiceRecordConsoleResponse(
+  payload: unknown
+): CounselingServiceRecordConsole {
+  const parsed = CounselingServiceRecordConsoleResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 export function parseCounselingAdminScheduleConsoleResponse(
   payload: unknown
 ): CounselingAdminScheduleConsole {
@@ -175,6 +190,12 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     return operationsParsed.data.error.message;
   }
 
+  const serviceRecordParsed =
+    CounselingServiceRecordConsoleResponseSchema.safeParse(payload);
+  if (serviceRecordParsed.success && !serviceRecordParsed.data.ok) {
+    return serviceRecordParsed.data.error.message;
+  }
+
   const scheduleParsed =
     CounselingAdminScheduleConsoleResponseSchema.safeParse(payload);
   if (scheduleParsed.success && !scheduleParsed.data.ok) {
@@ -194,6 +215,33 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   }
 
   return fallback;
+}
+
+function buildServiceRecordQuery(
+  filters?: Partial<CounselingServiceRecordFilter>
+) {
+  const normalized = CounselingServiceRecordFilterSchema.partial().parse(
+    filters ?? {}
+  );
+  const searchParams = new URLSearchParams();
+  if (normalized.counselorId) {
+    searchParams.set("counselorId", normalized.counselorId);
+  }
+  if (normalized.appointmentStatus) {
+    searchParams.set("appointmentStatus", normalized.appointmentStatus);
+  }
+  if (normalized.anomalyType) {
+    searchParams.set("anomalyType", normalized.anomalyType);
+  }
+  if (normalized.keyword) {
+    searchParams.set("keyword", normalized.keyword);
+  }
+  if (normalized.limit) {
+    searchParams.set("limit", String(normalized.limit));
+  }
+
+  const query = searchParams.toString();
+  return query ? `?${query}` : "";
 }
 
 export const httpCounselingRepository = {
@@ -253,6 +301,26 @@ export const httpCounselingRepository = {
       throw new Error(extractErrorMessage(payload, "咨询运营配置暂时不可用"));
     }
     return parseCounselingOperationsConsoleResponse(payload);
+  },
+
+  async loadServiceRecords(
+    filters?: Partial<CounselingServiceRecordFilter>
+  ): Promise<CounselingServiceRecordConsole> {
+    const response = await fetch(
+      `${API_BASE}/admin/service-records${buildServiceRecordQuery(filters)}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "咨询服务记录暂时不可用"));
+    }
+    return parseCounselingServiceRecordConsoleResponse(payload);
   },
 
   async loadAdminSchedules(): Promise<CounselingAdminScheduleConsole> {

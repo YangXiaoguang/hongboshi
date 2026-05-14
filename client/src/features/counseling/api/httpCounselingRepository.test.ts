@@ -8,6 +8,7 @@ import {
   parseCounselingAvailabilityResponse,
   parseCounselingCancellationPolicyUpdateResponse,
   parseCounselingOperationsConsoleResponse,
+  parseCounselingServiceRecordConsoleResponse,
   parseCounselingWorkbenchResponse,
 } from "./httpCounselingRepository";
 
@@ -307,6 +308,64 @@ describe("http counseling repository parsing", () => {
         },
       }).auditEvent?.action
     ).toBe("schedule_slot_added");
+  });
+
+  it("parses service record console responses", () => {
+    expect(
+      parseCounselingServiceRecordConsoleResponse({
+        ok: true,
+        data: {
+          counselors: [
+            {
+              ...counselor,
+            },
+          ],
+          filters: {
+            anomalyType: "payment_hold_expiring",
+            limit: 50,
+          },
+          records: [
+            {
+              appointmentId: "appointment_1",
+              userId: "user_1",
+              counselorId: counselor.id,
+              counselorName: counselor.name,
+              slotId: slot.id,
+              startsAt: slot.startsAt,
+              endsAt: slot.endsAt,
+              channel: "video",
+              appointmentStatus: "pending_payment",
+              orderId: order.id,
+              orderStatus: "pending_payment",
+              payableAmount: 399,
+              paymentDeadlineAt: "2026-05-10T00:30:00.000Z",
+              minutesUntilStart: 2040,
+              riskLevel: "high",
+              anomalies: ["payment_hold_expiring"],
+              latestAuditAction: "schedule_slot_added",
+              latestAuditAt: "2026-05-10T00:10:00.000Z",
+              operationHint: "支付锁位即将到期，请提醒用户或释放资源。",
+              createdAt: "2026-05-10T00:00:00.000Z",
+              updatedAt: "2026-05-10T00:00:00.000Z",
+            },
+          ],
+          summary: {
+            totalCount: 1,
+            anomalyCount: 1,
+            pendingPaymentCount: 1,
+            scheduledCount: 0,
+            completedCount: 0,
+            cancelledCount: 0,
+            noShowCount: 0,
+            refundingCount: 0,
+            paymentHoldExpiringCount: 1,
+            paymentHoldExpiredCount: 0,
+            upcomingUnconfirmedCount: 0,
+          },
+          serverTime: "2026-05-10T00:25:00.000Z",
+        },
+      }).records[0]?.anomalies
+    ).toContain("payment_hold_expiring");
   });
 
   it("throws on error response", () => {
