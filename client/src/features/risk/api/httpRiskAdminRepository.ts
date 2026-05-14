@@ -5,11 +5,17 @@ import {
   RiskAdminListQuerySchema,
   RiskAdminListResultSchema,
   RiskAdminMutationResultSchema,
+  RiskSopConsoleSchema,
+  RiskSopTemplateMutationResultSchema,
+  RiskSopTemplateUpdateRequestSchema,
   type RiskAdminActionRequest,
   type RiskAdminDetail,
   type RiskAdminListQuery,
   type RiskAdminListResult,
   type RiskAdminMutationResult,
+  type RiskSopConsole,
+  type RiskSopTemplateMutationResult,
+  type RiskSopTemplateUpdateRequest,
 } from "@shared/domain";
 
 const RiskAdminListResponseSchema = ApiResponseSchema(
@@ -18,6 +24,10 @@ const RiskAdminListResponseSchema = ApiResponseSchema(
 const RiskAdminDetailResponseSchema = ApiResponseSchema(RiskAdminDetailSchema);
 const RiskAdminMutationResponseSchema = ApiResponseSchema(
   RiskAdminMutationResultSchema
+);
+const RiskSopConsoleResponseSchema = ApiResponseSchema(RiskSopConsoleSchema);
+const RiskSopTemplateMutationResponseSchema = ApiResponseSchema(
+  RiskSopTemplateMutationResultSchema
 );
 const API_BASE = "/api/risk/admin";
 
@@ -53,6 +63,20 @@ export function parseRiskAdminMutationResponse(
   return parsed.data;
 }
 
+export function parseRiskSopConsoleResponse(payload: unknown): RiskSopConsole {
+  const parsed = RiskSopConsoleResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseRiskSopTemplateMutationResponse(
+  payload: unknown
+): RiskSopTemplateMutationResult {
+  const parsed = RiskSopTemplateMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = RiskAdminListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -67,6 +91,17 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   const mutationParsed = RiskAdminMutationResponseSchema.safeParse(payload);
   if (mutationParsed.success && !mutationParsed.data.ok) {
     return mutationParsed.data.error.message;
+  }
+
+  const sopParsed = RiskSopConsoleResponseSchema.safeParse(payload);
+  if (sopParsed.success && !sopParsed.data.ok) {
+    return sopParsed.data.error.message;
+  }
+
+  const sopMutationParsed =
+    RiskSopTemplateMutationResponseSchema.safeParse(payload);
+  if (sopMutationParsed.success && !sopMutationParsed.data.ok) {
+    return sopMutationParsed.data.error.message;
   }
 
   return fallback;
@@ -84,6 +119,21 @@ function queryStringFromRiskAdminQuery(query: Partial<RiskAdminListQuery>) {
 }
 
 export const httpRiskAdminRepository = {
+  async loadSopConsole(): Promise<RiskSopConsole> {
+    const response = await fetch(`${API_BASE}/sop`, {
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "风险 SOP 暂时不可用"));
+    }
+    return parseRiskSopConsoleResponse(payload);
+  },
+
   async loadEvents(
     query: Partial<RiskAdminListQuery> = {}
   ): Promise<RiskAdminListResult> {
@@ -144,5 +194,29 @@ export const httpRiskAdminRepository = {
       throw new Error(extractErrorMessage(payload, "风险复核处理暂时不可用"));
     }
     return parseRiskAdminMutationResponse(payload);
+  },
+
+  async updateSopTemplate(
+    templateId: string,
+    request: RiskSopTemplateUpdateRequest
+  ): Promise<RiskSopTemplateMutationResult> {
+    const response = await fetch(
+      `${API_BASE}/sop/templates/${encodeURIComponent(templateId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify(RiskSopTemplateUpdateRequestSchema.parse(request)),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "风险 SOP 保存失败"));
+    }
+    return parseRiskSopTemplateMutationResponse(payload);
   },
 };

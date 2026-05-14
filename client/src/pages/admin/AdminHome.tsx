@@ -50,6 +50,7 @@ const implementationRows = [
   ["M7-B", "服务记录异常", "已完成", "服务记录、履约异常和隐私最小化"],
   ["M7-C", "咨询师档案", "已完成", "展示资料、资质状态和接单开关"],
   ["M8-A", "风险复核台", "已完成", "风险事件、SOP 摘要和人工处理记录"],
+  ["M8-B", "风险 SOP", "已完成", "SOP 模板、结果模板和升级队列"],
 ] as const;
 
 const overviewMetrics: {
@@ -58,7 +59,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "M8-B", icon: GitBranch },
+  { label: "下一阶段", value: "M8-C", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -82,8 +83,8 @@ export default function AdminHome() {
             业务运营总览
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            当前后台已接入咨询师档案、咨询排班运营、服务记录与履约异常、支付对账、课程商品、用户会员、订单管理、交易退款、财务管理和风险复核，后续按风险
-            SOP、质检和审计中心逐步扩展。
+            当前后台已接入咨询师档案、咨询排班运营、服务记录与履约异常、支付对账、课程商品、用户会员、订单管理、交易退款、财务管理、风险复核、风险
+            SOP 和升级队列，后续按持久化、质检和审计中心逐步扩展。
           </p>
         </div>
         <button
@@ -197,8 +198,8 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经完成 M8-A 风险复核台基础，下一步进入风险 SOP
-              与升级队列。
+              当前连续执行状态已经完成 M8-B 风险 SOP
+              与升级队列基础，下一步进入风险复核持久化与审计中心预备。
             </p>
           </div>
           <div className="overflow-x-auto">

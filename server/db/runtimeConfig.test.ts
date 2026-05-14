@@ -21,6 +21,7 @@ describe("database runtime persistence config", () => {
       HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE: "file",
       HONGBOSHI_RISK_EVENT_STORE: "memory",
       HONGBOSHI_RISK_REVIEW_STORE: "file",
+      HONGBOSHI_RISK_SOP_STORE: "file",
       HONGBOSHI_TRANSACTION_OPERATION_STORE: "file",
       HONGBOSHI_FINANCE_RULE_STORE: "file",
     });
@@ -52,6 +53,10 @@ describe("database runtime persistence config", () => {
       config.stores.find(
         store => store.envName === "HONGBOSHI_RISK_REVIEW_STORE"
       )?.mode
+    ).toBe("file");
+    expect(
+      config.stores.find(store => store.envName === "HONGBOSHI_RISK_SOP_STORE")
+        ?.mode
     ).toBe("file");
   });
 

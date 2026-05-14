@@ -19,6 +19,8 @@ import {
   RiskAdminActionRequestSchema,
   RiskAdminDetailSchema,
   RiskAdminListResultSchema,
+  RiskSopConsoleSchema,
+  RiskSopTemplateUpdateRequestSchema,
   TransactionAdminDetailSchema,
   TransactionAdminListResultSchema,
   TransactionAdminMutationResultSchema,
@@ -122,6 +124,7 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["member"] }, "finance:manage")).toBe(false);
     expect(userCan({ roles: ["member"] }, "risk:read")).toBe(false);
     expect(userCan({ roles: ["member"] }, "risk:review")).toBe(false);
+    expect(userCan({ roles: ["member"] }, "risk:sop")).toBe(false);
     expect(userCan({ roles: ["operator"] }, "user:read")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "user:membership")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "order:read")).toBe(true);
@@ -132,6 +135,7 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["operator"] }, "finance:manage")).toBe(false);
     expect(userCan({ roles: ["operator"] }, "risk:read")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "risk:review")).toBe(true);
+    expect(userCan({ roles: ["operator"] }, "risk:sop")).toBe(false);
     expect(userCan({ roles: ["admin"] }, "admin:manage")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "catalog:publish")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "user:read")).toBe(true);
@@ -144,6 +148,7 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["admin"] }, "finance:manage")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "risk:read")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "risk:review")).toBe(true);
+    expect(userCan({ roles: ["admin"] }, "risk:sop")).toBe(true);
   });
 
   it("captures consent records in login sessions", () => {
@@ -311,6 +316,42 @@ describe("domain contracts", () => {
   });
 
   it("validates risk admin list, detail and action snapshots", () => {
+    const sopTemplate = {
+      id: "sop_urgent_crisis_review",
+      title: "紧急风险安全确认 SOP",
+      version: "2026.05.1",
+      enabled: true,
+      riskLevels: ["urgent"],
+      sources: ["assessment", "counseling_intake"],
+      ownerRole: "危机干预负责人",
+      steps: [
+        {
+          id: "step_confirm_safety",
+          title: "确认当前安全状态",
+          description: "优先确认用户当前安全状态。",
+          required: true,
+        },
+      ],
+      resultTemplates: [
+        {
+          id: "result_urgent_escalate",
+          action: "escalate",
+          label: "需负责人跟进",
+          noteTemplate: "风险仍需负责人复核，已升级至危机干预队列。",
+        },
+      ],
+      updatedAt: "2026-05-10T08:00:00.000Z",
+    };
+    const escalation = {
+      id: "risk_escalation_1",
+      riskEventId: "risk_1",
+      userId: "user_1",
+      priority: "urgent",
+      status: "assigned",
+      ownerId: "admin_1",
+      reason: "需要负责人确认安全状态",
+      createdAt: "2026-05-10T08:12:00.000Z",
+    };
     const event = {
       id: "risk_1",
       user: {
@@ -343,6 +384,10 @@ describe("domain contracts", () => {
       previousStatus: "open",
       nextStatus: "reviewing",
       note: "已开始人工复核",
+      sopTemplateId: "sop_urgent_crisis_review",
+      sopTemplateVersion: "2026.05.1",
+      resultTemplateId: "result_urgent_escalate",
+      escalation,
       createdAt: "2026-05-10T08:12:00.000Z",
     };
 
@@ -382,6 +427,8 @@ describe("domain contracts", () => {
         },
         records: [record],
         sopHints: ["优先确认用户当前安全状态。"],
+        sopTemplate,
+        escalation,
         privacyNotice: "风险复核台仅展示运营处理所需摘要。",
         generatedAt: "2026-05-10T08:12:00.000Z",
       }).success
@@ -389,8 +436,31 @@ describe("domain contracts", () => {
 
     expect(
       RiskAdminActionRequestSchema.safeParse({
-        action: "resolve",
-        note: "已完成风险复核",
+        action: "escalate",
+        note: "已升级给负责人跟进",
+        sopTemplateId: "sop_urgent_crisis_review",
+        resultTemplateId: "result_urgent_escalate",
+        escalation: {
+          priority: "urgent",
+          ownerId: "admin_1",
+          reason: "需要负责人确认安全状态",
+        },
+      }).success
+    ).toBe(true);
+
+    expect(
+      RiskSopConsoleSchema.safeParse({
+        templates: [sopTemplate],
+        escalationQueue: [escalation],
+        privacyNotice: "风险复核台仅展示运营处理所需摘要。",
+        generatedAt: "2026-05-10T08:12:00.000Z",
+      }).success
+    ).toBe(true);
+
+    expect(
+      RiskSopTemplateUpdateRequestSchema.safeParse({
+        enabled: false,
+        reason: "暂停模板测试",
       }).success
     ).toBe(true);
   });

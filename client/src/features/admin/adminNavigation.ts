@@ -136,13 +136,13 @@ export const adminNavigationItems = [
   {
     key: "risk",
     title: "风险复核",
-    description: "风险事件、人工处理记录和 SOP 摘要。",
+    description: "风险事件、SOP 模板、升级队列和人工处理记录。",
     href: "/admin/risk",
     icon: AlertTriangle,
     permission: RISK_ADMIN_PERMISSIONS.read,
     status: "available",
     group: "governance",
-    milestone: "M8-A",
+    milestone: "M8-B",
   },
   {
     key: "audit",

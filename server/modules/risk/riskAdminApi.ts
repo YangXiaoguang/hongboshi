@@ -10,23 +10,31 @@ import {
   RISK_ADMIN_PERMISSIONS,
   RiskAdminActionRequestSchema,
   RiskAdminDetailSchema,
+  RiskEscalationQueueItemSchema,
   RiskAdminListItemSchema,
   RiskAdminListQuerySchema,
   RiskAdminListResultSchema,
   RiskAdminMutationResultSchema,
   RiskAdminReviewRecordSchema,
+  RiskSopConsoleSchema,
+  RiskSopTemplateMutationResultSchema,
+  RiskSopTemplateSchema,
+  RiskSopTemplateUpdateRequestSchema,
   RiskEventSchema,
   userCan,
   type AuthPermission,
   type LoginSession,
   type RiskAdminAction,
   type RiskAdminDetail,
+  type RiskAdminEscalationRequest,
   type RiskAdminListItem,
   type RiskAdminListQuery,
   type RiskAdminReviewRecord,
+  type RiskEscalationQueueItem,
   type RiskEvent,
   type RiskEventStatus,
   type RiskLevel,
+  type RiskSopTemplate,
 } from "../../../shared/domain";
 import { getLatestAssessmentResult } from "../assessments/assessmentApi";
 import {
@@ -43,6 +51,11 @@ import {
   createDefaultRiskReviewStore,
   type RiskReviewStore,
 } from "./riskReviewStore";
+import {
+  createDefaultRiskSopStore,
+  findRiskSopTemplateForEvent,
+  type RiskSopStore,
+} from "./riskSopStore";
 
 type RiskAdminActor = Pick<LoginSession["user"], "id" | "roles">;
 
@@ -52,6 +65,10 @@ const RiskAdminListResponseSchema = ApiResponseSchema(
 const RiskAdminDetailResponseSchema = ApiResponseSchema(RiskAdminDetailSchema);
 const RiskAdminMutationResponseSchema = ApiResponseSchema(
   RiskAdminMutationResultSchema
+);
+const RiskSopConsoleResponseSchema = ApiResponseSchema(RiskSopConsoleSchema);
+const RiskSopTemplateMutationResponseSchema = ApiResponseSchema(
+  RiskSopTemplateMutationResultSchema
 );
 
 const riskLevelRank = {
@@ -71,6 +88,7 @@ const privacyNotice =
   "风险复核台仅展示运营处理所需摘要：不展示测评答案原文、咨询前说明全文或风险信号原文。";
 
 let riskReviewStore = createDefaultRiskReviewStore();
+let riskSopStore = createDefaultRiskSopStore();
 
 function sendJson(
   res: Response | ServerResponse,
@@ -117,7 +135,9 @@ function denyUnauthorizedActor(
         "UNAUTHORIZED",
         permission === RISK_ADMIN_PERMISSIONS.review
           ? "请先登录后处理风险事件"
-          : "请先登录后查看风险复核台"
+          : permission === RISK_ADMIN_PERMISSIONS.sop
+            ? "请先登录后维护风险 SOP 模板"
+            : "请先登录后查看风险复核台"
       ),
     };
   }
@@ -129,7 +149,9 @@ function denyUnauthorizedActor(
         "FORBIDDEN",
         permission === RISK_ADMIN_PERMISSIONS.review
           ? "当前账号暂无风险复核处理权限"
-          : "当前账号暂无风险复核读取权限"
+          : permission === RISK_ADMIN_PERMISSIONS.sop
+            ? "当前账号暂无风险 SOP 模板维护权限"
+            : "当前账号暂无风险复核读取权限"
       ),
     };
   }
@@ -143,6 +165,14 @@ export function setRiskReviewStore(store: RiskReviewStore) {
 
 export function resetRiskReviewStore() {
   return Promise.resolve(riskReviewStore.clear());
+}
+
+export function setRiskSopStore(store: RiskSopStore) {
+  riskSopStore = store;
+}
+
+export function resetRiskSopStore() {
+  return Promise.resolve(riskSopStore.clear());
 }
 
 function signalSummary(event: RiskEvent) {
@@ -162,7 +192,9 @@ function signalSummary(event: RiskEvent) {
   return `${sourceCopy[event.source]}触发${levelCopy[event.riskLevel]}复核`;
 }
 
-function sopHints(event: RiskEvent) {
+function sopHints(event: RiskEvent, template?: RiskSopTemplate) {
+  if (template) return template.steps.map(step => step.description);
+
   if (event.riskLevel === "urgent") {
     return [
       "优先确认用户当前安全状态，必要时升级给具备危机干预资质的负责人。",
@@ -379,13 +411,21 @@ async function buildRiskAdminDetail(
   event: RiskEvent,
   now: string
 ): Promise<RiskAdminDetail> {
-  const records = await riskReviewStore.listRecords(event.id);
+  const [records, templates, escalations] = await Promise.all([
+    riskReviewStore.listRecords(event.id),
+    riskSopStore.listTemplates(),
+    riskSopStore.listEscalations(),
+  ]);
   const item = await toRiskAdminListItem({ event, records, now });
+  const sopTemplate = findRiskSopTemplateForEvent(event, templates);
+  const escalation = escalations.find(item => item.riskEventId === event.id);
 
   return RiskAdminDetailSchema.parse({
     event: item,
     records,
-    sopHints: sopHints(event),
+    sopHints: sopHints(event, sopTemplate),
+    sopTemplate,
+    escalation,
     privacyNotice,
     generatedAt: now,
   });
@@ -461,6 +501,53 @@ function queryFromExpress(req: Request) {
 
 function queryFromSearchParams(params: URLSearchParams) {
   return queryFromRecord(Object.fromEntries(params.entries()));
+}
+
+function escalationPriorityForEvent(
+  event: RiskEvent,
+  escalation?: RiskAdminEscalationRequest
+): RiskEscalationQueueItem["priority"] {
+  if (escalation?.priority) return escalation.priority;
+  return event.riskLevel === "urgent" ? "urgent" : "high";
+}
+
+async function activeSopTemplateForAction(
+  event: RiskEvent,
+  request: {
+    sopTemplateId?: string;
+    resultTemplateId?: string;
+    action: RiskAdminAction;
+  }
+) {
+  const templates = await riskSopStore.listTemplates();
+  const template = request.sopTemplateId
+    ? templates.find(item => item.id === request.sopTemplateId)
+    : findRiskSopTemplateForEvent(event, templates);
+
+  if (!template) return { templates };
+  if (!template.enabled) return { templates, template, disabled: true };
+
+  const resultTemplate = request.resultTemplateId
+    ? template.resultTemplates.find(
+        item => item.id === request.resultTemplateId
+      )
+    : undefined;
+
+  if (request.resultTemplateId && !resultTemplate) {
+    return { templates, template, missingResultTemplate: true };
+  }
+
+  if (resultTemplate && resultTemplate.action !== request.action) {
+    return { templates, template, resultTemplateActionMismatch: true };
+  }
+
+  return { templates, template, resultTemplate };
+}
+
+function nextTemplateVersion(version: string) {
+  const match = version.match(/^(.*?)(\d+)$/);
+  if (!match) return `${version}.1`;
+  return `${match[1]}${Number(match[2]) + 1}`;
 }
 
 export async function getRiskAdminListPayload(
@@ -552,6 +639,29 @@ export async function updateRiskAdminEventPayload(
     } as const;
   }
 
+  const sopContext = await activeSopTemplateForAction(
+    event,
+    requestResult.data
+  );
+  if (sopContext.disabled) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "所选风险 SOP 模板已停用"),
+    } as const;
+  }
+  if (sopContext.missingResultTemplate) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "所选处理结果模板不存在"),
+    } as const;
+  }
+  if (sopContext.resultTemplateActionMismatch) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "所选处理结果模板不匹配当前动作"),
+    } as const;
+  }
+
   const nextEvent = await saveRiskEvent(
     RiskEventSchema.parse({
       ...event,
@@ -560,6 +670,42 @@ export async function updateRiskAdminEventPayload(
       resolvedAt: nextStatus === "resolved" ? now : undefined,
     })
   );
+
+  let escalation: RiskEscalationQueueItem | undefined;
+  if (requestResult.data.action === "escalate") {
+    escalation = await riskSopStore.upsertEscalation(
+      RiskEscalationQueueItemSchema.parse({
+        id: `risk_escalation_${Date.parse(now)}_${randomUUID().slice(0, 8)}`,
+        riskEventId: event.id,
+        userId: event.userId,
+        priority: escalationPriorityForEvent(
+          event,
+          requestResult.data.escalation
+        ),
+        status: requestResult.data.escalation?.ownerId
+          ? "assigned"
+          : "pending_assignment",
+        ownerId: requestResult.data.escalation?.ownerId,
+        reason:
+          requestResult.data.escalation?.reason ?? requestResult.data.note,
+        createdAt: now,
+      })
+    );
+  } else if (requestResult.data.action === "resolve") {
+    const existingEscalation = (await riskSopStore.listEscalations()).find(
+      item => item.riskEventId === event.id && item.status !== "resolved"
+    );
+    if (existingEscalation) {
+      escalation = await riskSopStore.upsertEscalation(
+        RiskEscalationQueueItemSchema.parse({
+          ...existingEscalation,
+          status: "resolved",
+          resolvedAt: now,
+        })
+      );
+    }
+  }
+
   const record = await riskReviewStore.appendRecord(
     RiskAdminReviewRecordSchema.parse({
       id: `risk_review_${Date.parse(now)}_${randomUUID().slice(0, 8)}`,
@@ -571,6 +717,10 @@ export async function updateRiskAdminEventPayload(
       previousStatus: event.status,
       nextStatus,
       note: requestResult.data.note,
+      sopTemplateId: sopContext.template?.id,
+      sopTemplateVersion: sopContext.template?.version,
+      resultTemplateId: sopContext.resultTemplate?.id,
+      escalation,
       createdAt: now,
     })
   );
@@ -588,7 +738,97 @@ export async function updateRiskAdminEventPayload(
   } as const;
 }
 
+export async function getRiskSopConsolePayload(
+  actor: RiskAdminActor | null | undefined,
+  now = new Date().toISOString()
+) {
+  const denied = denyUnauthorizedActor(actor);
+  if (denied) return denied;
+
+  return {
+    status: 200,
+    body: RiskSopConsoleResponseSchema.parse({
+      ok: true,
+      data: {
+        templates: await riskSopStore.listTemplates(),
+        escalationQueue: await riskSopStore.listEscalations(),
+        privacyNotice,
+        generatedAt: now,
+      },
+    }),
+  } as const;
+}
+
+export async function updateRiskSopTemplatePayload(
+  actor: RiskAdminActor | null | undefined,
+  templateId: string,
+  rawBody: unknown,
+  now = new Date().toISOString()
+) {
+  const denied = denyUnauthorizedActor(actor, RISK_ADMIN_PERMISSIONS.sop);
+  if (denied) return denied;
+
+  const requestResult = RiskSopTemplateUpdateRequestSchema.safeParse(rawBody);
+  if (!requestResult.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "风险 SOP 模板参数不合法"),
+    } as const;
+  }
+
+  const templates = await riskSopStore.listTemplates();
+  const template = templates.find(item => item.id === templateId);
+  if (!template) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "风险 SOP 模板不存在"),
+    } as const;
+  }
+
+  const nextTemplate = await riskSopStore.saveTemplate(
+    RiskSopTemplateSchema.parse({
+      ...template,
+      ...Object.fromEntries(
+        Object.entries(requestResult.data).filter(([key]) => key !== "reason")
+      ),
+      version: nextTemplateVersion(template.version),
+      updatedAt: now,
+    })
+  );
+
+  return {
+    status: 200,
+    body: RiskSopTemplateMutationResponseSchema.parse({
+      ok: true,
+      data: {
+        template: nextTemplate,
+        templates: await riskSopStore.listTemplates(),
+        serverTime: now,
+      },
+    }),
+  } as const;
+}
+
 export function registerRiskAdminApi(app: Express) {
+  app.get("/api/risk/admin/sop", async (req: Request, res: Response) => {
+    const session = await getLoginSessionFromRequest(req);
+    const payload = await getRiskSopConsolePayload(session?.user);
+    sendJson(res, payload.status, payload.body);
+  });
+
+  app.patch(
+    "/api/risk/admin/sop/templates/:templateId",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await updateRiskSopTemplatePayload(
+        session?.user,
+        req.params.templateId,
+        req.body
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
   app.get("/api/risk/admin/events", async (req: Request, res: Response) => {
     const session = await getLoginSessionFromRequest(req);
     const payload = await getRiskAdminListPayload(
@@ -631,6 +871,39 @@ export function handleRiskAdminApiRequest(
   if (!req.url || !req.url.startsWith("/api/risk/admin")) return false;
 
   const url = new URL(req.url, "http://localhost");
+
+  if (req.method === "GET" && url.pathname === "/api/risk/admin/sop") {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getRiskSopConsolePayload(session?.user);
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "风险 SOP 读取失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "风险 SOP 读取失败"));
+    });
+    return true;
+  }
+
+  const sopTemplateMatch = url.pathname.match(
+    /^\/api\/risk\/admin\/sop\/templates\/([^/]+)$/
+  );
+  if (req.method === "PATCH" && sopTemplateMatch?.[1]) {
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await updateRiskSopTemplatePayload(
+          session?.user,
+          decodeURIComponent(sopTemplateMatch[1]),
+          body
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(err => {
+        console.error(err instanceof Error ? err.message : "风险 SOP 保存失败");
+        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "风险 SOP 保存失败"));
+      });
+    return true;
+  }
 
   if (req.method === "GET" && url.pathname === "/api/risk/admin/events") {
     void (async () => {

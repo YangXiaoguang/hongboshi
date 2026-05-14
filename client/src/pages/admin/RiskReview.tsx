@@ -10,7 +10,9 @@ import {
   ChevronRight,
   ClipboardCheck,
   FileWarning,
+  GitBranch,
   History,
+  ListChecks,
   Loader2,
   MessageCircle,
   PhoneCall,
@@ -31,6 +33,7 @@ import {
   RiskAdminListQuerySchema,
   RiskEventSourceSchema,
   RiskEventStatusSchema,
+  RiskEscalationPrioritySchema,
   RiskLevelSchema,
   userCan,
   type RiskAdminAction,
@@ -38,9 +41,13 @@ import {
   type RiskAdminListItem,
   type RiskAdminListQuery,
   type RiskAdminListResult,
+  type RiskEscalationPriority,
   type RiskEventSource,
   type RiskEventStatus,
   type RiskLevel,
+  type RiskSopConsole,
+  type RiskSopResultTemplate,
+  type RiskSopTemplate,
 } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpRiskAdminRepository } from "@/features/risk";
@@ -80,6 +87,18 @@ const riskActionDescription = {
   escalate: "转入更高优先级队列。",
   resolve: "完成本次风险事件处理。",
 } satisfies Record<RiskAdminAction, string>;
+
+const escalationPriorityCopy = {
+  medium: "常规",
+  high: "高优先级",
+  urgent: "紧急",
+} satisfies Record<RiskEscalationPriority, string>;
+
+const escalationStatusCopy = {
+  pending_assignment: "待分配",
+  assigned: "已分配",
+  resolved: "已解决",
+} as const;
 
 const sortOptions: {
   value: RiskAdminListQuery["sort"];
@@ -141,6 +160,17 @@ function actionOptionsForStatus(status: RiskEventStatus): RiskAdminAction[] {
     return ["mark_contacted", "recommend_counseling", "escalate", "resolve"];
   }
   return ["mark_contacted", "recommend_counseling", "resolve"];
+}
+
+function resultTemplatesForAction(
+  template: RiskSopTemplate | undefined,
+  action: RiskAdminAction
+): RiskSopResultTemplate[] {
+  return template?.resultTemplates.filter(item => item.action === action) ?? [];
+}
+
+function defaultEscalationPriority(level: RiskLevel): RiskEscalationPriority {
+  return level === "urgent" ? "urgent" : "high";
 }
 
 function EmptyState({
@@ -277,9 +307,130 @@ function MetricTile({
   );
 }
 
+function SopConsolePanel({
+  consoleData,
+  canManage,
+  isSaving,
+  onToggleTemplate,
+}: {
+  consoleData: RiskSopConsole | null;
+  canManage: boolean;
+  isSaving: boolean;
+  onToggleTemplate: (template: RiskSopTemplate) => void;
+}) {
+  if (!consoleData) return null;
+
+  const openEscalations = consoleData.escalationQueue.filter(
+    item => item.status !== "resolved"
+  );
+
+  return (
+    <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E8DED0] px-5 py-4">
+          <div>
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <ListChecks className="h-4 w-4 text-[#6F8F83]" />
+              SOP 模板
+            </h2>
+            <p className="mt-1 text-xs text-[#8A8176]">
+              由服务端按风险等级和来源匹配，处理记录会保存模板版本。
+            </p>
+          </div>
+          <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
+            {consoleData.templates.length} 个
+          </span>
+        </div>
+        <div className="divide-y divide-[#E8DED0]">
+          {consoleData.templates.map(template => (
+            <div
+              key={template.id}
+              className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[minmax(0,1fr)_110px]"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-semibold text-[#243B35]">
+                    {template.title}
+                  </p>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      template.enabled
+                        ? "bg-[#E7EFE8] text-[#41675A]"
+                        : "bg-[#F1E8DC] text-[#8A8176]"
+                    }`}
+                  >
+                    {template.enabled ? "启用" : "停用"}
+                  </span>
+                  <span className="text-xs text-[#8A8176]">
+                    v{template.version}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-[#66716A]">
+                  {template.riskLevels
+                    .map(level => riskLevelCopy[level])
+                    .join(" / ")}
+                  {" · "}
+                  {template.sources
+                    .map(source => riskSourceCopy[source])
+                    .join(" / ")}
+                </p>
+              </div>
+              {canManage ? (
+                <button
+                  onClick={() => onToggleTemplate(template)}
+                  disabled={isSaving}
+                  className="h-9 rounded-lg border border-[#E1D7C8] bg-white px-3 text-xs font-semibold text-[#5F6B64] transition hover:bg-[#F8F3EA] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {template.enabled ? "停用" : "启用"}
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <GitBranch className="h-4 w-4 text-[#6F8F83]" />
+            升级队列
+          </h2>
+          <span className="rounded-full bg-[#FFF7E5] px-2.5 py-1 text-xs font-semibold text-[#8F6B1C]">
+            {openEscalations.length} 个待处理
+          </span>
+        </div>
+        <div className="mt-4 space-y-3">
+          {openEscalations.slice(0, 4).map(item => (
+            <div key={item.id} className="rounded-lg bg-[#F8F3EA] px-3 py-3">
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="truncate font-semibold text-[#243B35]">
+                  {item.riskEventId}
+                </span>
+                <span className="shrink-0 text-xs text-[#8F6B1C]">
+                  {escalationPriorityCopy[item.priority]}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[#8A8176]">
+                {escalationStatusCopy[item.status]} ·{" "}
+                {item.ownerId ?? "待分配负责人"}
+              </p>
+            </div>
+          ))}
+          {!openEscalations.length ? (
+            <p className="text-sm leading-6 text-[#66716A]">
+              当前没有待处理升级项。
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function RiskReview() {
   const { user } = useAuth();
   const canReview = !!user && userCan(user, RISK_ADMIN_PERMISSIONS.review);
+  const canManageSop = !!user && userCan(user, RISK_ADMIN_PERMISSIONS.sop);
   const [query, setQuery] = useState<Partial<RiskAdminListQuery>>({
     page: 1,
     pageSize: RISK_ADMIN_PAGE_SIZE,
@@ -294,11 +445,18 @@ export default function RiskReview() {
   const [selectedId, setSelectedId] = useState<string>();
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isLoadingSop, setIsLoadingSop] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingSop, setIsSavingSop] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [sopConsole, setSopConsole] = useState<RiskSopConsole | null>(null);
   const [selectedAction, setSelectedAction] =
     useState<RiskAdminAction>("start_review");
+  const [selectedResultTemplateId, setSelectedResultTemplateId] = useState("");
+  const [escalationPriority, setEscalationPriority] =
+    useState<RiskEscalationPriority>("high");
+  const [escalationOwnerId, setEscalationOwnerId] = useState("");
   const [note, setNote] = useState("");
 
   const normalizedQuery = useMemo(
@@ -309,6 +467,32 @@ export default function RiskReview() {
   const actionOptions = useMemo(
     () => (detail ? actionOptionsForStatus(detail.event.status) : []),
     [detail]
+  );
+
+  const resultTemplateOptions = useMemo(
+    () =>
+      detail
+        ? resultTemplatesForAction(detail.sopTemplate, selectedAction)
+        : [],
+    [detail, selectedAction]
+  );
+
+  const configureActionDraft = useCallback(
+    (data: RiskAdminDetail, action: RiskAdminAction) => {
+      const resultTemplate = resultTemplatesForAction(
+        data.sopTemplate,
+        action
+      )[0];
+      setSelectedAction(action);
+      setSelectedResultTemplateId(resultTemplate?.id ?? "");
+      setNote(resultTemplate?.noteTemplate ?? "");
+      setEscalationPriority(
+        data.escalation?.priority ??
+          defaultEscalationPriority(data.event.riskLevel)
+      );
+      setEscalationOwnerId(data.escalation?.ownerId ?? "");
+    },
+    []
   );
 
   const loadList = useCallback(
@@ -336,29 +520,49 @@ export default function RiskReview() {
     [normalizedQuery]
   );
 
-  const loadDetail = useCallback(async (riskEventId: string) => {
-    setIsLoadingDetail(true);
-    setDetailError(null);
+  const loadDetail = useCallback(
+    async (riskEventId: string) => {
+      setIsLoadingDetail(true);
+      setDetailError(null);
+      try {
+        const data = await httpRiskAdminRepository.loadEventDetail(riskEventId);
+        setDetail(data);
+        const nextActions = actionOptionsForStatus(data.event.status);
+        configureActionDraft(data, nextActions[0] ?? "start_review");
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "风险复核详情加载失败";
+        setDetailError(message);
+        setDetail(null);
+        toast.error(message);
+      } finally {
+        setIsLoadingDetail(false);
+      }
+    },
+    [configureActionDraft]
+  );
+
+  const loadSopConsole = useCallback(async (showLoading = true) => {
+    if (showLoading) setIsLoadingSop(true);
     try {
-      const data = await httpRiskAdminRepository.loadEventDetail(riskEventId);
-      setDetail(data);
-      const nextActions = actionOptionsForStatus(data.event.status);
-      setSelectedAction(nextActions[0] ?? "start_review");
-      setNote("");
+      const data = await httpRiskAdminRepository.loadSopConsole();
+      setSopConsole(data);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "风险复核详情加载失败";
-      setDetailError(message);
-      setDetail(null);
+        error instanceof Error ? error.message : "SOP 配置加载失败";
       toast.error(message);
     } finally {
-      setIsLoadingDetail(false);
+      if (showLoading) setIsLoadingSop(false);
     }
   }, []);
 
   useEffect(() => {
     void loadList();
   }, [loadList]);
+
+  useEffect(() => {
+    void loadSopConsole();
+  }, [loadSopConsole]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -376,6 +580,55 @@ export default function RiskReview() {
     }));
   }
 
+  function handleActionChange(action: RiskAdminAction) {
+    if (!detail) {
+      setSelectedAction(action);
+      return;
+    }
+    configureActionDraft(detail, action);
+  }
+
+  function handleResultTemplateChange(templateId: string) {
+    setSelectedResultTemplateId(templateId);
+    const template = resultTemplateOptions.find(item => item.id === templateId);
+    if (template) {
+      setNote(template.noteTemplate);
+    }
+  }
+
+  async function handleToggleTemplate(template: RiskSopTemplate) {
+    if (!canManageSop) return;
+    setIsSavingSop(true);
+    try {
+      const mutation = await httpRiskAdminRepository.updateSopTemplate(
+        template.id,
+        {
+          enabled: !template.enabled,
+          reason: `${template.enabled ? "停用" : "启用"} SOP 模板`,
+        }
+      );
+      setSopConsole(current =>
+        current
+          ? {
+              ...current,
+              templates: mutation.templates,
+              generatedAt: mutation.serverTime,
+            }
+          : current
+      );
+      if (selectedId) {
+        await loadDetail(selectedId);
+      }
+      toast.success("SOP 模板配置已更新");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "SOP 模板配置更新失败";
+      toast.error(message);
+    } finally {
+      setIsSavingSop(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!detail || !canReview || !selectedId) return;
@@ -390,12 +643,22 @@ export default function RiskReview() {
       const mutation = await httpRiskAdminRepository.updateEvent(selectedId, {
         action: selectedAction,
         note: trimmedNote,
+        sopTemplateId: detail.sopTemplate?.id,
+        resultTemplateId: selectedResultTemplateId || undefined,
+        escalation:
+          selectedAction === "escalate"
+            ? {
+                priority: escalationPriority,
+                ownerId: escalationOwnerId.trim() || undefined,
+                reason: trimmedNote,
+              }
+            : undefined,
       });
       setDetail(mutation.detail);
       setNote("");
       const nextActions = actionOptionsForStatus(mutation.detail.event.status);
-      setSelectedAction(nextActions[0] ?? "start_review");
-      await loadList(false);
+      configureActionDraft(mutation.detail, nextActions[0] ?? "start_review");
+      await Promise.all([loadList(false), loadSopConsole(false)]);
       toast.success("风险复核处理已记录");
     } catch (error) {
       const message =
@@ -426,11 +689,11 @@ export default function RiskReview() {
           </p>
         </div>
         <button
-          onClick={() => void loadList()}
-          disabled={isLoadingList}
+          onClick={() => void Promise.all([loadList(), loadSopConsole()])}
+          disabled={isLoadingList || isLoadingSop}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isLoadingList ? (
+          {isLoadingList || isLoadingSop ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <RefreshCw className="h-4 w-4" />
@@ -466,6 +729,13 @@ export default function RiskReview() {
           icon={CheckCircle2}
         />
       </motion.section>
+
+      <SopConsolePanel
+        consoleData={sopConsole}
+        canManage={canManageSop}
+        isSaving={isSavingSop}
+        onToggleTemplate={handleToggleTemplate}
+      />
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="min-w-0 overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
@@ -706,9 +976,52 @@ export default function RiskReview() {
                 )}
               </DetailSection>
 
-              <DetailSection title="处理建议">
+              {detail.escalation ? (
+                <DetailSection title="升级状态">
+                  <div className="rounded-lg bg-[#FFF7E5] px-3 py-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-semibold text-[#243B35]">
+                        {escalationPriorityCopy[detail.escalation.priority]}
+                      </span>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#8F6B1C]">
+                        {escalationStatusCopy[detail.escalation.status]}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-[#8A8176]">
+                      负责人：{detail.escalation.ownerId ?? "待分配"} · 创建于{" "}
+                      {formatDate(detail.escalation.createdAt)}
+                    </p>
+                    {detail.escalation.reason ? (
+                      <p className="mt-2 text-sm leading-6 text-[#5F6B64]">
+                        {detail.escalation.reason}
+                      </p>
+                    ) : null}
+                  </div>
+                </DetailSection>
+              ) : null}
+
+              <DetailSection title="匹配 SOP">
+                {detail.sopTemplate ? (
+                  <div className="mb-3 rounded-lg bg-[#E5ECE1] px-3 py-3 text-sm text-[#41675A]">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-semibold">
+                        {detail.sopTemplate.title}
+                      </span>
+                      <span className="shrink-0 text-xs">
+                        v{detail.sopTemplate.version}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs leading-5">
+                      责任角色：{detail.sopTemplate.ownerRole} ·{" "}
+                      {detail.sopTemplate.resultTemplates.length} 个结果模板
+                    </p>
+                  </div>
+                ) : null}
                 <div className="space-y-2">
-                  {detail.sopHints.map(hint => (
+                  {(
+                    detail.sopTemplate?.steps.map(step => step.description) ??
+                    detail.sopHints
+                  ).map(hint => (
                     <div
                       key={hint}
                       className="flex items-start gap-2 rounded-lg bg-[#F8F3EA] px-3 py-2 text-sm leading-6 text-[#5F6B64]"
@@ -726,7 +1039,9 @@ export default function RiskReview() {
                     <select
                       value={selectedAction}
                       onChange={event =>
-                        setSelectedAction(event.target.value as RiskAdminAction)
+                        handleActionChange(
+                          event.target.value as RiskAdminAction
+                        )
                       }
                       className="h-10 w-full rounded-lg border border-[#E1D7C8] bg-white px-3 text-sm outline-none transition focus:border-[#9CAF88]"
                     >
@@ -739,6 +1054,51 @@ export default function RiskReview() {
                     <p className="text-xs leading-5 text-[#8A8176]">
                       {riskActionDescription[selectedAction]}
                     </p>
+                    {resultTemplateOptions.length ? (
+                      <select
+                        value={selectedResultTemplateId}
+                        onChange={event =>
+                          handleResultTemplateChange(event.target.value)
+                        }
+                        className="h-10 w-full rounded-lg border border-[#E1D7C8] bg-white px-3 text-sm outline-none transition focus:border-[#9CAF88]"
+                      >
+                        <option value="">不使用结果模板</option>
+                        {resultTemplateOptions.map(template => (
+                          <option key={template.id} value={template.id}>
+                            {template.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
+                    {selectedAction === "escalate" ? (
+                      <div className="grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]">
+                        <select
+                          value={escalationPriority}
+                          onChange={event =>
+                            setEscalationPriority(
+                              event.target.value as RiskEscalationPriority
+                            )
+                          }
+                          className="h-10 rounded-lg border border-[#E1D7C8] bg-white px-3 text-sm outline-none transition focus:border-[#9CAF88]"
+                        >
+                          {RiskEscalationPrioritySchema.options.map(
+                            priority => (
+                              <option key={priority} value={priority}>
+                                {escalationPriorityCopy[priority]}
+                              </option>
+                            )
+                          )}
+                        </select>
+                        <input
+                          value={escalationOwnerId}
+                          onChange={event =>
+                            setEscalationOwnerId(event.target.value)
+                          }
+                          placeholder="负责人 ID，可留空进入待分配"
+                          className="h-10 rounded-lg border border-[#E1D7C8] bg-white px-3 text-sm outline-none transition focus:border-[#9CAF88]"
+                        />
+                      </div>
+                    ) : null}
                     <textarea
                       value={note}
                       onChange={event => setNote(event.target.value)}
@@ -786,6 +1146,25 @@ export default function RiskReview() {
                           {riskStatusCopy[record.previousStatus]} →{" "}
                           {riskStatusCopy[record.nextStatus]} · {record.actorId}
                         </p>
+                        {record.sopTemplateId ? (
+                          <p className="mt-2 text-xs text-[#8A8176]">
+                            SOP：{record.sopTemplateId}
+                            {record.sopTemplateVersion
+                              ? ` v${record.sopTemplateVersion}`
+                              : ""}
+                            {record.resultTemplateId
+                              ? ` · ${record.resultTemplateId}`
+                              : ""}
+                          </p>
+                        ) : null}
+                        {record.escalation ? (
+                          <p className="mt-2 text-xs text-[#8A8176]">
+                            升级：
+                            {escalationPriorityCopy[record.escalation.priority]}{" "}
+                            · {escalationStatusCopy[record.escalation.status]} ·{" "}
+                            {record.escalation.ownerId ?? "待分配负责人"}
+                          </p>
+                        ) : null}
                         <p className="mt-2 leading-6 text-[#5F6B64]">
                           {record.note}
                         </p>

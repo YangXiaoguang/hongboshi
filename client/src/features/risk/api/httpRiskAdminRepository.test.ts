@@ -4,6 +4,8 @@ import {
   parseRiskAdminDetailResponse,
   parseRiskAdminListResponse,
   parseRiskAdminMutationResponse,
+  parseRiskSopConsoleResponse,
+  parseRiskSopTemplateMutationResponse,
 } from "./httpRiskAdminRepository";
 
 const event = {
@@ -43,6 +45,44 @@ const record = {
   createdAt: "2026-05-13T10:00:00.000Z",
 };
 
+const sopTemplate = {
+  id: "sop_urgent_crisis_review",
+  title: "紧急风险安全确认 SOP",
+  version: "2026.05.1",
+  enabled: true,
+  riskLevels: ["urgent"],
+  sources: ["assessment", "counseling_intake"],
+  ownerRole: "危机干预负责人",
+  updatedAt: "2026-05-13T10:00:00.000Z",
+  steps: [
+    {
+      id: "step_confirm_safety",
+      title: "确认当前安全状态",
+      description: "优先确认用户当前安全状态。",
+      required: true,
+    },
+  ],
+  resultTemplates: [
+    {
+      id: "result_urgent_escalate",
+      action: "escalate",
+      label: "需负责人跟进",
+      noteTemplate: "风险仍需负责人复核，已升级至危机干预队列。",
+    },
+  ],
+};
+
+const escalationItem = {
+  id: "risk_escalation_1",
+  riskEventId: "risk_urgent_1",
+  userId: "u_risk_1",
+  priority: "urgent",
+  status: "assigned",
+  ownerId: "admin_1",
+  reason: "需要负责人确认安全状态",
+  createdAt: "2026-05-13T10:00:00.000Z",
+};
+
 const listData = {
   items: [event],
   summary: {
@@ -70,6 +110,7 @@ const detailData = {
   event,
   records: [],
   sopHints: ["优先确认用户当前安全状态。"],
+  sopTemplate,
   privacyNotice: "风险复核台仅展示运营处理所需摘要。",
   generatedAt: "2026-05-13T10:00:00.000Z",
 };
@@ -88,6 +129,29 @@ const mutationData = {
   },
   record,
   serverTime: "2026-05-13T10:00:00.000Z",
+};
+
+const sopConsoleData = {
+  templates: [sopTemplate],
+  escalationQueue: [escalationItem],
+  privacyNotice: "风险复核台仅展示运营处理所需摘要。",
+  generatedAt: "2026-05-13T10:00:00.000Z",
+};
+
+const sopMutationData = {
+  template: {
+    ...sopTemplate,
+    enabled: false,
+    version: "2026.05.2",
+  },
+  templates: [
+    {
+      ...sopTemplate,
+      enabled: false,
+      version: "2026.05.2",
+    },
+  ],
+  serverTime: "2026-05-13T10:05:00.000Z",
 };
 
 describe("http risk admin repository", () => {
@@ -130,6 +194,21 @@ describe("http risk admin repository", () => {
         data: mutationData,
       }).record.action
     ).toBe("start_review");
+  });
+
+  it("parses SOP console and template mutation responses", () => {
+    expect(
+      parseRiskSopConsoleResponse({
+        ok: true,
+        data: sopConsoleData,
+      }).templates[0]?.id
+    ).toBe("sop_urgent_crisis_review");
+    expect(
+      parseRiskSopTemplateMutationResponse({
+        ok: true,
+        data: sopMutationData,
+      }).template.enabled
+    ).toBe(false);
   });
 
   it("loads risk events with filters", async () => {
@@ -191,6 +270,39 @@ describe("http risk admin repository", () => {
     );
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
       "/api/risk/admin/events/risk_urgent_1/actions"
+    );
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        method: "PATCH",
+        credentials: "same-origin",
+      })
+    );
+  });
+
+  it("loads SOP console and updates templates", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true, data: sopConsoleData }))
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true, data: sopMutationData }))
+      );
+
+    const consoleData = await httpRiskAdminRepository.loadSopConsole();
+    const mutation = await httpRiskAdminRepository.updateSopTemplate(
+      "sop_urgent_crisis_review",
+      {
+        enabled: false,
+        reason: "停用 SOP 模板测试",
+      }
+    );
+
+    expect(consoleData.escalationQueue[0]?.priority).toBe("urgent");
+    expect(mutation.template.enabled).toBe(false);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/risk/admin/sop");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/risk/admin/sop/templates/sop_urgent_crisis_review"
     );
     expect(fetchMock.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({

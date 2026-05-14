@@ -23,13 +23,17 @@ import {
 import {
   getRiskAdminDetailPayload,
   getRiskAdminListPayload,
+  getRiskSopConsolePayload,
   setRiskReviewStore,
+  setRiskSopStore,
   updateRiskAdminEventPayload,
+  updateRiskSopTemplatePayload,
 } from "./riskAdminApi";
 import {
   InMemoryRiskReviewStore,
   type RiskReviewStore,
 } from "./riskReviewStore";
+import { InMemoryRiskSopStore, type RiskSopStore } from "./riskSopStore";
 
 const operator = { id: "operator_1", roles: ["operator" as const] };
 const admin = { id: "admin_1", roles: ["admin" as const] };
@@ -41,6 +45,7 @@ let assessmentStore: AssessmentResultStore;
 let counselingStore: CounselingAppointmentStore;
 let riskStore: RiskEventStore;
 let reviewStore: RiskReviewStore;
+let riskSopStore: RiskSopStore;
 
 beforeEach(async () => {
   authStore = new InMemoryAuthSessionStore();
@@ -48,12 +53,14 @@ beforeEach(async () => {
   counselingStore = new InMemoryCounselingAppointmentStore(new Date(now));
   riskStore = new InMemoryRiskEventStore();
   reviewStore = new InMemoryRiskReviewStore();
+  riskSopStore = new InMemoryRiskSopStore();
 
   setAuthSessionStore(authStore);
   setAssessmentResultStore(assessmentStore);
   setCounselingAppointmentStore(counselingStore);
   setRiskEventStore(riskStore);
   setRiskReviewStore(reviewStore);
+  setRiskSopStore(riskSopStore);
 
   await authStore.saveSession(
     "session_risk_user",
@@ -215,7 +222,9 @@ describe("risk admin api payloads", () => {
     expect(detail.status).toBe(200);
     expect(detail.body.ok).toBe(true);
     if (detail.body.ok) {
+      expect(detail.body.data.sopTemplate?.id).toBe("sop_urgent_crisis_review");
       expect(detail.body.data.sopHints.length).toBeGreaterThan(0);
+      expect(detail.body.data.sopHints[0]).toContain("安全状态");
       expect(detail.body.data.records).toEqual([]);
     }
 
@@ -271,6 +280,100 @@ describe("risk admin api payloads", () => {
     );
 
     expect(conflict.status).toBe(409);
+  });
+
+  it("loads SOP console and restricts SOP template mutations to admins", async () => {
+    const consolePayload = await getRiskSopConsolePayload(operator, now);
+
+    expect(consolePayload.status).toBe(200);
+    expect(consolePayload.body.ok).toBe(true);
+    if (!consolePayload.body.ok) throw new Error("expected SOP console");
+    expect(consolePayload.body.data.templates.length).toBeGreaterThanOrEqual(3);
+    expect(consolePayload.body.data.escalationQueue).toEqual([]);
+
+    expect(
+      (
+        await updateRiskSopTemplatePayload(
+          operator,
+          "sop_high_followup_review",
+          {
+            enabled: false,
+            reason: "运营账号不能修改 SOP",
+          },
+          now
+        )
+      ).status
+    ).toBe(403);
+
+    const mutation = await updateRiskSopTemplatePayload(
+      admin,
+      "sop_high_followup_review",
+      {
+        enabled: false,
+        reason: "暂停高风险 SOP 测试",
+      },
+      "2026-05-13T10:30:00.000Z"
+    );
+
+    expect(mutation.status).toBe(200);
+    expect(mutation.body.ok).toBe(true);
+    if (mutation.body.ok) {
+      expect(mutation.body.data.template).toMatchObject({
+        id: "sop_high_followup_review",
+        enabled: false,
+        version: "2026.05.2",
+      });
+    }
+  });
+
+  it("creates escalation queue entries through SOP result templates", async () => {
+    await riskStore.save(riskEvent({ id: "risk_escalate_1" }));
+
+    const mutation = await updateRiskAdminEventPayload(
+      admin,
+      "risk_escalate_1",
+      {
+        action: "escalate",
+        note: "风险需要负责人继续跟进",
+        sopTemplateId: "sop_urgent_crisis_review",
+        resultTemplateId: "result_urgent_escalate",
+        escalation: {
+          priority: "urgent",
+          ownerId: "admin_1",
+          reason: "需要具备危机干预资质的负责人确认安全状态",
+        },
+      },
+      now
+    );
+
+    expect(mutation.status).toBe(200);
+    expect(mutation.body.ok).toBe(true);
+    if (!mutation.body.ok) throw new Error("expected escalation mutation");
+    expect(mutation.body.data.record).toMatchObject({
+      action: "escalate",
+      nextStatus: "escalated",
+      sopTemplateId: "sop_urgent_crisis_review",
+      sopTemplateVersion: "2026.05.1",
+      resultTemplateId: "result_urgent_escalate",
+      escalation: {
+        priority: "urgent",
+        status: "assigned",
+        ownerId: "admin_1",
+      },
+    });
+    expect(mutation.body.data.detail.escalation).toMatchObject({
+      riskEventId: "risk_escalate_1",
+      status: "assigned",
+    });
+
+    const consolePayload = await getRiskSopConsolePayload(operator, now);
+    expect(consolePayload.body.ok).toBe(true);
+    if (consolePayload.body.ok) {
+      expect(consolePayload.body.data.escalationQueue[0]).toMatchObject({
+        riskEventId: "risk_escalate_1",
+        priority: "urgent",
+      });
+    }
   });
 
   it("rejects invalid queries and missing events", async () => {
