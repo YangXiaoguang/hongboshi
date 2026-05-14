@@ -53,11 +53,11 @@ describe("database runtime persistence config", () => {
       config.stores.find(
         store => store.envName === "HONGBOSHI_RISK_REVIEW_STORE"
       )?.mode
-    ).toBe("file");
+    ).toBe("postgres");
     expect(
       config.stores.find(store => store.envName === "HONGBOSHI_RISK_SOP_STORE")
         ?.mode
-    ).toBe("file");
+    ).toBe("postgres");
   });
 
   it("reports invalid modes and missing database urls", () => {

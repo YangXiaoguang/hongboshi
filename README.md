@@ -118,7 +118,7 @@ docs/
 - `HONGBOSHI_COUNSELING_OPERATION_STORE`
 - `HONGBOSHI_PAYMENT_WEBHOOK_STORE`
 
-切换 PostgreSQL 时，先配置 `DATABASE_URL`，再按需将对应 Store 变量设置为 `postgres`。课程商品、课程商品详情内容和交易操作均支持 `file`、`memory` 和 `postgres`；财务账期与手续费规则、风险复核处理记录、风险 SOP 模板与升级队列、咨询师档案 overlay 当前支持 `file` 和 `memory`，为后续 PostgreSQL 实现保留 Store 接口。本地开发仍可用 `.env.example` 中的文件模式。运行：
+切换 PostgreSQL 时，先配置 `DATABASE_URL`，再按需将对应 Store 变量设置为 `postgres`。课程商品、课程商品详情内容、交易操作、风险复核处理记录、风险 SOP 模板与升级队列均支持 `file`、`memory` 和 `postgres`；财务账期与手续费规则、咨询师档案 overlay 当前支持 `file` 和 `memory`。本地开发仍可用 `.env.example` 中的文件模式。运行：
 
 ```bash
 pnpm db:doctor
@@ -153,9 +153,9 @@ pnpm db:migrate
 - 课程权益和会员操作审计开发期默认写入 `.hongboshi-data/course-access.json`，也可通过 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 切到 PostgreSQL
 - 课程商品开发期默认写入 `.hongboshi-data/course-products.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_STORE=memory` 临时切回内存，或通过 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 写入 PostgreSQL
 - 课程商品详情内容开发期默认写入 `.hongboshi-data/course-product-content.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 临时切回内存，或通过 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 写入 PostgreSQL；后台会展示批量内容校验状态，提交审核前会拦截摘要、适合人群、章节、时长和素材占位等硬性问题，并已为素材资料 ID、资料地址、下载开关和合规审核状态预留字段
-- 测评结果、咨询预约、咨询运营配置、咨询审计、咨询师档案 overlay、风险事件、风险复核处理记录、风险 SOP 模板与升级队列、支付回调收据、交易操作工单、交易操作审计和财务规则已抽象为服务端 Store 接口；咨询师档案 overlay、风险复核处理记录、风险 SOP 模板与升级队列、财务规则当前先提供内存/JSON 文件实现，其余核心 Store 均已有 PostgreSQL 实现
+- 测评结果、咨询预约、咨询运营配置、咨询审计、咨询师档案 overlay、风险事件、风险复核处理记录、风险 SOP 模板与升级队列、支付回调收据、交易操作工单、交易操作审计和财务规则已抽象为服务端 Store 接口；咨询师档案 overlay 和财务规则当前先提供内存/JSON 文件实现，其余核心 Store 均已有 PostgreSQL 实现
 - 数据库准备层位于 `server/db`，初始 PostgreSQL 迁移草案见 `server/db/migrations/0001_core_tables.sql`
-- 登录会话、课程权益、课程商品、课程商品详情内容、风险事件、测评结果、咨询预约、咨询运营配置/审计、支付回调和交易操作 Store 已有 PostgreSQL 实现；设置 `DATABASE_URL` 且分别将对应 `HONGBOSHI_*_STORE` 设为 `postgres` 后可切换
+- 登录会话、课程权益、课程商品、课程商品详情内容、风险事件、风险复核记录、风险 SOP 模板与升级队列、测评结果、咨询预约、咨询运营配置/审计、支付回调和交易操作 Store 已有 PostgreSQL 实现；设置 `DATABASE_URL` 且分别将对应 `HONGBOSHI_*_STORE` 设为 `postgres` 后可切换，其中风险复核记录与风险 SOP/升级队列未显式设置为 `file` 时可随 `DATABASE_URL` 自动切换
 - 课程权益读取优先使用服务端 session cookie 识别用户，`x-hongboshi-user-id` 仅作为开发期读取兜底
 - 课程购买和会员开通必须具备 `member` 权限，登录时会记录 terms/privacy 协议版本
 - 成长档案读取需要登录；当前聚合课程权益、订单、最新测评报告、咨询预约和最近时间线
@@ -178,6 +178,6 @@ pnpm db:migrate
 3. 接入真实支付渠道和退款通道，在现有退款渠道适配接口内替换人工/模拟受理实现。
 4. 建立支付对账异常处理动作，并把交易异常工单与财务异常继续联动。
 5. 在现有账期手续费规则基础上继续完善结算批次、渠道结算单、发票和财务审核流。
-6. 在风险复核台基础上继续补风险复核记录、SOP 模板和升级队列 PostgreSQL Store，并为通知协作和统一审计中心预备投影字段。
+6. 在风险复核台持久化基础上继续建设通知协作和统一审计中心，只读聚合现有课程、会员、订单、交易、咨询和风险审计事实。
 7. 拆分 `MobileView`、`LoginModal`、`CourseCard` 等大组件。
 8. 引入 ESLint 或统一的代码质量检查规则。

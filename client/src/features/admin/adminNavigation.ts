@@ -142,7 +142,7 @@ export const adminNavigationItems = [
     permission: RISK_ADMIN_PERMISSIONS.read,
     status: "available",
     group: "governance",
-    milestone: "M8-B",
+    milestone: "M8-C",
   },
   {
     key: "audit",

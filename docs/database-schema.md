@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计和交易操作审计均已完成开发期 Store、专用 PostgreSQL 表与 Store。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-B 风险复核处理记录、SOP 模板和升级队列当前先进入独立 JSON/内存 Store，风险事件事实仍来自 `risk_events`，后续 M8-C 再补复核记录、SOP 模板和升级队列 PostgreSQL 表。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。
 
 ## 文件位置
 
@@ -18,6 +18,7 @@
 - `server/db/migrations/0011_transaction_admin_operations.sql`：交易后台异常工单与操作审计表，记录退款申请、异常标记、异常解决及退款渠道受理摘要。
 - `server/db/migrations/0012_counseling_schedule_audit_actions.sql`：扩展咨询运营审计动作约束，允许记录排班新增、关闭和恢复。
 - `server/db/migrations/0013_counselor_profile_audit_actions.sql`：扩展咨询运营审计动作约束，允许记录咨询师档案和接单状态维护。
+- `server/db/migrations/0014_risk_review_sop_persistence.sql`：风险复核处理记录、风险 SOP 模板和升级队列表，包含审计中心预备投影字段与查询索引。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
@@ -25,7 +26,7 @@
 ## 初始化命令
 
 1. 配置 `DATABASE_URL`。
-2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_COURSE_PRODUCT_STORE`、`HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE`、`HONGBOSHI_TRANSACTION_OPERATION_STORE` 设置为 `postgres`。`HONGBOSHI_RISK_REVIEW_STORE` 与 `HONGBOSHI_RISK_SOP_STORE` 当前支持 `file` 与 `memory`，暂不随 `DATABASE_URL` 自动切换 PostgreSQL。
+2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_COURSE_PRODUCT_STORE`、`HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_RISK_REVIEW_STORE`、`HONGBOSHI_RISK_SOP_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE`、`HONGBOSHI_TRANSACTION_OPERATION_STORE` 设置为 `postgres`。其中风险复核记录与风险 SOP/升级队列配置 `DATABASE_URL` 后可自动切换 PostgreSQL，显式设置为 `file` 时继续使用开发期 JSON 文件。
 3. 运行 `pnpm db:doctor` 检查 Store 配置与数据库连接。
 4. 运行 `pnpm db:migrate` 应用 `server/db/migrations/*.sql`。
 
@@ -45,18 +46,18 @@
 
 ## 初始核心表
 
-| 领域           | 表                                                                                                                                                                                                                                                            |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                                                                                                                                                                                                       |
-| 课程权益与订单 | `course_memberships`, `course_access_grants`, `course_products`, `course_product_contents`, `orders`, `order_items`, `payments`, `payment_webhook_events`                                                                                                     |
-| 测评           | `assessment_reports`                                                                                                                                                                                                                                          |
-| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`, `counseling_operation_settings`                                                                                                                                                                  |
-| 风险与审计     | `risk_events`, `audit_logs`, `course_product_audit_events`, `counseling_operation_audit_events`, `user_membership_audit_events`, `order_admin_exception_flags`, `order_admin_audit_events`, `transaction_admin_work_orders`, `transaction_admin_audit_events` |
+| 领域           | 表                                                                                                                                                                                                                                                                                                                                              |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 用户与认证     | `users`, `user_roles`, `user_consents`, `auth_sessions`                                                                                                                                                                                                                                                                                         |
+| 课程权益与订单 | `course_memberships`, `course_access_grants`, `course_products`, `course_product_contents`, `orders`, `order_items`, `payments`, `payment_webhook_events`                                                                                                                                                                                       |
+| 测评           | `assessment_reports`                                                                                                                                                                                                                                                                                                                            |
+| 咨询           | `counselors`, `counseling_slots`, `counseling_appointments`, `counseling_operation_settings`                                                                                                                                                                                                                                                    |
+| 风险与审计     | `risk_events`, `risk_admin_review_records`, `risk_sop_templates`, `risk_escalation_queue_items`, `audit_logs`, `course_product_audit_events`, `counseling_operation_audit_events`, `user_membership_audit_events`, `order_admin_exception_flags`, `order_admin_audit_events`, `transaction_admin_work_orders`, `transaction_admin_audit_events` |
 
 ## 后续接入顺序
 
 1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
-2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、交易操作审计、课程商品、课程商品详情内容、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，且已能支撑用户会员后台、统一订单后台和交易流水聚合；咨询师档案 overlay 与风险复核处理记录当前先使用内存/JSON Store，后续可补 PostgreSQL 表。
+2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、交易操作审计、课程商品、课程商品详情内容、风险事件、风险复核记录、风险 SOP 模板、风险升级队列、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，且已能支撑用户会员后台、统一订单后台、交易流水聚合和风险复核台；咨询师档案 overlay 当前先使用内存/JSON Store，后续可补 PostgreSQL 表。
 3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
 4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
 5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。
@@ -65,9 +66,9 @@
 
 `server/modules/risk/postgresRiskEventStore.ts` 已实现 `risk_events` 表的保存、单条读取、按用户读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_RISK_EVENT_STORE=postgres` 时，风险事件会写入 PostgreSQL。
 
-`server/modules/risk/riskReviewStore.ts` 已实现风险复核处理记录的内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/risk-reviews.json` 保存复核动作、操作者、角色、前后状态、备注摘要、SOP 模板版本、结果模板和升级摘要；当设置 `HONGBOSHI_RISK_REVIEW_STORE=memory` 时可临时切回内存。当前不提供 PostgreSQL Store，M8-C 会在 SOP 模板和升级队列基础稳定后补齐表结构。
+`server/modules/risk/riskReviewStore.ts` 已实现风险复核处理记录的内存 Store、JSON 文件 Store 与 PostgreSQL Store。开发期默认可使用 `.hongboshi-data/risk-reviews.json` 保存复核动作、操作者、角色、前后状态、备注摘要、SOP 模板版本、结果模板和升级摘要；当配置 `DATABASE_URL` 且未显式设置为 `file` 时可自动切换 PostgreSQL，也可通过 `HONGBOSHI_RISK_REVIEW_STORE=postgres` 强制写入 `risk_admin_review_records`。数据库记录包含 `audit_resource_type`、`audit_resource_id`、`before_snapshot` 和 `after_snapshot`，供后续统一审计中心只读聚合。
 
-`server/modules/risk/riskSopStore.ts` 已实现风险 SOP 模板与升级队列的内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/risk-sop.json` 保存默认 SOP 模板、模板启停、版本、生效范围、处理结果模板和升级队列；当设置 `HONGBOSHI_RISK_SOP_STORE=memory` 时可临时切回内存。当前不提供 PostgreSQL Store，M8-C 会与风险复核处理记录一并推进到数据库边界。
+`server/modules/risk/riskSopStore.ts` 已实现风险 SOP 模板与升级队列的内存 Store、JSON 文件 Store 与 PostgreSQL Store。开发期默认可使用 `.hongboshi-data/risk-sop.json` 保存默认 SOP 模板、模板启停、版本、生效范围、处理结果模板和升级队列；当配置 `DATABASE_URL` 且未显式设置为 `file` 时可自动切换 PostgreSQL，也可通过 `HONGBOSHI_RISK_SOP_STORE=postgres` 写入 `risk_sop_templates` 与 `risk_escalation_queue_items`。PostgreSQL 版会在空表时初始化默认 SOP 模板，并保存模板更新、升级队列创建/关闭的操作者、原因和 before/after 摘要。
 
 `server/modules/assessments/postgresAssessmentResultStore.ts` 已实现 `assessment_reports` 表的保存、最新报告读取、按用户读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_ASSESSMENT_RESULT_STORE=postgres` 时，测评报告会写入 PostgreSQL。
 
@@ -95,4 +96,4 @@
 
 `server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节和素材占位；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
 
-当前实现已覆盖登录会话、课程权益、会员操作审计、订单异常标记、订单操作审计、交易操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作、`/admin/orders` 统一订单聚合及受控订单动作，以及 `/admin/transactions` 交易流水聚合、退款申请和异常工单动作。咨询师档案 overlay、风险复核处理记录、风险 SOP 模板和升级队列已具备内存/JSON Store，为后续 PostgreSQL Store、资质审核流和统一审计中心留下边界。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+当前实现已覆盖登录会话、课程权益、会员操作审计、订单异常标记、订单操作审计、交易操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件、风险复核记录、风险 SOP 模板、风险升级队列与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作、`/admin/orders` 统一订单聚合及受控订单动作、`/admin/transactions` 交易流水聚合、退款申请和异常工单动作，以及 `/admin/risk` 风险复核、SOP 模板和升级队列。咨询师档案 overlay 仍先使用内存/JSON Store，为后续资质审核流留下边界。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

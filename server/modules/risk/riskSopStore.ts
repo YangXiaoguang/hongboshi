@@ -8,6 +8,8 @@ import {
   type RiskEvent,
   type RiskSopTemplate,
 } from "../../../shared/domain";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
+import { PostgresRiskSopStore } from "./postgresRiskSopStore";
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -28,13 +30,27 @@ const allRiskSources = [
 
 export interface RiskSopStore {
   listTemplates(): MaybePromise<RiskSopTemplate[]>;
-  saveTemplate(template: RiskSopTemplate): MaybePromise<RiskSopTemplate>;
+  saveTemplate(
+    template: RiskSopTemplate,
+    auditContext?: RiskSopAuditContext
+  ): MaybePromise<RiskSopTemplate>;
   listEscalations(): MaybePromise<RiskEscalationQueueItem[]>;
   upsertEscalation(
-    item: RiskEscalationQueueItem
+    item: RiskEscalationQueueItem,
+    auditContext?: RiskSopAuditContext
   ): MaybePromise<RiskEscalationQueueItem>;
   clear(): MaybePromise<void>;
 }
+
+export type RiskSopAuditContext = {
+  actorId?: string;
+  actorRoles?: string[];
+  action?: "seed" | "update" | "escalate" | "resolve";
+  reason?: string;
+  before?: unknown;
+  after?: unknown;
+  occurredAt?: string;
+};
 
 function cloneTemplate(template: RiskSopTemplate): RiskSopTemplate {
   return RiskSopTemplateSchema.parse(JSON.parse(JSON.stringify(template)));
@@ -253,7 +269,10 @@ export class InMemoryRiskSopStore implements RiskSopStore {
     );
   }
 
-  saveTemplate(template: RiskSopTemplate): RiskSopTemplate {
+  saveTemplate(
+    template: RiskSopTemplate,
+    _auditContext?: RiskSopAuditContext
+  ): RiskSopTemplate {
     const normalized = cloneTemplate(template);
     this.templates.set(normalized.id, normalized);
     return cloneTemplate(normalized);
@@ -265,7 +284,10 @@ export class InMemoryRiskSopStore implements RiskSopStore {
     );
   }
 
-  upsertEscalation(item: RiskEscalationQueueItem): RiskEscalationQueueItem {
+  upsertEscalation(
+    item: RiskEscalationQueueItem,
+    _auditContext?: RiskSopAuditContext
+  ): RiskEscalationQueueItem {
     const normalized = cloneEscalation(item);
     this.escalationQueue.set(normalized.riskEventId, normalized);
     return cloneEscalation(normalized);
@@ -288,7 +310,10 @@ export class JsonFileRiskSopStore implements RiskSopStore {
     return sortTemplates(this.readFile().templates).map(cloneTemplate);
   }
 
-  saveTemplate(template: RiskSopTemplate): RiskSopTemplate {
+  saveTemplate(
+    template: RiskSopTemplate,
+    _auditContext?: RiskSopAuditContext
+  ): RiskSopTemplate {
     const normalized = cloneTemplate(template);
     const file = this.readFile();
     const templates = file.templates.filter(item => item.id !== normalized.id);
@@ -303,7 +328,10 @@ export class JsonFileRiskSopStore implements RiskSopStore {
     );
   }
 
-  upsertEscalation(item: RiskEscalationQueueItem): RiskEscalationQueueItem {
+  upsertEscalation(
+    item: RiskEscalationQueueItem,
+    _auditContext?: RiskSopAuditContext
+  ): RiskEscalationQueueItem {
     const normalized = cloneEscalation(item);
     const file = this.readFile();
     const queue = file.escalationQueue.filter(
@@ -354,6 +382,13 @@ export function createDefaultRiskSopStore(): RiskSopStore {
     process.env.HONGBOSHI_RISK_SOP_STORE === "memory"
   ) {
     return new InMemoryRiskSopStore();
+  }
+
+  if (
+    process.env.HONGBOSHI_RISK_SOP_STORE === "postgres" ||
+    (process.env.HONGBOSHI_RISK_SOP_STORE !== "file" && getDatabaseUrl())
+  ) {
+    return new PostgresRiskSopStore(getSharedPostgresPool());
   }
 
   return new JsonFileRiskSopStore();

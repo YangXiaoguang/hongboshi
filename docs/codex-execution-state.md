@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M8-C 风险复核持久化与审计中心预备`
-- 当前状态：`M8-B 风险 SOP 模板与升级队列基础` 已完成，风险复核台已从静态提示升级为服务端 SOP 模板、处理结果模板、升级队列和模板版本沉淀。
-- 本轮完成后下一步：执行 `M8-C 风险复核持久化与审计中心预备`
+- 当前阶段：`M9-A 统一审计中心只读聚合基础`
+- 当前状态：`M8-C 风险复核持久化与审计中心预备` 已完成，风险复核记录、SOP 模板和升级队列已具备 PostgreSQL Store 与审计投影字段。
+- 本轮完成后下一步：执行 `M9-A 统一审计中心只读聚合基础`
 
 ## 已完成关键能力
 
@@ -134,58 +134,63 @@
 - 新增 `/api/risk/admin/sop` 和 `/api/risk/admin/sop/templates/:templateId`，支持 SOP 控制台读取、升级队列读取和管理员模板启停/编辑。
 - 风险复核详情会返回服务端按风险等级和来源匹配的 SOP 模板，处理记录会保存 SOP 模板 ID、版本、结果模板 ID 和升级队列摘要。
 - `/admin/risk` 已加入 SOP 模板区、升级队列、处理结果模板选择、升级优先级/负责人录入和升级状态提示。
+- 建立 `risk_admin_review_records`、`risk_sop_templates` 和 `risk_escalation_queue_items` 数据库迁移表，保存风险复核记录、SOP 模板、升级队列和审计中心预备投影字段。
+- 新增 `PostgresRiskReviewStore` 与 `PostgresRiskSopStore`，风险处理记录、SOP 模板和升级队列支持内存、JSON 文件与 PostgreSQL 三种实现。
+- `HONGBOSHI_RISK_REVIEW_STORE` 与 `HONGBOSHI_RISK_SOP_STORE` 已支持 `memory/file/postgres`，配置 `DATABASE_URL` 时可自动选择 PostgreSQL，显式 `file` 仍保留本地开发模式。
+- 风险 SOP 模板更新、升级队列创建/关闭和复核记录写入时会沉淀 actor、roles、resource、action、before/after 摘要和时间，为 M9 审计中心只读聚合预备数据。
 
 ## 最近完成阶段
 
-M8-B 风险 SOP 模板与升级队列基础已交付：
+M8-C 风险复核持久化与审计中心预备已交付：
 
-- `shared/domain/risk.ts`：新增 SOP 模板、SOP 步骤、处理结果模板、升级队列和 SOP 控制台契约，并扩展风险处理动作与处理记录字段。
-- `shared/domain/user.ts`：新增 `risk:sop` 权限，当前仅授予 `admin`，`operator` 继续拥有 `risk:read` 与 `risk:review`。
-- `server/modules/risk/riskSopStore.ts`：新增风险 SOP Store，开发期支持内存与 JSON 文件 `.hongboshi-data/risk-sop.json`，内置紧急/高/中风险默认 SOP 模板。
-- `server/modules/risk/riskAdminApi.ts`：风险详情返回服务端匹配的 SOP 模板；`escalate` 动作写入升级队列；`resolve` 会关闭未解决升级项；新增 SOP 控制台读取和模板更新接口。
-- `/admin/risk` 增加 SOP 模板区、升级队列摘要、匹配 SOP 详情、结果模板选择、升级优先级/负责人录入、升级状态和记录中的 SOP 版本展示。
-- `server/db/runtimeConfig.ts` 与 `.env.example`：新增 `HONGBOSHI_RISK_SOP_STORE` 和 `HONGBOSHI_RISK_SOP_FILE`，默认开发期使用文件持久化。
-- README、领域契约、数据库说明、产品路线、后台路线图和后台首页均同步了 M8-B 当前状态和下一步。
-- `shared/domain/domain.test.ts`、`server/modules/risk/riskAdminApi.test.ts`、`server/modules/risk/riskSopStore.test.ts`、`client/src/features/risk/api/httpRiskAdminRepository.test.ts` 与运行时配置测试已覆盖契约、权限、Store、升级队列和前端解析。
+- `server/db/migrations/0014_risk_review_sop_persistence.sql`：新增风险复核记录、风险 SOP 模板和风险升级队列表，字段包含资源类型/资源 ID、操作者、动作、before/after 摘要和必要索引。
+- `server/db/schema.ts`：把三张风险持久化表和审计投影索引纳入核心数据库契约，schema 测试会持续校验迁移完整性。
+- `server/modules/risk/postgresRiskReviewStore.ts`：实现风险复核记录 PostgreSQL Store，支持追加记录、按风险事件读取、全量读取和测试清空。
+- `server/modules/risk/postgresRiskSopStore.ts`：实现风险 SOP PostgreSQL Store，支持默认 SOP 初始化、模板 upsert、升级队列 upsert、排序读取和测试清空。
+- `server/modules/risk/riskReviewStore.ts`、`server/modules/risk/riskSopStore.ts` 与 `server/db/runtimeConfig.ts`：`HONGBOSHI_RISK_REVIEW_STORE` 和 `HONGBOSHI_RISK_SOP_STORE` 已支持 `memory/file/postgres`，配置 `DATABASE_URL` 时可自动切换 PostgreSQL，显式 `file` 仍保留开发期文件模式。
+- `server/modules/risk/riskAdminApi.ts`：SOP 模板更新、风险升级和升级关闭会传入审计上下文，PostgreSQL Store 可保存 actor、roles、reason、before/after 和发生时间。
+- README、领域契约、数据库说明、产品路线、后台路线图和后台首页已同步 M8-C 状态与下一步。
+- 新增 `server/modules/risk/postgresRiskReviewStore.test.ts` 与 `server/modules/risk/postgresRiskSopStore.test.ts`，并回归风险 API、Store、运行时配置和数据库 schema 测试。
 
-M8-B 验收结果：
+M8-C 验收结果：
 
-- 风险复核详情能看到服务端匹配的 SOP 模板和版本，不再依赖前端硬编码提示。
-- 升级处理能留下升级原因、优先级、负责人/待分配状态，并进入 SOP 控制台升级队列。
-- SOP 模板读写有权限边界，普通会员和咨询师不可访问风险后台接口，`operator` 不可修改 SOP 模板。
-- 处理记录保存所用 SOP 模板 ID/版本、结果模板 ID 和升级摘要，为后续统一审计中心留出稳定字段。
-- 页面只展示复核和 SOP 所需摘要，测评答案原文、咨询前说明全文和敏感危机信号原文默认不输出。
-- 现有 M8-A 风险列表、处理记录、测评、咨询预约、成长档案、用户会员后台和咨询运营能力不回退。
-- `pnpm run ci` 已通过：类型检查、71 个测试文件 / 322 个测试和生产构建均完成。
+- 配置 PostgreSQL 后，风险复核处理记录、SOP 模板和升级队列具备跨服务重启恢复能力。
+- JSON/内存 Store 仍可用于本地开发与测试，接口 payload 不因 Store 切换变化。
+- 默认 SOP 模板可初始化到 PostgreSQL，后续模板启停和升级队列状态变更可持久化。
+- 风险复核记录、SOP 模板和升级队列已经具备 M9 审计中心所需的 actor、resource、action、before/after 和时间投影字段。
+- 敏感内容仍保持最小化，不写入测评答案原文、咨询前说明全文或风险信号原文。
+- 现有风险复核台、SOP 控制台、升级队列、测评、咨询预约、成长档案、用户会员后台和咨询运营能力不回退。
+- `pnpm run ci` 已通过：类型检查、73 个测试文件 / 329 个测试和生产构建均完成。
 
 ## 下一步任务包
 
-### M8-C: 风险复核持久化与审计中心预备
+### M9-A: 统一审计中心只读聚合基础
 
 业务目标：
 
-把 M8-A/M8-B 已经形成的风险处理记录、SOP 模板和升级队列从开发期文件 Store 推进到可迁移的 PostgreSQL 边界，并为 M9 审计中心预备统一审计视图字段。第一版仍不接入外呼、IM、短信或第三方告警，优先保证数据稳定、可追溯和可升级。
+建立运营管理后台的统一审计中心第一版，把课程商品、用户会员、订单、交易、咨询运营和风险复核中已经存在的审计事实聚合成只读列表。第一版不新增跨模块写入真相源，优先统一查询契约、权限边界、资源定位和前端审计台，为后续导出、详情追踪和统一审计 Store 打基础。
 
 实施范围：
 
-- 新增 SQL 迁移，建立风险复核处理记录、风险 SOP 模板、风险升级队列和必要索引；字段只保存摘要、模板、状态、操作者和时间，不保存敏感原文。
-- 新增 `PostgresRiskReviewStore`，对齐现有 `RiskReviewStore` 接口，支持保存、按风险事件读取、全量读取和测试清空。
-- 新增 `PostgresRiskSopStore`，对齐现有 `RiskSopStore` 接口，支持默认模板初始化、模板保存、升级队列 upsert、列表读取和测试清空。
-- 扩展 `server/db/runtimeConfig.ts`，让 `HONGBOSHI_RISK_REVIEW_STORE` 与 `HONGBOSHI_RISK_SOP_STORE` 支持 `postgres`，并在配置 `DATABASE_URL` 时按策略决定是否自动切换。
-- 为风险复核记录和 SOP/升级队列设计可被 M9 审计中心消费的投影字段，例如 actorId、actorRoles、resourceType、resourceId、action、before/after 摘要和 createdAt。
-- 补充 Store 测试、迁移/schema 测试、运行时配置测试和风险 API 回归测试。
+- 在 `shared/domain` 新增审计中心只读契约，统一事件 ID、模块、动作、资源、操作者、角色、原因、摘要、发生时间、before/after 摘要和查询分页。
+- 新增 `audit:read` 权限，默认授予 `operator` 与 `admin`；后台审计中心读取接口必须校验权限。
+- 新增服务端聚合模块，从已有 Store/API 边界读取课程商品审计、会员操作审计、订单操作审计、交易操作审计、咨询运营审计和风险复核记录，归一化为 `AuditCenterEvent`。
+- 新增 `/api/audit/admin/events`，支持按模块、动作、操作者、资源关键词和时间范围筛选，默认倒序分页。
+- 新增 `/admin/audit` 只读页面，把审计中心从规划模块切换为可用模块；页面展示事件列表、筛选、资源摘要、操作者和 before/after 摘要入口。
+- 第一版不提供审计事件修改、删除、导出或外部通知；不展示咨询说明、测评答案、风险信号原文和支付敏感原文。
+- 补充聚合服务、权限、API repository、页面解析和路由测试。
 - 更新 README、`docs/domain-contracts.md`、`docs/database-schema.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
-- 不在本阶段展示测评答案原文、咨询前说明全文、敏感危机信号原文，也不接入外呼、IM、短信或第三方告警。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add risk persistence foundation`。
+- 提交并推送，建议 commit message：`Add audit center read model`
 
 验收标准：
 
-- 配置 PostgreSQL 后，风险复核处理记录、SOP 模板和升级队列可跨服务重启恢复。
-- JSON/内存 Store 仍可用于本地开发与测试，接口 payload 不因 Store 切换发生变化。
-- 默认 SOP 模板可以初始化到 PostgreSQL，后续模板启停和升级队列更新可持久化。
-- 风险复核记录具备进入统一审计中心所需的最小字段，不需要读取敏感原文。
-- 现有风险复核台、SOP 控制台、升级队列、测评、咨询预约、成长档案、用户会员后台和咨询运营能力不回退。
+- 运营或管理员可在 `/admin/audit` 查看跨模块审计事件，普通会员和咨询师不可访问。
+- 审计列表能解释事件来自哪个模块、谁操作、操作了什么资源、发生时间和摘要结果。
+- 课程商品、会员、订单、交易、咨询运营和风险复核至少各有一类已有审计事实可被聚合展示。
+- 审计中心只读，不会改写任何业务 Store 或审计事实。
+- 隐私最小化边界不回退，不展示测评答案、咨询说明、风险信号原文和支付敏感原文。
+- 现有后台模块能力不回退。
 - CI 通过。
 
 ## 执行不变量

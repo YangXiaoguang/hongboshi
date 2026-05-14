@@ -673,36 +673,52 @@ export async function updateRiskAdminEventPayload(
 
   let escalation: RiskEscalationQueueItem | undefined;
   if (requestResult.data.action === "escalate") {
-    escalation = await riskSopStore.upsertEscalation(
-      RiskEscalationQueueItemSchema.parse({
-        id: `risk_escalation_${Date.parse(now)}_${randomUUID().slice(0, 8)}`,
-        riskEventId: event.id,
-        userId: event.userId,
-        priority: escalationPriorityForEvent(
-          event,
-          requestResult.data.escalation
-        ),
-        status: requestResult.data.escalation?.ownerId
-          ? "assigned"
-          : "pending_assignment",
-        ownerId: requestResult.data.escalation?.ownerId,
-        reason:
-          requestResult.data.escalation?.reason ?? requestResult.data.note,
-        createdAt: now,
-      })
+    const existingEscalation = (await riskSopStore.listEscalations()).find(
+      item => item.riskEventId === event.id
     );
+    const nextEscalation = RiskEscalationQueueItemSchema.parse({
+      id: `risk_escalation_${Date.parse(now)}_${randomUUID().slice(0, 8)}`,
+      riskEventId: event.id,
+      userId: event.userId,
+      priority: escalationPriorityForEvent(
+        event,
+        requestResult.data.escalation
+      ),
+      status: requestResult.data.escalation?.ownerId
+        ? "assigned"
+        : "pending_assignment",
+      ownerId: requestResult.data.escalation?.ownerId,
+      reason: requestResult.data.escalation?.reason ?? requestResult.data.note,
+      createdAt: now,
+    });
+    escalation = await riskSopStore.upsertEscalation(nextEscalation, {
+      actorId: actor.id,
+      actorRoles: actor.roles,
+      action: "escalate",
+      reason: nextEscalation.reason,
+      before: existingEscalation,
+      after: nextEscalation,
+      occurredAt: now,
+    });
   } else if (requestResult.data.action === "resolve") {
     const existingEscalation = (await riskSopStore.listEscalations()).find(
       item => item.riskEventId === event.id && item.status !== "resolved"
     );
     if (existingEscalation) {
-      escalation = await riskSopStore.upsertEscalation(
-        RiskEscalationQueueItemSchema.parse({
-          ...existingEscalation,
-          status: "resolved",
-          resolvedAt: now,
-        })
-      );
+      const nextEscalation = RiskEscalationQueueItemSchema.parse({
+        ...existingEscalation,
+        status: "resolved",
+        resolvedAt: now,
+      });
+      escalation = await riskSopStore.upsertEscalation(nextEscalation, {
+        actorId: actor.id,
+        actorRoles: actor.roles,
+        action: "resolve",
+        reason: requestResult.data.note,
+        before: existingEscalation,
+        after: nextEscalation,
+        occurredAt: now,
+      });
     }
   }
 
@@ -767,6 +783,12 @@ export async function updateRiskSopTemplatePayload(
 ) {
   const denied = denyUnauthorizedActor(actor, RISK_ADMIN_PERMISSIONS.sop);
   if (denied) return denied;
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后维护风险 SOP 模板"),
+    } as const;
+  }
 
   const requestResult = RiskSopTemplateUpdateRequestSchema.safeParse(rawBody);
   if (!requestResult.success) {
@@ -785,16 +807,23 @@ export async function updateRiskSopTemplatePayload(
     } as const;
   }
 
-  const nextTemplate = await riskSopStore.saveTemplate(
-    RiskSopTemplateSchema.parse({
-      ...template,
-      ...Object.fromEntries(
-        Object.entries(requestResult.data).filter(([key]) => key !== "reason")
-      ),
-      version: nextTemplateVersion(template.version),
-      updatedAt: now,
-    })
-  );
+  const parsedNextTemplate = RiskSopTemplateSchema.parse({
+    ...template,
+    ...Object.fromEntries(
+      Object.entries(requestResult.data).filter(([key]) => key !== "reason")
+    ),
+    version: nextTemplateVersion(template.version),
+    updatedAt: now,
+  });
+  const nextTemplate = await riskSopStore.saveTemplate(parsedNextTemplate, {
+    actorId: actor.id,
+    actorRoles: actor.roles,
+    action: "update",
+    reason: requestResult.data.reason,
+    before: template,
+    after: parsedNextTemplate,
+    occurredAt: now,
+  });
 
   return {
     status: 200,

@@ -5,6 +5,8 @@ import {
   RiskAdminReviewRecordSchema,
   type RiskAdminReviewRecord,
 } from "../../../shared/domain";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
+import { PostgresRiskReviewStore } from "./postgresRiskReviewStore";
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -154,6 +156,13 @@ export function createDefaultRiskReviewStore(): RiskReviewStore {
     process.env.HONGBOSHI_RISK_REVIEW_STORE === "memory"
   ) {
     return new InMemoryRiskReviewStore();
+  }
+
+  if (
+    process.env.HONGBOSHI_RISK_REVIEW_STORE === "postgres" ||
+    (process.env.HONGBOSHI_RISK_REVIEW_STORE !== "file" && getDatabaseUrl())
+  ) {
+    return new PostgresRiskReviewStore(getSharedPostgresPool());
   }
 
   return new JsonFileRiskReviewStore();
