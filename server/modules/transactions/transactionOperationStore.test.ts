@@ -81,6 +81,10 @@ describe("transaction operation store", () => {
         },
       },
     });
+    expect(store.listAllAuditEvents()[0]).toMatchObject({
+      id: "transaction_audit_1",
+      transactionId: "evt_payment_1",
+    });
   });
 
   it("persists transaction operations in a JSON file", () => {
@@ -100,6 +104,10 @@ describe("transaction operation store", () => {
       refundProviderResult: {
         status: "failed",
       },
+    });
+    expect(readStore.listAllAuditEvents()[0]).toMatchObject({
+      id: "transaction_audit_1",
+      transactionId: "evt_payment_1",
     });
   });
 });

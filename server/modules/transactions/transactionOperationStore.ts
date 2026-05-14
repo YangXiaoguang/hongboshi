@@ -37,6 +37,7 @@ export interface TransactionOperationStore {
   listAuditEvents(
     transactionId: string
   ): MaybePromise<TransactionAdminAuditEvent[]>;
+  listAllAuditEvents(): MaybePromise<TransactionAdminAuditEvent[]>;
   appendAuditEvent(
     event: TransactionAdminAuditEvent
   ): MaybePromise<TransactionAdminAuditEvent>;
@@ -135,6 +136,12 @@ export class InMemoryTransactionOperationStore implements TransactionOperationSt
     );
   }
 
+  listAllAuditEvents(): TransactionAdminAuditEvent[] {
+    return sortAuditEvents(Array.from(this.auditEvents.values()).flat()).map(
+      cloneAuditEvent
+    );
+  }
+
   appendAuditEvent(
     event: TransactionAdminAuditEvent
   ): TransactionAdminAuditEvent {
@@ -182,6 +189,12 @@ export class JsonFileTransactionOperationStore implements TransactionOperationSt
   listAuditEvents(transactionId: string): TransactionAdminAuditEvent[] {
     return sortAuditEvents(
       this.readFile().auditEvents[transactionId] ?? []
+    ).map(cloneAuditEvent);
+  }
+
+  listAllAuditEvents(): TransactionAdminAuditEvent[] {
+    return sortAuditEvents(
+      Object.values(this.readFile().auditEvents).flat()
     ).map(cloneAuditEvent);
   }
 

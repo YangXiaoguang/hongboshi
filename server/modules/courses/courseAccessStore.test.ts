@@ -71,6 +71,10 @@ describe("course access JSON store", () => {
         reason: "客服补偿延期",
       }
     );
+    expect(reloadedStore.listAllMembershipAuditEvents()[0]).toMatchObject({
+      id: "audit_1",
+      userId: "u_10001",
+    });
     expect(reloadedStore.listMembershipAuditEvents("u_20001")).toEqual([]);
   });
 
@@ -121,5 +125,9 @@ describe("course access JSON store", () => {
         action: "mark_exception",
       }
     );
+    expect(reloadedStore.listAllOrderAdminAuditEvents()[0]).toMatchObject({
+      id: "order_audit_1",
+      orderId: "order_1",
+    });
   });
 });

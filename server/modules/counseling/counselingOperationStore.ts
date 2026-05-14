@@ -24,6 +24,7 @@ export interface CounselingOperationStore {
   listAuditEvents(
     limit?: number
   ): MaybePromise<CounselingOperationAuditEvent[]>;
+  listAllAuditEvents(): MaybePromise<CounselingOperationAuditEvent[]>;
   saveAuditEvent(
     event: CounselingOperationAuditEvent
   ): MaybePromise<CounselingOperationAuditEvent>;
@@ -71,6 +72,10 @@ export class InMemoryCounselingOperationStore implements CounselingOperationStor
     return this.auditEvents
       .slice(0, normalizeLimit(limit))
       .map(cloneAuditEvent);
+  }
+
+  listAllAuditEvents(): CounselingOperationAuditEvent[] {
+    return this.auditEvents.map(cloneAuditEvent);
   }
 
   saveAuditEvent(

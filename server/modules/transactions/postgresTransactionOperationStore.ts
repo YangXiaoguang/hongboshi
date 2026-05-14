@@ -105,9 +105,7 @@ const auditEventReturningSql = `
   created_at
 `;
 
-export class PostgresTransactionOperationStore
-  implements TransactionOperationStore
-{
+export class PostgresTransactionOperationStore implements TransactionOperationStore {
   constructor(private readonly db: DatabaseQueryExecutor) {}
 
   async getWorkOrder(transactionId: string) {
@@ -198,6 +196,30 @@ export class PostgresTransactionOperationStore
         ORDER BY created_at DESC
       `,
       [transactionId]
+    );
+
+    return result.rows.map(rowToAuditEvent);
+  }
+
+  async listAllAuditEvents() {
+    const result = await this.db.query<TransactionAuditEventRow>(
+      `
+        SELECT
+          id,
+          transaction_id,
+          order_id,
+          user_id,
+          actor_id,
+          actor_roles,
+          action,
+          reason,
+          before_snapshot,
+          after_snapshot,
+          refund_provider_result,
+          created_at
+        FROM transaction_admin_audit_events
+        ORDER BY created_at DESC, id DESC
+      `
     );
 
     return result.rows.map(rowToAuditEvent);

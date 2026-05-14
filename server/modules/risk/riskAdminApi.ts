@@ -167,6 +167,10 @@ export function resetRiskReviewStore() {
   return Promise.resolve(riskReviewStore.clear());
 }
 
+export function listRiskAdminReviewRecords() {
+  return Promise.resolve(riskReviewStore.listAllRecords());
+}
+
 export function setRiskSopStore(store: RiskSopStore) {
   riskSopStore = store;
 }

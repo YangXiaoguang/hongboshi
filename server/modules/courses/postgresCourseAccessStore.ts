@@ -490,6 +490,29 @@ export class PostgresCourseAccessStore {
     return result.rows.map(membershipAuditEventRowToDomain);
   }
 
+  async listAllMembershipAuditEvents(): Promise<
+    UserAdminMembershipAuditEvent[]
+  > {
+    const result = await this.db.query<MembershipAuditEventRow>(
+      `
+        SELECT
+          id,
+          user_id,
+          actor_id,
+          actor_roles,
+          action,
+          reason,
+          before_membership,
+          after_membership,
+          created_at
+        FROM user_membership_audit_events
+        ORDER BY created_at DESC, id DESC
+      `
+    );
+
+    return result.rows.map(membershipAuditEventRowToDomain);
+  }
+
   async appendMembershipAuditEvent(
     event: UserAdminMembershipAuditEvent
   ): Promise<UserAdminMembershipAuditEvent> {
@@ -547,6 +570,28 @@ export class PostgresCourseAccessStore {
         ORDER BY created_at DESC, id DESC
       `,
       [orderId]
+    );
+
+    return result.rows.map(orderAdminAuditEventRowToDomain);
+  }
+
+  async listAllOrderAdminAuditEvents(): Promise<OrderAdminAuditEvent[]> {
+    const result = await this.db.query<OrderAdminAuditEventRow>(
+      `
+        SELECT
+          id,
+          order_id,
+          user_id,
+          actor_id,
+          actor_roles,
+          action,
+          reason,
+          before_snapshot,
+          after_snapshot,
+          created_at
+        FROM order_admin_audit_events
+        ORDER BY created_at DESC, id DESC
+      `
     );
 
     return result.rows.map(orderAdminAuditEventRowToDomain);

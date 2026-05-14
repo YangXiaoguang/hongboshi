@@ -46,12 +46,14 @@ export interface CourseAccessStore {
   listMembershipAuditEvents(
     userId: string
   ): MaybePromise<UserAdminMembershipAuditEvent[]>;
+  listAllMembershipAuditEvents(): MaybePromise<UserAdminMembershipAuditEvent[]>;
   appendMembershipAuditEvent(
     event: UserAdminMembershipAuditEvent
   ): MaybePromise<UserAdminMembershipAuditEvent>;
   listOrderAdminAuditEvents(
     orderId: string
   ): MaybePromise<OrderAdminAuditEvent[]>;
+  listAllOrderAdminAuditEvents(): MaybePromise<OrderAdminAuditEvent[]>;
   appendOrderAdminAuditEvent(
     event: OrderAdminAuditEvent
   ): MaybePromise<OrderAdminAuditEvent>;
@@ -190,6 +192,12 @@ export class InMemoryCourseAccessStore implements CourseAccessStore {
     ).map(cloneMembershipAuditEvent);
   }
 
+  listAllMembershipAuditEvents(): UserAdminMembershipAuditEvent[] {
+    return sortMembershipAuditEvents(
+      Array.from(this.membershipAuditEvents.values()).flat()
+    ).map(cloneMembershipAuditEvent);
+  }
+
   appendMembershipAuditEvent(
     event: UserAdminMembershipAuditEvent
   ): UserAdminMembershipAuditEvent {
@@ -205,6 +213,12 @@ export class InMemoryCourseAccessStore implements CourseAccessStore {
   listOrderAdminAuditEvents(orderId: string): OrderAdminAuditEvent[] {
     return sortOrderAdminAuditEvents(
       this.orderAdminAuditEvents.get(orderId) ?? []
+    ).map(cloneOrderAdminAuditEvent);
+  }
+
+  listAllOrderAdminAuditEvents(): OrderAdminAuditEvent[] {
+    return sortOrderAdminAuditEvents(
+      Array.from(this.orderAdminAuditEvents.values()).flat()
     ).map(cloneOrderAdminAuditEvent);
   }
 
@@ -278,6 +292,12 @@ export class JsonFileCourseAccessStore implements CourseAccessStore {
     ).map(cloneMembershipAuditEvent);
   }
 
+  listAllMembershipAuditEvents(): UserAdminMembershipAuditEvent[] {
+    return sortMembershipAuditEvents(
+      Object.values(this.readFile().membershipAuditEvents).flat()
+    ).map(cloneMembershipAuditEvent);
+  }
+
   appendMembershipAuditEvent(
     event: UserAdminMembershipAuditEvent
   ): UserAdminMembershipAuditEvent {
@@ -296,6 +316,12 @@ export class JsonFileCourseAccessStore implements CourseAccessStore {
     const file = this.readFile();
     return sortOrderAdminAuditEvents(
       file.orderAdminAuditEvents[orderId] ?? []
+    ).map(cloneOrderAdminAuditEvent);
+  }
+
+  listAllOrderAdminAuditEvents(): OrderAdminAuditEvent[] {
+    return sortOrderAdminAuditEvents(
+      Object.values(this.readFile().orderAdminAuditEvents).flat()
     ).map(cloneOrderAdminAuditEvent);
   }
 

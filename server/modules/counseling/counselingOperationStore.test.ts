@@ -44,11 +44,13 @@ describe("counseling operation store", () => {
       allowPendingPaymentCancellation: false,
     });
     expect(await store.listAuditEvents()).toEqual([event]);
+    expect(await store.listAllAuditEvents()).toEqual([event]);
 
     await store.clear();
     expect(await store.getCancellationPolicy()).toEqual(
       DEFAULT_COUNSELING_CANCELLATION_POLICY
     );
     expect(await store.listAuditEvents()).toEqual([]);
+    expect(await store.listAllAuditEvents()).toEqual([]);
   });
 });

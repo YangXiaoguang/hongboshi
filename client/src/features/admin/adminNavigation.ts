@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  AUDIT_CENTER_PERMISSIONS,
   COURSE_CATALOG_PERMISSIONS,
   FINANCE_ADMIN_PERMISSIONS,
   ORDER_ADMIN_PERMISSIONS,
@@ -44,7 +45,7 @@ export interface AdminNavigationItem {
   milestone: string;
 }
 
-export const adminNavigationItems = [
+export const adminNavigationItems: readonly AdminNavigationItem[] = [
   {
     key: "overview",
     title: "后台首页",
@@ -150,12 +151,12 @@ export const adminNavigationItems = [
     description: "跨模块操作日志、对象追踪和导出基础。",
     href: "/admin/audit",
     icon: FileClock,
-    permission: "admin:manage",
-    status: "planned",
+    permission: AUDIT_CENTER_PERMISSIONS.read,
+    status: "available",
     group: "governance",
-    milestone: "M9",
+    milestone: "M9-A",
   },
-] as const satisfies readonly AdminNavigationItem[];
+];
 
 export function getAdminAccessState(
   user: Pick<UserProfile, "roles"> | null | undefined,

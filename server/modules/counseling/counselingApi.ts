@@ -894,6 +894,14 @@ export function setCounselingOperationStore(store: CounselingOperationStore) {
   counselingOperationStore = store;
 }
 
+export function listCounselingOperationAuditEvents(limit = 100) {
+  return Promise.resolve(counselingOperationStore.listAuditEvents(limit));
+}
+
+export function listAllCounselingOperationAuditEvents() {
+  return Promise.resolve(counselingOperationStore.listAllAuditEvents());
+}
+
 export function setCounselorAdminProfileStore(
   store: CounselorAdminProfileStore
 ) {

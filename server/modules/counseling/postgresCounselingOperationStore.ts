@@ -155,6 +155,33 @@ export class PostgresCounselingOperationStore implements CounselingOperationStor
     return result.rows.map(counselingOperationAuditEventRowToDomain);
   }
 
+  async listAllAuditEvents(): Promise<CounselingOperationAuditEvent[]> {
+    const result = await this.db.query<CounselingOperationAuditEventRow>(
+      `
+        SELECT
+          id,
+          action,
+          actor_id,
+          actor_roles,
+          appointment_id,
+          user_id,
+          counselor_id,
+          previous_appointment_status,
+          next_appointment_status,
+          previous_order_status,
+          next_order_status,
+          policy_before,
+          policy_after,
+          note,
+          created_at
+        FROM counseling_operation_audit_events
+        ORDER BY created_at DESC
+      `
+    );
+
+    return result.rows.map(counselingOperationAuditEventRowToDomain);
+  }
+
   async saveAuditEvent(
     event: CounselingOperationAuditEvent
   ): Promise<CounselingOperationAuditEvent> {

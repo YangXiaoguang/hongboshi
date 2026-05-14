@@ -175,6 +175,12 @@ describe("postgres transaction operation store", () => {
         },
       },
     ]);
+    expect(await store.listAllAuditEvents()).toMatchObject([
+      {
+        transactionId: "evt_payment_1",
+        action: "request_refund",
+      },
+    ]);
   });
 
   it("stores refund provider acceptance in audit events", async () => {

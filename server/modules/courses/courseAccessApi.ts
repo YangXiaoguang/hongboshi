@@ -136,6 +136,10 @@ export function listMembershipAuditEvents(userId: string) {
   return Promise.resolve(courseAccessStore.listMembershipAuditEvents(userId));
 }
 
+export function listAllMembershipAuditEvents() {
+  return Promise.resolve(courseAccessStore.listAllMembershipAuditEvents());
+}
+
 export function appendMembershipAuditEvent(
   event: UserAdminMembershipAuditEvent
 ) {
@@ -144,6 +148,10 @@ export function appendMembershipAuditEvent(
 
 export function listOrderAdminAuditEvents(orderId: string) {
   return Promise.resolve(courseAccessStore.listOrderAdminAuditEvents(orderId));
+}
+
+export function listAllOrderAdminAuditEvents() {
+  return Promise.resolve(courseAccessStore.listAllOrderAdminAuditEvents());
 }
 
 export function appendOrderAdminAuditEvent(event: OrderAdminAuditEvent) {

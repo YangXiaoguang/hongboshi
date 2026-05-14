@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M9-A 统一审计中心只读聚合基础`
-- 当前状态：`M8-C 风险复核持久化与审计中心预备` 已完成，风险复核记录、SOP 模板和升级队列已具备 PostgreSQL Store 与审计投影字段。
-- 本轮完成后下一步：执行 `M9-A 统一审计中心只读聚合基础`
+- 当前阶段：`M9-B 审计导出与事件详情追踪基础`
+- 当前状态：`M9-A 统一审计中心只读聚合基础` 已完成，审计中心已可只读聚合课程商品、会员、订单、交易、咨询运营和风险复核既有审计事实。
+- 本轮完成后下一步：执行 `M9-B 审计导出与事件详情追踪基础`
 
 ## 已完成关键能力
 
@@ -138,57 +138,63 @@
 - 新增 `PostgresRiskReviewStore` 与 `PostgresRiskSopStore`，风险处理记录、SOP 模板和升级队列支持内存、JSON 文件与 PostgreSQL 三种实现。
 - `HONGBOSHI_RISK_REVIEW_STORE` 与 `HONGBOSHI_RISK_SOP_STORE` 已支持 `memory/file/postgres`，配置 `DATABASE_URL` 时可自动选择 PostgreSQL，显式 `file` 仍保留本地开发模式。
 - 风险 SOP 模板更新、升级队列创建/关闭和复核记录写入时会沉淀 actor、roles、resource、action、before/after 摘要和时间，为 M9 审计中心只读聚合预备数据。
+- 建立统一审计中心共享契约 `AuditCenterListResultSchema`、`AuditCenterEventSchema` 和 `AuditCenterQuerySchema`，统一描述跨模块审计事件、筛选、分页、摘要和隐私提示。
+- 建立 `audit:read` 后台读取权限，`operator` 与 `admin` 可读取审计中心，普通会员和咨询师不可访问。
+- 新增 `server/modules/audit/auditAdminApi.ts` 和 `/api/audit/admin/events`，只读聚合课程商品审计、会员操作审计、订单操作审计、交易操作审计、咨询运营审计和风险复核记录。
+- 课程权益 Store 与交易操作 Store 已补充全量审计读取方法，PostgreSQL Store 同步支持审计中心聚合所需读取边界。
+- 新增 `/admin/audit` 审计中心页面，支持模块、动作、操作者、资源关键词和日期范围筛选，展示资源摘要、操作者、原因和 before/after 摘要。
+- 后台导航已将审计中心从“规划”切换为“可用”，后台首页实施路线已同步到 M9-A。
 
 ## 最近完成阶段
 
-M8-C 风险复核持久化与审计中心预备已交付：
+M9-A 统一审计中心只读聚合基础已交付：
 
-- `server/db/migrations/0014_risk_review_sop_persistence.sql`：新增风险复核记录、风险 SOP 模板和风险升级队列表，字段包含资源类型/资源 ID、操作者、动作、before/after 摘要和必要索引。
-- `server/db/schema.ts`：把三张风险持久化表和审计投影索引纳入核心数据库契约，schema 测试会持续校验迁移完整性。
-- `server/modules/risk/postgresRiskReviewStore.ts`：实现风险复核记录 PostgreSQL Store，支持追加记录、按风险事件读取、全量读取和测试清空。
-- `server/modules/risk/postgresRiskSopStore.ts`：实现风险 SOP PostgreSQL Store，支持默认 SOP 初始化、模板 upsert、升级队列 upsert、排序读取和测试清空。
-- `server/modules/risk/riskReviewStore.ts`、`server/modules/risk/riskSopStore.ts` 与 `server/db/runtimeConfig.ts`：`HONGBOSHI_RISK_REVIEW_STORE` 和 `HONGBOSHI_RISK_SOP_STORE` 已支持 `memory/file/postgres`，配置 `DATABASE_URL` 时可自动切换 PostgreSQL，显式 `file` 仍保留开发期文件模式。
-- `server/modules/risk/riskAdminApi.ts`：SOP 模板更新、风险升级和升级关闭会传入审计上下文，PostgreSQL Store 可保存 actor、roles、reason、before/after 和发生时间。
-- README、领域契约、数据库说明、产品路线、后台路线图和后台首页已同步 M8-C 状态与下一步。
-- 新增 `server/modules/risk/postgresRiskReviewStore.test.ts` 与 `server/modules/risk/postgresRiskSopStore.test.ts`，并回归风险 API、Store、运行时配置和数据库 schema 测试。
+- `shared/domain/auditCenter.ts`：新增审计中心模块、查询、事件、摘要、筛选项和列表结果契约，并从 `shared/domain/index.ts` 导出。
+- `shared/domain/user.ts`：新增 `audit:read` 权限和 `AUDIT_CENTER_PERMISSIONS`，默认授予 `operator` 与 `admin`。
+- `server/modules/audit/auditAdminApi.ts`：新增审计中心服务端聚合器和 `/api/audit/admin/events`，统一读取课程商品、会员、订单、交易、咨询运营和风险复核既有审计事实。
+- `server/modules/courses/*` 与 `server/modules/transactions/*`：补齐审计中心所需的全量审计读取方法，内存、JSON 和 PostgreSQL Store 保持同一接口。
+- `server/modules/counseling/counselingApi.ts` 与 `server/modules/risk/riskAdminApi.ts`：开放咨询运营审计和风险复核记录的只读聚合边界。
+- `client/src/features/audit` 与 `client/src/pages/admin/AuditCenter.tsx`：新增前端仓储和审计中心页面，支持筛选、摘要统计、事件列表和 before/after 摘要展示。
+- `client/src/features/admin/adminNavigation.ts`、`client/src/App.tsx` 与 `client/src/pages/admin/AdminHome.tsx`：审计中心切换为可用模块，并接入 `/admin/audit` 路由和后台首页状态。
+- README、领域契约、数据库说明、产品路线、后台路线图和本文件已同步 M9-A 状态与下一步。
+- 新增 `shared/domain/auditCenter.test.ts`、`server/modules/audit/auditAdminApi.test.ts` 和 `client/src/features/audit/api/httpAuditCenterRepository.test.ts`，并更新权限、导航、Store 全量审计读取测试。
 
-M8-C 验收结果：
+M9-A 验收结果：
 
-- 配置 PostgreSQL 后，风险复核处理记录、SOP 模板和升级队列具备跨服务重启恢复能力。
-- JSON/内存 Store 仍可用于本地开发与测试，接口 payload 不因 Store 切换变化。
-- 默认 SOP 模板可初始化到 PostgreSQL，后续模板启停和升级队列状态变更可持久化。
-- 风险复核记录、SOP 模板和升级队列已经具备 M9 审计中心所需的 actor、resource、action、before/after 和时间投影字段。
-- 敏感内容仍保持最小化，不写入测评答案原文、咨询前说明全文或风险信号原文。
-- 现有风险复核台、SOP 控制台、升级队列、测评、咨询预约、成长档案、用户会员后台和咨询运营能力不回退。
-- `pnpm run ci` 已通过：类型检查、73 个测试文件 / 329 个测试和生产构建均完成。
+- 运营或管理员可在 `/admin/audit` 查看跨模块审计事件，普通会员不可读取 API。
+- 审计列表能解释事件来自哪个模块、谁操作、操作了什么资源、发生时间、原因和状态摘要。
+- 课程商品、会员、订单、交易、咨询运营和风险复核均已有审计事实进入统一列表。
+- 审计中心只读，不改写业务 Store 或审计事实。
+- 隐私最小化边界不回退，不展示测评答案、咨询说明、风险信号原文和支付敏感原文。
+- 现有后台模块能力不回退。
+- `pnpm run ci` 已通过：类型检查、76 个测试文件 / 338 个测试和生产构建均完成。
 
 ## 下一步任务包
 
-### M9-A: 统一审计中心只读聚合基础
+### M9-B: 审计导出与事件详情追踪基础
 
 业务目标：
 
-建立运营管理后台的统一审计中心第一版，把课程商品、用户会员、订单、交易、咨询运营和风险复核中已经存在的审计事实聚合成只读列表。第一版不新增跨模块写入真相源，优先统一查询契约、权限边界、资源定位和前端审计台，为后续导出、详情追踪和统一审计 Store 打基础。
+在 M9-A 只读聚合基础上，补齐运营审计常用的“可带走”和“可定位”能力。第一步继续保持只读，不引入跨模块写入真相源：基于同一套筛选条件输出 CSV 导出，并提供单条审计事件详情读取/定位契约，为后续统一审计 Store、长期归档和合规审计报告打基础。
 
 实施范围：
 
-- 在 `shared/domain` 新增审计中心只读契约，统一事件 ID、模块、动作、资源、操作者、角色、原因、摘要、发生时间、before/after 摘要和查询分页。
-- 新增 `audit:read` 权限，默认授予 `operator` 与 `admin`；后台审计中心读取接口必须校验权限。
-- 新增服务端聚合模块，从已有 Store/API 边界读取课程商品审计、会员操作审计、订单操作审计、交易操作审计、咨询运营审计和风险复核记录，归一化为 `AuditCenterEvent`。
-- 新增 `/api/audit/admin/events`，支持按模块、动作、操作者、资源关键词和时间范围筛选，默认倒序分页。
-- 新增 `/admin/audit` 只读页面，把审计中心从规划模块切换为可用模块；页面展示事件列表、筛选、资源摘要、操作者和 before/after 摘要入口。
-- 第一版不提供审计事件修改、删除、导出或外部通知；不展示咨询说明、测评答案、风险信号原文和支付敏感原文。
-- 补充聚合服务、权限、API repository、页面解析和路由测试。
+- 在 `shared/domain/auditCenter.ts` 扩展导出契约，例如 `AuditCenterExportSchema`、导出字段定义、筛选快照、生成时间、操作者和口径版本。
+- 新增 `/api/audit/admin/export`，复用 `audit:read` 权限和 M9-A 聚合筛选逻辑，输出 CSV，字段包含时间、模块、动作、资源类型/ID/名称、操作者、原因、摘要和 source event ID。
+- 新增单条事件详情读取能力，例如 `/api/audit/admin/events/:eventId`，从聚合列表按归一化事件 ID 定位源事件，返回同一隐私边界下的详情摘要和来源模块提示。
+- `/admin/audit` 增加导出入口、导出中/失败状态、筛选快照提示和事件详情抽屉。
+- 导出和详情仍不展示咨询说明、测评答案、风险信号原文和支付敏感原文；before/after 继续使用摘要快照。
+- 补充导出、详情、权限失败、参数失败、前端 repository 和页面状态测试。
 - 更新 README、`docs/domain-contracts.md`、`docs/database-schema.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add audit center read model`
+- 提交并推送，建议 commit message：`Add audit center export flow`
 
 验收标准：
 
-- 运营或管理员可在 `/admin/audit` 查看跨模块审计事件，普通会员和咨询师不可访问。
-- 审计列表能解释事件来自哪个模块、谁操作、操作了什么资源、发生时间和摘要结果。
-- 课程商品、会员、订单、交易、咨询运营和风险复核至少各有一类已有审计事实可被聚合展示。
-- 审计中心只读，不会改写任何业务 Store 或审计事实。
+- 运营或管理员可按当前筛选条件导出审计 CSV，普通会员和咨询师不可导出。
+- 导出文件包含生成时间、筛选条件、口径版本和稳定字段定义，便于后续合规归档。
+- 单条审计事件详情能定位来源模块和源事件 ID，并解释资源、操作者、动作、原因、时间和 before/after 摘要。
+- 审计导出和详情只读，不会改写任何业务 Store 或审计事实。
 - 隐私最小化边界不回退，不展示测评答案、咨询说明、风险信号原文和支付敏感原文。
 - 现有后台模块能力不回退。
 - CI 通过。
@@ -212,4 +218,4 @@ M8-C 验收结果：
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；后续是否并入统一审计中心视图建议放到 M9 跨模块审计聚合处理。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，后续是否建设统一审计 Store 与归档表建议放到 M9-C/M10 决策。

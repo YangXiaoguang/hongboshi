@@ -4,6 +4,7 @@ import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { registerAssessmentApi } from "./modules/assessments/assessmentApi";
+import { registerAuditAdminApi } from "./modules/audit/auditAdminApi";
 import { registerAuthApi } from "./modules/auth/authSessionApi";
 import { registerCatalogApi } from "./modules/catalog/catalogApi";
 import { registerCounselingApi } from "./modules/counseling/counselingApi";
@@ -32,6 +33,7 @@ async function startServer() {
 
   app.use(express.json({ verify: capturePaymentWebhookRawBody }));
   registerAuthApi(app);
+  registerAuditAdminApi(app);
   registerCatalogApi(app);
   registerAssessmentApi(app);
   registerCounselingApi(app);

@@ -295,6 +295,7 @@ describe("postgres course access store", () => {
     expect(await readStore.listMembershipAuditEvents("user_1")).toEqual([
       event,
     ]);
+    expect(await readStore.listAllMembershipAuditEvents()).toEqual([event]);
   });
 
   it("appends and reads order admin audit events and exception flags", async () => {
@@ -384,6 +385,9 @@ describe("postgres course access store", () => {
 
     expect(await readStore.listOrderAdminExceptionFlags()).toEqual([exception]);
     expect(await readStore.listOrderAdminAuditEvents("order_1")).toEqual([
+      auditEvent,
+    ]);
+    expect(await readStore.listAllOrderAdminAuditEvents()).toEqual([
       auditEvent,
     ]);
   });

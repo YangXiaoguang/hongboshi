@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import LoginModal from "./components/LoginModal";
 import Assessment from "./pages/Assessment";
+import AuditCenter from "./pages/admin/AuditCenter";
 import AdminHome from "./pages/admin/AdminHome";
 import AdminLayout from "./pages/admin/AdminLayout";
 import Consulting from "./pages/Consulting";
@@ -68,6 +69,11 @@ function Router() {
       <Route path={"/admin/risk"}>
         <AdminLayout>
           <RiskReview />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/audit"}>
+        <AdminLayout>
+          <AuditCenter />
         </AdminLayout>
       </Route>
       <Route path={"/admin"}>

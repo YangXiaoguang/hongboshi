@@ -41,6 +41,7 @@ describe("admin navigation model", () => {
       "transactions",
       "finance",
       "risk",
+      "audit",
     ]);
     expect(
       getAvailableAdminNavigationItems({ roles: ["catalog_viewer"] }).map(
@@ -49,7 +50,7 @@ describe("admin navigation model", () => {
     ).toEqual(["overview", "courses"]);
     expect(
       getPlannedAdminNavigationItems({ roles: ["admin"] }).map(item => item.key)
-    ).toEqual(["audit"]);
+    ).toEqual([]);
   });
 
   it("matches active admin routes without activating sibling modules", () => {

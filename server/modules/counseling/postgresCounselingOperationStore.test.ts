@@ -135,9 +135,11 @@ describe("postgres counseling operation store", () => {
 
     const saved = await store.saveAuditEvent(event);
     const listed = await store.listAuditEvents(10);
+    const allEvents = await store.listAllAuditEvents();
 
     expect(saved).toMatchObject(event);
     expect(listed).toEqual([event]);
+    expect(allEvents).toEqual([event]);
     expect(db.queries[0]?.values).toEqual([
       event.id,
       event.action,
@@ -156,5 +158,6 @@ describe("postgres counseling operation store", () => {
       event.createdAt,
     ]);
     expect(db.queries[1]?.values).toEqual([10]);
+    expect(db.queries[2]?.values).toBeUndefined();
   });
 });
