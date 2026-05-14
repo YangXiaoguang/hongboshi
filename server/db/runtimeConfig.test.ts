@@ -21,6 +21,7 @@ describe("database runtime persistence config", () => {
       HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE: "file",
       HONGBOSHI_RISK_EVENT_STORE: "memory",
       HONGBOSHI_TRANSACTION_OPERATION_STORE: "file",
+      HONGBOSHI_FINANCE_RULE_STORE: "file",
     });
     expect(config.issues).toEqual([]);
   });
@@ -41,6 +42,11 @@ describe("database runtime persistence config", () => {
         store => store.envName === "HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE"
       )?.mode
     ).toBe("postgres");
+    expect(
+      config.stores.find(
+        store => store.envName === "HONGBOSHI_FINANCE_RULE_STORE"
+      )?.mode
+    ).toBe("file");
   });
 
   it("reports invalid modes and missing database urls", () => {

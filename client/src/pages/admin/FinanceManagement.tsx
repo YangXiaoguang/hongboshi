@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import {
   AlertTriangle,
   BadgeDollarSign,
+  Calculator,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -13,8 +14,10 @@ import {
   Download,
   FileWarning,
   Loader2,
+  Percent,
   ReceiptText,
   RefreshCw,
+  Save,
   Search,
   TrendingDown,
   WalletCards,
@@ -29,10 +32,12 @@ import {
   PaymentChannelSchema,
   PurchasableTypeSchema,
   userCan,
+  type FinanceAdminChannelFeeRule,
   type FinanceAdminEntry,
   type FinanceAdminEntryType,
   type FinanceAdminOverview,
   type FinanceAdminQuery,
+  type FinanceAdminRuleConsole,
   type PaymentChannel,
   type PurchasableType,
 } from "@shared/domain";
@@ -89,6 +94,59 @@ function formatDate(value?: string) {
 
 function metricValue(value: number) {
   return new Intl.NumberFormat("zh-CN").format(value);
+}
+
+function formatPercent(value: number) {
+  return `${new Intl.NumberFormat("zh-CN", {
+    maximumFractionDigits: 3,
+  }).format(value * 100)}%`;
+}
+
+type FinanceRuleDraft = Record<
+  PaymentChannel,
+  {
+    ratePercent: string;
+    fixedFeeAmount: string;
+    minimumFeeAmount: string;
+  }
+>;
+
+function numericDraftValue(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function draftFromRule(rule: FinanceAdminChannelFeeRule) {
+  return {
+    ratePercent: String(Number((rule.rate * 100).toFixed(4))),
+    fixedFeeAmount: String(rule.fixedFeeAmount),
+    minimumFeeAmount: String(rule.minimumFeeAmount),
+  };
+}
+
+function ruleDraftsFromConsole(
+  ruleConsole: FinanceAdminRuleConsole
+): FinanceRuleDraft {
+  return Object.fromEntries(
+    PaymentChannelSchema.options.map(channel => {
+      const rule = ruleConsole.rules.channelFeeRules.find(
+        item => item.channel === channel
+      );
+      return [
+        channel,
+        draftFromRule(
+          rule ?? {
+            channel,
+            rate: 0,
+            fixedFeeAmount: 0,
+            minimumFeeAmount: 0,
+            effectiveFrom: ruleConsole.rules.updatedAt,
+            description: `${channelCopy[channel]} 手续费规则`,
+          }
+        ),
+      ];
+    })
+  ) as FinanceRuleDraft;
 }
 
 function entryTypeClass(type: FinanceAdminEntryType) {
@@ -203,6 +261,9 @@ export default function FinanceManagement() {
   const canRead = Boolean(
     user && userCan(user, FINANCE_ADMIN_PERMISSIONS.read)
   );
+  const canManageRules = Boolean(
+    user && userCan(user, FINANCE_ADMIN_PERMISSIONS.manage)
+  );
   const [query, setQuery] = useState<FinanceAdminQuery>({
     keyword: "",
     channel: ALL_FINANCE_ADMIN_CHANNEL,
@@ -218,6 +279,12 @@ export default function FinanceManagement() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string>();
   const [exportSuccess, setExportSuccess] = useState<string>();
+  const [ruleConsole, setRuleConsole] = useState<FinanceAdminRuleConsole>();
+  const [ruleDrafts, setRuleDrafts] = useState<FinanceRuleDraft>();
+  const [ruleLoading, setRuleLoading] = useState(false);
+  const [ruleSaving, setRuleSaving] = useState(false);
+  const [ruleError, setRuleError] = useState<string>();
+  const [ruleSuccess, setRuleSuccess] = useState<string>();
 
   const loadOverview = useCallback(async () => {
     if (!canRead) return undefined;
@@ -240,6 +307,37 @@ export default function FinanceManagement() {
   useEffect(() => {
     void loadOverview();
   }, [loadOverview]);
+
+  const applyRuleConsole = useCallback(
+    (nextRuleConsole: FinanceAdminRuleConsole) => {
+      setRuleConsole(nextRuleConsole);
+      setRuleDrafts(ruleDraftsFromConsole(nextRuleConsole));
+    },
+    []
+  );
+
+  const loadRules = useCallback(async () => {
+    if (!canRead) return undefined;
+
+    setRuleLoading(true);
+    setRuleError(undefined);
+    try {
+      const nextRuleConsole = await httpFinanceAdminRepository.loadRules();
+      applyRuleConsole(nextRuleConsole);
+      return nextRuleConsole;
+    } catch (err) {
+      setRuleError(err instanceof Error ? err.message : "财务规则暂时不可用");
+      setRuleConsole(undefined);
+      setRuleDrafts(undefined);
+      return undefined;
+    } finally {
+      setRuleLoading(false);
+    }
+  }, [applyRuleConsole, canRead]);
+
+  useEffect(() => {
+    void loadRules();
+  }, [loadRules]);
 
   useEffect(() => {
     setExportError(undefined);
@@ -297,6 +395,72 @@ export default function FinanceManagement() {
     }
   }
 
+  function updateRuleDraft(
+    channel: PaymentChannel,
+    field: keyof FinanceRuleDraft[PaymentChannel],
+    value: string
+  ) {
+    setRuleSuccess(undefined);
+    setRuleDrafts(current => {
+      if (!current) return current;
+      return {
+        ...current,
+        [channel]: {
+          ...current[channel],
+          [field]: value,
+        },
+      };
+    });
+  }
+
+  async function saveRules(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!ruleConsole || !ruleDrafts || !canManageRules || ruleSaving) return;
+
+    setRuleSaving(true);
+    setRuleError(undefined);
+    setRuleSuccess(undefined);
+    try {
+      const channelFeeRules = PaymentChannelSchema.options.map(channel => {
+        const currentRule =
+          ruleConsole.rules.channelFeeRules.find(
+            rule => rule.channel === channel
+          ) ??
+          ({
+            channel,
+            effectiveFrom: ruleConsole.rules.updatedAt,
+            description: `${channelCopy[channel]} 手续费规则`,
+            rate: 0,
+            fixedFeeAmount: 0,
+            minimumFeeAmount: 0,
+          } satisfies FinanceAdminChannelFeeRule);
+        const draft = ruleDrafts[channel];
+        return {
+          ...currentRule,
+          rate: numericDraftValue(draft.ratePercent) / 100,
+          fixedFeeAmount: numericDraftValue(draft.fixedFeeAmount),
+          minimumFeeAmount: numericDraftValue(draft.minimumFeeAmount),
+        };
+      });
+      const result = await httpFinanceAdminRepository.updateRules({
+        channelFeeRules,
+        notes: "财务后台保存手续费规则",
+      });
+      const nextRuleConsole = {
+        rules: result.rules,
+        preview: result.preview,
+        canManage: true,
+        serverTime: result.preview.generatedAt,
+      } satisfies FinanceAdminRuleConsole;
+      applyRuleConsole(nextRuleConsole);
+      setRuleSuccess("手续费规则已保存");
+    } catch (err) {
+      setRuleError(err instanceof Error ? err.message : "财务规则保存失败");
+    } finally {
+      setRuleSaving(false);
+    }
+  }
+
   if (!canRead) {
     return (
       <div className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-8 text-center text-[#243B35] shadow-sm shadow-[#243B35]/5">
@@ -337,11 +501,18 @@ export default function FinanceManagement() {
             导出 CSV
           </button>
           <button
-            onClick={() => void loadOverview()}
-            disabled={loading}
+            onClick={() => {
+              void loadOverview();
+              void loadRules();
+            }}
+            disabled={loading || ruleLoading}
             className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-70"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${
+                loading || ruleLoading ? "animate-spin" : ""
+              }`}
+            />
             刷新
           </button>
         </div>
@@ -509,6 +680,228 @@ export default function FinanceManagement() {
             搜索
           </button>
         </form>
+      </section>
+
+      <section className="mt-6 rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
+        <div className="flex flex-col gap-3 border-b border-[#E8DED0] px-5 py-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#E5ECE1] text-[#41675A]">
+              <Calculator className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold">账期与手续费</h2>
+              <p className="mt-1 truncate text-xs text-[#8A8176]">
+                {ruleConsole
+                  ? `${ruleConsole.rules.activePeriod.label} · ${ruleConsole.rules.version}`
+                  : "读取规则中"}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {ruleConsole ? (
+              <span className="rounded-full bg-[#F8F3EA] px-2.5 py-1 font-semibold text-[#746758]">
+                更新 {formatDate(ruleConsole.rules.updatedAt)}
+              </span>
+            ) : null}
+            {canManageRules ? (
+              <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 font-semibold text-[#41675A]">
+                可维护
+              </span>
+            ) : (
+              <span className="rounded-full bg-[#F8F3EA] px-2.5 py-1 font-semibold text-[#8A8176]">
+                只读
+              </span>
+            )}
+          </div>
+        </div>
+
+        {ruleError || ruleSuccess ? (
+          <div
+            className={`mx-5 mt-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm ${
+              ruleError
+                ? "border-[#F0C7B7] bg-[#FFF0EA] text-[#AD503A]"
+                : "border-[#C9DDC8] bg-[#F2F8EF] text-[#41675A]"
+            }`}
+          >
+            {ruleError ? (
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+            )}
+            <span>{ruleError ?? ruleSuccess}</span>
+          </div>
+        ) : null}
+
+        {ruleLoading ? (
+          <div className="flex min-h-[220px] items-center justify-center text-sm text-[#6F7771]">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            正在读取财务规则
+          </div>
+        ) : ruleConsole && ruleDrafts ? (
+          <form
+            onSubmit={saveRules}
+            className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_360px]"
+          >
+            <div className="min-w-0 px-5 py-5">
+              <div className="hidden grid-cols-[120px_repeat(3,minmax(120px,1fr))_140px] gap-3 border-b border-[#E8DED0] pb-3 text-xs font-semibold text-[#8A8176] lg:grid">
+                <span>渠道</span>
+                <span>费率</span>
+                <span>固定费</span>
+                <span>最低费</span>
+                <span>生效时间</span>
+              </div>
+              <div className="divide-y divide-[#E8DED0]">
+                {PaymentChannelSchema.options.map(channel => {
+                  const rule = ruleConsole.rules.channelFeeRules.find(
+                    item => item.channel === channel
+                  );
+                  const draft = ruleDrafts[channel];
+                  return (
+                    <div
+                      key={channel}
+                      className="grid gap-3 py-4 text-sm lg:grid-cols-[120px_repeat(3,minmax(120px,1fr))_140px] lg:items-center"
+                    >
+                      <div>
+                        <p className="font-semibold text-[#243B35]">
+                          {channelCopy[channel]}
+                        </p>
+                        <p className="mt-1 text-xs text-[#8A8176]">
+                          {rule?.description ?? "手续费规则"}
+                        </p>
+                      </div>
+                      {canManageRules ? (
+                        <>
+                          <label className="relative block">
+                            <Percent className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9A8F82]" />
+                            <input
+                              type="number"
+                              min="0"
+                              max="20"
+                              step="0.001"
+                              value={draft.ratePercent}
+                              onChange={event =>
+                                updateRuleDraft(
+                                  channel,
+                                  "ratePercent",
+                                  event.target.value
+                                )
+                              }
+                              aria-label={`${channelCopy[channel]}费率`}
+                              className="h-10 w-full rounded-lg border border-[#DCCDBB] bg-white pl-9 pr-3 text-sm outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
+                            />
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={draft.fixedFeeAmount}
+                            onChange={event =>
+                              updateRuleDraft(
+                                channel,
+                                "fixedFeeAmount",
+                                event.target.value
+                              )
+                            }
+                            aria-label={`${channelCopy[channel]}固定费`}
+                            className="h-10 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={draft.minimumFeeAmount}
+                            onChange={event =>
+                              updateRuleDraft(
+                                channel,
+                                "minimumFeeAmount",
+                                event.target.value
+                              )
+                            }
+                            aria-label={`${channelCopy[channel]}最低费`}
+                            className="h-10 rounded-lg border border-[#DCCDBB] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15"
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-semibold text-[#243B35]">
+                            {formatPercent(rule?.rate ?? 0)}
+                          </p>
+                          <p className="font-semibold text-[#243B35]">
+                            {formatMoney(rule?.fixedFeeAmount ?? 0)}
+                          </p>
+                          <p className="font-semibold text-[#243B35]">
+                            {formatMoney(rule?.minimumFeeAmount ?? 0)}
+                          </p>
+                        </>
+                      )}
+                      <p className="text-xs text-[#8A8176]">
+                        {formatDate(rule?.effectiveFrom)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {canManageRules ? (
+                <div className="flex justify-end border-t border-[#E8DED0] pt-4">
+                  <button
+                    disabled={ruleSaving}
+                    className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-70"
+                  >
+                    {ruleSaving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    保存规则
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="border-t border-[#E8DED0] bg-[#F8F3EA] px-5 py-5 xl:border-l xl:border-t-0">
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  ["预计结算", ruleConsole.preview.estimatedSettlementAmount],
+                  ["预计手续费", ruleConsole.preview.estimatedFeeAmount],
+                  ["退款中", ruleConsole.preview.pendingRefundAmount],
+                  ["异常未结算", ruleConsole.preview.exceptionUnsettledAmount],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-lg bg-[#FFFDF8] px-3 py-3"
+                  >
+                    <p className="text-xs text-[#8A8176]">{label}</p>
+                    <p className="mt-1 text-base font-semibold text-[#243B35]">
+                      {formatMoney(Number(value))}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 space-y-3">
+                {ruleConsole.preview.channelPreviews.map(preview => (
+                  <div
+                    key={preview.channel}
+                    className="flex items-center justify-between gap-3 text-sm"
+                  >
+                    <div>
+                      <p className="font-semibold text-[#243B35]">
+                        {preview.label}
+                      </p>
+                      <p className="mt-1 text-xs text-[#8A8176]">
+                        {formatPercent(preview.rate)} · 手续费{" "}
+                        {formatMoney(preview.estimatedFeeAmount)}
+                      </p>
+                    </div>
+                    <span className="font-semibold text-[#243B35]">
+                      {formatMoney(preview.estimatedSettlementAmount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </form>
+        ) : null}
       </section>
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   httpFinanceAdminRepository,
   parseFinanceAdminOverviewResponse,
+  parseFinanceAdminRuleConsoleResponse,
 } from "./httpFinanceAdminRepository";
 
 const overviewData = {
@@ -76,6 +77,71 @@ const overviewData = {
   serverTime: "2026-05-12T10:00:00+08:00",
 };
 
+const ruleConsoleData = {
+  rules: {
+    version: "finance_rules_20260512100000000",
+    policyVersion: "finance-admin-rules-v1",
+    accountingPeriodStrategy: "natural_month",
+    activePeriod: {
+      periodId: "2026-05",
+      label: "2026年05月",
+      startsAt: "2026-04-30T16:00:00.000Z",
+      endsAt: "2026-05-31T15:59:59.999Z",
+      strategy: "natural_month",
+    },
+    channelFeeRules: [
+      {
+        channel: "manual",
+        rate: 0.01,
+        fixedFeeAmount: 0.5,
+        minimumFeeAmount: 0,
+        effectiveFrom: "2026-05-01T00:00:00.000+08:00",
+        description: "人工模拟渠道试算费率",
+      },
+    ],
+    updatedAt: "2026-05-12T10:00:00.000Z",
+    updatedBy: "admin_1",
+  },
+  preview: {
+    period: {
+      periodId: "2026-05",
+      label: "2026年05月",
+      startsAt: "2026-04-30T16:00:00.000Z",
+      endsAt: "2026-05-31T15:59:59.999Z",
+      strategy: "natural_month",
+    },
+    generatedAt: "2026-05-12T10:00:00.000Z",
+    policyVersion: "finance-admin-rules-v1",
+    entryCount: 1,
+    paymentCount: 1,
+    refundCount: 0,
+    grossRevenueAmount: 399,
+    refundAmount: 0,
+    netRevenueAmount: 399,
+    estimatedFeeAmount: 4.49,
+    estimatedSettlementAmount: 394.51,
+    pendingRefundAmount: 0,
+    exceptionUnsettledAmount: 0,
+    channelPreviews: [
+      {
+        channel: "manual",
+        label: "人工模拟",
+        rate: 0.01,
+        fixedFeeAmount: 0.5,
+        minimumFeeAmount: 0,
+        grossRevenueAmount: 399,
+        refundAmount: 0,
+        netRevenueAmount: 399,
+        estimatedFeeAmount: 4.49,
+        estimatedSettlementAmount: 394.51,
+        entryCount: 1,
+      },
+    ],
+  },
+  canManage: true,
+  serverTime: "2026-05-12T10:00:00.000Z",
+};
+
 describe("http finance admin repository", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -101,6 +167,16 @@ describe("http finance admin repository", () => {
         },
       })
     ).toThrow("当前账号暂无财务管理读取权限");
+  });
+
+  it("parses finance rule console responses", () => {
+    const parsed = parseFinanceAdminRuleConsoleResponse({
+      ok: true,
+      data: ruleConsoleData,
+    });
+
+    expect(parsed.rules.activePeriod.periodId).toBe("2026-05");
+    expect(parsed.preview.estimatedFeeAmount).toBe(4.49);
   });
 
   it("loads finance overview with filters", async () => {
@@ -180,6 +256,64 @@ describe("http finance admin repository", () => {
         },
       })
     );
+  });
+
+  it("loads finance rules", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: ruleConsoleData,
+        })
+      )
+    );
+
+    const result = await httpFinanceAdminRepository.loadRules();
+
+    expect(result.canManage).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe("/api/finance/admin/rules");
+    expect(init).toEqual(
+      expect.objectContaining({
+        cache: "no-store",
+        credentials: "same-origin",
+      })
+    );
+  });
+
+  it("updates finance rules", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            rules: ruleConsoleData.rules,
+            preview: ruleConsoleData.preview,
+          },
+        })
+      )
+    );
+
+    const result = await httpFinanceAdminRepository.updateRules({
+      channelFeeRules: ruleConsoleData.rules.channelFeeRules,
+      notes: "财务后台保存手续费规则",
+    });
+
+    expect(result.rules.version).toBe("finance_rules_20260512100000000");
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe("/api/finance/admin/rules");
+    expect(init).toEqual(
+      expect.objectContaining({
+        method: "PUT",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+      })
+    );
+    expect(String(init?.body)).toContain("财务后台保存手续费规则");
   });
 
   it("throws finance CSV export API errors", async () => {

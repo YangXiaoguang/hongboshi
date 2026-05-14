@@ -29,9 +29,17 @@ import {
 import {
   getFinanceAdminExportPayload,
   getFinanceAdminOverviewPayload,
+  getFinanceAdminRulesPayload,
+  updateFinanceAdminRulesPayload,
 } from "./financeAdminApi";
+import {
+  InMemoryFinanceRuleStore,
+  createDefaultFinanceRuleConfig,
+  type FinanceRuleStore,
+} from "./financeRuleStore";
 
 const operator = { id: "operator_1", roles: ["operator" as const] };
+const admin = { id: "admin_1", roles: ["admin" as const] };
 const member = { id: "member_1", roles: ["member" as const] };
 const now = "2026-05-12T10:00:00.000Z";
 
@@ -39,12 +47,14 @@ let authStore: AuthSessionStore;
 let courseAccessStore: CourseAccessStore;
 let paymentStore: PaymentWebhookEventStore;
 let transactionOperationStore: TransactionOperationStore;
+let financeRuleStore: FinanceRuleStore;
 
 beforeEach(() => {
   authStore = new InMemoryAuthSessionStore();
   courseAccessStore = new InMemoryCourseAccessStore();
   paymentStore = new InMemoryPaymentWebhookEventStore();
   transactionOperationStore = new InMemoryTransactionOperationStore();
+  financeRuleStore = new InMemoryFinanceRuleStore();
 
   setAuthSessionStore(authStore);
   setCourseAccessStore(courseAccessStore);
@@ -349,5 +359,145 @@ describe("finance admin api payloads", () => {
   it("requires finance read permission for CSV export", async () => {
     expect((await getFinanceAdminExportPayload(null, {})).status).toBe(401);
     expect((await getFinanceAdminExportPayload(member, {})).status).toBe(403);
+  });
+
+  it("reads and updates finance rules with separated permissions", async () => {
+    expect((await getFinanceAdminRulesPayload(null, now)).status).toBe(401);
+    expect(
+      (await getFinanceAdminRulesPayload(member, now, financeRuleStore)).status
+    ).toBe(403);
+
+    const readPayload = await getFinanceAdminRulesPayload(
+      operator,
+      now,
+      financeRuleStore,
+      paymentStore,
+      transactionOperationStore
+    );
+    expect(readPayload.status).toBe(200);
+    expect(readPayload.body.ok).toBe(true);
+    if (!readPayload.body.ok) throw new Error("expected finance rules payload");
+    expect(readPayload.body.data.canManage).toBe(false);
+
+    expect(
+      (
+        await updateFinanceAdminRulesPayload(
+          operator,
+          {
+            channelFeeRules: readPayload.body.data.rules.channelFeeRules,
+          },
+          now,
+          financeRuleStore,
+          paymentStore,
+          transactionOperationStore
+        )
+      ).status
+    ).toBe(403);
+
+    const updatePayload = await updateFinanceAdminRulesPayload(
+      admin,
+      {
+        channelFeeRules: readPayload.body.data.rules.channelFeeRules.map(
+          rule => (rule.channel === "manual" ? { ...rule, rate: 0.01 } : rule)
+        ),
+        notes: "测试保存手续费规则",
+      },
+      now,
+      financeRuleStore,
+      paymentStore,
+      transactionOperationStore
+    );
+    expect(updatePayload.status).toBe(200);
+    expect(updatePayload.body.ok).toBe(true);
+    if (updatePayload.body.ok) {
+      expect(updatePayload.body.data.rules.updatedBy).toBe("admin_1");
+      expect(
+        updatePayload.body.data.rules.channelFeeRules.find(
+          rule => rule.channel === "manual"
+        )?.rate
+      ).toBe(0.01);
+    }
+  });
+
+  it("builds settlement preview with channel fee estimates", async () => {
+    const paidOrder = order({
+      id: "order_finance_rule_paid",
+      status: "paid",
+      amount: 100,
+      title: "规则试算课程",
+    });
+    const refundedOrder = order({
+      id: "order_finance_rule_refund",
+      status: "refunded",
+      amount: 40,
+      title: "规则试算退款",
+    });
+    await courseAccessStore.save(
+      "finance_user_1",
+      CourseAccessStateSchema.parse({
+        ownedCourseIds: [],
+        membership: { status: "none" },
+        orders: [paidOrder, refundedOrder],
+      })
+    );
+
+    const paidEvent = createSimulatedPaymentSucceededEvent({
+      order: paidOrder,
+      now: "2026-05-12T09:02:00.000Z",
+    });
+    await paymentStore.begin(paidEvent, "2026-05-12T09:02:01.000Z");
+    await paymentStore.markProcessed(
+      paidEvent.id,
+      200,
+      { ok: true },
+      "2026-05-12T09:02:02.000Z"
+    );
+
+    const refundEvent = createSimulatedRefundSucceededEvent({
+      order: refundedOrder,
+      now: "2026-05-12T09:03:00.000Z",
+    });
+    await paymentStore.begin(refundEvent, "2026-05-12T09:03:01.000Z");
+    await paymentStore.markProcessed(
+      refundEvent.id,
+      200,
+      { ok: true },
+      "2026-05-12T09:03:02.000Z"
+    );
+
+    const rules = createDefaultFinanceRuleConfig(now);
+    await financeRuleStore.saveRules({
+      ...rules,
+      channelFeeRules: rules.channelFeeRules.map(rule =>
+        rule.channel === "manual"
+          ? { ...rule, rate: 0.02, fixedFeeAmount: 1 }
+          : rule
+      ),
+    });
+
+    const payload = await getFinanceAdminRulesPayload(
+      operator,
+      now,
+      financeRuleStore,
+      paymentStore,
+      transactionOperationStore
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (payload.body.ok) {
+      const manualPreview = payload.body.data.preview.channelPreviews.find(
+        preview => preview.channel === "manual"
+      );
+      expect(payload.body.data.preview.period.periodId).toBe("2026-05");
+      expect(manualPreview).toMatchObject({
+        grossRevenueAmount: 100,
+        refundAmount: 40,
+        netRevenueAmount: 60,
+        estimatedFeeAmount: 3,
+        estimatedSettlementAmount: 57,
+      });
+      expect(payload.body.data.preview.estimatedSettlementAmount).toBe(57);
+    }
   });
 });

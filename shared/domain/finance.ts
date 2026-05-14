@@ -19,6 +19,7 @@ export const FINANCE_ADMIN_PAGE_SIZE = 12;
 export const ALL_FINANCE_ADMIN_CHANNEL = ALL_TRANSACTION_ADMIN_CHANNEL;
 export const ALL_FINANCE_ADMIN_ITEM_TYPE = ALL_TRANSACTION_ADMIN_ITEM_TYPE;
 export const FINANCE_ADMIN_EXPORT_POLICY_VERSION = "finance-admin-csv-v1";
+export const FINANCE_ADMIN_RULE_POLICY_VERSION = "finance-admin-rules-v1";
 
 export const FinanceAdminEntryTypeSchema = z.enum([
   "payment",
@@ -313,6 +314,87 @@ export const FinanceAdminExportSchema = z.object({
   contentType: z.literal("text/csv; charset=utf-8"),
 });
 
+export const FinanceAdminAccountingPeriodStrategySchema =
+  z.literal("natural_month");
+
+export const FinanceAdminAccountingPeriodSchema = z.object({
+  periodId: z.string().regex(/^\d{4}-\d{2}$/),
+  label: z.string().min(1).max(32),
+  startsAt: DateTimeLikeSchema,
+  endsAt: DateTimeLikeSchema,
+  strategy: FinanceAdminAccountingPeriodStrategySchema.default("natural_month"),
+});
+
+export const FinanceAdminChannelFeeRuleSchema = z.object({
+  channel: PaymentChannelSchema,
+  rate: z.number().min(0).max(0.2),
+  fixedFeeAmount: MoneyAmountSchema.default(0),
+  minimumFeeAmount: MoneyAmountSchema.default(0),
+  effectiveFrom: DateTimeLikeSchema,
+  effectiveTo: DateTimeLikeSchema.optional(),
+  description: z.string().trim().min(1).max(120),
+});
+
+export const FinanceAdminRuleConfigSchema = z.object({
+  version: z.string().min(1),
+  policyVersion: z.literal(FINANCE_ADMIN_RULE_POLICY_VERSION),
+  accountingPeriodStrategy:
+    FinanceAdminAccountingPeriodStrategySchema.default("natural_month"),
+  activePeriod: FinanceAdminAccountingPeriodSchema,
+  channelFeeRules: z.array(FinanceAdminChannelFeeRuleSchema).min(1),
+  updatedAt: DateTimeLikeSchema,
+  updatedBy: EntityIdSchema.optional(),
+  notes: z.string().trim().max(240).optional(),
+});
+
+export const FinanceAdminRuleUpdateRequestSchema = z.object({
+  channelFeeRules: z.array(FinanceAdminChannelFeeRuleSchema).min(1),
+  notes: z.string().trim().max(240).optional(),
+});
+
+export const FinanceAdminSettlementChannelPreviewSchema = z.object({
+  channel: PaymentChannelSchema,
+  label: z.string().min(1),
+  rate: z.number().min(0).max(0.2),
+  fixedFeeAmount: MoneyAmountSchema,
+  minimumFeeAmount: MoneyAmountSchema,
+  grossRevenueAmount: MoneyAmountSchema,
+  refundAmount: MoneyAmountSchema,
+  netRevenueAmount: z.number().finite(),
+  estimatedFeeAmount: MoneyAmountSchema,
+  estimatedSettlementAmount: z.number().finite(),
+  entryCount: z.number().int().nonnegative(),
+});
+
+export const FinanceAdminSettlementPreviewSchema = z.object({
+  period: FinanceAdminAccountingPeriodSchema,
+  generatedAt: DateTimeLikeSchema,
+  policyVersion: z.literal(FINANCE_ADMIN_RULE_POLICY_VERSION),
+  entryCount: z.number().int().nonnegative(),
+  paymentCount: z.number().int().nonnegative(),
+  refundCount: z.number().int().nonnegative(),
+  grossRevenueAmount: MoneyAmountSchema,
+  refundAmount: MoneyAmountSchema,
+  netRevenueAmount: z.number().finite(),
+  estimatedFeeAmount: MoneyAmountSchema,
+  estimatedSettlementAmount: z.number().finite(),
+  pendingRefundAmount: MoneyAmountSchema,
+  exceptionUnsettledAmount: MoneyAmountSchema,
+  channelPreviews: z.array(FinanceAdminSettlementChannelPreviewSchema),
+});
+
+export const FinanceAdminRuleConsoleSchema = z.object({
+  rules: FinanceAdminRuleConfigSchema,
+  preview: FinanceAdminSettlementPreviewSchema,
+  canManage: z.boolean(),
+  serverTime: DateTimeLikeSchema,
+});
+
+export const FinanceAdminRuleMutationResultSchema = z.object({
+  rules: FinanceAdminRuleConfigSchema,
+  preview: FinanceAdminSettlementPreviewSchema,
+});
+
 export type FinanceAdminEntryType = z.infer<typeof FinanceAdminEntryTypeSchema>;
 export type FinanceAdminSeverity = z.infer<typeof FinanceAdminSeveritySchema>;
 export type FinanceAdminQuery = z.infer<typeof FinanceAdminQuerySchema>;
@@ -327,3 +409,27 @@ export type FinanceAdminExportMetadata = z.infer<
   typeof FinanceAdminExportMetadataSchema
 >;
 export type FinanceAdminExport = z.infer<typeof FinanceAdminExportSchema>;
+export type FinanceAdminAccountingPeriod = z.infer<
+  typeof FinanceAdminAccountingPeriodSchema
+>;
+export type FinanceAdminChannelFeeRule = z.infer<
+  typeof FinanceAdminChannelFeeRuleSchema
+>;
+export type FinanceAdminRuleConfig = z.infer<
+  typeof FinanceAdminRuleConfigSchema
+>;
+export type FinanceAdminRuleUpdateRequest = z.infer<
+  typeof FinanceAdminRuleUpdateRequestSchema
+>;
+export type FinanceAdminSettlementChannelPreview = z.infer<
+  typeof FinanceAdminSettlementChannelPreviewSchema
+>;
+export type FinanceAdminSettlementPreview = z.infer<
+  typeof FinanceAdminSettlementPreviewSchema
+>;
+export type FinanceAdminRuleConsole = z.infer<
+  typeof FinanceAdminRuleConsoleSchema
+>;
+export type FinanceAdminRuleMutationResult = z.infer<
+  typeof FinanceAdminRuleMutationResultSchema
+>;

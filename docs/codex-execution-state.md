@@ -7,10 +7,10 @@
 - 最后更新时间：2026-05-14 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
-- 最近已知基线提交：上一阶段 `32c6c87 Add finance admin overview`，本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M6-C 财务账期与手续费规则基础`
-- 当前状态：`M6-B 财务导出与账期口径预留` 已完成，下一轮应进入账期规则、渠道手续费配置和结算预览基础。
-- 本轮完成后下一步：执行 `M6-C 财务账期与手续费规则基础`
+- 最近已知基线提交：上一阶段 `bd2b6dd Add finance admin export foundation`，本轮提交后以 Git 历史最新提交为准
+- 当前阶段：`M7-A 咨询排班运营基础`
+- 当前状态：`M6-C 财务账期与手续费规则基础` 已完成，下一轮应进入咨询运营增强，先补咨询师排班与服务状态管理基础。
+- 本轮完成后下一步：执行 `M7-A 咨询排班运营基础`
 
 ## 已完成关键能力
 
@@ -101,55 +101,64 @@
 - 新增 `/api/finance/admin/export`，复用 `finance:read` 权限和财务只读台同一套服务端聚合口径。
 - `/admin/finance` 已加入导出 CSV 入口、导出中/失败/成功状态和导出口径提示。
 - 财务导出字段已预留账期、手续费、结算批次和发票状态，为后续账期、手续费和结算模块保留兼容空间。
+- 建立财务账期与手续费共享契约 `FinanceAdminRuleConfigSchema`、`FinanceAdminChannelFeeRuleSchema` 和 `FinanceAdminSettlementPreviewSchema`，统一描述自然月账期、渠道费率、固定手续费、最低手续费、规则版本、生效时间和结算预览。
+- 新增 `finance:manage` 后台写权限，当前仅 `admin` 可维护财务规则；`operator` 和 `admin` 可通过 `finance:read` 查看规则和结算预览。
+- 新增 `server/modules/finance/financeRuleStore.ts`，开发期支持内存/JSON 文件 `.hongboshi-data/finance-rules.json` 保存手续费规则，并为后续 PostgreSQL Store 保留接口。
+- 新增 `/api/finance/admin/rules`，支持读取财务规则、维护渠道手续费规则和基于服务端财务明细生成结算预览。
+- `/admin/finance` 已加入账期与手续费工作区，展示当前规则版本、渠道费率、固定手续费、最低手续费、自然月账期、预计手续费、预计结算金额、退款中金额和异常未结算金额。
+- 结算预览复用财务只读台同一套收入/退款/待退款/异常口径，不修改订单、支付回调或交易状态。
 
 ## 最近完成阶段
 
-M6-B 财务导出与账期口径预留已交付：
+M6-C 财务账期与手续费规则基础已交付：
 
-- `shared/domain/finance.ts`：新增财务导出查询、稳定字段、导出行、导出元数据和 `FinanceAdminExportSchema`。
-- `server/modules/finance/financeAdminApi.ts`：新增 `/api/finance/admin/export`，复用 M6-A 的服务端财务聚合、筛选、排序和汇总逻辑生成 CSV。
-- `client/src/features/finance/api/httpFinanceAdminRepository.ts`：新增 `exportCsv` repository，解析文件名、内容类型和导出 ID。
-- `client/src/pages/admin/FinanceManagement.tsx`：新增导出 CSV 按钮、导出中/成功/失败状态和导出口径提示。
-- `client/src/pages/admin/AdminHome.tsx`：更新后台总览，使当前路线进入 M6-C。
-- README、领域契约、产品路线、后台路线图和本文件同步了财务导出、元数据和预留字段边界。
+- `shared/domain/finance.ts`：新增财务账期、渠道手续费规则、规则更新请求、结算预览和规则控制台契约。
+- `shared/domain/user.ts`：新增 `finance:manage` 权限，当前仅 `admin` 拥有规则维护能力。
+- `server/modules/finance/financeRuleStore.ts`：新增财务规则 Store，支持内存与 JSON 文件持久化，并生成中国业务时间自然月账期。
+- `server/modules/finance/financeAdminApi.ts`：新增 `/api/finance/admin/rules` GET/PUT，读取规则、保存规则并复用财务明细生成预计手续费、预计结算金额和异常未结算金额。
+- `client/src/features/finance/api/httpFinanceAdminRepository.ts`：新增 `loadRules` 和 `updateRules` repository，统一解析规则控制台和规则更新响应。
+- `client/src/pages/admin/FinanceManagement.tsx`：新增账期与手续费工作区，支持规则展示、管理员轻量维护和结算预览。
+- `.env.example` 与 `server/db/runtimeConfig.ts`：新增 `HONGBOSHI_FINANCE_RULE_STORE` 和 `HONGBOSHI_FINANCE_RULE_FILE` 配置，当前支持 `memory/file`。
+- README、领域契约、产品路线、后台路线图和本文件同步了财务规则、权限、Store 和后续边界。
 
-M6-B 验收结果：
+M6-C 验收结果：
 
-- 具备 `finance:read` 的账号可以按当前筛选条件导出财务 CSV，普通会员会被拒绝。
-- CSV 导出与财务只读台使用同一套服务端口径，不在前端重复计算核心金额。
-- 导出文件包含生成时间、操作者、筛选条件、汇总金额、口径版本和稳定字段定义。
-- 导出明细包含发生时间、事项类型、订单 ID、用户脱敏摘要、业务类型、商品标题、渠道、金额、来源状态、异常等级、交易号、回调收据 ID 和财务备注。
-- 导出字段预留账期、手续费、结算批次和发票状态，后续可向后兼容接入真实结算。
-- `pnpm check`、相关测试和 `pnpm run ci` 已通过。
+- 具备 `finance:read` 的后台账号可以查看当前自然月账期、规则版本、渠道手续费规则和结算预览，普通会员会被拒绝。
+- 仅具备 `finance:manage` 的管理员可以保存手续费规则，运营账号默认只读。
+- 规则配置包含版本、生效时间、渠道费率、固定手续费和最低手续费，开发期可重启恢复。
+- 结算预览来自服务端财务明细和同一套收入/退款口径，不在页面临时计算核心金额。
+- 手续费和结算预览不会修改订单、支付回调或交易状态。
+- 财务只读台、CSV 导出、交易、订单、支付对账后台能力不回退。
+- `pnpm run ci` 已通过。
 
 ## 下一步任务包
 
-### M6-C: 财务账期与手续费规则基础
+### M7-A: 咨询排班运营基础
 
 业务目标：
 
-在 M6-B 已预留导出字段的基础上，建立财务账期和渠道手续费的第一版规则能力。先让运营/财务可以查看和维护自然月账期、渠道费率、固定手续费和结算预览口径，为后续真实支付渠道结算单、发票和财务审核流打基础。
+在现有咨询预约、咨询师工作台和咨询运营配置基础上，把咨询师排班从 seed 可用时段升级为可运营的排班管理基础。先让运营能查看咨询师服务状态、排班窗口和时段状态，并可维护可预约时段，为后续咨询师档案、服务记录、履约异常统计和规则版本化打基础。
 
 实施范围：
 
-- 在 `shared/domain/finance.ts` 增加财务账期、渠道手续费规则和结算预览契约，例如自然月账期、渠道费率、固定手续费、规则生效时间和规则版本。
-- 新增 `server/modules/finance/financeRuleStore.ts`，开发期可先用内存/JSON Store 保存手续费规则和账期配置，为 PostgreSQL 实现预留接口。
-- 新增 `/api/finance/admin/rules` 或同等接口，复用 `finance:read` 读取规则，并视需要新增 `finance:manage` 或暂时使用 `admin:manage` 控制规则写入。
-- 结算预览复用财务明细和导出口径，按账期与渠道规则计算预计手续费、预计结算金额和异常未结算金额。
-- 前端 `/admin/finance` 增加账期/手续费规则只读或轻量配置区，展示当前规则版本、渠道费率和结算预览。
-- 不在本阶段接入真实支付渠道结算单，不做发票开具动作，不修改历史订单金额。
+- 在 `shared/domain/counseling.ts` 增加咨询师运营排班契约，例如咨询师服务状态、排班时段、可预约/锁定/已预约/停诊状态、排班更新请求和操作结果。
+- 新增或扩展服务端咨询排班 Store/API，优先复用 `server/modules/counseling/counselingAppointmentStore.ts` 的时段数据，必要时新增轻量 Store 保存运营覆盖配置。
+- 新增 `/api/counseling/admin/schedules` 或同等接口，复用 `admin:manage` 或拆分 `counseling:manage` 写权限；读取仍需后台运营权限。
+- 排班维护动作至少支持新增可预约时段、关闭未被预约时段和恢复可预约时段；已被预约或锁定的时段不能被危险覆盖。
+- 前端 `/admin/counseling` 或新 `/admin/counselors` 增加排班管理区，展示咨询师列表、服务状态、未来时段、冲突提示和排班动作入口。
+- 不在本阶段修改咨询师完整资质档案，不做真实日历同步，不处理复杂重复排班模板。
 - 更新 README、`docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
-- 增加 shared domain、server API、Store/repository 和页面关键测试。
+- 增加 shared domain、server API/Store、repository 和页面关键测试。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add finance rule foundation`。
+- 提交并推送，建议 commit message：`Add counseling schedule foundation`。
 
 验收标准：
 
-- 财务账号可以查看当前账期和手续费规则，普通会员不可访问。
-- 规则配置有明确版本、生效时间和渠道维度，后续可迁移到数据库。
-- 结算预览来自服务端财务明细和同一套收入/退款口径，不在页面临时计算。
-- 手续费和结算预览不会修改订单、支付回调或交易状态。
-- 现有财务只读台、CSV 导出、交易、订单、支付对账后台能力不回退。
+- 运营/管理员可以查看咨询师未来排班和服务状态，普通会员不可访问后台排班。
+- 新增、关闭、恢复时段均由服务端校验，已预约或锁定时段不会被直接覆盖。
+- 排班动作留下审计或操作记录，至少能追踪操作者、咨询师、时段、动作和原因。
+- 前台咨询可用时段读取继续以服务端状态为准，后台排班变更能影响后续可预约结果。
+- 现有咨询预约、咨询师工作台、咨询运营配置、订单和支付回调能力不回退。
 - CI 通过。
 
 ## 执行不变量
@@ -169,6 +178,6 @@ M6-B 验收结果：
 
 - 课程详情章节/素材是否要从 JSONB 拆成独立表。建议 M2-G 先用 JSONB 保持可维护速度，等学习记录、资料下载和素材真实文件管理进入后再拆表。
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
-- 财务账期第一版按自然月还是按支付渠道账单日。建议 M6-C 先按自然月落地，渠道账单日作为规则字段预留。
+- 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
 - 交易操作 Store 已独立落表；后续是否并入统一审计中心视图建议放到 M9 跨模块审计聚合处理。

@@ -116,6 +116,7 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["member"] }, "transaction:read")).toBe(false);
     expect(userCan({ roles: ["member"] }, "transaction:operate")).toBe(false);
     expect(userCan({ roles: ["member"] }, "finance:read")).toBe(false);
+    expect(userCan({ roles: ["member"] }, "finance:manage")).toBe(false);
     expect(userCan({ roles: ["operator"] }, "user:read")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "user:membership")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "order:read")).toBe(true);
@@ -123,6 +124,7 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["operator"] }, "transaction:read")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "transaction:operate")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "finance:read")).toBe(true);
+    expect(userCan({ roles: ["operator"] }, "finance:manage")).toBe(false);
     expect(userCan({ roles: ["admin"] }, "admin:manage")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "catalog:publish")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "user:read")).toBe(true);
@@ -132,6 +134,7 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["admin"] }, "transaction:read")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "transaction:operate")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "finance:read")).toBe(true);
+    expect(userCan({ roles: ["admin"] }, "finance:manage")).toBe(true);
   });
 
   it("captures consent records in login sessions", () => {

@@ -5,22 +5,32 @@ import {
   ALL_FINANCE_ADMIN_CHANNEL,
   ALL_FINANCE_ADMIN_ITEM_TYPE,
   ApiResponseSchema,
-  FINANCE_ADMIN_PERMISSIONS,
   FINANCE_ADMIN_EXPORT_FIELDS,
   FINANCE_ADMIN_EXPORT_POLICY_VERSION,
+  FINANCE_ADMIN_PERMISSIONS,
+  FINANCE_ADMIN_RULE_POLICY_VERSION,
   FinanceAdminEntrySchema,
   FinanceAdminExportQuerySchema,
   FinanceAdminExportSchema,
   FinanceAdminOverviewSchema,
   FinanceAdminQuerySchema,
+  FinanceAdminRuleConfigSchema,
+  FinanceAdminRuleConsoleSchema,
+  FinanceAdminRuleMutationResultSchema,
+  FinanceAdminRuleUpdateRequestSchema,
   userCan,
   type CourseAccessState,
+  type FinanceAdminChannelFeeRule,
   type FinanceAdminEntry,
   type FinanceAdminExport,
   type FinanceAdminExportQuery,
   type FinanceAdminExportRow,
   type FinanceAdminOverview,
   type FinanceAdminQuery,
+  type FinanceAdminRuleConfig,
+  type FinanceAdminRuleConsole,
+  type FinanceAdminRuleMutationResult,
+  type FinanceAdminSettlementPreview,
   type LoginSession,
   type Order,
   type OrderAdminUserSummary,
@@ -43,6 +53,7 @@ import {
   getTransactionOperationStore,
   type TransactionOperationStore,
 } from "../transactions/transactionOperationStore";
+import { getFinanceRuleStore, type FinanceRuleStore } from "./financeRuleStore";
 
 type FinanceAdminActor = Pick<LoginSession["user"], "id" | "roles">;
 type DirectoryProfile = OrderAdminUserSummary & {
@@ -60,7 +71,14 @@ type FinanceAdminFilterQuery = Pick<
 const FinanceAdminOverviewResponseSchema = ApiResponseSchema(
   FinanceAdminOverviewSchema
 );
+const FinanceAdminRuleConsoleResponseSchema = ApiResponseSchema(
+  FinanceAdminRuleConsoleSchema
+);
+const FinanceAdminRuleMutationResponseSchema = ApiResponseSchema(
+  FinanceAdminRuleMutationResultSchema
+);
 const FINANCE_ADMIN_CSV_CONTENT_TYPE = "text/csv; charset=utf-8" as const;
+const financeChannels: PaymentChannel[] = ["wechat_pay", "alipay", "manual"];
 
 const itemTypeCopy = {
   course: "课程",
@@ -847,6 +865,177 @@ async function buildFinanceExport(
   });
 }
 
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function financeRuleVersionFromNow(now: string) {
+  return `finance_rules_${now.replace(/\D/g, "").slice(0, 17)}`;
+}
+
+function entryOccurredInPeriod(
+  entry: FinanceAdminEntry,
+  period: FinanceAdminRuleConfig["activePeriod"]
+) {
+  const occurredAt = Date.parse(entry.occurredAt);
+  return (
+    Number.isFinite(occurredAt) &&
+    occurredAt >= Date.parse(period.startsAt) &&
+    occurredAt <= Date.parse(period.endsAt)
+  );
+}
+
+function effectiveRuleForChannel(
+  rules: FinanceAdminChannelFeeRule[],
+  channel: PaymentChannel
+) {
+  return rules.find(rule => rule.channel === channel);
+}
+
+function estimateChannelFee({
+  grossRevenueAmount,
+  paymentCount,
+  rule,
+}: {
+  grossRevenueAmount: number;
+  paymentCount: number;
+  rule: FinanceAdminChannelFeeRule;
+}) {
+  if (grossRevenueAmount <= 0) return 0;
+  const rawFee =
+    grossRevenueAmount * rule.rate + paymentCount * rule.fixedFeeAmount;
+  return roundMoney(Math.max(rawFee, rule.minimumFeeAmount));
+}
+
+function normalizeChannelFeeRules(
+  currentRules: FinanceAdminChannelFeeRule[],
+  nextRules: FinanceAdminChannelFeeRule[]
+) {
+  const currentByChannel = new Map(
+    currentRules.map(rule => [rule.channel, rule] as const)
+  );
+  const nextByChannel = new Map(
+    nextRules.map(rule => [rule.channel, rule] as const)
+  );
+
+  return financeChannels.map(channel => {
+    const rule = nextByChannel.get(channel) ?? currentByChannel.get(channel);
+    if (!rule) {
+      throw new Error(`缺少 ${channelCopy[channel]} 手续费规则`);
+    }
+    return {
+      ...rule,
+      rate: Number(rule.rate.toFixed(6)),
+      fixedFeeAmount: roundMoney(rule.fixedFeeAmount),
+      minimumFeeAmount: roundMoney(rule.minimumFeeAmount),
+    };
+  });
+}
+
+async function buildFinanceSettlementPreview(
+  rules: FinanceAdminRuleConfig,
+  now: string,
+  paymentStore: PaymentWebhookEventStore,
+  operationStore: TransactionOperationStore
+): Promise<FinanceAdminSettlementPreview> {
+  const sourceEntries = await collectFinanceEntries(
+    now,
+    paymentStore,
+    operationStore
+  );
+  const periodEntries = sourceEntries.filter(entry =>
+    entryOccurredInPeriod(entry, rules.activePeriod)
+  );
+
+  const channelPreviews = financeChannels.map(channel => {
+    const channelEntries = periodEntries.filter(
+      entry => entry.channel === channel
+    );
+    const payments = channelEntries.filter(entry => entry.type === "payment");
+    const refunds = channelEntries.filter(entry => entry.type === "refund");
+    const grossRevenueAmount = roundMoney(
+      payments.reduce((sum, entry) => sum + entry.amount, 0)
+    );
+    const refundAmount = roundMoney(
+      refunds.reduce((sum, entry) => sum + entry.amount, 0)
+    );
+    const netRevenueAmount = roundMoney(grossRevenueAmount - refundAmount);
+    const rule = effectiveRuleForChannel(rules.channelFeeRules, channel);
+    if (!rule) {
+      throw new Error(`缺少 ${channelCopy[channel]} 手续费规则`);
+    }
+    const estimatedFeeAmount = estimateChannelFee({
+      grossRevenueAmount,
+      paymentCount: payments.length,
+      rule,
+    });
+
+    return {
+      channel,
+      label: channelCopy[channel],
+      rate: rule.rate,
+      fixedFeeAmount: rule.fixedFeeAmount,
+      minimumFeeAmount: rule.minimumFeeAmount,
+      grossRevenueAmount,
+      refundAmount,
+      netRevenueAmount,
+      estimatedFeeAmount,
+      estimatedSettlementAmount: roundMoney(
+        netRevenueAmount - estimatedFeeAmount
+      ),
+      entryCount: payments.length + refunds.length,
+    };
+  });
+
+  const summary = buildSummary(periodEntries);
+  const estimatedFeeAmount = roundMoney(
+    channelPreviews.reduce(
+      (sum, preview) => sum + preview.estimatedFeeAmount,
+      0
+    )
+  );
+
+  return {
+    period: rules.activePeriod,
+    generatedAt: now,
+    policyVersion: FINANCE_ADMIN_RULE_POLICY_VERSION,
+    entryCount: periodEntries.length,
+    paymentCount: summary.paymentCount,
+    refundCount: summary.refundCount,
+    grossRevenueAmount: roundMoney(summary.grossRevenueAmount),
+    refundAmount: roundMoney(summary.refundAmount),
+    netRevenueAmount: roundMoney(summary.netRevenueAmount),
+    estimatedFeeAmount,
+    estimatedSettlementAmount: roundMoney(
+      summary.netRevenueAmount - estimatedFeeAmount
+    ),
+    pendingRefundAmount: roundMoney(summary.pendingRefundAmount),
+    exceptionUnsettledAmount: roundMoney(summary.exceptionAmount),
+    channelPreviews,
+  };
+}
+
+async function buildFinanceRuleConsole(
+  actor: FinanceAdminActor,
+  now: string,
+  financeRuleStore: FinanceRuleStore,
+  paymentStore: PaymentWebhookEventStore,
+  operationStore: TransactionOperationStore
+): Promise<FinanceAdminRuleConsole> {
+  const rules = await financeRuleStore.getRules(now);
+  return FinanceAdminRuleConsoleSchema.parse({
+    rules,
+    preview: await buildFinanceSettlementPreview(
+      rules,
+      now,
+      paymentStore,
+      operationStore
+    ),
+    canManage: userCan(actor, FINANCE_ADMIN_PERMISSIONS.manage),
+    serverTime: now,
+  });
+}
+
 function queryFromRecord(record: Record<string, unknown>) {
   return {
     keyword: stringValue(record.keyword),
@@ -878,6 +1067,21 @@ function numberValue(value: unknown) {
   if (!raw) return undefined;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : raw;
+}
+
+async function jsonBodyFromIncomingMessage(req: IncomingMessage) {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) return {};
+
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function getFinanceAdminOverviewPayload(
@@ -964,7 +1168,120 @@ export async function getFinanceAdminExportPayload(
   } as const;
 }
 
+export async function getFinanceAdminRulesPayload(
+  actor: FinanceAdminActor | null | undefined,
+  now = new Date().toISOString(),
+  financeRuleStore: FinanceRuleStore = getFinanceRuleStore(),
+  paymentStore: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
+  operationStore: TransactionOperationStore = getTransactionOperationStore()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后查看财务规则"),
+    } as const;
+  }
+
+  if (!userCan(actor, FINANCE_ADMIN_PERMISSIONS.read)) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无财务规则读取权限"),
+    } as const;
+  }
+
+  return {
+    status: 200,
+    body: FinanceAdminRuleConsoleResponseSchema.parse({
+      ok: true,
+      data: await buildFinanceRuleConsole(
+        actor,
+        now,
+        financeRuleStore,
+        paymentStore,
+        operationStore
+      ),
+    }),
+  } as const;
+}
+
+export async function updateFinanceAdminRulesPayload(
+  actor: FinanceAdminActor | null | undefined,
+  rawBody: unknown,
+  now = new Date().toISOString(),
+  financeRuleStore: FinanceRuleStore = getFinanceRuleStore(),
+  paymentStore: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
+  operationStore: TransactionOperationStore = getTransactionOperationStore()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后维护财务规则"),
+    } as const;
+  }
+
+  if (!userCan(actor, FINANCE_ADMIN_PERMISSIONS.manage)) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无财务规则维护权限"),
+    } as const;
+  }
+
+  const request = FinanceAdminRuleUpdateRequestSchema.safeParse(rawBody);
+  if (!request.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "财务规则参数不合法"),
+    } as const;
+  }
+
+  const currentRules = await financeRuleStore.getRules(now);
+  const updatedRules = FinanceAdminRuleConfigSchema.parse({
+    ...currentRules,
+    version: financeRuleVersionFromNow(now),
+    channelFeeRules: normalizeChannelFeeRules(
+      currentRules.channelFeeRules,
+      request.data.channelFeeRules
+    ),
+    updatedAt: now,
+    updatedBy: actor.id,
+    notes: request.data.notes,
+  });
+  const savedRules = await financeRuleStore.saveRules(updatedRules);
+  const preview = await buildFinanceSettlementPreview(
+    savedRules,
+    now,
+    paymentStore,
+    operationStore
+  );
+
+  return {
+    status: 200,
+    body: FinanceAdminRuleMutationResponseSchema.parse({
+      ok: true,
+      data: {
+        rules: savedRules,
+        preview,
+      } satisfies FinanceAdminRuleMutationResult,
+    }),
+  } as const;
+}
+
 export function registerFinanceAdminApi(app: Express) {
+  app.get("/api/finance/admin/rules", async (req: Request, res: Response) => {
+    const session = await getLoginSessionFromRequest(req);
+    const payload = await getFinanceAdminRulesPayload(session?.user);
+    sendJson(res, payload.status, payload.body);
+  });
+
+  app.put("/api/finance/admin/rules", async (req: Request, res: Response) => {
+    const session = await getLoginSessionFromRequest(req);
+    const payload = await updateFinanceAdminRulesPayload(
+      session?.user,
+      req.body
+    );
+    sendJson(res, payload.status, payload.body);
+  });
+
   app.get(
     "/api/finance/admin/overview",
     async (req: Request, res: Response) => {
@@ -998,6 +1315,33 @@ export function handleFinanceAdminApiRequest(
   if (!req.url || !req.url.startsWith("/api/finance/admin")) return false;
 
   const url = new URL(req.url, "http://localhost");
+  if (req.method === "GET" && url.pathname === "/api/finance/admin/rules") {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getFinanceAdminRulesPayload(session?.user);
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "财务规则读取失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "财务规则读取失败"));
+    });
+    return true;
+  }
+
+  if (req.method === "PUT" && url.pathname === "/api/finance/admin/rules") {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await updateFinanceAdminRulesPayload(
+        session?.user,
+        await jsonBodyFromIncomingMessage(req)
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "财务规则维护失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "财务规则维护失败"));
+    });
+    return true;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/finance/admin/export") {
     void (async () => {
       const session = await getLoginSessionFromRequest(req);

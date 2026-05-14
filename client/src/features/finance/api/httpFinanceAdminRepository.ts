@@ -3,12 +3,24 @@ import {
   FinanceAdminExportQuerySchema,
   FinanceAdminOverviewSchema,
   FinanceAdminQuerySchema,
+  FinanceAdminRuleConsoleSchema,
+  FinanceAdminRuleMutationResultSchema,
+  FinanceAdminRuleUpdateRequestSchema,
   type FinanceAdminOverview,
   type FinanceAdminQuery,
+  type FinanceAdminRuleConsole,
+  type FinanceAdminRuleMutationResult,
+  type FinanceAdminRuleUpdateRequest,
 } from "@shared/domain";
 
 const FinanceAdminOverviewResponseSchema = ApiResponseSchema(
   FinanceAdminOverviewSchema
+);
+const FinanceAdminRuleConsoleResponseSchema = ApiResponseSchema(
+  FinanceAdminRuleConsoleSchema
+);
+const FinanceAdminRuleMutationResponseSchema = ApiResponseSchema(
+  FinanceAdminRuleMutationResultSchema
 );
 const API_BASE = "/api/finance/admin";
 
@@ -31,6 +43,22 @@ export function parseFinanceAdminOverviewResponse(
   payload: unknown
 ): FinanceAdminOverview {
   const parsed = FinanceAdminOverviewResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseFinanceAdminRuleConsoleResponse(
+  payload: unknown
+): FinanceAdminRuleConsole {
+  const parsed = FinanceAdminRuleConsoleResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseFinanceAdminRuleMutationResponse(
+  payload: unknown
+): FinanceAdminRuleMutationResult {
+  const parsed = FinanceAdminRuleMutationResponseSchema.parse(payload);
   if (!parsed.ok) throw new Error(parsed.error.message);
   return parsed.data;
 }
@@ -94,6 +122,41 @@ export const httpFinanceAdminRepository = {
       throw new Error(extractErrorMessage(payload, "财务管理暂时不可用"));
     }
     return parseFinanceAdminOverviewResponse(payload);
+  },
+
+  async loadRules(): Promise<FinanceAdminRuleConsole> {
+    const response = await fetch(`${API_BASE}/rules`, {
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "财务规则暂时不可用"));
+    }
+    return parseFinanceAdminRuleConsoleResponse(payload);
+  },
+
+  async updateRules(
+    request: FinanceAdminRuleUpdateRequest
+  ): Promise<FinanceAdminRuleMutationResult> {
+    const response = await fetch(`${API_BASE}/rules`, {
+      method: "PUT",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      credentials: "same-origin",
+      body: JSON.stringify(FinanceAdminRuleUpdateRequestSchema.parse(request)),
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "财务规则保存失败"));
+    }
+    return parseFinanceAdminRuleMutationResponse(payload);
   },
 
   async exportCsv(

@@ -3,10 +3,14 @@ import {
   ALL_FINANCE_ADMIN_CHANNEL,
   ALL_FINANCE_ADMIN_ITEM_TYPE,
   FINANCE_ADMIN_EXPORT_POLICY_VERSION,
+  FINANCE_ADMIN_RULE_POLICY_VERSION,
   FinanceAdminExportSchema,
   FinanceAdminExportQuerySchema,
   FinanceAdminOverviewSchema,
   FinanceAdminQuerySchema,
+  FinanceAdminRuleConfigSchema,
+  FinanceAdminRuleConsoleSchema,
+  FinanceAdminRuleUpdateRequestSchema,
 } from "./finance";
 
 describe("finance admin domain contract", () => {
@@ -182,5 +186,77 @@ describe("finance admin domain contract", () => {
     );
     expect(parsed.rows[0]?.feeAmount).toBe(0);
     expect(parsed.rows[0]?.invoiceStatus).toBe("not_requested");
+  });
+
+  it("validates finance rule config and settlement preview", () => {
+    const rules = FinanceAdminRuleConfigSchema.parse({
+      version: "finance_rules_20260512100000000",
+      policyVersion: FINANCE_ADMIN_RULE_POLICY_VERSION,
+      accountingPeriodStrategy: "natural_month",
+      activePeriod: {
+        periodId: "2026-05",
+        label: "2026年05月",
+        startsAt: "2026-04-30T16:00:00.000Z",
+        endsAt: "2026-05-31T15:59:59.999Z",
+        strategy: "natural_month",
+      },
+      channelFeeRules: [
+        {
+          channel: "manual",
+          rate: 0.01,
+          fixedFeeAmount: 0.5,
+          minimumFeeAmount: 0,
+          effectiveFrom: "2026-05-01T00:00:00.000+08:00",
+          description: "人工模拟渠道试算费率",
+        },
+      ],
+      updatedAt: "2026-05-12T10:00:00.000Z",
+      updatedBy: "admin_1",
+    });
+
+    const parsed = FinanceAdminRuleConsoleSchema.parse({
+      rules,
+      preview: {
+        period: rules.activePeriod,
+        generatedAt: "2026-05-12T10:00:00.000Z",
+        policyVersion: FINANCE_ADMIN_RULE_POLICY_VERSION,
+        entryCount: 2,
+        paymentCount: 1,
+        refundCount: 1,
+        grossRevenueAmount: 399,
+        refundAmount: 99,
+        netRevenueAmount: 300,
+        estimatedFeeAmount: 4.49,
+        estimatedSettlementAmount: 295.51,
+        pendingRefundAmount: 0,
+        exceptionUnsettledAmount: 0,
+        channelPreviews: [
+          {
+            channel: "manual",
+            label: "人工模拟",
+            rate: 0.01,
+            fixedFeeAmount: 0.5,
+            minimumFeeAmount: 0,
+            grossRevenueAmount: 399,
+            refundAmount: 99,
+            netRevenueAmount: 300,
+            estimatedFeeAmount: 4.49,
+            estimatedSettlementAmount: 295.51,
+            entryCount: 2,
+          },
+        ],
+      },
+      canManage: true,
+      serverTime: "2026-05-12T10:00:00.000Z",
+    });
+
+    const request = FinanceAdminRuleUpdateRequestSchema.parse({
+      channelFeeRules: parsed.rules.channelFeeRules,
+      notes: "财务后台保存手续费规则",
+    });
+
+    expect(parsed.preview.period.periodId).toBe("2026-05");
+    expect(parsed.preview.channelPreviews[0]?.estimatedFeeAmount).toBe(4.49);
+    expect(request.channelFeeRules[0]?.rate).toBe(0.01);
   });
 });
