@@ -3,7 +3,6 @@ import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
 import { z } from "zod";
-import { counselorProfiles } from "../../../shared/data/counselingSeed";
 import {
   ApiResponseSchema,
   applyCounselingAppointmentAction,
@@ -23,6 +22,12 @@ import {
   CounselingAvailabilitySchema,
   CounselingCancellationPolicyUpdateRequestSchema,
   CounselingCancellationPolicyUpdateResultSchema,
+  CounselorAdminProfileConfigSchema,
+  CounselorAdminProfileConsoleSchema,
+  CounselorAdminProfileFilterSchema,
+  CounselorAdminProfileMutationResultSchema,
+  CounselorAdminProfileSchema,
+  CounselorAdminProfileUpdateRequestSchema,
   CounselingOperationAuditEventSchema,
   CounselingOperationsConsoleSchema,
   CounselingServiceRecordConsoleSchema,
@@ -45,6 +50,12 @@ import {
   upsertCourseAccessOrder,
   userCan,
   type CourseAccessState,
+  type Counselor,
+  type CounselorAdminProfile,
+  type CounselorAdminProfileConfig,
+  type CounselorAdminProfileFilter,
+  type CounselorAdminProfileSummary,
+  type CounselorAdminProfileUpdateRequest,
   type CounselingAdminScheduleActionRequest,
   type CounselingAdminScheduleConsole,
   type CounselingAdminScheduleSlot,
@@ -81,6 +92,10 @@ import {
   type CounselingOperationStore,
 } from "./counselingOperationStore";
 import {
+  createDefaultCounselorAdminProfileStore,
+  type CounselorAdminProfileStore,
+} from "./counselorAdminProfileStore";
+import {
   loadCourseAccessState,
   saveCourseAccessState,
 } from "../courses/courseAccessApi";
@@ -100,6 +115,12 @@ const CounselingWorkbenchResponseSchema = ApiResponseSchema(
 );
 const CounselingOperationsConsoleResponseSchema = ApiResponseSchema(
   CounselingOperationsConsoleSchema
+);
+const CounselorAdminProfileConsoleResponseSchema = ApiResponseSchema(
+  CounselorAdminProfileConsoleSchema
+);
+const CounselorAdminProfileMutationResponseSchema = ApiResponseSchema(
+  CounselorAdminProfileMutationResultSchema
 );
 const CounselingServiceRecordConsoleResponseSchema = ApiResponseSchema(
   CounselingServiceRecordConsoleSchema
@@ -145,6 +166,45 @@ const CounselingRefundWebhookResponseSchema = ApiResponseSchema(
 
 let counselingAppointmentStore = createDefaultCounselingAppointmentStore();
 let counselingOperationStore = createDefaultCounselingOperationStore();
+let counselorAdminProfileStore = createDefaultCounselorAdminProfileStore();
+
+async function listCounselorProfileConfigs(
+  now = new Date().toISOString()
+): Promise<CounselorAdminProfileConfig[]> {
+  return counselorAdminProfileStore.listProfiles(now);
+}
+
+async function listCounselors(now = new Date().toISOString()) {
+  return (await listCounselorProfileConfigs(now)).map(
+    profile => profile.counselor
+  );
+}
+
+async function getCounselorProfileConfig(
+  counselorId: string,
+  now = new Date().toISOString()
+) {
+  return counselorAdminProfileStore.getProfile(counselorId, now);
+}
+
+async function getCounselor(
+  counselorId: string,
+  now = new Date().toISOString()
+) {
+  return (await getCounselorProfileConfig(counselorId, now))?.counselor;
+}
+
+function profileCanAcceptNewClients(profile: CounselorAdminProfileConfig) {
+  const hasUsableCredential =
+    profile.credentialStatus === "verified" ||
+    profile.credentialStatus === "expiring_soon";
+
+  return (
+    profile.serviceStatus === "active" &&
+    profile.acceptsNewClients &&
+    hasUsableCredential
+  );
+}
 
 function reportStoreError(err: unknown) {
   console.error(err instanceof Error ? err.message : "咨询预约持久化失败");
@@ -495,8 +555,9 @@ export async function processCounselingPaymentWebhookEvent(
   }
 
   const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
-  const counselor = counselorProfiles.find(
-    item => item.id === appointment.counselorId
+  const counselor = await getCounselor(
+    appointment.counselorId,
+    paymentEvent.occurredAt
   );
   if (!slot || !counselor) {
     return {
@@ -629,8 +690,9 @@ export async function processCounselingRefundWebhookEvent(
   }
 
   const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
-  const counselor = counselorProfiles.find(
-    item => item.id === appointment.counselorId
+  const counselor = await getCounselor(
+    appointment.counselorId,
+    refundEvent.occurredAt
   );
   if (!slot || !counselor) {
     return {
@@ -757,9 +819,7 @@ export async function expireOverdueCounselingPayments(
     if (!expiredAppointment) continue;
 
     const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
-    const counselor = counselorProfiles.find(
-      item => item.id === appointment.counselorId
-    );
+    const counselor = await getCounselor(appointment.counselorId, now);
     if (!slot || !counselor) continue;
 
     const riskEvent =
@@ -819,6 +879,7 @@ export function resetCounselingAppointmentStore(now = new Date()) {
   return Promise.all([
     Promise.resolve(counselingAppointmentStore.reset(now)),
     Promise.resolve(counselingOperationStore.clear()),
+    Promise.resolve(counselorAdminProfileStore.clear()),
     resetRiskEventStore(),
   ]).then(() => undefined);
 }
@@ -833,16 +894,33 @@ export function setCounselingOperationStore(store: CounselingOperationStore) {
   counselingOperationStore = store;
 }
 
+export function setCounselorAdminProfileStore(
+  store: CounselorAdminProfileStore
+) {
+  counselorAdminProfileStore = store;
+}
+
 export async function getCounselingAvailabilityPayload(
   now = new Date().toISOString()
 ) {
   await expireOverdueCounselingPayments(now);
 
+  const profileConfigs = await listCounselorProfileConfigs(now);
+  const availableCounselorIds = new Set(
+    profileConfigs
+      .filter(profileCanAcceptNewClients)
+      .map(profile => profile.counselor.id)
+  );
+
   return CounselingAvailabilityResponseSchema.parse({
     ok: true,
     data: {
-      counselors: counselorProfiles,
-      slots: await counselingAppointmentStore.listSlots(new Date(now)),
+      counselors: profileConfigs
+        .filter(profile => availableCounselorIds.has(profile.counselor.id))
+        .map(profile => profile.counselor),
+      slots: (await counselingAppointmentStore.listSlots(new Date(now))).filter(
+        slot => availableCounselorIds.has(slot.counselorId)
+      ),
       serverTime: now,
     },
   });
@@ -871,15 +949,23 @@ export async function createCounselingAppointmentPayload(
   const request = parsed.data;
   await expireOverdueCounselingPayments(now);
 
-  const counselor = counselorProfiles.find(
-    item => item.id === request.counselorId
+  const counselorProfile = await getCounselorProfileConfig(
+    request.counselorId,
+    now
   );
-  if (!counselor) {
+  if (!counselorProfile) {
     return {
       status: 404,
       body: errorPayload("NOT_FOUND", "咨询师不存在"),
     } as const;
   }
+  if (!profileCanAcceptNewClients(counselorProfile)) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "该咨询师当前暂停接单，请选择其他咨询师"),
+    } as const;
+  }
+  const counselor = counselorProfile.counselor;
 
   const slot = await counselingAppointmentStore.getSlot(request.slotId);
   if (!slot || slot.counselorId !== request.counselorId) {
@@ -989,8 +1075,9 @@ export async function createCounselingAppointmentPayload(
 async function appointmentToRecord(
   appointment: CounselingAppointment
 ): Promise<CounselingAppointmentRecord | undefined> {
-  const counselor = counselorProfiles.find(
-    item => item.id === appointment.counselorId
+  const counselor = await getCounselor(
+    appointment.counselorId,
+    appointment.updatedAt
   );
   const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
   if (!counselor || !slot) return undefined;
@@ -1175,7 +1262,7 @@ function toAdminScheduleSlot({
   appointment,
 }: {
   slot: CounselingSlot;
-  counselor: (typeof counselorProfiles)[number];
+  counselor: Counselor;
   appointment?: CounselingAppointment;
 }): CounselingAdminScheduleSlot {
   const status = getAdminScheduleSlotStatus(slot, appointment);
@@ -1215,11 +1302,15 @@ async function buildCounselingAdminScheduleConsole(
       COUNSELING_ADMIN_SCHEDULE_WINDOW_DAYS * 24 * 60 * 60 * 1000
   ).toISOString();
   const windowEndMs = Date.parse(windowEnd);
-  const [slots, appointments] = await Promise.all([
+  const [slots, appointments, counselorConfigs] = await Promise.all([
     counselingAppointmentStore.listSlots(new Date(safeWindowStart)),
     counselingAppointmentStore.listAppointments(),
+    listCounselorProfileConfigs(safeWindowStart),
   ]);
   const appointmentsBySlotId = buildAppointmentBySlotId(appointments);
+  const counselorConfigById = new Map(
+    counselorConfigs.map(profile => [profile.counselor.id, profile])
+  );
 
   const slotsByCounselorId = new Map<string, CounselingAdminScheduleSlot[]>();
   slots
@@ -1233,14 +1324,12 @@ async function buildCounselingAdminScheduleConsole(
     })
     .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
     .forEach(slot => {
-      const counselor = counselorProfiles.find(
-        item => item.id === slot.counselorId
-      );
-      if (!counselor) return;
+      const counselorConfig = counselorConfigById.get(slot.counselorId);
+      if (!counselorConfig) return;
 
       const adminSlot = toAdminScheduleSlot({
         slot,
-        counselor,
+        counselor: counselorConfig.counselor,
         appointment: appointmentsBySlotId.get(slot.id),
       });
       slotsByCounselorId.set(slot.counselorId, [
@@ -1249,7 +1338,8 @@ async function buildCounselingAdminScheduleConsole(
       ]);
     });
 
-  const counselors = counselorProfiles.map(counselor => {
+  const counselors = counselorConfigs.map(counselorConfig => {
+    const counselor = counselorConfig.counselor;
     const scheduleSlots = slotsByCounselorId.get(counselor.id) ?? [];
     const summary = {
       availableCount: scheduleSlots.filter(slot => slot.status === "available")
@@ -1267,7 +1357,11 @@ async function buildCounselingAdminScheduleConsole(
 
     return {
       counselor,
-      serviceStatus: buildCounselorServiceStatus(summary),
+      serviceStatus:
+        counselorConfig.serviceStatus === "paused" ||
+        !counselorConfig.acceptsNewClients
+          ? "paused"
+          : buildCounselorServiceStatus(summary),
       nextAvailableAt,
       summary,
       slots: scheduleSlots,
@@ -1458,9 +1552,7 @@ export async function updateCounselingAdminSchedulePayload(
   let savedSlot: CounselingSlot;
 
   if (request.action === "add_available_slot") {
-    const counselor = counselorProfiles.find(
-      item => item.id === request.counselorId
-    );
+    const counselor = await getCounselor(request.counselorId, now);
     if (!counselor) {
       return {
         status: 404,
@@ -1728,6 +1820,103 @@ function buildServiceRecordFilterCandidate(rawQuery: unknown) {
   };
 }
 
+function buildCounselorAdminProfileFilterCandidate(rawQuery: unknown) {
+  const query =
+    rawQuery && typeof rawQuery === "object"
+      ? (rawQuery as Record<string, unknown>)
+      : {};
+  const limitValue = firstStringParam(query.limit);
+  const parsedLimit = limitValue ? Number(limitValue) : undefined;
+
+  return {
+    serviceStatus: firstStringParam(query.serviceStatus),
+    credentialStatus: firstStringParam(query.credentialStatus),
+    keyword: firstStringParam(query.keyword),
+    limit: Number.isFinite(parsedLimit)
+      ? parsedLimit
+      : COUNSELING_SERVICE_RECORD_DEFAULT_LIMIT,
+  };
+}
+
+function counselorProfileMatchesFilter(
+  profile: CounselorAdminProfile,
+  filters: CounselorAdminProfileFilter
+) {
+  if (
+    filters.serviceStatus &&
+    profile.serviceStatus !== filters.serviceStatus
+  ) {
+    return false;
+  }
+  if (
+    filters.credentialStatus &&
+    profile.credentialStatus !== filters.credentialStatus
+  ) {
+    return false;
+  }
+  if (filters.keyword) {
+    const keyword = filters.keyword.toLowerCase();
+    const searchable = [
+      profile.counselor.id,
+      profile.counselor.name,
+      profile.counselor.title,
+      profile.counselor.licenseSummary,
+      profile.counselor.specialties.join(" "),
+    ]
+      .join(" ")
+      .toLowerCase();
+    if (!searchable.includes(keyword)) return false;
+  }
+
+  return true;
+}
+
+function buildCounselorAdminProfileSummary(
+  profiles: CounselorAdminProfile[]
+): CounselorAdminProfileSummary {
+  return {
+    totalCount: profiles.length,
+    activeCount: profiles.filter(profile => profile.serviceStatus === "active")
+      .length,
+    pausedCount: profiles.filter(profile => profile.serviceStatus === "paused")
+      .length,
+    acceptingNewClientsCount: profiles.filter(
+      profile => profile.acceptsNewClients
+    ).length,
+    pendingReviewCount: profiles.filter(
+      profile => profile.credentialStatus === "pending_review"
+    ).length,
+    expiringSoonCount: profiles.filter(
+      profile => profile.credentialStatus === "expiring_soon"
+    ).length,
+    expiredCredentialCount: profiles.filter(
+      profile => profile.credentialStatus === "expired"
+    ).length,
+  };
+}
+
+function buildCounselorServiceSummary(
+  counselorId: string,
+  serviceRecords: CounselingServiceRecord[]
+) {
+  const records = serviceRecords.filter(
+    record => record.counselorId === counselorId
+  );
+  return {
+    totalAppointments: records.length,
+    scheduledCount: records.filter(
+      record => record.appointmentStatus === "scheduled"
+    ).length,
+    completedCount: records.filter(
+      record => record.appointmentStatus === "completed"
+    ).length,
+    noShowCount: records.filter(
+      record => record.appointmentStatus === "no_show"
+    ).length,
+    anomalyCount: records.filter(record => record.anomalies.length > 0).length,
+  };
+}
+
 function uniqueAnomalies(
   anomalies: CounselingServiceRecordAnomalyType[]
 ): CounselingServiceRecordAnomalyType[] {
@@ -1927,9 +2116,7 @@ async function appointmentToServiceRecord({
   latestAudit?: CounselingOperationAuditEvent;
   now: string;
 }): Promise<CounselingServiceRecord | undefined> {
-  const counselor = counselorProfiles.find(
-    item => item.id === appointment.counselorId
-  );
+  const counselor = await getCounselor(appointment.counselorId, now);
   const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
   if (!counselor || !slot) return undefined;
 
@@ -2014,12 +2201,219 @@ async function buildCounselingServiceRecordConsole({
     });
 
   return CounselingServiceRecordConsoleSchema.parse({
-    counselors: counselorProfiles,
+    counselors: await listCounselors(now),
     filters,
     records: matchedRecords.slice(0, filters.limit),
     summary: buildServiceRecordSummary(matchedRecords),
     serverTime: now,
   });
+}
+
+async function buildCounselorAdminProfileConsole({
+  filters,
+  now,
+}: {
+  filters: CounselorAdminProfileFilter;
+  now: string;
+}) {
+  const [profileConfigs, scheduleConsole, serviceRecordConsole] =
+    await Promise.all([
+      listCounselorProfileConfigs(now),
+      buildCounselingAdminScheduleConsole(now),
+      buildCounselingServiceRecordConsole({
+        filters: {
+          limit: 100,
+        },
+        now,
+      }),
+    ]);
+  const scheduleByCounselorId = new Map(
+    scheduleConsole.counselors.map(schedule => [
+      schedule.counselor.id,
+      schedule,
+    ])
+  );
+  const profiles = profileConfigs.map(config => {
+    const schedule = scheduleByCounselorId.get(config.counselor.id);
+    return CounselorAdminProfileSchema.parse({
+      ...config,
+      scheduleSummary: schedule?.summary ?? {
+        availableCount: 0,
+        lockedCount: 0,
+        scheduledCount: 0,
+        closedCount: 0,
+      },
+      serviceSummary: buildCounselorServiceSummary(
+        config.counselor.id,
+        serviceRecordConsole.records
+      ),
+      nextAvailableAt: schedule?.nextAvailableAt,
+    });
+  });
+
+  const matchedProfiles = profiles
+    .filter(profile => counselorProfileMatchesFilter(profile, filters))
+    .sort((a, b) => {
+      const statusDelta =
+        Number(b.serviceStatus === "active") -
+        Number(a.serviceStatus === "active");
+      if (statusDelta !== 0) return statusDelta;
+      return a.counselor.name.localeCompare(b.counselor.name, "zh-Hans-CN");
+    });
+
+  return CounselorAdminProfileConsoleSchema.parse({
+    filters,
+    profiles: matchedProfiles.slice(0, filters.limit),
+    summary: buildCounselorAdminProfileSummary(matchedProfiles),
+    serverTime: now,
+  });
+}
+
+export async function getCounselingAdminCounselorProfilesPayload(
+  actor?: FulfillmentActor,
+  rawQuery?: unknown,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后查看咨询师档案"),
+    } as const;
+  }
+
+  if (!userCan(actor, "admin:manage")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无咨询师档案权限"),
+    } as const;
+  }
+
+  const parsedFilters = CounselorAdminProfileFilterSchema.safeParse(
+    buildCounselorAdminProfileFilterCandidate(rawQuery)
+  );
+  if (!parsedFilters.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "咨询师档案筛选参数不合法"),
+    } as const;
+  }
+
+  await expireOverdueCounselingPayments(now);
+
+  return {
+    status: 200,
+    body: CounselorAdminProfileConsoleResponseSchema.parse({
+      ok: true,
+      data: await buildCounselorAdminProfileConsole({
+        filters: parsedFilters.data,
+        now,
+      }),
+    }),
+  } as const;
+}
+
+export async function updateCounselingAdminCounselorProfilePayload(
+  body: unknown,
+  actor?: FulfillmentActor,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后维护咨询师档案"),
+    } as const;
+  }
+
+  if (!userCan(actor, "admin:manage")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无咨询师档案权限"),
+    } as const;
+  }
+
+  const parsed = CounselorAdminProfileUpdateRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "咨询师档案操作参数不合法"),
+    } as const;
+  }
+
+  await expireOverdueCounselingPayments(now);
+
+  const request: CounselorAdminProfileUpdateRequest = parsed.data;
+  const existing = await getCounselorProfileConfig(request.counselorId, now);
+  if (!existing) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "咨询师不存在"),
+    } as const;
+  }
+
+  const {
+    serviceStatus,
+    acceptsNewClients,
+    credentialStatus,
+    credentialExpiresAt,
+    ...counselorPatch
+  } = request.profile;
+  const nextProfile = CounselorAdminProfileConfigSchema.parse({
+    ...existing,
+    counselor: {
+      ...existing.counselor,
+      ...counselorPatch,
+    },
+    serviceStatus: serviceStatus ?? existing.serviceStatus,
+    acceptsNewClients:
+      serviceStatus === "paused"
+        ? false
+        : (acceptsNewClients ??
+          (serviceStatus === "active" ? true : existing.acceptsNewClients)),
+    credentialStatus: credentialStatus ?? existing.credentialStatus,
+    credentialExpiresAt: credentialExpiresAt ?? existing.credentialExpiresAt,
+    updatedAt: now,
+    updatedBy: actor.id,
+  });
+  const savedProfile =
+    await counselorAdminProfileStore.saveProfile(nextProfile);
+  const serviceStatusChanged =
+    "serviceStatus" in request.profile ||
+    "acceptsNewClients" in request.profile;
+  const auditEvent = CounselingOperationAuditEventSchema.parse({
+    id: `audit_counselor_${Date.parse(now)}_${randomUUID().slice(0, 8)}`,
+    action: serviceStatusChanged
+      ? "counselor_service_status_updated"
+      : "counselor_profile_updated",
+    actorId: actor.id,
+    actorRoles: actor.roles,
+    counselorId: savedProfile.counselor.id,
+    note: request.reason,
+    createdAt: now,
+  });
+  await counselingOperationStore.saveAuditEvent(auditEvent);
+
+  const consoleData = await buildCounselorAdminProfileConsole({
+    filters: {
+      limit: 50,
+    },
+    now,
+  });
+  const profile = consoleData.profiles.find(
+    item => item.counselor.id === savedProfile.counselor.id
+  );
+
+  return {
+    status: 200,
+    body: CounselorAdminProfileMutationResponseSchema.parse({
+      ok: true,
+      data: {
+        profile,
+        console: consoleData,
+        auditEvent,
+        serverTime: now,
+      },
+    }),
+  } as const;
 }
 
 export async function getCounselingAdminServiceRecordsPayload(
@@ -2097,7 +2491,7 @@ async function listWorkbenchAppointmentsForActor(actor: FulfillmentActor) {
   }
 
   const appointmentGroups = await Promise.all(
-    counselorProfiles.map(counselor =>
+    (await listCounselors()).map(counselor =>
       counselingAppointmentStore.listAppointmentsByCounselor(counselor.id)
     )
   );
@@ -2203,9 +2597,7 @@ export async function fulfillCounselingAppointmentPayload(
   }
 
   const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
-  const counselor = counselorProfiles.find(
-    item => item.id === appointment.counselorId
-  );
+  const counselor = await getCounselor(appointment.counselorId, now);
   if (!slot || !counselor) {
     return {
       status: 404,
@@ -2307,9 +2699,7 @@ export async function updateCounselingAppointmentPayload(
   }
 
   const slot = await counselingAppointmentStore.getSlot(appointment.slotId);
-  const counselor = counselorProfiles.find(
-    item => item.id === appointment.counselorId
-  );
+  const counselor = await getCounselor(appointment.counselorId, now);
   if (!slot || !counselor) {
     return {
       status: 404,
@@ -2374,9 +2764,7 @@ export async function updateCounselingAppointmentPayload(
       } as const;
     }
 
-    const nextCounselor = counselorProfiles.find(
-      item => item.id === nextSlot.counselorId
-    );
+    const nextCounselor = await getCounselor(nextSlot.counselorId, now);
     if (!nextCounselor) {
       return {
         status: 404,
@@ -2721,6 +3109,30 @@ export function registerCounselingApi(app: Express) {
   );
 
   app.get(
+    "/api/counseling/admin/counselors",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getCounselingAdminCounselorProfilesPayload(
+        session?.user,
+        req.query
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.put(
+    "/api/counseling/admin/counselors",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await updateCounselingAdminCounselorProfilePayload(
+        req.body,
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.get(
     "/api/counseling/admin/schedules",
     async (req: Request, res: Response) => {
       const session = await getLoginSessionFromRequest(req);
@@ -2872,6 +3284,43 @@ export function handleCounselingApiRequest(
     })().catch(err => {
       reportStoreError(err);
       sendJson(res, 500, errorPayload("INTERNAL_ERROR", "服务记录读取失败"));
+    });
+    return true;
+  }
+
+  if (
+    req.method === "GET" &&
+    url.pathname === "/api/counseling/admin/counselors"
+  ) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getCounselingAdminCounselorProfilesPayload(
+        session?.user,
+        Object.fromEntries(url.searchParams.entries())
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      reportStoreError(err);
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询师档案读取失败"));
+    });
+    return true;
+  }
+
+  if (
+    req.method === "PUT" &&
+    url.pathname === "/api/counseling/admin/counselors"
+  ) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const body = await readRequestBody(req);
+      const payload = await updateCounselingAdminCounselorProfilePayload(
+        body,
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      reportStoreError(err);
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询师档案保存失败"));
     });
     return true;
   }

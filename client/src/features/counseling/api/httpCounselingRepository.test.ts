@@ -10,6 +10,8 @@ import {
   parseCounselingOperationsConsoleResponse,
   parseCounselingServiceRecordConsoleResponse,
   parseCounselingWorkbenchResponse,
+  parseCounselorAdminProfileConsoleResponse,
+  parseCounselorAdminProfileMutationResponse,
 } from "./httpCounselingRepository";
 
 const counselor = {
@@ -366,6 +368,77 @@ describe("http counseling repository parsing", () => {
         },
       }).records[0]?.anomalies
     ).toContain("payment_hold_expiring");
+  });
+
+  it("parses counselor profile console and mutation responses", () => {
+    const profile = {
+      counselor,
+      serviceStatus: "active",
+      acceptsNewClients: true,
+      credentialStatus: "expiring_soon",
+      credentialExpiresAt: "2026-08-10T00:00:00.000Z",
+      scheduleSummary: {
+        availableCount: 2,
+        lockedCount: 1,
+        scheduledCount: 3,
+        closedCount: 0,
+      },
+      serviceSummary: {
+        totalAppointments: 4,
+        scheduledCount: 2,
+        completedCount: 1,
+        noShowCount: 0,
+        anomalyCount: 1,
+      },
+      nextAvailableAt: slot.startsAt,
+      updatedAt: "2026-05-10T00:00:00.000Z",
+      updatedBy: "operator_1",
+    };
+    const consolePayload = {
+      filters: {
+        serviceStatus: "active",
+        limit: 50,
+      },
+      profiles: [profile],
+      summary: {
+        totalCount: 1,
+        activeCount: 1,
+        pausedCount: 0,
+        acceptingNewClientsCount: 1,
+        pendingReviewCount: 0,
+        expiringSoonCount: 1,
+        expiredCredentialCount: 0,
+      },
+      serverTime: "2026-05-10T00:00:00.000Z",
+    };
+    const auditEvent = {
+      id: "audit_counselor_1",
+      action: "counselor_service_status_updated",
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      counselorId: counselor.id,
+      note: "暂停咨询师接单",
+      createdAt: "2026-05-10T00:01:00.000Z",
+    };
+
+    expect(
+      parseCounselorAdminProfileConsoleResponse({
+        ok: true,
+        data: consolePayload,
+      }).profiles[0]?.credentialStatus
+    ).toBe("expiring_soon");
+
+    expect(
+      parseCounselorAdminProfileMutationResponse({
+        ok: true,
+        data: {
+          profile,
+          console: consolePayload,
+          auditEvent,
+          serverTime: "2026-05-10T00:01:00.000Z",
+        },
+      }).auditEvent.action
+    ).toBe("counselor_service_status_updated");
   });
 
   it("throws on error response", () => {

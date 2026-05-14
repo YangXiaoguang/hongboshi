@@ -7,6 +7,13 @@ export {
 } from "@shared/domain";
 export type {
   Counselor,
+  CounselorAdminProfile,
+  CounselorAdminProfileConsole,
+  CounselorAdminProfileFilter,
+  CounselorAdminProfileMutationResult,
+  CounselorAdminProfileUpdateRequest,
+  CounselorAdminServiceStatus,
+  CounselorCredentialStatus,
   CounselorOperationServiceStatus,
   CounselorSpecialty,
   CounselingAdminCounselorSchedule,

@@ -42,6 +42,15 @@ export const CounselorSchema = z.object({
   rating: z.number().min(0).max(5).optional(),
 });
 
+export const CounselorAdminServiceStatusSchema = z.enum(["active", "paused"]);
+
+export const CounselorCredentialStatusSchema = z.enum([
+  "verified",
+  "pending_review",
+  "expiring_soon",
+  "expired",
+]);
+
 export const CounselingChannelSchema = z.enum(["video", "voice", "offline"]);
 
 export const AppointmentStatusSchema = z.enum([
@@ -169,6 +178,92 @@ export const CounselingAdminScheduleMutationResultSchema = z.object({
   serverTime: DateTimeLikeSchema,
 });
 
+export const CounselorAdminProfileConfigSchema = z.object({
+  counselor: CounselorSchema,
+  serviceStatus: CounselorAdminServiceStatusSchema.default("active"),
+  acceptsNewClients: z.boolean().default(true),
+  credentialStatus: CounselorCredentialStatusSchema.default("verified"),
+  credentialExpiresAt: DateTimeLikeSchema.optional(),
+  updatedAt: DateTimeLikeSchema,
+  updatedBy: EntityIdSchema.optional(),
+});
+
+export const CounselorAdminServiceSummarySchema = z.object({
+  totalAppointments: z.number().int().nonnegative(),
+  scheduledCount: z.number().int().nonnegative(),
+  completedCount: z.number().int().nonnegative(),
+  noShowCount: z.number().int().nonnegative(),
+  anomalyCount: z.number().int().nonnegative(),
+});
+
+export const CounselorAdminProfileSchema = z.object({
+  counselor: CounselorSchema,
+  serviceStatus: CounselorAdminServiceStatusSchema,
+  acceptsNewClients: z.boolean(),
+  credentialStatus: CounselorCredentialStatusSchema,
+  credentialExpiresAt: DateTimeLikeSchema.optional(),
+  scheduleSummary: CounselingAdminScheduleSummarySchema,
+  serviceSummary: CounselorAdminServiceSummarySchema,
+  nextAvailableAt: DateTimeLikeSchema.optional(),
+  updatedAt: DateTimeLikeSchema,
+  updatedBy: EntityIdSchema.optional(),
+});
+
+export const CounselorAdminProfileSummarySchema = z.object({
+  totalCount: z.number().int().nonnegative(),
+  activeCount: z.number().int().nonnegative(),
+  pausedCount: z.number().int().nonnegative(),
+  acceptingNewClientsCount: z.number().int().nonnegative(),
+  pendingReviewCount: z.number().int().nonnegative(),
+  expiringSoonCount: z.number().int().nonnegative(),
+  expiredCredentialCount: z.number().int().nonnegative(),
+});
+
+export const CounselorAdminProfileFilterSchema = z.object({
+  serviceStatus: CounselorAdminServiceStatusSchema.optional(),
+  credentialStatus: CounselorCredentialStatusSchema.optional(),
+  keyword: z.string().trim().max(80).optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+});
+
+export const CounselorAdminProfilePatchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(40).optional(),
+    title: z.string().trim().min(1).max(80).optional(),
+    introduction: z.string().trim().min(10).max(600).optional(),
+    specialties: z.array(CounselorSpecialtySchema).min(1).max(6).optional(),
+    licenseSummary: z.string().trim().min(1).max(180).optional(),
+    yearsOfPractice: z.number().int().min(0).max(60).optional(),
+    sessionPrice: z.number().finite().nonnegative().max(5000).optional(),
+    serviceStatus: CounselorAdminServiceStatusSchema.optional(),
+    acceptsNewClients: z.boolean().optional(),
+    credentialStatus: CounselorCredentialStatusSchema.optional(),
+    credentialExpiresAt: DateTimeLikeSchema.optional(),
+  })
+  .refine(value => Object.keys(value).length > 0, {
+    message: "至少需要提交一个咨询师档案字段",
+  });
+
+export const CounselorAdminProfileUpdateRequestSchema = z.object({
+  counselorId: EntityIdSchema,
+  profile: CounselorAdminProfilePatchSchema,
+  reason: z.string().trim().min(2).max(200),
+});
+
+export const CounselorAdminProfileConsoleSchema = z.object({
+  filters: CounselorAdminProfileFilterSchema,
+  profiles: z.array(CounselorAdminProfileSchema),
+  summary: CounselorAdminProfileSummarySchema,
+  serverTime: DateTimeLikeSchema,
+});
+
+export const CounselorAdminProfileMutationResultSchema = z.object({
+  profile: CounselorAdminProfileSchema,
+  console: CounselorAdminProfileConsoleSchema,
+  auditEvent: z.lazy(() => CounselingOperationAuditEventSchema),
+  serverTime: DateTimeLikeSchema,
+});
+
 export const CounselingAppointmentCreateRequestSchema = z.object({
   counselorId: EntityIdSchema,
   slotId: EntityIdSchema,
@@ -287,6 +382,8 @@ export const CounselingOperationAuditActionSchema = z.enum([
   "schedule_slot_added",
   "schedule_slot_closed",
   "schedule_slot_restored",
+  "counselor_profile_updated",
+  "counselor_service_status_updated",
 ]);
 
 export const CounselingOperationAuditEventSchema = z.object({
@@ -605,6 +702,12 @@ export function applyCounselingAppointmentReschedule({
 export type CounselorSpecialty = z.infer<typeof CounselorSpecialtySchema>;
 export type CounselingConcernTag = z.infer<typeof CounselingConcernTagSchema>;
 export type Counselor = z.infer<typeof CounselorSchema>;
+export type CounselorAdminServiceStatus = z.infer<
+  typeof CounselorAdminServiceStatusSchema
+>;
+export type CounselorCredentialStatus = z.infer<
+  typeof CounselorCredentialStatusSchema
+>;
 export type CounselingChannel = z.infer<typeof CounselingChannelSchema>;
 export type CounselingSlot = z.infer<typeof CounselingSlotSchema>;
 export type AppointmentStatus = z.infer<typeof AppointmentStatusSchema>;
@@ -636,6 +739,31 @@ export type CounselingAdminScheduleActionRequest = z.infer<
 >;
 export type CounselingAdminScheduleMutationResult = z.infer<
   typeof CounselingAdminScheduleMutationResultSchema
+>;
+export type CounselorAdminProfileConfig = z.infer<
+  typeof CounselorAdminProfileConfigSchema
+>;
+export type CounselorAdminServiceSummary = z.infer<
+  typeof CounselorAdminServiceSummarySchema
+>;
+export type CounselorAdminProfile = z.infer<typeof CounselorAdminProfileSchema>;
+export type CounselorAdminProfileSummary = z.infer<
+  typeof CounselorAdminProfileSummarySchema
+>;
+export type CounselorAdminProfileFilter = z.infer<
+  typeof CounselorAdminProfileFilterSchema
+>;
+export type CounselorAdminProfilePatch = z.infer<
+  typeof CounselorAdminProfilePatchSchema
+>;
+export type CounselorAdminProfileUpdateRequest = z.infer<
+  typeof CounselorAdminProfileUpdateRequestSchema
+>;
+export type CounselorAdminProfileConsole = z.infer<
+  typeof CounselorAdminProfileConsoleSchema
+>;
+export type CounselorAdminProfileMutationResult = z.infer<
+  typeof CounselorAdminProfileMutationResultSchema
 >;
 export type CounselingAppointmentCreateRequest = z.infer<
   typeof CounselingAppointmentCreateRequestSchema

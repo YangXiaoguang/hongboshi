@@ -3,6 +3,7 @@ import {
   createCounselingAppointmentPayload,
   expireOverdueCounselingPayments,
   fulfillCounselingAppointmentPayload,
+  getCounselingAdminCounselorProfilesPayload,
   getCounselingAdminServiceRecordsPayload,
   getCounselingAdminSchedulesPayload,
   getCounselingOperationsConsolePayload,
@@ -12,6 +13,7 @@ import {
   processCounselingRefundWebhookEvent,
   resetCounselingAppointmentStore,
   updateCounselingAdminSchedulePayload,
+  updateCounselingAdminCounselorProfilePayload,
   updateCounselingCancellationPolicyPayload,
   updateCounselingAppointmentPayload,
 } from "./counselingApi";
@@ -487,6 +489,114 @@ describe("counseling api payloads", () => {
       { id: "operator_1", roles: ["operator"] },
       { anomalyType: "unknown_anomaly" },
       "2026-05-10T00:25:00.000Z"
+    );
+    expect(invalid.status).toBe(400);
+  });
+
+  it("lets operators maintain counselor profiles and service status safely", async () => {
+    const forbidden = await getCounselingAdminCounselorProfilesPayload(
+      { id: "counselor_lin", roles: ["counselor"] },
+      {},
+      fixedNow.toISOString()
+    );
+    expect(forbidden.status).toBe(403);
+
+    const profiles = await getCounselingAdminCounselorProfilesPayload(
+      { id: "operator_1", roles: ["operator"] },
+      {},
+      fixedNow.toISOString()
+    );
+    expect(profiles.status).toBe(200);
+    if (!profiles.body.ok) throw new Error("expected counselor profiles");
+
+    const firstProfile = profiles.body.data.profiles[0];
+    expect(firstProfile?.counselor.name).toBeTruthy();
+    if (!firstProfile) throw new Error("expected first profile");
+
+    const updated = await updateCounselingAdminCounselorProfilePayload(
+      {
+        counselorId: firstProfile.counselor.id,
+        profile: {
+          title: "资深心理咨询师",
+          serviceStatus: "paused",
+          acceptsNewClients: false,
+          credentialStatus: "expiring_soon",
+        },
+        reason: "资质年审前暂停接单",
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:10:00.000Z"
+    );
+    expect(updated.status).toBe(200);
+    if (!updated.body.ok) throw new Error("expected profile updated");
+    expect(updated.body.data.profile).toMatchObject({
+      counselor: {
+        id: firstProfile.counselor.id,
+        title: "资深心理咨询师",
+      },
+      serviceStatus: "paused",
+      acceptsNewClients: false,
+      credentialStatus: "expiring_soon",
+    });
+    expect(updated.body.data.auditEvent).toMatchObject({
+      action: "counselor_service_status_updated",
+      counselorId: firstProfile.counselor.id,
+      note: "资质年审前暂停接单",
+    });
+
+    const availability = await getCounselingAvailabilityPayload(
+      "2026-05-10T00:11:00.000Z"
+    );
+    if (!availability.ok) throw new Error("expected availability");
+    expect(
+      availability.data.counselors.some(
+        counselor => counselor.id === firstProfile.counselor.id
+      )
+    ).toBe(false);
+
+    const pausedSlot = availability.data.slots.find(
+      slot => slot.counselorId === firstProfile.counselor.id
+    );
+    expect(pausedSlot).toBeUndefined();
+
+    const pendingReview = await updateCounselingAdminCounselorProfilePayload(
+      {
+        counselorId: firstProfile.counselor.id,
+        profile: {
+          serviceStatus: "active",
+          credentialStatus: "pending_review",
+        },
+        reason: "恢复服务但等待资质复核",
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:11:30.000Z"
+    );
+    expect(pendingReview.status).toBe(200);
+    if (!pendingReview.body.ok) throw new Error("expected profile updated");
+    expect(pendingReview.body.data.profile).toMatchObject({
+      serviceStatus: "active",
+      acceptsNewClients: true,
+      credentialStatus: "pending_review",
+    });
+
+    const pendingAvailability = await getCounselingAvailabilityPayload(
+      "2026-05-10T00:11:45.000Z"
+    );
+    if (!pendingAvailability.ok) throw new Error("expected availability");
+    expect(
+      pendingAvailability.data.counselors.some(
+        counselor => counselor.id === firstProfile.counselor.id
+      )
+    ).toBe(false);
+
+    const invalid = await updateCounselingAdminCounselorProfilePayload(
+      {
+        counselorId: firstProfile.counselor.id,
+        profile: {},
+        reason: "缺少修改字段",
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:12:00.000Z"
     );
     expect(invalid.status).toBe(400);
   });

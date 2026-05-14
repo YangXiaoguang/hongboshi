@@ -5,6 +5,8 @@ import {
   CounselingCancellationPolicyUpdateRequestSchema,
   CounselingAdminScheduleActionRequestSchema,
   CounselingAdminScheduleConsoleSchema,
+  CounselorAdminProfileConsoleSchema,
+  CounselorAdminProfileUpdateRequestSchema,
   CounselingOperationAuditEventSchema,
   CounselingServiceRecordConsoleSchema,
   CounselingServiceRecordFilterSchema,
@@ -305,6 +307,75 @@ describe("counseling appointment status machine", () => {
     expect(consolePayload.records[0]?.anomalies).toContain(
       "payment_hold_expiring"
     );
+  });
+
+  it("validates counselor admin profile contracts and updates", () => {
+    const update = CounselorAdminProfileUpdateRequestSchema.parse({
+      counselorId: "counselor_1",
+      profile: {
+        title: "资深心理咨询师",
+        specialties: ["emotion", "personal_growth"],
+        serviceStatus: "paused",
+        acceptsNewClients: false,
+        credentialStatus: "expiring_soon",
+      },
+      reason: "资质年审前暂停接单",
+    });
+    expect(update.profile.serviceStatus).toBe("paused");
+
+    const consolePayload = CounselorAdminProfileConsoleSchema.parse({
+      filters: {
+        serviceStatus: "paused",
+        limit: 50,
+      },
+      profiles: [
+        {
+          counselor: {
+            id: "counselor_1",
+            name: "林若安",
+            title: "资深心理咨询师",
+            introduction: "擅长情绪与自我成长议题。",
+            specialties: ["emotion", "personal_growth"],
+            licenseSummary: "执业 9 年",
+            yearsOfPractice: 9,
+            sessionPrice: 399,
+            rating: 4.9,
+          },
+          serviceStatus: "paused",
+          acceptsNewClients: false,
+          credentialStatus: "expiring_soon",
+          credentialExpiresAt: "2026-06-30T00:00:00.000Z",
+          scheduleSummary: {
+            availableCount: 1,
+            lockedCount: 0,
+            scheduledCount: 0,
+            closedCount: 0,
+          },
+          serviceSummary: {
+            totalAppointments: 2,
+            scheduledCount: 1,
+            completedCount: 1,
+            noShowCount: 0,
+            anomalyCount: 1,
+          },
+          nextAvailableAt: "2026-05-11T10:00:00.000Z",
+          updatedAt: "2026-05-10T10:25:00.000Z",
+          updatedBy: "operator_1",
+        },
+      ],
+      summary: {
+        totalCount: 1,
+        activeCount: 0,
+        pausedCount: 1,
+        acceptingNewClientsCount: 0,
+        pendingReviewCount: 0,
+        expiringSoonCount: 1,
+        expiredCredentialCount: 0,
+      },
+      serverTime: "2026-05-10T10:25:00.000Z",
+    });
+
+    expect(consolePayload.profiles[0]?.credentialStatus).toBe("expiring_soon");
   });
 
   it("marks cancelled appointments as refunded", () => {
