@@ -14,6 +14,7 @@ import { handleFinanceAdminApiRequest } from "./server/modules/finance/financeAd
 import { handleGrowthProfileApiRequest } from "./server/modules/growth/growthProfileApi";
 import { handleOrderAdminApiRequest } from "./server/modules/orders/orderAdminApi";
 import { handlePaymentApiRequest } from "./server/modules/payments/paymentApi";
+import { handleRiskAdminApiRequest } from "./server/modules/risk/riskAdminApi";
 import { handleTransactionAdminApiRequest } from "./server/modules/transactions/transactionAdminApi";
 import { handleUserAdminApiRequest } from "./server/modules/users/userAdminApi";
 //import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
@@ -121,6 +122,7 @@ function vitePluginManusDebugCollector(): Plugin {
         if (handleGrowthProfileApiRequest(req, res)) return;
         if (handleOrderAdminApiRequest(req, res)) return;
         if (handlePaymentApiRequest(req, res)) return;
+        if (handleRiskAdminApiRequest(req, res)) return;
         if (handleTransactionAdminApiRequest(req, res)) return;
         if (handleUserAdminApiRequest(req, res)) return;
         next();

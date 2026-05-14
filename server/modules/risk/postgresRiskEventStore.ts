@@ -142,6 +142,27 @@ export class PostgresRiskEventStore {
     return result.rows.map(riskEventRowToDomain);
   }
 
+  async listAll(): Promise<RiskEvent[]> {
+    const result = await this.db.query<RiskEventRow>(
+      `
+        SELECT
+          id,
+          user_id,
+          source,
+          risk_level,
+          signal,
+          status,
+          reviewer_id,
+          created_at,
+          resolved_at
+        FROM risk_events
+        ORDER BY created_at DESC
+      `
+    );
+
+    return result.rows.map(riskEventRowToDomain);
+  }
+
   async clear(): Promise<void> {
     await this.db.query("DELETE FROM risk_events");
   }

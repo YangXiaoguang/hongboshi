@@ -28,6 +28,10 @@ describe("risk event store", () => {
       "risk_2",
       "risk_1",
     ]);
+    expect(store.listAll().map(event => event.id)).toEqual([
+      "risk_2",
+      "risk_1",
+    ]);
     expect(store.listByUser("user_2")).toEqual([]);
   });
 

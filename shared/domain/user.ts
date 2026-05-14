@@ -50,6 +50,8 @@ export const AuthPermissionSchema = z.enum([
   "transaction:operate",
   "finance:read",
   "finance:manage",
+  "risk:read",
+  "risk:review",
   "catalog:read",
   "catalog:edit",
   "catalog:review",
@@ -83,6 +85,11 @@ export const TRANSACTION_ADMIN_PERMISSIONS = {
 export const FINANCE_ADMIN_PERMISSIONS = {
   read: "finance:read",
   manage: "finance:manage",
+} satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
+
+export const RISK_ADMIN_PERMISSIONS = {
+  read: "risk:read",
+  review: "risk:review",
 } satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
 
 export const CURRENT_USER_CONSENT_VERSION = "2026.05";
@@ -153,6 +160,8 @@ const RolePermissionMap = {
     "transaction:read",
     "transaction:operate",
     "finance:read",
+    "risk:read",
+    "risk:review",
     "catalog:read",
     "catalog:edit",
     "catalog:review",
@@ -174,6 +183,8 @@ const RolePermissionMap = {
     "transaction:operate",
     "finance:read",
     "finance:manage",
+    "risk:read",
+    "risk:review",
     "catalog:read",
     "catalog:edit",
     "catalog:review",

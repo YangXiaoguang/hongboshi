@@ -53,6 +53,13 @@ export const persistenceStoreSpecs = [
     supportedModes: ["memory", "postgres"],
   },
   {
+    envName: "HONGBOSHI_RISK_REVIEW_STORE",
+    label: "风险复核处理记录",
+    fallbackMode: "file",
+    autoPostgresWithDatabaseUrl: false,
+    supportedModes: ["memory", "file"],
+  },
+  {
     envName: "HONGBOSHI_ASSESSMENT_RESULT_STORE",
     label: "测评报告",
     fallbackMode: "memory",

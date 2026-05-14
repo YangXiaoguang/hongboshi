@@ -16,6 +16,9 @@ import {
   markOrderPaid,
   markOrderRefunded,
   PaymentReconciliationConsoleSchema,
+  RiskAdminActionRequestSchema,
+  RiskAdminDetailSchema,
+  RiskAdminListResultSchema,
   TransactionAdminDetailSchema,
   TransactionAdminListResultSchema,
   TransactionAdminMutationResultSchema,
@@ -117,6 +120,8 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["member"] }, "transaction:operate")).toBe(false);
     expect(userCan({ roles: ["member"] }, "finance:read")).toBe(false);
     expect(userCan({ roles: ["member"] }, "finance:manage")).toBe(false);
+    expect(userCan({ roles: ["member"] }, "risk:read")).toBe(false);
+    expect(userCan({ roles: ["member"] }, "risk:review")).toBe(false);
     expect(userCan({ roles: ["operator"] }, "user:read")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "user:membership")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "order:read")).toBe(true);
@@ -125,6 +130,8 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["operator"] }, "transaction:operate")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "finance:read")).toBe(true);
     expect(userCan({ roles: ["operator"] }, "finance:manage")).toBe(false);
+    expect(userCan({ roles: ["operator"] }, "risk:read")).toBe(true);
+    expect(userCan({ roles: ["operator"] }, "risk:review")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "admin:manage")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "catalog:publish")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "user:read")).toBe(true);
@@ -135,6 +142,8 @@ describe("domain contracts", () => {
     expect(userCan({ roles: ["admin"] }, "transaction:operate")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "finance:read")).toBe(true);
     expect(userCan({ roles: ["admin"] }, "finance:manage")).toBe(true);
+    expect(userCan({ roles: ["admin"] }, "risk:read")).toBe(true);
+    expect(userCan({ roles: ["admin"] }, "risk:review")).toBe(true);
   });
 
   it("captures consent records in login sessions", () => {
@@ -297,6 +306,91 @@ describe("domain contracts", () => {
           criticalCount: 0,
         },
         serverTime: "2026-05-10T08:11:00.000Z",
+      }).success
+    ).toBe(true);
+  });
+
+  it("validates risk admin list, detail and action snapshots", () => {
+    const event = {
+      id: "risk_1",
+      user: {
+        id: "user_1",
+        displayName: "测试用户",
+        phoneMasked: "138****2049",
+      },
+      source: "assessment",
+      riskLevel: "urgent",
+      status: "open",
+      createdAt: "2026-05-10T08:10:00.000Z",
+      signalSummary: "心理测评触发紧急风险复核",
+      relatedObject: {
+        type: "assessment_report",
+        id: "report_1",
+        status: "urgent",
+        occurredAt: "2026-05-10T08:10:00.000Z",
+        summary: "测评报告风险等级：urgent",
+      },
+      recordCount: 0,
+    };
+
+    const record = {
+      id: "risk_review_1",
+      riskEventId: "risk_1",
+      userId: "user_1",
+      action: "start_review",
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      previousStatus: "open",
+      nextStatus: "reviewing",
+      note: "已开始人工复核",
+      createdAt: "2026-05-10T08:12:00.000Z",
+    };
+
+    expect(
+      RiskAdminListResultSchema.safeParse({
+        items: [event],
+        summary: {
+          totalCount: 1,
+          openCount: 1,
+          reviewingCount: 0,
+          escalatedCount: 0,
+          resolvedCount: 0,
+          urgentCount: 1,
+          highCount: 0,
+          needsActionCount: 1,
+        },
+        meta: {
+          page: 1,
+          pageSize: 12,
+          total: 1,
+          totalPages: 1,
+        },
+        query: {},
+        privacyNotice: "风险复核台仅展示运营处理所需摘要。",
+        generatedAt: "2026-05-10T08:12:00.000Z",
+      }).success
+    ).toBe(true);
+
+    expect(
+      RiskAdminDetailSchema.safeParse({
+        event: {
+          ...event,
+          status: "reviewing",
+          reviewerId: "operator_1",
+          latestRecord: record,
+          recordCount: 1,
+        },
+        records: [record],
+        sopHints: ["优先确认用户当前安全状态。"],
+        privacyNotice: "风险复核台仅展示运营处理所需摘要。",
+        generatedAt: "2026-05-10T08:12:00.000Z",
+      }).success
+    ).toBe(true);
+
+    expect(
+      RiskAdminActionRequestSchema.safeParse({
+        action: "resolve",
+        note: "已完成风险复核",
       }).success
     ).toBe(true);
   });

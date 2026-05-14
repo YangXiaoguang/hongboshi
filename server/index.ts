@@ -16,6 +16,7 @@ import {
   registerPaymentApi,
 } from "./modules/payments/paymentApi";
 import { registerOrderAdminApi } from "./modules/orders/orderAdminApi";
+import { registerRiskAdminApi } from "./modules/risk/riskAdminApi";
 import { registerTransactionAdminApi } from "./modules/transactions/transactionAdminApi";
 import { registerUserAdminApi } from "./modules/users/userAdminApi";
 import { assertPersistenceConfig } from "./db/runtimeConfig";
@@ -40,6 +41,7 @@ async function startServer() {
   registerGrowthProfileApi(app);
   registerPaymentApi(app);
   registerOrderAdminApi(app);
+  registerRiskAdminApi(app);
   registerTransactionAdminApi(app);
   registerUserAdminApi(app);
 

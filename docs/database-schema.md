@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计和交易操作审计均已完成开发期 Store、专用 PostgreSQL 表与 Store。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计和交易操作审计均已完成开发期 Store、专用 PostgreSQL 表与 Store。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-A 风险复核处理记录当前先进入独立 JSON/内存 Store，风险事件事实仍来自 `risk_events`，后续再补复核记录 PostgreSQL 表。
 
 ## 文件位置
 
@@ -25,7 +25,7 @@
 ## 初始化命令
 
 1. 配置 `DATABASE_URL`。
-2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_COURSE_PRODUCT_STORE`、`HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE`、`HONGBOSHI_TRANSACTION_OPERATION_STORE` 设置为 `postgres`。
+2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_COURSE_PRODUCT_STORE`、`HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE`、`HONGBOSHI_TRANSACTION_OPERATION_STORE` 设置为 `postgres`。`HONGBOSHI_RISK_REVIEW_STORE` 当前支持 `file` 与 `memory`，暂不随 `DATABASE_URL` 自动切换 PostgreSQL。
 3. 运行 `pnpm db:doctor` 检查 Store 配置与数据库连接。
 4. 运行 `pnpm db:migrate` 应用 `server/db/migrations/*.sql`。
 
@@ -39,8 +39,8 @@
 - 金额统一以 `*_cents` 整数存储，避免浮点金额误差；API 层再转换为领域模型里的金额数值。
 - 测评分数、推荐结果这类强业务结构先用 `JSONB` 存储，保持与报告生成引擎同步；当运营查询变复杂后再拆维度表。
 - 咨询时段和预约单分表，`uniq_active_counseling_slot` 防止同一时段被多个有效预约占用；咨询预约通过 `order_id` 关联 `orders`，用于支付确认、超时关闭和后续退款流转。排班运营不新增第二套时段表，基础版通过 `counseling_slots.available` 与活跃预约状态派生可预约、锁定、已预约和已关闭状态。
-- 风险事件独立建表，测评报告和咨询预约通过 `risk_event_id` 关联，咨询预约同时保留 `assessment_report_id`，方便咨询师在服务前回看用户授权带入的测评上下文。
-- 审计日志只追加，不作为业务状态来源；咨询运营审计单独保留规则快照、排班动作、履约状态、咨询师档案/服务状态动作和操作者角色，会员操作审计保留前后会员状态、订单操作审计保留订单状态和异常标记前后快照、交易操作审计保留交易异常工单和退款渠道受理结果，便于后台追溯。
+- 风险事件独立建表，测评报告和咨询预约通过 `risk_event_id` 关联，咨询预约同时保留 `assessment_report_id`，方便咨询师在服务前回看用户授权带入的测评上下文。风险复核处理记录当前不改写风险信号原文，只保存处理摘要、操作者、角色、动作、前后状态和时间。
+- 审计日志只追加，不作为业务状态来源；咨询运营审计单独保留规则快照、排班动作、履约状态、咨询师档案/服务状态动作和操作者角色，会员操作审计保留前后会员状态、订单操作审计保留订单状态和异常标记前后快照、交易操作审计保留交易异常工单和退款渠道受理结果，风险复核记录保留人工处理轨迹，便于后台追溯。
 - 交易流水以 `payment_webhook_events` 为准，订单和业务对象状态分别来自订单、课程权益和咨询预约 Store。交易退款动作的操作记录来源是 `TransactionOperationStore`，默认 JSON 文件为 `.hongboshi-data/transaction-operations.json`，也可通过 `HONGBOSHI_TRANSACTION_OPERATION_STORE=postgres` 切换到 PostgreSQL。
 
 ## 初始核心表
@@ -56,7 +56,7 @@
 ## 后续接入顺序
 
 1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
-2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、交易操作审计、课程商品、课程商品详情内容、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，且已能支撑用户会员后台、统一订单后台和交易流水聚合；咨询师档案 overlay 当前先使用内存/JSON Store，后续可补 PostgreSQL 表。
+2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、交易操作审计、课程商品、课程商品详情内容、风险事件、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，且已能支撑用户会员后台、统一订单后台和交易流水聚合；咨询师档案 overlay 与风险复核处理记录当前先使用内存/JSON Store，后续可补 PostgreSQL 表。
 3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
 4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
 5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。
@@ -64,6 +64,8 @@
 ## 数据库 Store 试点
 
 `server/modules/risk/postgresRiskEventStore.ts` 已实现 `risk_events` 表的保存、单条读取、按用户读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_RISK_EVENT_STORE=postgres` 时，风险事件会写入 PostgreSQL。
+
+`server/modules/risk/riskReviewStore.ts` 已实现风险复核处理记录的内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/risk-reviews.json` 保存复核动作、操作者、角色、前后状态、备注摘要和时间；当设置 `HONGBOSHI_RISK_REVIEW_STORE=memory` 时可临时切回内存。当前不提供 PostgreSQL Store，避免在 SOP 模板和升级队列稳定前过早固化表结构。
 
 `server/modules/assessments/postgresAssessmentResultStore.ts` 已实现 `assessment_reports` 表的保存、最新报告读取、按用户读取和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_ASSESSMENT_RESULT_STORE=postgres` 时，测评报告会写入 PostgreSQL。
 
@@ -91,4 +93,4 @@
 
 `server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节和素材占位；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
 
-当前实现已覆盖登录会话、课程权益、会员操作审计、订单异常标记、订单操作审计、交易操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作、`/admin/orders` 统一订单聚合及受控订单动作，以及 `/admin/transactions` 交易流水聚合、退款申请和异常工单动作。咨询师档案 overlay 已具备内存/JSON Store 与审计动作约束，为后续 PostgreSQL Store 和资质审核流留下边界。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+当前实现已覆盖登录会话、课程权益、会员操作审计、订单异常标记、订单操作审计、交易操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作、`/admin/orders` 统一订单聚合及受控订单动作，以及 `/admin/transactions` 交易流水聚合、退款申请和异常工单动作。咨询师档案 overlay 与风险复核处理记录已具备内存/JSON Store，为后续 PostgreSQL Store、资质审核流、风险 SOP 模板和升级队列留下边界。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

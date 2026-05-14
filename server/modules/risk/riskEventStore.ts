@@ -8,6 +8,7 @@ export interface RiskEventStore {
   save(event: RiskEvent): MaybePromise<RiskEvent>;
   get(eventId: string): MaybePromise<RiskEvent | undefined>;
   listByUser(userId: string): MaybePromise<RiskEvent[]>;
+  listAll(): MaybePromise<RiskEvent[]>;
   clear(): MaybePromise<void>;
 }
 
@@ -30,8 +31,13 @@ export class InMemoryRiskEventStore implements RiskEventStore {
   }
 
   listByUser(userId: string): RiskEvent[] {
-    return Array.from(this.events.values())
+    return this.listAll()
       .filter(event => event.userId === userId)
+      .map(cloneRiskEvent);
+  }
+
+  listAll(): RiskEvent[] {
+    return Array.from(this.events.values())
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .map(cloneRiskEvent);
   }
@@ -68,6 +74,10 @@ export function saveRiskEvent(event: RiskEvent) {
 
 export function listRiskEventsByUser(userId: string) {
   return Promise.resolve(riskEventStore.listByUser(userId));
+}
+
+export function listAllRiskEvents() {
+  return Promise.resolve(riskEventStore.listAll());
 }
 
 export function getRiskEvent(eventId: string) {

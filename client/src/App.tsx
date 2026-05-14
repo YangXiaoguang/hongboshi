@@ -19,6 +19,7 @@ import Home from "./pages/Home";
 import MyCourses from "./pages/MyCourses";
 import OrderManagement from "./pages/admin/OrderManagement";
 import PaymentReconciliation from "./pages/PaymentReconciliation";
+import RiskReview from "./pages/admin/RiskReview";
 import TransactionManagement from "./pages/admin/TransactionManagement";
 import UserMembers from "./pages/admin/UserMembers";
 
@@ -62,6 +63,11 @@ function Router() {
       <Route path={"/admin/finance"}>
         <AdminLayout>
           <FinanceManagement />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/risk"}>
+        <AdminLayout>
+          <RiskReview />
         </AdminLayout>
       </Route>
       <Route path={"/admin"}>

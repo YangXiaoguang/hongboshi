@@ -54,6 +54,16 @@ class FakeRiskEventExecutor implements DatabaseQueryExecutor {
       };
     }
 
+    if (
+      text.includes("FROM risk_events") &&
+      text.includes("ORDER BY created_at DESC")
+    ) {
+      return {
+        rows: (this.rows.all ?? []) as Row[],
+        rowCount: this.rows.all?.length ?? 0,
+      };
+    }
+
     return { rows: [] as Row[], rowCount: 0 };
   }
 }
@@ -121,5 +131,31 @@ describe("postgres risk event store", () => {
     });
     expect(db.queries[0]?.text).toContain("ORDER BY created_at DESC");
     expect(db.queries[0]?.values).toEqual(["user_1"]);
+  });
+
+  it("lists all risk events newest first", async () => {
+    const db = new FakeRiskEventExecutor({
+      all: [
+        {
+          id: "risk_3",
+          user_id: "user_2",
+          source: "operator",
+          risk_level: "medium",
+          signal: "运营标记",
+          status: "open",
+          reviewer_id: null,
+          created_at: "2026-05-10T10:00:00.000Z",
+          resolved_at: null,
+        },
+      ],
+    });
+    const store = new PostgresRiskEventStore(db);
+
+    const events = await store.listAll();
+
+    expect(events.map(event => event.id)).toEqual(["risk_3"]);
+    expect(db.queries[0]?.text).toContain("FROM risk_events");
+    expect(db.queries[0]?.text).toContain("ORDER BY created_at DESC");
+    expect(db.queries[0]?.values).toBeUndefined();
   });
 });

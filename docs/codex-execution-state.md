@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M8-A 风险复核台只读与处理记录基础`
-- 当前状态：`M7-C 咨询师档案与资质服务状态基础` 已完成，咨询运营页已具备咨询师档案、资质状态、服务状态、接单开关、排班和服务记录基础闭环。
-- 本轮完成后下一步：执行 `M8-A 风险复核台只读与处理记录基础`
+- 当前阶段：`M8-B 风险 SOP 模板与升级队列基础`
+- 当前状态：`M8-A 风险复核台只读与处理记录基础` 已完成，风险复核台已具备风险事件队列、隐私最小化详情、SOP 提醒、处理动作和处理记录基础闭环。
+- 本轮完成后下一步：执行 `M8-B 风险 SOP 模板与升级队列基础`
 
 ## 已完成关键能力
 
@@ -122,58 +122,65 @@
 - 新增 `/api/counseling/admin/counselors`，运营/管理员可读取和维护咨询师档案；写动作需要操作原因并写入咨询运营审计。
 - 前台 `/api/counseling/availability` 已接入咨询师档案 overlay，暂停接单、关闭接新客、资质待复核或资质过期的咨询师不会进入用户可预约列表。
 - `/admin/counseling` 已加入咨询师档案与服务状态区，支持按服务状态和关键词筛选，展示资质状态、排班摘要、服务摘要和接单切换。
+- 建立 `risk:read` 后台读取权限与 `risk:review` 风险处理权限，`operator` 与 `admin` 可进入风险复核台并执行处理动作。
+- 建立风险复核后台共享契约 `RiskAdminListResultSchema`、`RiskAdminDetailSchema`、`RiskAdminActionRequestSchema`、`RiskAdminReviewRecordSchema` 和 `RiskAdminMutationResultSchema`，统一描述风险队列、隐私最小化详情、SOP 提醒和处理记录。
+- 新增 `server/modules/risk/riskReviewStore.ts`，开发期支持内存/JSON 文件 `.hongboshi-data/risk-reviews.json` 保存风险处理记录。
+- 新增 `/api/risk/admin/events` 列表/详情接口和 `/api/risk/admin/events/:riskEventId/actions` 处理动作接口，支持风险等级、状态、来源、关键词筛选和状态机流转。
+- 新增 `/admin/risk` 风险复核台，支持风险事件队列、摘要指标、详情检查器、SOP 提醒、处理记录和受控处理入口。
+- 风险复核接口与页面只展示复核所需摘要，不输出测评答案原文、咨询前说明全文或风险信号原文。
 
 ## 最近完成阶段
 
-M7-C 咨询师档案与资质服务状态基础已交付：
+M8-A 风险复核台只读与处理记录基础已交付：
 
-- `shared/domain/counseling.ts`：新增 `CounselorAdminProfile*` 契约，覆盖后台档案、资质状态、服务状态、接单开关、筛选条件、编辑请求和变更返回。
-- `server/modules/counseling/counselorAdminProfileStore.ts`：新增咨询师档案 overlay Store，开发期支持内存和 JSON 文件 `.hongboshi-data/counselor-profiles.json`。
-- `server/modules/counseling/counselingApi.ts`：新增 `/api/counseling/admin/counselors` 读取/维护接口，写动作校验权限、字段、价格、标签和操作原因，并写入 `counselor_profile_updated` 或 `counselor_service_status_updated` 审计。
-- 前台咨询可用性已接入咨询师档案 overlay，暂停接单、关闭接新客、资质待复核或资质过期的咨询师不会进入用户可预约列表。
-- `/admin/counseling` 新增咨询师档案与服务状态区，支持服务状态/关键词筛选，展示资质状态、资质到期时间、排班摘要、服务摘要和接单切换。
-- 新增 `0013_counselor_profile_audit_actions.sql`，补充咨询运营审计动作约束。
-- README、领域契约、数据库说明、产品路线、后台路线图和后台首页均同步了 M7-C 当前状态和下一步。
-- `shared/domain/counseling.test.ts`、`server/modules/counseling/counselingApi.test.ts`、`server/modules/counseling/counselorAdminProfileStore.test.ts`、`client/src/features/counseling/api/httpCounselingRepository.test.ts` 已覆盖契约、权限、Store、前台可预约过滤和前端解析。
+- `shared/domain/risk.ts`：新增 `RiskAdmin*` 契约，覆盖列表查询、风险事件摘要、用户脱敏摘要、关联对象、SOP 提醒、处理动作和处理记录。
+- `shared/domain/user.ts`：新增 `risk:read` 与 `risk:review` 权限，并授予 `operator` 与 `admin`。
+- `server/modules/risk/riskEventStore.ts` 与 `server/modules/risk/postgresRiskEventStore.ts`：补充全量风险事件读取能力，支撑后台队列聚合。
+- `server/modules/risk/riskReviewStore.ts`：新增风险复核处理记录 Store，开发期支持内存和 JSON 文件 `.hongboshi-data/risk-reviews.json`。
+- `server/modules/risk/riskAdminApi.ts`：新增风险后台列表、详情和处理动作接口，服务端校验权限、查询参数、状态流转和处理备注。
+- `/admin/risk` 新增风险复核台，接入后台导航和 `/admin` 首页，支持筛选、摘要指标、详情、SOP 提醒、处理动作和记录查看。
+- README、领域契约、数据库说明、产品路线、后台路线图和后台首页均同步了 M8-A 当前状态和下一步。
+- `shared/domain/domain.test.ts`、`server/modules/risk/riskAdminApi.test.ts`、`server/modules/risk/riskReviewStore.test.ts`、`server/modules/risk/riskEventStore.test.ts`、`server/modules/risk/postgresRiskEventStore.test.ts`、`client/src/features/risk/api/httpRiskAdminRepository.test.ts` 与后台导航测试已覆盖契约、权限、Store、隐私边界、状态机和前端解析。
 
-M7-C 验收结果：
+M8-A 验收结果：
 
-- 运营/管理员可以查看和维护咨询师档案与服务状态，普通咨询师/会员不可访问后台档案接口。
-- 前台咨询师展示仍来自统一 `CounselorSchema`，后台 overlay 不产生第二套前台类型。
-- 服务状态、接单开关、资质摘要、擅长方向、价格和操作原因通过共享契约校验。
-- 敏感资质原件、身份证件、合同文件和临床会谈记录未进入本阶段接口。
-- 现有排班、服务记录、预约、工作台、取消规则、订单和支付回调能力不回退。
-- `pnpm run ci` 已通过：类型检查、67 个测试文件 / 301 个测试和生产构建均完成。
+- 运营/管理员可以查看风险复核台，普通会员不可读取或处理风险后台接口。
+- 风险复核列表来自服务端聚合，不在页面临时拼接风险状态。
+- 处理动作通过服务端状态机校验，并留下处理人、角色、时间、前后状态和备注。
+- 页面只展示复核所需摘要，测评答案原文、咨询前说明全文和风险信号原文默认不输出。
+- 现有测评、咨询预约、成长档案、用户会员后台、咨询运营和风险事件生成能力不回退。
+- `pnpm run ci` 已通过：类型检查、70 个测试文件 / 315 个测试和生产构建均完成。
 
 ## 下一步任务包
 
-### M8-A: 风险复核台只读与处理记录基础
+### M8-B: 风险 SOP 模板与升级队列基础
 
 业务目标：
 
-把心理测评和咨询前信息中已经产生的高风险事件从“日志/用户摘要”升级为运营可复核、可处理、可追踪的后台工作台。第一版重点做风险事件列表、隐私最小化详情、处理动作和审计记录，为后续危机干预 SOP、分级权限和跨模块审计中心打基础。
+在 M8-A 风险复核台基础上，把“页面内静态提示”升级为可维护的 SOP 模板和升级队列，让运营能够按风险等级、来源和处理动作使用标准化步骤，同时为后续危机干预协作、通知和审计中心打基础。第一版仍保持隐私最小化，不接入外呼、IM 或第三方告警。
 
 实施范围：
 
-- 在 `shared/domain/risk.ts` 或新增风险后台契约中定义风险复核列表、详情摘要、筛选条件、处理动作、处理记录和返回结构；不要暴露测评答案原文或咨询前说明全文。
-- 扩展风险 Store 或新增复核 Store，优先支持内存/JSON 文件实现处理记录，并为 PostgreSQL Store 留出接口；风险事件事实仍来自现有 `riskEventStore`。
-- 新增 `/api/risk/admin/events` 或同等后台接口，支持运营/管理员读取风险事件列表、按等级/状态/来源筛选、查看隐私最小化详情和最近处理记录。
-- 新增风险处理动作基础版，例如 `start_review`、`mark_contacted`、`recommend_counseling`、`escalate`、`resolve`；服务端校验权限、状态流转、处理原因和结果备注。
-- 前端新增 `/admin/risk` 风险复核台，并接入后台导航；展示风险等级、来源、用户脱敏摘要、关联测评/咨询预约摘要、处理状态和动作入口。
-- 复核记录必须写审计或处理日志，包含处理人、角色、动作、时间和备注摘要。
-- 不在本阶段做危机干预外呼集成、IM 工单、第三方告警、完整标准量表报告查看或敏感原文展示。
+- 在 `shared/domain/risk.ts` 中新增风险 SOP 模板、SOP 步骤、处理结果模板、升级队列摘要和升级负责人字段契约；不要引入敏感原文字段。
+- 新增 `RiskSopStore` 或等价 Store，开发期支持内存/JSON 文件，保存默认 SOP 模板、模板启停、版本、生效范围和结果备注模板。
+- 扩展风险复核详情接口，返回匹配当前风险等级/来源/状态的 SOP 模板与可选处理结果模板。
+- 扩展风险处理动作：`escalate` 时写入升级队列摘要，记录升级原因、建议优先级、负责人或待分配状态；不做外部通知。
+- 新增或扩展后台 API，支持读取 SOP 模板、升级队列摘要和模板启停/编辑的基础能力；写动作建议仅 `admin` 或具备更高权限账号可用。
+- 前端 `/admin/risk` 增加 SOP 模板区、处理结果模板选择、升级队列筛选和升级状态提示。
+- 处理记录继续写入 `RiskReviewStore`，记录所用 SOP 模板 ID/版本和升级队列摘要，为后续统一审计中心做准备。
+- 不在本阶段展示测评答案原文、咨询前说明全文、敏感危机信号原文，也不接入外呼、IM、短信或第三方告警。
 - 更新 README、`docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
 - 增加 shared domain、server API、Store/repository、权限和页面关键测试。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add risk review console foundation`。
+- 提交并推送，建议 commit message：`Add risk SOP templates foundation`。
 
 验收标准：
 
-- 运营/管理员可以查看风险复核台，普通会员和咨询师不可访问风险后台接口。
-- 风险复核列表来自服务端聚合，不在页面临时拼接风险状态。
-- 处理动作通过服务端状态机校验，并留下处理记录。
-- 页面只展示复核所需摘要，测评答案原文、咨询前说明全文和敏感危机信号原文默认不输出。
-- 现有测评、咨询预约、成长档案、用户会员后台、咨询运营和风险事件生成能力不回退。
+- 风险复核详情能看到服务端匹配的 SOP 模板和版本，不依赖前端硬编码提示。
+- 升级处理能留下升级原因、优先级和负责人/待分配状态。
+- SOP 模板读写有权限边界，普通会员和咨询师不可访问风险后台接口。
+- 页面只展示复核和 SOP 所需摘要，测评答案原文、咨询前说明全文和敏感危机信号原文默认不输出。
+- 现有 M8-A 风险列表、处理记录、测评、咨询预约、成长档案、用户会员后台和咨询运营能力不回退。
 - CI 通过。
 
 ## 执行不变量
