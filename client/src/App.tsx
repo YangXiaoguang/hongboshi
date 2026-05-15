@@ -14,6 +14,7 @@ import Consulting from "./pages/Consulting";
 import CounselingOperations from "./pages/CounselingOperations";
 import CounselorWorkbench from "./pages/CounselorWorkbench";
 import CourseDetail from "./pages/CourseDetail";
+import Courses from "./pages/Courses";
 import CourseProducts from "./pages/admin/CourseProducts";
 import FinanceManagement from "./pages/admin/FinanceManagement";
 import Home from "./pages/Home";
@@ -28,6 +29,7 @@ function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/courses"} component={Courses} />
       <Route path={"/courses/:courseId"} component={CourseDetail} />
       <Route path={"/consulting"} component={Consulting} />
       <Route path={"/counselor/workbench"} component={CounselorWorkbench} />

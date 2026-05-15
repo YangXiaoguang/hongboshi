@@ -19,8 +19,8 @@ import { canAccessAdmin as canAccessAdminShell } from "@/features/admin/adminNav
 
 const navItems = [
   { label: "首页", href: "/" },
+  { label: "心理课程", href: "/courses" },
   { label: "咨询服务", href: "/consulting" },
-  { label: "心理课程", href: "/" },
   { label: "成长测评", href: "/assessment" },
   { label: "关于我们", href: "/about" },
 ];
@@ -58,6 +58,7 @@ export default function AppHeader() {
   const handleNavClick = (item: (typeof navItems)[number]) => {
     if (
       item.href === "/" ||
+      item.href === "/courses" ||
       item.href === "/assessment" ||
       item.href === "/consulting"
     ) {
@@ -136,7 +137,7 @@ export default function AppHeader() {
               红博士心理小讲堂
             </span>
             <span className="block text-[11px] text-[#7B817C]">
-              心理咨询与成长陪伴
+              课程学习与成长陪伴
             </span>
           </span>
         </button>

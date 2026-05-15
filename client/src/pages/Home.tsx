@@ -4,10 +4,6 @@ import { useLocation } from "wouter";
 import {
   ArrowRight,
   CalendarCheck,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   ClipboardList,
   HeartHandshake,
   Leaf,
@@ -15,14 +11,10 @@ import {
   Monitor,
   ShieldCheck,
   Smartphone,
-  Sparkles,
 } from "lucide-react";
-import { toast } from "sonner";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
-import CourseCard from "@/components/CourseCard";
-import CourseFilter from "@/components/CourseFilter";
-import CourseToolbar from "@/components/CourseToolbar";
+import CourseDiscoverySection from "@/components/CourseDiscoverySection";
 import MobileView from "@/components/MobileView";
 import {
   getRecommendedCourses,
@@ -33,7 +25,7 @@ import {
 } from "@/features/courses";
 
 const heroImage =
-  "https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=1800&q=86";
+  "https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1800&q=86";
 
 const supportNeeds = [
   {
@@ -156,7 +148,7 @@ export default function Home() {
           <div>
             <p className="text-xs font-medium text-[#6F8F83]">小程序预览</p>
             <h1 className="mt-1 text-2xl font-semibold text-[#243B35]">
-              把心理支持放进日常
+              把课程学习放进日常
             </h1>
           </div>
           <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
@@ -215,52 +207,70 @@ export default function Home() {
               <p className="text-sm font-semibold tracking-[0.28em] text-[#DDE8D9]">
                 红博士心理小讲堂
               </p>
-              <h1 className="mt-6 max-w-[640px] text-5xl font-semibold leading-[1.05] text-white sm:text-6xl lg:text-7xl">
-                把难说出口的事，慢慢说出来
+              <h1 className="mt-6 max-w-[720px] text-4xl font-semibold leading-[1.08] text-white sm:text-6xl lg:text-7xl">
+                <span className="block">从一门心理课开始</span>
+                <span className="block">把成长变成日常</span>
               </h1>
               <p className="mt-6 max-w-[520px] text-base leading-8 text-white/78 sm:text-lg">
-                专业咨询、心理课程与成长陪伴，为每一次低谷提供可抵达的支持。
+                用课程路径、测评推荐和咨询陪伴，把情绪、关系、亲子与职场压力拆成可以学习的一小步。
               </p>
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
                 <button
-                  onClick={() => navigate("/consulting")}
+                  onClick={() => navigate("/courses")}
                   className="inline-flex h-12 items-center justify-center rounded-full bg-[#DDE8D9] px-6 text-sm font-semibold text-[#20362F] transition hover:bg-white"
                 >
-                  预约咨询
+                  浏览课程
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </button>
                 <button
                   onClick={() => navigate("/assessment")}
                   className="inline-flex h-12 items-center justify-center rounded-full border border-white/35 px-6 text-sm font-semibold text-white transition hover:bg-white/10"
                 >
-                  先做心理评估
+                  做测评推荐课程
                 </button>
-              </div>
-
-              <div className="mt-12 grid max-w-[560px] grid-cols-3 divide-x divide-white/20 border-y border-white/18 py-5 text-white/82">
-                {[
-                  ["24", "主题课程"],
-                  ["3", "成长路径"],
-                  ["私密", "支持体验"],
-                ].map(([value, label]) => (
-                  <div key={label} className="px-4 first:pl-0">
-                    <div className="text-2xl font-semibold text-white">
-                      {value}
-                    </div>
-                    <div className="mt-1 text-xs">{label}</div>
-                  </div>
-                ))}
               </div>
             </motion.div>
           </div>
 
           <div className="absolute bottom-5 left-5 z-20 hidden items-center gap-3 text-sm font-semibold text-[#243B35] sm:left-8 sm:flex lg:left-12">
             <span className="h-px w-12 bg-[#6F8F83]" />
-            下一步：选择你最近的状态
+            下一步：浏览适合你的课程
             <ArrowRight className="h-4 w-4 rotate-90 text-[#6F8F83]" />
           </div>
         </section>
+
+        <CourseDiscoverySection
+          id="courses"
+          className="bg-[#F3EDE4]"
+          eyebrow="课程学习中心"
+          title="先找到一门真正适合你的心理课"
+          description="按困扰、主题和学习形式筛选课程，让成长从可以完成的一小步开始。"
+          actionSlot={
+            <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+          }
+          favoriteCount={favoriteCount}
+          ownedCourseCount={ownedCourseCount}
+          hasActiveMembership={hasActiveMembership}
+          selectedCategory={selectedCategory}
+          selectedType={selectedType}
+          activeSort={activeSort}
+          vipOnly={vipOnly}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageNumbers={pageNumbers}
+          paginatedCourses={paginatedCourses}
+          favoriteCourseIds={favoriteCourseIds}
+          getCourseAccessStatus={course => getCourseAccess(course).status}
+          onToggleFavorite={toggleFavorite}
+          onCategoryChange={setCategory}
+          onTypeChange={setType}
+          onSortChange={setSort}
+          onSearch={setKeyword}
+          onVipToggle={setVipOnlyFilter}
+          onPageChange={setCurrentPage}
+        />
 
         <section className="px-5 pb-14 pt-8 sm:px-8 sm:pb-16 sm:pt-10 lg:px-12">
           <div className="mx-auto max-w-[1200px]">
@@ -391,7 +401,7 @@ export default function Home() {
                           navigate("/assessment");
                           return;
                         }
-                        toast(path.action, { description: "功能即将上线" });
+                        navigate("/courses");
                       }}
                       className="mt-6 inline-flex items-center text-sm font-semibold text-[#DDE8D9]"
                     >
@@ -458,130 +468,6 @@ export default function Home() {
             </div>
           </div>
         </section>
-
-        <section className="bg-[#F3EDE4] px-5 py-16 sm:px-8 lg:px-12">
-          <div className="mx-auto max-w-[1200px]">
-            <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="inline-flex items-center rounded-full bg-[#DDE8D9] px-4 py-2 text-xs font-semibold text-[#41675A]">
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  成长内容库
-                </div>
-                <h2 className="mt-4 text-3xl font-semibold text-[#243B35]">
-                  按你的节奏学习心理成长
-                </h2>
-                <p className="mt-3 max-w-[620px] text-sm leading-7 text-[#6D746F]">
-                  这里保留完整课程发现能力，但去掉过度促销感，把重点放回适合谁、解决什么问题。
-                </p>
-                {favoriteCount > 0 && (
-                  <p className="mt-3 inline-flex rounded-full bg-[#FFFDF8]/80 px-4 py-2 text-xs font-semibold text-[#8C6E4A]">
-                    已收藏 {favoriteCount} 门课程
-                  </p>
-                )}
-                {(ownedCourseCount > 0 || hasActiveMembership) && (
-                  <p className="ml-2 mt-3 inline-flex rounded-full bg-[#DDE8D9] px-4 py-2 text-xs font-semibold text-[#41675A]">
-                    {hasActiveMembership
-                      ? "成长会员权益已生效"
-                      : `已解锁 ${ownedCourseCount} 门课程`}
-                  </p>
-                )}
-              </div>
-              <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
-            </div>
-
-            <CourseFilter
-              selectedCategory={selectedCategory}
-              selectedType={selectedType}
-              onCategoryChange={setCategory}
-              onTypeChange={setType}
-            />
-
-            <div className="mt-6">
-              <CourseToolbar
-                activeSort={activeSort}
-                onSortChange={setSort}
-                onSearch={setKeyword}
-                vipOnly={vipOnly}
-                onVipToggle={setVipOnlyFilter}
-                totalCount={totalCount}
-              />
-            </div>
-
-            <div className="mt-8">
-              {paginatedCourses.length > 0 ? (
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {paginatedCourses.map((course, i) => (
-                    <CourseCard
-                      key={course.id}
-                      course={course}
-                      index={i}
-                      isFavorited={favoriteCourseIds.has(course.id)}
-                      accessStatus={getCourseAccess(course).status}
-                      onToggleFavorite={toggleFavorite}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="py-20 text-center">
-                  <p className="text-sm text-[#7B817C]">
-                    暂无匹配的课程，请尝试调整筛选条件
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {totalPages > 1 && (
-              <div className="mt-10 flex items-center justify-center gap-1">
-                <PageButton
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                  icon={<ChevronsLeft className="h-4 w-4" />}
-                />
-                <PageButton
-                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                  disabled={currentPage === 1}
-                  icon={<ChevronLeft className="h-4 w-4" />}
-                />
-
-                {pageNumbers.map((page, i) =>
-                  page === "..." ? (
-                    <span
-                      key={`ellipsis-${i}`}
-                      className="flex h-9 w-9 items-center justify-center text-sm text-[#9AA19B]"
-                    >
-                      ...
-                    </span>
-                  ) : (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page as number)}
-                      className={`flex h-9 w-9 items-center justify-center rounded-full text-sm transition ${
-                        currentPage === page
-                          ? "bg-[#6F8F83] font-semibold text-white"
-                          : "text-[#6D746F] hover:bg-white/70"
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  )
-                )}
-
-                <PageButton
-                  onClick={() =>
-                    setCurrentPage(Math.min(totalPages, currentPage + 1))
-                  }
-                  disabled={currentPage === totalPages}
-                  icon={<ChevronRight className="h-4 w-4" />}
-                />
-                <PageButton
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage === totalPages}
-                  icon={<ChevronsRight className="h-4 w-4" />}
-                />
-              </div>
-            )}
-          </div>
-        </section>
       </main>
 
       <AppFooter />
@@ -621,25 +507,5 @@ function ViewModeToggle({
         小程序端
       </button>
     </div>
-  );
-}
-
-function PageButton({
-  onClick,
-  disabled,
-  icon,
-}: {
-  onClick: () => void;
-  disabled: boolean;
-  icon: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="flex h-9 w-9 items-center justify-center rounded-full text-[#7B817C] transition hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-35"
-    >
-      {icon}
-    </button>
   );
 }
