@@ -11,6 +11,7 @@ import {
   Heart,
   Lock,
   PlayCircle,
+  Route,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
@@ -24,6 +25,10 @@ import {
   useCourseAccess,
   useCourseDetail,
   useCourseEngagement,
+  getCourseAccessDescription,
+  getCourseDetailPrimaryActionCopy,
+  getLearningPathForCourse,
+  getNextCoursesInLearningPath,
   type Course,
   type CourseAccessStatus,
 } from "@/features/courses";
@@ -39,27 +44,18 @@ function formatPrice(course: Course): string {
 }
 
 const accessCopy = {
-  free: {
-    label: "免费学习",
-    description: "无需购买，适合先低压力开始。",
-  },
-  owned: {
-    label: "已解锁",
-    description: "你已拥有本课程，可继续学习并记录进度。",
-  },
-  member_included: {
-    label: "会员权益",
-    description: "当前会员权益已覆盖本课程。",
-  },
-  requires_purchase: {
-    label: "需购买",
-    description: "购买后可记录学习进度，并保留在个人课程中。",
-  },
-  requires_membership: {
-    label: "会员可学",
-    description: "开通会员可学习本课，也可以单独购买。",
-  },
-} satisfies Record<CourseAccessStatus, { label: string; description: string }>;
+  free: "免费学习",
+  owned: "已解锁",
+  member_included: "会员权益",
+  requires_purchase: "需购买",
+  requires_membership: "会员可学",
+} satisfies Record<CourseAccessStatus, string>;
+
+const actionIcon = {
+  play: PlayCircle,
+  crown: Crown,
+  shoppingBag: ShoppingBag,
+};
 
 export default function CourseDetail() {
   const [, navigate] = useLocation();
@@ -80,7 +76,7 @@ export default function CourseDetail() {
     toggleFavorite,
   } = useCourseEngagement();
   const courseId = Number(params?.courseId);
-  const { course, relatedCourses, isLoading } = useCourseDetail(
+  const { course, allCourses, relatedCourses, isLoading } = useCourseDetail(
     Number.isInteger(courseId) ? courseId : undefined
   );
 
@@ -90,8 +86,12 @@ export default function CourseDetail() {
         <AppHeader />
         <main className="flex min-h-[520px] items-center justify-center px-5">
           <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] px-8 py-7 text-center shadow-sm">
-            <p className="text-sm font-semibold text-[#6F8F83]">正在同步课程内容</p>
-            <p className="mt-3 text-xs text-[#7B817C]">请稍候，马上进入课程详情。</p>
+            <p className="text-sm font-semibold text-[#6F8F83]">
+              正在同步课程内容
+            </p>
+            <p className="mt-3 text-xs text-[#7B817C]">
+              请稍候，马上进入课程详情。
+            </p>
           </div>
         </main>
         <AppFooter />
@@ -115,6 +115,21 @@ export default function CourseDetail() {
   const hasStarted = Boolean(progress);
   const favorite = isFavorited(course.id);
   const access = getCourseAccess(course);
+  const learningPath = getLearningPathForCourse(course);
+  const nextPathCourses = getNextCoursesInLearningPath(allCourses, course, 3);
+  const supplementalCourses = relatedCourses
+    .filter(
+      relatedCourse =>
+        !nextPathCourses.some(pathCourse => pathCourse.id === relatedCourse.id)
+    )
+    .slice(0, 3);
+  const primaryAction = getCourseDetailPrimaryActionCopy(access, hasStarted);
+  const PrimaryActionIcon = actionIcon[primaryAction.icon];
+  const pathPosition = learningPath.courseIds.indexOf(course.id);
+  const pathStepLabel =
+    pathPosition >= 0
+      ? `第 ${pathPosition + 1} / ${learningPath.courseIds.length} 门`
+      : "路径补充课程";
   const locked = !access.canStart;
   const visibleProgressPercent = access.canStart ? progressPercent : 0;
   const visibleLearningStatus = locked
@@ -128,7 +143,7 @@ export default function CourseDetail() {
   const handleStartLearning = () => {
     if (!access.canStart) {
       toast("请先解锁课程", {
-        description: accessCopy[access.status].description,
+        description: getCourseAccessDescription(access.status),
       });
       return;
     }
@@ -137,7 +152,7 @@ export default function CourseDetail() {
     toast(hasStarted ? "继续学习" : "已加入学习计划", {
       description: hasStarted
         ? "已为你更新最近学习时间。"
-        : "学习进度会在本机保存，后续可接入真实账号同步。",
+        : "课程已放入成长空间，学习进度会在本机保存。",
     });
   };
 
@@ -151,7 +166,7 @@ export default function CourseDetail() {
   };
 
   const handlePurchaseCourse = () => {
-    void purchaseCourse(course).then((syncMode) => {
+    void purchaseCourse(course).then(syncMode => {
       if (syncMode === "auth_required") {
         toast("请先登录", {
           description: "登录后即可购买课程，并同步学习权益。",
@@ -169,7 +184,7 @@ export default function CourseDetail() {
   };
 
   const handleActivateMembership = () => {
-    void activateMembership().then((syncMode) => {
+    void activateMembership().then(syncMode => {
       if (syncMode === "auth_required") {
         toast("请先登录", {
           description: "登录后即可开通会员，并同步 VIP 课程权益。",
@@ -216,7 +231,7 @@ export default function CourseDetail() {
           <div className="relative mx-auto grid max-w-[1200px] gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[1fr_360px] lg:px-12 lg:py-20">
             <div>
               <button
-                onClick={() => navigate("/")}
+                onClick={() => navigate("/courses")}
                 className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/78 transition hover:bg-white/10 hover:text-white"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -235,6 +250,9 @@ export default function CourseDetail() {
                     会员内容
                   </span>
                 )}
+                <span className="rounded-full bg-white/12 px-3 py-1 text-xs font-semibold text-white/82">
+                  {learningPath.label}
+                </span>
               </div>
 
               <h1 className="mt-5 max-w-[760px] text-4xl font-semibold leading-tight sm:text-5xl">
@@ -247,11 +265,40 @@ export default function CourseDetail() {
                 {course.summary}
               </p>
 
+              <button
+                onClick={() =>
+                  document
+                    .getElementById("learning-path")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
+                className="mt-6 inline-flex items-center rounded-full bg-white/12 px-4 py-2 text-sm font-semibold text-[#DDE8D9] transition hover:bg-white/18"
+              >
+                <Route className="mr-2 h-4 w-4" />
+                所属路径：{learningPath.title}
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </button>
+
               <div className="mt-9 grid max-w-[760px] grid-cols-2 gap-4 sm:grid-cols-4">
-                <Metric icon={Users} value={formatLearners(course.learners)} label="学习人数" />
-                <Metric icon={BookOpen} value={`${totalLessons} 节`} label="课程内容" />
-                <Metric icon={Clock3} value={`${totalDuration} 分钟`} label="预计时长" />
-                <Metric icon={CalendarCheck} value={course.teacher} label="主讲老师" />
+                <Metric
+                  icon={Users}
+                  value={formatLearners(course.learners)}
+                  label="学习人数"
+                />
+                <Metric
+                  icon={BookOpen}
+                  value={`${totalLessons} 节`}
+                  label="课程内容"
+                />
+                <Metric
+                  icon={Clock3}
+                  value={`${totalDuration} 分钟`}
+                  label="预计时长"
+                />
+                <Metric
+                  icon={CalendarCheck}
+                  value={course.teacher}
+                  label="主讲老师"
+                />
               </div>
             </div>
 
@@ -266,7 +313,9 @@ export default function CourseDetail() {
                       : "bg-[#E6EDDF] text-[#41675A] hover:bg-[#DDE8D9]"
                   }`}
                 >
-                  <Heart className={`h-3.5 w-3.5 ${favorite ? "fill-current" : ""}`} />
+                  <Heart
+                    className={`h-3.5 w-3.5 ${favorite ? "fill-current" : ""}`}
+                  />
                   {favorite ? "已收藏" : "收藏"}
                 </button>
               </div>
@@ -282,14 +331,22 @@ export default function CourseDetail() {
                   )}
                 </div>
                 <span className="rounded-full bg-[#E6EDDF] px-3 py-1 text-xs font-semibold text-[#41675A]">
-                  {accessCopy[access.status].label}
+                  {accessCopy[access.status]}
                 </span>
               </div>
 
               <div className="mt-5 rounded-[20px] bg-[#F4EFE6] p-4">
                 <div className="flex items-center justify-between text-xs font-semibold">
                   <span className="text-[#6D746F]">学习状态</span>
-                  <span className={locked ? "text-[#A65F48]" : hasStarted ? "text-[#41675A]" : "text-[#9AA19B]"}>
+                  <span
+                    className={
+                      locked
+                        ? "text-[#A65F48]"
+                        : hasStarted
+                          ? "text-[#41675A]"
+                          : "text-[#9AA19B]"
+                    }
+                  >
                     {visibleLearningStatus}
                   </span>
                 </div>
@@ -301,14 +358,18 @@ export default function CourseDetail() {
                 </div>
                 <p className="mt-3 text-xs leading-5 text-[#7B817C]">
                   {locked
-                    ? accessCopy[access.status].description
+                    ? getCourseAccessDescription(access.status)
                     : hasStarted
-                    ? progressPercent > 0
-                      ? `已完成 ${progressPercent}% 的章节。`
-                      : "已加入学习计划，建议从第一章开始。"
-                    : "点击开始学习后，会在本机记录你的进度。"}
+                      ? progressPercent > 0
+                        ? `已完成 ${progressPercent}% 的章节。`
+                        : "已加入学习计划，建议从第一章开始。"
+                      : "点击开始学习后，会在本机记录你的进度。"}
                 </p>
               </div>
+
+              <p className="mt-4 rounded-[18px] bg-[#FFFDF8] px-4 py-3 text-xs leading-5 text-[#6D746F] ring-1 ring-[#E4DCCF]">
+                {primaryAction.description}
+              </p>
 
               <div className="mt-5 space-y-3 text-sm text-[#5F6B64]">
                 <p className="flex items-center gap-2">
@@ -322,7 +383,9 @@ export default function CourseDetail() {
                 {course.isVip && (
                   <p className="flex items-center gap-2">
                     <Crown className="h-4 w-4 text-[#C4A46A]" />
-                    {hasActiveMembership ? "会员权益已生效" : "开通会员可解锁更多课程"}
+                    {hasActiveMembership
+                      ? "会员权益已生效"
+                      : "开通会员可解锁更多课程"}
                   </p>
                 )}
               </div>
@@ -332,38 +395,23 @@ export default function CourseDetail() {
                 disabled={isSyncing}
                 className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-65"
               >
-                {access.canStart ? (
-                  <PlayCircle className="mr-2 h-4 w-4" />
-                ) : access.status === "requires_membership" ? (
-                  <Crown className="mr-2 h-4 w-4" />
-                ) : (
-                  <ShoppingBag className="mr-2 h-4 w-4" />
-                )}
-                {isSyncing
-                  ? "同步中"
-                  : access.canStart
-                  ? hasStarted
-                    ? "继续学习"
-                    : "开始学习"
-                  : access.status === "requires_membership"
-                    ? "开通会员学习"
-                    : "购买并解锁"}
+                <PrimaryActionIcon className="mr-2 h-4 w-4" />
+                {isSyncing ? "同步中" : primaryAction.label}
               </button>
-              {access.status === "requires_membership" && access.canPurchase && (
-                <button
-                  onClick={handlePurchaseCourse}
-                  disabled={isSyncing}
-                  className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#EFE7D8] text-sm font-semibold text-[#7A5B31] transition hover:bg-[#E8D8BD] disabled:cursor-wait disabled:opacity-65"
-                >
-                  {isSyncing ? "同步中" : `单独购买本课 ¥${course.price.toFixed(1)}`}
-                </button>
-              )}
+              {access.status === "requires_membership" &&
+                access.canPurchase && (
+                  <button
+                    onClick={handlePurchaseCourse}
+                    disabled={isSyncing}
+                    className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#EFE7D8] text-sm font-semibold text-[#7A5B31] transition hover:bg-[#E8D8BD] disabled:cursor-wait disabled:opacity-65"
+                  >
+                    {isSyncing
+                      ? "同步中"
+                      : `单独购买本课 ¥${course.price.toFixed(1)}`}
+                  </button>
+                )}
               <button
-                onClick={() =>
-                  toast("预约咨询", {
-                    description: "可以根据这门课的主题匹配咨询师，预约流程即将接入。",
-                  })
-                }
+                onClick={() => navigate("/consulting")}
                 className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-full border border-[#DCD3C4] text-sm font-semibold text-[#41675A] transition hover:bg-[#EEF4EA]"
               >
                 需要咨询师陪伴
@@ -385,7 +433,7 @@ export default function CourseDetail() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
-              {course.suitableFor.map((item) => (
+              {course.suitableFor.map(item => (
                 <div
                   key={item.title}
                   className="rounded-[22px] border border-[#E4DCCF] bg-[#FFFDF8]/80 p-5"
@@ -403,6 +451,101 @@ export default function CourseDetail() {
           </div>
         </section>
 
+        <section
+          id="learning-path"
+          className="bg-[#FFFDF8] px-5 py-16 sm:px-8 lg:px-12"
+        >
+          <div className="mx-auto grid max-w-[1200px] gap-10 lg:grid-cols-[0.95fr_1.05fr]">
+            <div className="overflow-hidden rounded-[28px] border border-[#E4DCCF] bg-[#F9F5EE]">
+              <img
+                src={learningPath.imageUrl}
+                alt=""
+                className="h-72 w-full object-cover"
+              />
+              <div className="p-6">
+                <p className="text-sm font-semibold text-[#6F8F83]">
+                  所属学习路径
+                </p>
+                <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35]">
+                  {learningPath.title}
+                </h2>
+                <p className="mt-4 text-sm leading-7 text-[#6D746F]">
+                  {learningPath.description}
+                </p>
+
+                <div className="mt-6 divide-y divide-[#E4DCCF] border-y border-[#E4DCCF]">
+                  <PathFact label="路径位置" value={pathStepLabel} />
+                  <PathFact label="建议节奏" value={learningPath.paceLabel} />
+                  <PathFact
+                    label="预计周期"
+                    value={learningPath.durationLabel}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="self-center">
+              <p className="text-sm font-semibold text-[#6F8F83]">转化路径</p>
+              <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35]">
+                让课程不只是购买，而是进入一条可持续的成长线
+              </h2>
+              <p className="mt-4 text-sm leading-7 text-[#6D746F]">
+                详情页优先回答“我为什么现在学这门课、学完以后接什么”，让用户从单课决策自然过渡到学习计划。
+              </p>
+
+              <div className="mt-7 flex flex-wrap gap-2">
+                {learningPath.focus.map(item => (
+                  <span
+                    key={item}
+                    className="rounded-full bg-[#E6EDDF] px-3 py-1.5 text-xs font-semibold text-[#41675A]"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-8 border-l border-[#C9D8C2] pl-5">
+                <p className="text-sm font-semibold text-[#243B35]">
+                  学完这一课，核心目标是
+                </p>
+                <p className="mt-3 text-sm leading-7 text-[#6D746F]">
+                  {learningPath.outcome}
+                </p>
+              </div>
+
+              {nextPathCourses.length > 0 && (
+                <div className="mt-8 rounded-[24px] border border-[#E4DCCF] bg-[#F9F5EE] p-5">
+                  <p className="text-xs font-semibold text-[#6F8F83]">
+                    下一门建议课程
+                  </p>
+                  <button
+                    onClick={() =>
+                      navigate(`/courses/${nextPathCourses[0].id}`)
+                    }
+                    className="group mt-4 flex w-full items-center gap-4 text-left"
+                  >
+                    <img
+                      src={nextPathCourses[0].coverUrl}
+                      alt=""
+                      className="h-20 w-24 shrink-0 rounded-[18px] object-cover"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-base font-semibold leading-snug text-[#243B35] group-hover:text-[#5F7F73]">
+                        {nextPathCourses[0].title}
+                      </span>
+                      <span className="mt-2 block text-xs text-[#7B817C]">
+                        {nextPathCourses[0].category} ·{" "}
+                        {nextPathCourses[0].teacher}
+                      </span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-[#6F8F83]" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
         <section className="bg-[#F3EDE4] px-5 py-16 sm:px-8 lg:px-12">
           <div className="mx-auto grid max-w-[1200px] gap-12 lg:grid-cols-[1.1fr_0.9fr]">
             <div>
@@ -413,7 +556,10 @@ export default function CourseDetail() {
 
               <div className="mt-8 divide-y divide-[#E1D7C7] border-y border-[#E1D7C7]">
                 {course.chapters.map((chapter, index) => (
-                  <div key={chapter.id} className="grid gap-4 py-6 sm:grid-cols-[72px_1fr_auto]">
+                  <div
+                    key={chapter.id}
+                    className="grid gap-4 py-6 sm:grid-cols-[72px_1fr_auto]"
+                  >
                     <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#DDE8D9] text-sm font-semibold text-[#243B35]">
                       {String(index + 1).padStart(2, "0")}
                     </span>
@@ -432,12 +578,18 @@ export default function CourseDetail() {
                         onClick={() => {
                           if (!access.canStart) {
                             toast("课程尚未解锁", {
-                              description: accessCopy[access.status].description,
+                              description: getCourseAccessDescription(
+                                access.status
+                              ),
                             });
                             return;
                           }
 
-                          completeChapter(course.id, chapter.id, course.chapters.length);
+                          completeChapter(
+                            course.id,
+                            chapter.id,
+                            course.chapters.length
+                          );
                           toast(
                             completedChapterIds.has(chapter.id)
                               ? "章节已完成"
@@ -451,8 +603,8 @@ export default function CourseDetail() {
                           !access.canStart
                             ? "bg-[#F4E5DE] text-[#A65F48]"
                             : completedChapterIds.has(chapter.id)
-                            ? "bg-[#DDE8D9] text-[#41675A]"
-                            : "bg-white text-[#6D746F] hover:text-[#243B35]"
+                              ? "bg-[#DDE8D9] text-[#41675A]"
+                              : "bg-white text-[#6D746F] hover:text-[#243B35]"
                         }`}
                       >
                         {!access.canStart ? (
@@ -473,10 +625,15 @@ export default function CourseDetail() {
             </div>
 
             <div className="self-start rounded-[28px] bg-[#243B35] p-7 text-white">
-              <p className="text-sm font-semibold text-[#BFD0B8]">学完你会获得</p>
+              <p className="text-sm font-semibold text-[#BFD0B8]">
+                学完你会获得
+              </p>
               <div className="mt-6 space-y-4">
-                {course.outcomes.map((item) => (
-                  <p key={item} className="flex gap-3 text-sm leading-7 text-white/78">
+                {course.outcomes.map(item => (
+                  <p
+                    key={item}
+                    className="flex gap-3 text-sm leading-7 text-white/78"
+                  >
                     <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-[#BFD0B8]" />
                     {item}
                   </p>
@@ -492,18 +649,20 @@ export default function CourseDetail() {
           </div>
         </section>
 
-        {relatedCourses.length > 0 && (
+        {(nextPathCourses.length > 0 || supplementalCourses.length > 0) && (
           <section className="px-5 py-16 sm:px-8 lg:px-12">
             <div className="mx-auto max-w-[1200px]">
               <div className="mb-7 flex items-end justify-between gap-5">
                 <div>
-                  <p className="text-sm font-semibold text-[#6F8F83]">继续探索</p>
+                  <p className="text-sm font-semibold text-[#6F8F83]">
+                    继续探索
+                  </p>
                   <h2 className="mt-3 text-3xl font-semibold text-[#243B35]">
-                    同主题的其他内容
+                    下一门课与补充内容分开看
                   </h2>
                 </div>
                 <button
-                  onClick={() => navigate("/")}
+                  onClick={() => navigate("/courses")}
                   className="hidden items-center text-sm font-semibold text-[#41675A] transition hover:text-[#243B35] sm:inline-flex"
                 >
                   回到课程中心
@@ -511,27 +670,54 @@ export default function CourseDetail() {
                 </button>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                {relatedCourses.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => navigate(`/courses/${item.id}`)}
-                    className="group rounded-[24px] border border-[#E4DCCF] bg-[#FFFDF8] p-4 text-left transition hover:-translate-y-1 hover:border-[#AFC2AB]"
-                  >
-                    <img
-                      src={item.coverUrl}
-                      alt=""
-                      className="h-36 w-full rounded-[18px] object-cover"
-                    />
-                    <p className="mt-4 text-xs font-semibold text-[#6F8F83]">
-                      {item.category}
-                    </p>
-                    <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-snug text-[#243B35] group-hover:text-[#5F7F73]">
-                      {item.title}
-                    </h3>
-                    <p className="mt-3 text-sm text-[#7B817C]">{item.teacher}</p>
-                  </button>
-                ))}
+              <div className="space-y-12">
+                {nextPathCourses.length > 0 && (
+                  <div>
+                    <div className="mb-4 flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-semibold text-[#8C6E4A]">
+                          继续这条路径
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+                          按学习路径接着走，减少下一步选择成本。
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      {nextPathCourses.map(item => (
+                        <CompactCourseCard
+                          key={item.id}
+                          course={item}
+                          eyebrow={`${learningPath.label}路径`}
+                          onClick={() => navigate(`/courses/${item.id}`)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {supplementalCourses.length > 0 && (
+                  <div>
+                    <div className="mb-4">
+                      <p className="text-xs font-semibold text-[#8C6E4A]">
+                        同主题补充
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+                        这些课程保留在关联推荐层，用来扩展主题理解。
+                      </p>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      {supplementalCourses.map(item => (
+                        <CompactCourseCard
+                          key={item.id}
+                          course={item}
+                          eyebrow={item.category}
+                          onClick={() => navigate(`/courses/${item.id}`)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -558,5 +744,48 @@ function Metric({
       <p className="mt-3 text-lg font-semibold text-white">{value}</p>
       <p className="mt-1 text-xs text-white/58">{label}</p>
     </div>
+  );
+}
+
+function PathFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <span className="text-xs font-semibold text-[#7B817C]">{label}</span>
+      <span className="text-sm font-semibold text-[#243B35]">{value}</span>
+    </div>
+  );
+}
+
+function CompactCourseCard({
+  course,
+  eyebrow,
+  onClick,
+}: {
+  course: Course;
+  eyebrow: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="group rounded-[24px] border border-[#E4DCCF] bg-[#FFFDF8] p-4 text-left transition hover:-translate-y-1 hover:border-[#AFC2AB]"
+    >
+      <img
+        src={course.coverUrl}
+        alt=""
+        className="h-36 w-full rounded-[18px] object-cover"
+      />
+      <p className="mt-4 text-xs font-semibold text-[#6F8F83]">{eyebrow}</p>
+      <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-snug text-[#243B35] group-hover:text-[#5F7F73]">
+        {course.title}
+      </h3>
+      <p className="mt-3 text-sm text-[#7B817C]">{course.teacher}</p>
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#EAE2D6] pt-3 text-xs font-semibold">
+        <span className="text-[#A65F48]">{formatPrice(course)}</span>
+        <span className="text-[#7B817C]">
+          {formatLearners(course.learners)} 人学习
+        </span>
+      </div>
+    </button>
   );
 }

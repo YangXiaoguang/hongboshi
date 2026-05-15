@@ -40,9 +40,16 @@ export {
   courseLearningPaths,
   getCourseLearningPath,
   getCoursesForLearningPath,
+  getLearningPathForCourse,
+  getNextCoursesInLearningPath,
   type CourseLearningPath,
   type CourseLearningPathId,
 } from "./model/coursePath";
+export {
+  getCourseAccessDescription,
+  getCourseDetailPrimaryActionCopy,
+  type CourseDetailPrimaryActionCopy,
+} from "./model/courseDetailConversion";
 export {
   LOCAL_COURSE_USER_ID,
   completeCourseChapter,

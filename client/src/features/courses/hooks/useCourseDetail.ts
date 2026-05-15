@@ -43,6 +43,7 @@ function buildDetailFromCourse(
 function getFallbackDetail(courseId: number) {
   return {
     course: mockCourseRepository.getCourseDetailById(courseId),
+    allCourses: mockCourseRepository.listAllCourses(),
     relatedCourses: mockCourseRepository.listRelatedCourses(courseId, 3),
   };
 }
@@ -53,6 +54,7 @@ export function useCourseDetail(courseId: number | undefined) {
     if (!validCourseId) {
       return {
         course: undefined,
+        allCourses: mockCourseRepository.listAllCourses(),
         relatedCourses: [],
       };
     }
@@ -65,15 +67,17 @@ export function useCourseDetail(courseId: number | undefined) {
   const [relatedCourses, setRelatedCourses] = useState<Course[]>(
     fallback.relatedCourses
   );
+  const [allCourses, setAllCourses] = useState<Course[]>(fallback.allCourses);
   const [isLoading, setIsLoading] = useState(Boolean(validCourseId));
   const [error, setError] = useState<string | undefined>();
   const [dataSource, setDataSource] = useState<"api" | "fallback">("fallback");
 
   useEffect(() => {
     setCourse(fallback.course);
+    setAllCourses(fallback.allCourses);
     setRelatedCourses(fallback.relatedCourses);
     setDataSource("fallback");
-  }, [fallback.course, fallback.relatedCourses]);
+  }, [fallback.allCourses, fallback.course, fallback.relatedCourses]);
 
   const loadCourseDetail = useCallback(async () => {
     if (!validCourseId) return;
@@ -90,6 +94,7 @@ export function useCourseDetail(courseId: number | undefined) {
 
       const detail = buildDetailFromCourse(remoteCourse, remoteContent);
       setCourse(detail);
+      setAllCourses(remoteCourses);
       setRelatedCourses(
         detail ? getRelatedCourses(remoteCourses, detail, 3) : []
       );
@@ -98,6 +103,7 @@ export function useCourseDetail(courseId: number | undefined) {
     } catch (err) {
       const nextFallback = getFallbackDetail(validCourseId);
       setCourse(nextFallback.course);
+      setAllCourses(nextFallback.allCourses);
       setRelatedCourses(nextFallback.relatedCourses);
       setDataSource("fallback");
       setError(err instanceof Error ? err.message : "课程服务暂时不可用");
@@ -112,6 +118,7 @@ export function useCourseDetail(courseId: number | undefined) {
 
   return {
     course,
+    allCourses,
     relatedCourses,
     dataSource,
     isLoading,

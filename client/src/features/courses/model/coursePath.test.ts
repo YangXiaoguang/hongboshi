@@ -3,7 +3,9 @@ import type { Course } from "@shared/domain";
 import {
   courseLearningPaths,
   getCourseLearningPath,
+  getLearningPathForCourse,
   getCoursesForLearningPath,
+  getNextCoursesInLearningPath,
 } from "./coursePath";
 
 const fixtureCourses: Course[] = [
@@ -92,5 +94,16 @@ describe("course learning paths", () => {
         course => course.id
       )
     ).toEqual([6, 5]);
+  });
+
+  it("finds the user-facing path for a course and returns next path courses", () => {
+    expect(getLearningPathForCourse(fixtureCourses[0]).id).toBe(
+      "emotion-reset"
+    );
+    expect(
+      getNextCoursesInLearningPath(fixtureCourses, fixtureCourses[0], 2).map(
+        course => course.id
+      )
+    ).toEqual([2, 5]);
   });
 });

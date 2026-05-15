@@ -161,3 +161,55 @@ export function getCoursesForLearningPath(
 
   return Array.from(uniqueCourses.values()).slice(0, limit);
 }
+
+export function getLearningPathForCourse(course: Course): CourseLearningPath {
+  const explicitMatch = courseLearningPaths.find(path =>
+    path.courseIds.includes(course.id)
+  );
+  if (explicitMatch) return explicitMatch;
+
+  const primaryMatch = courseLearningPaths.find(
+    path => path.primaryCategory === course.category
+  );
+  if (primaryMatch) return primaryMatch;
+
+  return (
+    courseLearningPaths.find(path =>
+      path.relatedCategories.includes(course.category)
+    ) ?? courseLearningPaths[0]
+  );
+}
+
+export function getNextCoursesInLearningPath(
+  courses: Course[],
+  currentCourse: Course,
+  limit = 3
+): Course[] {
+  const path = getLearningPathForCourse(currentCourse);
+  const orderedPathCourses = getCoursesForLearningPath(
+    courses,
+    path,
+    Math.max(path.courseIds.length, limit + 1)
+  ).filter(course => course.id !== currentCourse.id);
+  const currentIndex = path.courseIds.indexOf(currentCourse.id);
+
+  if (currentIndex >= 0) {
+    const nextCourseIds = [
+      ...path.courseIds.slice(currentIndex + 1),
+      ...path.courseIds.slice(0, currentIndex),
+    ];
+    const courseById = new Map(
+      orderedPathCourses.map(course => [course.id, course])
+    );
+    const orderedNextCourses = nextCourseIds
+      .map(courseId => courseById.get(courseId))
+      .filter((course): course is Course => Boolean(course));
+    const supplemental = orderedPathCourses.filter(
+      course => !orderedNextCourses.some(item => item.id === course.id)
+    );
+
+    return [...orderedNextCourses, ...supplemental].slice(0, limit);
+  }
+
+  return orderedPathCourses.slice(0, limit);
+}
