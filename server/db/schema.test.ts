@@ -48,4 +48,29 @@ describe("database schema contract", () => {
       expect(migrationSql).toContain(indexName);
     }
   });
+
+  it("keeps the audit center archive append-only, idempotent and summary-only", () => {
+    const block = tableBlock("audit_center_archived_events");
+
+    expect(block).toMatch(/\bidempotency_key\b/i);
+    expect(migrationSql).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS uniq_audit_center_archived_events_idempotency_key[\s\S]*\(idempotency_key\)/i
+    );
+    expect(block).toMatch(/\bsummary\b/i);
+    expect(block).toMatch(/\bbefore_summary\b/i);
+    expect(block).toMatch(/\bafter_summary\b/i);
+    expect(block).toMatch(/\bprivacy_level\b/i);
+    expect(block).toContain("summary_only");
+    expect(block).toMatch(/\bpolicy_version\b/i);
+    expect(migrationSql).toContain(
+      "idx_audit_center_archived_events_module_occurred_at"
+    );
+    expect(migrationSql).toContain(
+      "idx_audit_center_archived_events_action_occurred_at"
+    );
+    expect(migrationSql).toContain("idx_audit_center_archived_events_resource");
+    expect(migrationSql).toContain(
+      "idx_audit_center_archived_events_actor_occurred_at"
+    );
+  });
 });

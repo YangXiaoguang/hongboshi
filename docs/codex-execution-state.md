@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M9-C 统一审计 Store 方案与归档边界预研`
-- 当前状态：`M9-B 审计导出与事件详情追踪基础` 已完成，审计中心已可按当前筛选条件导出 CSV，并可按归一化事件 ID 查看来源详情。
-- 本轮完成后下一步：执行 `M9-C 统一审计 Store 方案与归档边界预研`
+- 当前阶段：`M9-D 审计归档任务与只读校验试点`
+- 当前状态：`M9-C 统一审计 Store 方案与归档边界预研` 已完成，已建立统一审计 Store 架构方案、归档事件契约和只追加归档表草案，但业务 Store 仍是审计事实来源。
+- 本轮完成后下一步：执行 `M9-D 审计归档任务与只读校验试点`
 
 ## 已完成关键能力
 
@@ -149,54 +149,58 @@
 - 建立审计事件详情契约 `AuditCenterDetailResultSchema` 和 `/api/audit/admin/events/:eventId`，可按归一化事件 ID 定位来源模块、源事件 ID 和资源摘要。
 - `/admin/audit` 已加入导出 CSV 入口、导出反馈、事件详情抽屉和来源定位提示。
 - Vite 开发中间件已接入 `handleAuditAdminApiRequest`，开发环境 `/api/audit/admin/*` 与生产 Express 保持一致。
+- 建立统一审计 Store 架构方案 `docs/audit-store-architecture.md`，明确目标/非目标、数据流、回填策略、索引、隐私白名单、失败恢复和 M9-D 最小切片。
+- 建立审计归档事件契约 `AuditCenterArchiveEventSchema`、`AuditCenterSourceDescriptorSchema`、归档结构版本和隐私口径版本，保持现有审计列表、导出和详情契约向前兼容。
+- 新增 `audit_center_archived_events` 只追加 PostgreSQL 归档表草案，包含稳定事件 ID、唯一幂等键、source event ID、模块、动作、资源、操作者、角色、原因、summary-only 前后摘要、发生时间、归档时间和口径版本。
+- 归档表索引已覆盖模块/时间、动作/时间、资源、操作者/时间、来源和归档时间；当前不把业务写动作或审计真相源切换到该表。
 
 ## 最近完成阶段
 
-M9-B 审计导出与事件详情追踪基础已交付：
+M9-C 统一审计 Store 方案与归档边界预研已交付：
 
-- `shared/domain/auditCenter.ts`：新增 `AuditCenterExportSchema`、`AuditCenterExportQuerySchema`、`AuditCenterDetailResultSchema`、导出字段定义、口径版本和 CSV content type。
-- `server/modules/audit/auditAdminApi.ts`：新增 `/api/audit/admin/export` 和 `/api/audit/admin/events/:eventId`，复用 `audit:read`、同一套筛选逻辑和隐私边界。
-- `client/src/features/audit/api/httpAuditCenterRepository.ts`：新增 CSV 导出下载解析和事件详情读取，并保持 API 错误透传。
-- `client/src/pages/admin/AuditCenter.tsx`：新增导出按钮、导出中/成功/失败状态、筛选快照提示、事件详情抽屉和来源定位提示。
-- `vite.config.ts`：开发服务已接入 `handleAuditAdminApiRequest`，避免本地 `/api/audit/admin/*` 走 Vite HTML fallback。
-- `client/src/pages/admin/AdminHome.tsx`、README、领域契约、数据库说明、产品路线、后台路线图和本文件已同步 M9-B 状态与下一步。
-- 更新 `shared/domain/auditCenter.test.ts`、`server/modules/audit/auditAdminApi.test.ts` 和 `client/src/features/audit/api/httpAuditCenterRepository.test.ts`，覆盖导出、详情、权限、参数、CSV 元数据和前端仓储。
+- `docs/audit-store-architecture.md`：新增统一审计 Store 方案，解释为什么当前不直接替换业务 Store 真相源，并明确只追加归档、回填、索引、隐私白名单、失败恢复和 M9-D 切片。
+- `shared/domain/auditCenter.ts`：新增 `AuditCenterSourceDescriptorSchema`、`AuditCenterArchiveEventSchema`、归档结构版本和隐私口径版本，保持现有列表、导出和详情契约不变。
+- `server/db/migrations/0015_audit_center_archive.sql`：新增 `audit_center_archived_events` 只追加归档表草案，包含唯一幂等键和模块/动作/资源/操作者/来源/时间索引。
+- `server/db/schema.ts` 与 `server/db/schema.test.ts`：把归档表纳入数据库契约，增加 schema 测试保障幂等键、summary-only 前后摘要、隐私口径和关键索引。
+- README、领域契约、数据库说明、产品工程路线、后台路线图和本文件已同步 M9-C 状态与下一步。
+- 更新 `shared/domain/auditCenter.test.ts`，覆盖归档事件 source descriptor、幂等键、summary-only 隐私边界和版本字段。
 
-M9-B 验收结果：
+M9-C 验收结果：
 
-- 运营或管理员可按当前筛选条件导出审计 CSV，普通会员和咨询师不可导出。
-- 导出文件包含生成时间、筛选条件、口径版本、字段定义和模块汇总，且导出不受当前分页影响。
-- 单条审计事件详情能定位来源模块和源事件 ID，并解释资源、操作者、动作、原因、时间和 before/after 摘要。
-- 审计导出和详情只读，不改写业务 Store 或审计事实。
-- 隐私最小化边界不回退，不展示测评答案、咨询说明、风险信号原文和支付敏感原文。
-- 现有后台模块能力不回退。
-- `pnpm run ci` 已通过：类型检查、76 个测试文件 / 347 个测试和生产构建均完成。
+- 统一审计 Store 方案明确保留课程、用户、订单、交易、咨询和风险各自业务 Store 作为事实来源。
+- 归档表草案包含稳定事件 ID、source event ID、模块、动作、资源、操作者、角色、原因、摘要、before/after 摘要、发生时间、归档时间和口径版本。
+- 隐私白名单明确禁止咨询说明、测评答案、风险信号原文和支付敏感原文进入统一归档。
+- M9-D 已收敛为可手动/计划执行的归档任务与只读校验试点，不做业务双写和读取切换。
+- 隐私最小化边界不回退，现有后台模块能力不回退。
+- `pnpm run ci` 已通过：类型检查、76 个测试文件 / 349 个测试和生产构建均完成。
 
 ## 下一步任务包
 
-### M9-C: 统一审计 Store 方案与归档边界预研
+### M9-D: 审计归档任务与只读校验试点
 
 业务目标：
 
-在 M9-A/M9-B 的只读聚合、导出和详情基础上，设计统一审计 Store 的可维护落地方案。当前阶段优先做方案化和最小归档边界，不急于替换各业务 Store 的审计事实源：明确只追加归档表、回填策略、索引、幂等键、隐私字段白名单和迁移风险，为后续长期合规审计、性能优化和跨模块检索打基础。
+在 M9-C 的归档方案和表草案基础上，实现一个小而可回滚的归档试点：把现有审计中心聚合事件映射为 `AuditCenterArchiveEventSchema`，按唯一幂等键写入 `audit_center_archived_events`。本阶段仍不做业务双写，不把 `/api/audit/admin/events` 默认切到归档表，只先验证归档 Store、回填幂等性、隐私裁剪和只读校验能力。
 
 实施范围：
 
-- 新增 `docs/audit-store-architecture.md`，明确统一审计 Store 的业务目标、非目标、数据流、写入模式、回填模式、索引策略、隐私白名单和失败恢复策略。
-- 在 `shared/domain/auditCenter.ts` 评估是否需要补充归档事件版本、幂等键或 source descriptor 契约；若需要，保持向前兼容。
-- 设计 PostgreSQL 归档表草案，但本阶段默认不把业务写动作切换到新表；如新增 migration，应只建只追加归档表和索引，不改写既有业务表。
-- 明确 M9-D 的最小落地切片：优先选择一个低风险模块做双写/回填试点，还是先做定时归档任务。
-- 补充方案测试或 schema 测试，确保归档表草案包含唯一幂等键、模块/动作/资源/操作者/时间索引和隐私摘要字段。
+- 新增 `server/modules/audit/auditArchiveStore.ts`，定义 `upsertArchivedEvents`、`listArchivedEvents`、`countArchivedEvents` 或等价最小接口。
+- 新增 PostgreSQL Archive Store，实现写入 `audit_center_archived_events`，只接受已通过 `AuditCenterArchiveEventSchema` 校验的 summary-only 事件。
+- 新增归档映射函数，把现有 `AuditCenterEventSchema` 和来源追踪信息转换为 `AuditCenterArchiveEventSchema`，生成稳定 `idempotencyKey`、`sourceStore`、`sourceTable`、`policyVersion` 和 `backfillBatchId`。
+- 新增手动 service 函数或受控后台 API，支持按模块、日期窗口和批次 ID 归档当前聚合事件；默认不自动执行。
+- 归档任务必须返回成功数、跳过数、失败摘要和批次 ID；失败摘要只保留来源 ID、模块和错误信息，不保留敏感 payload。
+- 增加测试覆盖幂等写入、重复执行不重复插入、隐私字段裁剪、失败摘要和现有 `/api/audit/admin/events` 不受影响。
 - 更新 README、`docs/domain-contracts.md`、`docs/database-schema.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Document audit store architecture`
+- 提交并推送，建议 commit message：`Add audit archive read model`
 
 验收标准：
 
-- 统一审计 Store 方案能解释为什么当前不直接替换各业务 Store 真相源。
-- 归档表草案包含稳定事件 ID、source event ID、模块、动作、资源、操作者、角色、原因、摘要、before/after 摘要、发生时间、归档时间和口径版本。
-- 隐私白名单明确禁止咨询说明、测评答案、风险信号原文和支付敏感原文进入统一归档。
-- 后续 M9-D 的实现切片足够小，可一次完成、测试、提交和回滚。
+- 归档任务可重复执行，同一源事件只产生一条归档记录。
+- 归档事件必须通过 `AuditCenterArchiveEventSchema` 校验，并只包含 summary-only 摘要字段。
+- 归档结果包含批次 ID、成功数、跳过数和失败摘要，便于运营和工程排查。
+- 现有审计中心列表、导出和详情仍读取当前聚合逻辑，不依赖归档表即可正常工作。
+- 归档 Store 可以被暂停或回滚，不影响订单、支付、咨询、风险等业务状态机。
 - 隐私最小化边界不回退，不展示测评答案、咨询说明、风险信号原文和支付敏感原文。
 - 现有后台模块能力不回退。
 - CI 通过。
@@ -220,4 +224,4 @@ M9-B 验收结果：
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，后续是否建设统一审计 Store 与归档表建议放到 M9-C/M10 决策。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-C 已确定统一审计 Store 采用只追加归档边界，下一步先做归档任务与只读校验试点。

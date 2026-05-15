@@ -10,6 +10,8 @@ export const ALL_AUDIT_CENTER_MODULE = "all";
 export const AUDIT_CENTER_PAGE_SIZE = 20;
 export const AUDIT_CENTER_EXPORT_POLICY_VERSION = "audit-center-csv-v1";
 export const AUDIT_CENTER_CSV_CONTENT_TYPE = "text/csv; charset=utf-8";
+export const AUDIT_CENTER_ARCHIVE_SCHEMA_VERSION = "audit-center-archive-v1";
+export const AUDIT_CENTER_ARCHIVE_POLICY_VERSION = "audit-center-privacy-v1";
 
 export const AuditCenterModuleSchema = z.enum([
   "catalog",
@@ -254,10 +256,51 @@ export const AuditCenterDetailResultSchema = z.object({
   generatedAt: DateTimeLikeSchema,
 });
 
+export const AuditCenterSourceDescriptorSchema = z.object({
+  module: AuditCenterModuleSchema,
+  sourceEventId: EntityIdSchema,
+  sourceStore: z.string().min(1).max(120),
+  sourceTable: z.string().min(1).max(120).optional(),
+  sourceRecordId: EntityIdSchema.optional(),
+  sourceOccurredAt: DateTimeLikeSchema.optional(),
+});
+
+export const AuditCenterArchiveSnapshotSummarySchema = z
+  .record(z.string(), z.unknown())
+  .default({});
+
+export const AuditCenterArchivePrivacyLevelSchema = z.literal("summary_only");
+
+export const AuditCenterArchiveEventSchema = z.object({
+  id: EntityIdSchema,
+  idempotencyKey: z.string().min(3).max(240),
+  source: AuditCenterSourceDescriptorSchema,
+  module: AuditCenterModuleSchema,
+  action: z.string().min(1).max(80),
+  resource: AuditCenterResourceSchema,
+  actor: AuditCenterActorSchema,
+  reason: z.string().min(1).max(500).optional(),
+  summary: z.string().min(1).max(300),
+  beforeSummary: AuditCenterArchiveSnapshotSummarySchema,
+  afterSummary: AuditCenterArchiveSnapshotSummarySchema,
+  occurredAt: DateTimeLikeSchema,
+  archivedAt: DateTimeLikeSchema,
+  schemaVersion: z.literal(AUDIT_CENTER_ARCHIVE_SCHEMA_VERSION),
+  policyVersion: z.literal(AUDIT_CENTER_ARCHIVE_POLICY_VERSION),
+  privacyLevel: AuditCenterArchivePrivacyLevelSchema,
+  backfillBatchId: EntityIdSchema.optional(),
+});
+
 export type AuditCenterModule = z.infer<typeof AuditCenterModuleSchema>;
 export type AuditCenterQuery = z.infer<typeof AuditCenterQuerySchema>;
 export type AuditCenterEvent = z.infer<typeof AuditCenterEventSchema>;
 export type AuditCenterListResult = z.infer<typeof AuditCenterListResultSchema>;
+export type AuditCenterSourceDescriptor = z.infer<
+  typeof AuditCenterSourceDescriptorSchema
+>;
+export type AuditCenterArchiveEvent = z.infer<
+  typeof AuditCenterArchiveEventSchema
+>;
 export type AuditCenterExportQuery = z.infer<
   typeof AuditCenterExportQuerySchema
 >;

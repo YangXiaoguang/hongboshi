@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUDIT_CENTER_ARCHIVE_POLICY_VERSION,
+  AUDIT_CENTER_ARCHIVE_SCHEMA_VERSION,
+  AuditCenterArchiveEventSchema,
   AuditCenterDetailResultSchema,
   AuditCenterExportQuerySchema,
   AuditCenterExportSchema,
@@ -198,5 +201,49 @@ describe("audit center domain contract", () => {
       module: "catalog",
       sourceEventId: "audit_1",
     });
+  });
+
+  it("validates summary-only archive events with idempotent source descriptors", () => {
+    const parsed = AuditCenterArchiveEventSchema.parse({
+      id: event.id,
+      idempotencyKey: `${event.module}:${event.sourceEventId}`,
+      source: {
+        module: event.module,
+        sourceEventId: event.sourceEventId,
+        sourceStore: "CourseProductStore",
+        sourceTable: "course_product_audit_events",
+        sourceRecordId: event.sourceEventId,
+        sourceOccurredAt: event.occurredAt,
+      },
+      module: event.module,
+      action: event.action,
+      resource: event.resource,
+      actor: event.actor,
+      reason: event.reason,
+      summary: event.summary,
+      beforeSummary: {
+        status: "draft",
+      },
+      afterSummary: {
+        status: "published",
+      },
+      occurredAt: event.occurredAt,
+      archivedAt: "2026-05-14T10:02:00.000Z",
+      schemaVersion: AUDIT_CENTER_ARCHIVE_SCHEMA_VERSION,
+      policyVersion: AUDIT_CENTER_ARCHIVE_POLICY_VERSION,
+      privacyLevel: "summary_only",
+      backfillBatchId: "audit_backfill_20260514",
+    });
+
+    expect(parsed.idempotencyKey).toBe("catalog:audit_1");
+    expect(parsed.source).toMatchObject({
+      sourceStore: "CourseProductStore",
+      sourceTable: "course_product_audit_events",
+    });
+    expect(parsed.privacyLevel).toBe("summary_only");
+    expect(JSON.stringify(parsed)).not.toContain("咨询说明原文");
+    expect(JSON.stringify(parsed)).not.toContain("测评答案原文");
+    expect(JSON.stringify(parsed)).not.toContain("风险信号原文");
+    expect(JSON.stringify(parsed)).not.toContain("支付敏感原文");
   });
 });
