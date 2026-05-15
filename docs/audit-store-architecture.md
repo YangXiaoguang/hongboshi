@@ -142,12 +142,12 @@ M9-D 不建议先做业务双写。更稳妥的切片是先做一个可手动触
 
 ## M9-D 最小实现切片
 
-建议下一步做“审计归档任务与只读校验试点”，范围控制为：
+M9-D 已按“审计归档任务与只读校验试点”落地首版，范围控制为：
 
 - 新增 `server/modules/audit/auditArchiveStore.ts` 接口，定义 `upsertArchivedEvents`、`listArchivedEvents`、`countArchivedEvents`。
-- 新增 PostgreSQL 实现，写入 `audit_center_archived_events`，只接受已经通过 `AuditCenterArchiveEventSchema` 校验的摘要事件。
-- 新增归档映射函数，把现有 `AuditCenterEventSchema` 加来源描述转换为 `AuditCenterArchiveEventSchema`。
-- 新增手动 service 函数或受控后台 API，按模块和时间窗口归档当前聚合事件；默认不自动运行。
+- 新增 `server/modules/audit/postgresAuditArchiveStore.ts`，写入 `audit_center_archived_events`，只接受已经通过 `AuditCenterArchiveEventSchema` 校验的摘要事件。
+- 新增归档映射函数 `archiveEventFromAuditCenterEvent`，把现有 `AuditCenterEventSchema` 加来源描述转换为 `AuditCenterArchiveEventSchema`。
+- 新增受控后台 API `POST /api/audit/admin/archive`，按模块、动作、操作者、资源关键词和日期窗口归档当前聚合事件；默认不自动运行。
 - 新增测试覆盖幂等写入、隐私字段裁剪、批次失败摘要和不影响现有 `/api/audit/admin/events`。
 
-这个切片足够小，可测试、可回滚，也不会把归档表提前变成业务真相源。读取切换、定时任务、队列和告警可以放到 M9-E/M10。
+这个切片足够小，可测试、可回滚，也不会把归档表提前变成业务真相源。读取切换、后台可视化入口、定时任务、队列和告警可以放到 M9-E/M10。

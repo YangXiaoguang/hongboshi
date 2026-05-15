@@ -54,6 +54,7 @@ export const AuthPermissionSchema = z.enum([
   "risk:review",
   "risk:sop",
   "audit:read",
+  "audit:archive",
   "catalog:read",
   "catalog:edit",
   "catalog:review",
@@ -97,6 +98,7 @@ export const RISK_ADMIN_PERMISSIONS = {
 
 export const AUDIT_CENTER_PERMISSIONS = {
   read: "audit:read",
+  archive: "audit:archive",
 } satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
 
 export const CURRENT_USER_CONSENT_VERSION = "2026.05";
@@ -195,6 +197,7 @@ const RolePermissionMap = {
     "risk:review",
     "risk:sop",
     "audit:read",
+    "audit:archive",
     "catalog:read",
     "catalog:edit",
     "catalog:review",

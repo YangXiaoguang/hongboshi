@@ -291,6 +291,37 @@ export const AuditCenterArchiveEventSchema = z.object({
   backfillBatchId: EntityIdSchema.optional(),
 });
 
+export const AuditCenterArchiveRequestSchema = AuditCenterQuerySchema.omit({
+  page: true,
+  pageSize: true,
+}).extend({
+  batchId: EntityIdSchema.optional(),
+});
+
+export const AuditCenterArchiveFailureSchema = z.object({
+  eventId: EntityIdSchema.optional(),
+  sourceEventId: EntityIdSchema.optional(),
+  module: AuditCenterModuleSchema.optional(),
+  message: z.string().min(1).max(300),
+});
+
+export const AuditCenterArchiveResultSchema = z.object({
+  batchId: EntityIdSchema,
+  requestedAt: DateTimeLikeSchema,
+  archivedAt: DateTimeLikeSchema,
+  archivedBy: z.object({
+    id: EntityIdSchema,
+    roles: z.array(z.string().min(1)).min(1),
+  }),
+  query: AuditCenterArchiveRequestSchema,
+  scannedCount: z.number().int().nonnegative(),
+  archivedCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  failures: z.array(AuditCenterArchiveFailureSchema).default([]),
+  privacyNotice: z.string().min(1),
+});
+
 export type AuditCenterModule = z.infer<typeof AuditCenterModuleSchema>;
 export type AuditCenterQuery = z.infer<typeof AuditCenterQuerySchema>;
 export type AuditCenterEvent = z.infer<typeof AuditCenterEventSchema>;
@@ -300,6 +331,12 @@ export type AuditCenterSourceDescriptor = z.infer<
 >;
 export type AuditCenterArchiveEvent = z.infer<
   typeof AuditCenterArchiveEventSchema
+>;
+export type AuditCenterArchiveRequest = z.infer<
+  typeof AuditCenterArchiveRequestSchema
+>;
+export type AuditCenterArchiveResult = z.infer<
+  typeof AuditCenterArchiveResultSchema
 >;
 export type AuditCenterExportQuery = z.infer<
   typeof AuditCenterExportQuerySchema

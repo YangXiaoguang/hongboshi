@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。M9-A/M9-B 审计中心仍是只读聚合模型，列表、详情和 CSV 导出直接消费各业务 Store/表中的既有审计事实。M9-C 新增统一审计 Store 方案与 `audit_center_archived_events` 只追加归档表草案，但当前仍不把业务写动作或审计真相源切换到该表。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。M9-A/M9-B 审计中心仍是只读聚合模型，列表、详情和 CSV 导出直接消费各业务 Store/表中的既有审计事实。M9-C 新增统一审计 Store 方案与 `audit_center_archived_events` 只追加归档表草案；M9-D 新增 Archive Store 和手动归档任务，但当前仍不把业务写动作或审计真相源切换到该表。
 
 ## 文件位置
 
@@ -27,7 +27,7 @@
 ## 初始化命令
 
 1. 配置 `DATABASE_URL`。
-2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_COURSE_PRODUCT_STORE`、`HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_RISK_REVIEW_STORE`、`HONGBOSHI_RISK_SOP_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE`、`HONGBOSHI_TRANSACTION_OPERATION_STORE` 设置为 `postgres`。其中风险复核记录与风险 SOP/升级队列配置 `DATABASE_URL` 后可自动切换 PostgreSQL，显式设置为 `file` 时继续使用开发期 JSON 文件。
+2. 按需将 `HONGBOSHI_AUTH_SESSION_STORE`、`HONGBOSHI_COURSE_ACCESS_STORE`、`HONGBOSHI_COURSE_PRODUCT_STORE`、`HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE`、`HONGBOSHI_RISK_EVENT_STORE`、`HONGBOSHI_RISK_REVIEW_STORE`、`HONGBOSHI_RISK_SOP_STORE`、`HONGBOSHI_ASSESSMENT_RESULT_STORE`、`HONGBOSHI_COUNSELING_APPOINTMENT_STORE`、`HONGBOSHI_COUNSELING_OPERATION_STORE`、`HONGBOSHI_PAYMENT_WEBHOOK_STORE`、`HONGBOSHI_TRANSACTION_OPERATION_STORE`、`HONGBOSHI_AUDIT_ARCHIVE_STORE` 设置为 `postgres`。其中风险复核记录、风险 SOP/升级队列与审计归档配置 `DATABASE_URL` 后可自动切换 PostgreSQL；风险相关 Store 显式设置为 `file` 时继续使用开发期 JSON 文件，审计归档显式设置为 `memory` 时继续使用内存实现。
 3. 运行 `pnpm db:doctor` 检查 Store 配置与数据库连接。
 4. 运行 `pnpm db:migrate` 应用 `server/db/migrations/*.sql`。
 
@@ -58,7 +58,7 @@
 ## 后续接入顺序
 
 1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
-2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、交易操作审计、课程商品、课程商品详情内容、风险事件、风险复核记录、风险 SOP 模板、风险升级队列、测评结果、咨询预约、咨询运营配置/审计和支付回调收据已经完成第一版，且已能支撑用户会员后台、统一订单后台、交易流水聚合、风险复核台和审计中心只读聚合、详情定位与 CSV 导出；咨询师档案 overlay 当前先使用内存/JSON Store，后续可补 PostgreSQL 表；审计归档 Store 下一步先做手动/计划归档任务，不切换业务真相源。
+2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、交易操作审计、课程商品、课程商品详情内容、风险事件、风险复核记录、风险 SOP 模板、风险升级队列、测评结果、咨询预约、咨询运营配置/审计、支付回调收据和审计归档已经完成第一版，且已能支撑用户会员后台、统一订单后台、交易流水聚合、风险复核台、审计中心只读聚合、详情定位、CSV 导出和手动归档试点；咨询师档案 overlay 当前先使用内存/JSON Store，后续可补 PostgreSQL 表。
 3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
 4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
 5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。
@@ -97,6 +97,6 @@
 
 `server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节和素材占位；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
 
-`audit_center_archived_events` 是统一审计 Store 的只追加归档表草案。它保存稳定事件 ID、唯一幂等键、来源模块/源事件 ID、来源 Store/表、模块、动作、资源、操作者、角色、原因、summary-only 前后摘要、发生时间、归档时间、结构版本和隐私口径版本，并建立模块、动作、资源、操作者、来源和归档时间索引。当前没有对应业务写入切换，下一步应先实现可重复执行的归档任务和 PostgreSQL Archive Store。
+`server/modules/audit/auditArchiveStore.ts` 已实现统一审计归档 Store 接口和内存实现，`server/modules/audit/postgresAuditArchiveStore.ts` 已实现 `audit_center_archived_events` 的幂等写入、列表、计数和测试清理能力。手动归档任务通过 `AuditCenterArchiveEventSchema` 校验后写入，只保存稳定事件 ID、唯一幂等键、来源模块/源事件 ID、来源 Store/表、模块、动作、资源、操作者、角色、原因、summary-only 前后摘要、发生时间、归档时间、结构版本和隐私口径版本，并使用模块、动作、资源、操作者、来源和归档时间索引。当前没有对应业务写入切换，审计中心列表/导出/详情仍读取现有聚合逻辑。
 
-当前实现已覆盖登录会话、课程权益、会员操作审计、订单异常标记、订单操作审计、交易操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件、风险复核记录、风险 SOP 模板、风险升级队列与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作、`/admin/orders` 统一订单聚合及受控订单动作、`/admin/transactions` 交易流水聚合、退款申请和异常工单动作、`/admin/risk` 风险复核、SOP 模板和升级队列，以及 `/admin/audit` 审计中心只读聚合、详情定位与 CSV 导出。咨询师档案 overlay 仍先使用内存/JSON Store，为后续资质审核流留下边界。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+当前实现已覆盖登录会话、课程权益、会员操作审计、订单异常标记、订单操作审计、交易操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件、风险复核记录、风险 SOP 模板、风险升级队列、审计归档与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作、`/admin/orders` 统一订单聚合及受控订单动作、`/admin/transactions` 交易流水聚合、退款申请和异常工单动作、`/admin/risk` 风险复核、SOP 模板和升级队列，以及 `/admin/audit` 审计中心只读聚合、详情定位、CSV 导出和手动归档试点。咨询师档案 overlay 仍先使用内存/JSON Store，为后续资质审核流留下边界。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。

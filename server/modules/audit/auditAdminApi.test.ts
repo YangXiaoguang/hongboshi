@@ -36,7 +36,13 @@ import {
   getAuditCenterEventDetailPayload,
   getAuditCenterEventsPayload,
   getAuditCenterExportPayload,
+  getAuditCenterArchivePayload,
 } from "./auditAdminApi";
+import {
+  InMemoryAuditArchiveStore,
+  setAuditArchiveStore,
+  type AuditArchiveStore,
+} from "./auditArchiveStore";
 
 const operator = { id: "operator_1", roles: ["operator" as const] };
 const admin = { id: "admin_1", roles: ["admin" as const] };
@@ -48,6 +54,7 @@ let courseAccessStore: CourseAccessStore;
 let counselingOperationStore: CounselingOperationStore;
 let riskReviewStore: RiskReviewStore;
 let transactionOperationStore: TransactionOperationStore;
+let auditArchiveStore: InMemoryAuditArchiveStore;
 
 beforeEach(() => {
   courseProductStore = new InMemoryCourseProductStore([]);
@@ -55,12 +62,14 @@ beforeEach(() => {
   counselingOperationStore = new InMemoryCounselingOperationStore();
   riskReviewStore = new InMemoryRiskReviewStore();
   transactionOperationStore = new InMemoryTransactionOperationStore();
+  auditArchiveStore = new InMemoryAuditArchiveStore();
 
   setCourseProductStore(courseProductStore);
   setCourseAccessStore(courseAccessStore);
   setCounselingOperationStore(counselingOperationStore);
   setRiskReviewStore(riskReviewStore);
   setTransactionOperationStore(transactionOperationStore);
+  setAuditArchiveStore(auditArchiveStore);
 });
 
 const catalogAudit: CourseProductAuditEvent = {
@@ -403,5 +412,126 @@ describe("audit admin api payloads", () => {
       (await getAuditCenterExportPayload(admin, { module: "finance" }, now))
         .status
     ).toBe(400);
+  });
+
+  it("archives filtered audit events idempotently without changing audit reads", async () => {
+    await seedAuditFacts();
+
+    const firstPayload = await getAuditCenterArchivePayload(
+      admin,
+      {
+        module: "transaction",
+        batchId: "audit_archive_20260514120000",
+      },
+      now
+    );
+    const secondPayload = await getAuditCenterArchivePayload(
+      admin,
+      {
+        module: "transaction",
+        batchId: "audit_archive_20260514120000",
+      },
+      now
+    );
+    const readPayload = await getAuditCenterEventsPayload(operator, {}, now);
+
+    expect(firstPayload.status).toBe(200);
+    expect(firstPayload.body.ok).toBe(true);
+    expect(secondPayload.body.ok).toBe(true);
+    expect(readPayload.body.ok).toBe(true);
+    if (
+      !firstPayload.body.ok ||
+      !secondPayload.body.ok ||
+      !readPayload.body.ok
+    ) {
+      throw new Error("expected audit archive payloads");
+    }
+
+    expect(firstPayload.body.data).toMatchObject({
+      batchId: "audit_archive_20260514120000",
+      scannedCount: 1,
+      archivedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+    });
+    expect(secondPayload.body.data).toMatchObject({
+      scannedCount: 1,
+      archivedCount: 0,
+      skippedCount: 1,
+      failedCount: 0,
+    });
+    expect(readPayload.body.data.summary.totalCount).toBe(6);
+
+    const archivedEvents = auditArchiveStore.listArchivedEvents({
+      module: "transaction",
+    });
+    expect(archivedEvents).toMatchObject([
+      {
+        id: "transaction:transaction_audit_1",
+        idempotencyKey: "transaction:transaction_audit_1",
+        source: {
+          sourceStore: "TransactionOperationStore",
+          sourceTable: "transaction_admin_audit_events",
+        },
+        privacyLevel: "summary_only",
+      },
+    ]);
+    expect(JSON.stringify(archivedEvents)).not.toContain("原始敏感风险信号");
+  });
+
+  it("requires archive permission for manual archive tasks", async () => {
+    expect((await getAuditCenterArchivePayload(null, {}, now)).status).toBe(
+      401
+    );
+    expect((await getAuditCenterArchivePayload(operator, {}, now)).status).toBe(
+      403
+    );
+    expect((await getAuditCenterArchivePayload(admin, {}, now)).status).toBe(
+      200
+    );
+  });
+
+  it("returns archive failure summaries without leaking source payloads", async () => {
+    class FailingArchiveStore implements AuditArchiveStore {
+      async upsertArchivedEvents() {
+        throw new Error("写入归档表失败：原始敏感风险信号");
+      }
+
+      async listArchivedEvents() {
+        return [];
+      }
+
+      async countArchivedEvents() {
+        return 0;
+      }
+
+      async clear() {}
+    }
+
+    await seedAuditFacts();
+    setAuditArchiveStore(new FailingArchiveStore());
+
+    const payload = await getAuditCenterArchivePayload(
+      admin,
+      { module: "risk" },
+      now
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (!payload.body.ok) throw new Error("expected archive failure result");
+
+    expect(payload.body.data).toMatchObject({
+      scannedCount: 1,
+      archivedCount: 0,
+      skippedCount: 0,
+      failedCount: 1,
+    });
+    expect(payload.body.data.failures[0]).toMatchObject({
+      eventId: "risk:risk_record_1",
+      sourceEventId: "risk_record_1",
+      module: "risk",
+    });
+    expect(JSON.stringify(payload.body.data)).not.toContain("原始敏感风险信号");
   });
 });

@@ -3,6 +3,8 @@ import {
   AUDIT_CENTER_ARCHIVE_POLICY_VERSION,
   AUDIT_CENTER_ARCHIVE_SCHEMA_VERSION,
   AuditCenterArchiveEventSchema,
+  AuditCenterArchiveRequestSchema,
+  AuditCenterArchiveResultSchema,
   AuditCenterDetailResultSchema,
   AuditCenterExportQuerySchema,
   AuditCenterExportSchema,
@@ -245,5 +247,42 @@ describe("audit center domain contract", () => {
     expect(JSON.stringify(parsed)).not.toContain("测评答案原文");
     expect(JSON.stringify(parsed)).not.toContain("风险信号原文");
     expect(JSON.stringify(parsed)).not.toContain("支付敏感原文");
+  });
+
+  it("validates archive requests and archive task results", () => {
+    const query = AuditCenterArchiveRequestSchema.parse({
+      module: "transaction",
+      dateFrom: "2026-05-14",
+      dateTo: "2026-05-15",
+      batchId: "audit_archive_20260514120000",
+      page: 9,
+    });
+
+    expect(query).toMatchObject({
+      module: "transaction",
+      dateFrom: "2026-05-14",
+      batchId: "audit_archive_20260514120000",
+    });
+    expect(query).not.toHaveProperty("page");
+
+    const result = AuditCenterArchiveResultSchema.parse({
+      batchId: "audit_archive_20260514120000",
+      requestedAt: "2026-05-14T12:00:00.000Z",
+      archivedAt: "2026-05-14T12:00:00.000Z",
+      archivedBy: {
+        id: "admin_1",
+        roles: ["admin"],
+      },
+      query,
+      scannedCount: 1,
+      archivedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+      failures: [],
+      privacyNotice: "统一归档只保存后台操作摘要。",
+    });
+
+    expect(result.archivedCount).toBe(1);
+    expect(result.query).not.toHaveProperty("pageSize");
   });
 });

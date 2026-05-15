@@ -3,11 +3,16 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
 import {
   ALL_AUDIT_CENTER_MODULE,
+  AUDIT_CENTER_ARCHIVE_POLICY_VERSION,
+  AUDIT_CENTER_ARCHIVE_SCHEMA_VERSION,
   AUDIT_CENTER_CSV_CONTENT_TYPE,
   AUDIT_CENTER_EXPORT_FIELDS,
   AUDIT_CENTER_EXPORT_POLICY_VERSION,
   AUDIT_CENTER_PERMISSIONS,
   ApiResponseSchema,
+  AuditCenterArchiveEventSchema,
+  AuditCenterArchiveRequestSchema,
+  AuditCenterArchiveResultSchema,
   AuditCenterDetailResultSchema,
   AuditCenterEventSchema,
   AuditCenterExportQuerySchema,
@@ -17,6 +22,9 @@ import {
   AuditCenterQuerySchema,
   EntityIdSchema,
   userCan,
+  type AuditCenterArchiveEvent,
+  type AuditCenterArchiveRequest,
+  type AuditCenterArchiveResult,
   type AuditCenterDetailResult,
   type AuditCenterEvent,
   type AuditCenterExport,
@@ -41,6 +49,7 @@ import {
 } from "../courses/courseAccessApi";
 import { listRiskAdminReviewRecords } from "../risk/riskAdminApi";
 import { getTransactionOperationStore } from "../transactions/transactionOperationStore";
+import { getAuditArchiveStore } from "./auditArchiveStore";
 
 type AuditCenterActor = Pick<LoginSession["user"], "id" | "roles">;
 type AuditCenterFilterQuery = Pick<
@@ -53,6 +62,9 @@ const AuditCenterListResponseSchema = ApiResponseSchema(
 );
 const AuditCenterDetailResponseSchema = ApiResponseSchema(
   AuditCenterDetailResultSchema
+);
+const AuditCenterArchiveResponseSchema = ApiResponseSchema(
+  AuditCenterArchiveResultSchema
 );
 
 const privacyNotice =
@@ -122,6 +134,31 @@ function denyUnauthorizedActor(actor: AuditCenterActor | null | undefined):
     return {
       status: 403,
       body: errorPayload("FORBIDDEN", "当前账号暂无审计中心读取权限"),
+    };
+  }
+
+  return undefined;
+}
+
+function denyUnauthorizedArchiveActor(
+  actor: AuditCenterActor | null | undefined
+):
+  | {
+      status: 401 | 403;
+      body: ReturnType<typeof errorPayload>;
+    }
+  | undefined {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后归档审计事件"),
+    };
+  }
+
+  if (!userCan(actor, AUDIT_CENTER_PERMISSIONS.archive)) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无审计归档权限"),
     };
   }
 
@@ -590,6 +627,141 @@ function sourceTraceFromEvent(event: AuditCenterEvent) {
   } satisfies AuditCenterDetailResult["source"];
 }
 
+const archiveSourceByModule = {
+  catalog: {
+    sourceStore: "CourseProductStore",
+    sourceTable: "course_product_audit_events",
+  },
+  user: {
+    sourceStore: "CourseAccessStore",
+    sourceTable: "user_membership_audit_events",
+  },
+  order: {
+    sourceStore: "CourseAccessStore",
+    sourceTable: "order_admin_audit_events",
+  },
+  transaction: {
+    sourceStore: "TransactionOperationStore",
+    sourceTable: "transaction_admin_audit_events",
+  },
+  counseling: {
+    sourceStore: "CounselingOperationStore",
+    sourceTable: "counseling_operation_audit_events",
+  },
+  risk: {
+    sourceStore: "RiskReviewStore",
+    sourceTable: "risk_admin_review_records",
+  },
+} satisfies Record<
+  AuditCenterModule,
+  {
+    sourceStore: string;
+    sourceTable: string;
+  }
+>;
+
+const sensitiveArchiveKeyPatterns = [
+  /raw/i,
+  /payload/i,
+  /signature/i,
+  /secret/i,
+  /token/i,
+  /credential/i,
+  /card/i,
+  /phone/i,
+  /mobile/i,
+  /answer/i,
+  /signal/i,
+  /note/i,
+  /intake/i,
+  /咨询说明/,
+  /测评答案/,
+  /风险信号/,
+  /支付敏感/,
+];
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    !(value instanceof Date)
+  );
+}
+
+function shouldDropArchiveKey(key: string) {
+  return sensitiveArchiveKeyPatterns.some(pattern => pattern.test(key));
+}
+
+function sanitizeArchiveValue(value: unknown, depth = 0): unknown {
+  if (value === undefined || value === null) return undefined;
+  if (depth > 5) return "[summary-truncated]";
+  if (value instanceof Date) return value.toISOString();
+
+  if (Array.isArray(value)) {
+    return value
+      .map(item => sanitizeArchiveValue(item, depth + 1))
+      .filter(item => item !== undefined);
+  }
+
+  if (isPlainRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !shouldDropArchiveKey(key))
+        .map(([key, item]) => [key, sanitizeArchiveValue(item, depth + 1)])
+        .filter(([, item]) => item !== undefined)
+    );
+  }
+
+  if (typeof value === "string") return compactSummary(value);
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  return String(value);
+}
+
+function archiveSnapshotSummary(value: unknown): Record<string, unknown> {
+  const sanitized = sanitizeArchiveValue(value);
+  if (isPlainRecord(sanitized)) return sanitized;
+  if (sanitized === undefined) return {};
+  return {
+    value: sanitized,
+  };
+}
+
+export function archiveEventFromAuditCenterEvent(
+  event: AuditCenterEvent,
+  batchId: string,
+  archivedAt: string
+): AuditCenterArchiveEvent {
+  const source = archiveSourceByModule[event.module];
+
+  return AuditCenterArchiveEventSchema.parse({
+    id: event.id,
+    idempotencyKey: `${event.module}:${event.sourceEventId}`,
+    source: {
+      module: event.module,
+      sourceEventId: event.sourceEventId,
+      sourceStore: source.sourceStore,
+      sourceTable: source.sourceTable,
+      sourceRecordId: event.sourceEventId,
+      sourceOccurredAt: event.occurredAt,
+    },
+    module: event.module,
+    action: event.action,
+    resource: event.resource,
+    actor: event.actor,
+    reason: event.reason,
+    summary: event.summary,
+    beforeSummary: archiveSnapshotSummary(event.before),
+    afterSummary: archiveSnapshotSummary(event.after),
+    occurredAt: event.occurredAt,
+    archivedAt,
+    schemaVersion: AUDIT_CENTER_ARCHIVE_SCHEMA_VERSION,
+    policyVersion: AUDIT_CENTER_ARCHIVE_POLICY_VERSION,
+    privacyLevel: "summary_only",
+    backfillBatchId: batchId,
+  });
+}
+
 async function buildAuditCenterEventDetail(
   eventId: string,
   now: string
@@ -603,6 +775,64 @@ async function buildAuditCenterEventDetail(
     source: sourceTraceFromEvent(event),
     privacyNotice,
     generatedAt: now,
+  });
+}
+
+function archiveBatchIdFromNow(now: string) {
+  return `audit_archive_${now.replace(/\D/g, "").slice(0, 14)}`;
+}
+
+function archiveFailureFromEvent(event: AuditCenterEvent) {
+  return {
+    eventId: event.id,
+    sourceEventId: event.sourceEventId,
+    module: event.module,
+    message: "审计事件归档失败",
+  };
+}
+
+async function buildAuditCenterArchiveResult(
+  actor: AuditCenterActor,
+  query: AuditCenterArchiveRequest,
+  now: string
+): Promise<AuditCenterArchiveResult> {
+  const { matchedEvents } = await filterAuditCenterEvents(query);
+  const batchId = query.batchId ?? archiveBatchIdFromNow(now);
+  const archiveStore = getAuditArchiveStore();
+  let archivedCount = 0;
+  let skippedCount = 0;
+  const failures: AuditCenterArchiveResult["failures"] = [];
+
+  for (const event of matchedEvents) {
+    try {
+      const archiveEvent = archiveEventFromAuditCenterEvent(
+        event,
+        batchId,
+        now
+      );
+      const result = await archiveStore.upsertArchivedEvents([archiveEvent]);
+      archivedCount += result.archivedCount;
+      skippedCount += result.skippedCount;
+    } catch {
+      failures.push(archiveFailureFromEvent(event));
+    }
+  }
+
+  return AuditCenterArchiveResultSchema.parse({
+    batchId,
+    requestedAt: now,
+    archivedAt: now,
+    archivedBy: {
+      id: actor.id,
+      roles: [...actor.roles],
+    },
+    query,
+    scannedCount: matchedEvents.length,
+    archivedCount,
+    skippedCount,
+    failedCount: failures.length,
+    failures,
+    privacyNotice,
   });
 }
 
@@ -640,6 +870,27 @@ function queryFromSearchParams(params: URLSearchParams) {
   return queryFromRecord(Object.fromEntries(params.entries()));
 }
 
+function readRequestBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise(resolve => {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        resolve(undefined);
+      }
+    });
+  });
+}
+
 export async function getAuditCenterEventsPayload(
   actor: AuditCenterActor | null | undefined,
   rawQuery: Record<string, unknown>,
@@ -661,6 +912,39 @@ export async function getAuditCenterEventsPayload(
     body: AuditCenterListResponseSchema.parse({
       ok: true,
       data: await buildAuditCenterListResult(queryResult.data, now),
+    }),
+  } as const;
+}
+
+export async function getAuditCenterArchivePayload(
+  actor: AuditCenterActor | null | undefined,
+  rawBody: unknown,
+  now = new Date().toISOString()
+) {
+  const denied = denyUnauthorizedArchiveActor(actor);
+  if (denied) return denied;
+
+  const body =
+    typeof rawBody === "object" && rawBody !== null
+      ? (rawBody as Record<string, unknown>)
+      : {};
+  const requestResult = AuditCenterArchiveRequestSchema.safeParse(body);
+  if (!requestResult.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "审计归档参数不合法"),
+    } as const;
+  }
+
+  return {
+    status: 200,
+    body: AuditCenterArchiveResponseSchema.parse({
+      ok: true,
+      data: await buildAuditCenterArchiveResult(
+        actor as AuditCenterActor,
+        requestResult.data,
+        now
+      ),
     }),
   } as const;
 }
@@ -733,6 +1017,12 @@ export async function getAuditCenterEventDetailPayload(
 }
 
 export function registerAuditAdminApi(app: Express) {
+  app.post("/api/audit/admin/archive", async (req: Request, res: Response) => {
+    const session = await getLoginSessionFromRequest(req);
+    const payload = await getAuditCenterArchivePayload(session?.user, req.body);
+    sendJson(res, payload.status, payload.body);
+  });
+
   app.get("/api/audit/admin/export", async (req: Request, res: Response) => {
     const session = await getLoginSessionFromRequest(req);
     const payload = await getAuditCenterExportPayload(
@@ -775,6 +1065,21 @@ export function handleAuditAdminApiRequest(
   if (!req.url || !req.url.startsWith("/api/audit/admin")) return false;
 
   const url = new URL(req.url, "http://localhost");
+  if (req.method === "POST" && url.pathname === "/api/audit/admin/archive") {
+    void (async () => {
+      const [session, body] = await Promise.all([
+        getLoginSessionFromRequest(req),
+        readRequestBody(req),
+      ]);
+      const payload = await getAuditCenterArchivePayload(session?.user, body);
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "审计事件归档失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "审计事件归档失败"));
+    });
+    return true;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/audit/admin/export") {
     void (async () => {
       const session = await getLoginSessionFromRequest(req);
