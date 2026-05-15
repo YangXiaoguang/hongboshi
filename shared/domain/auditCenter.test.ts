@@ -5,6 +5,7 @@ import {
   AuditCenterArchiveEventSchema,
   AuditCenterArchiveRequestSchema,
   AuditCenterArchiveResultSchema,
+  AuditCenterArchiveVerificationResultSchema,
   AuditCenterDetailResultSchema,
   AuditCenterExportQuerySchema,
   AuditCenterExportSchema,
@@ -284,5 +285,60 @@ describe("audit center domain contract", () => {
 
     expect(result.archivedCount).toBe(1);
     expect(result.query).not.toHaveProperty("pageSize");
+  });
+
+  it("validates archive verification summaries without raw source payloads", () => {
+    const parsed = AuditCenterArchiveVerificationResultSchema.parse({
+      generatedAt: "2026-05-14T12:05:00.000Z",
+      generatedBy: {
+        id: "admin_1",
+        roles: ["admin"],
+      },
+      currentAggregateTotalCount: 2,
+      archiveTotalCount: 1,
+      totalDifference: 1,
+      moduleDifferences: [
+        {
+          module: "catalog",
+          currentAggregateCount: 1,
+          archivedCount: 1,
+          difference: 0,
+        },
+        {
+          module: "risk",
+          currentAggregateCount: 1,
+          archivedCount: 0,
+          difference: 1,
+        },
+      ],
+      recentBatches: [
+        {
+          batchId: "audit_archive_20260514120000",
+          archivedCount: 1,
+          firstArchivedAt: "2026-05-14T12:00:00.000Z",
+          lastArchivedAt: "2026-05-14T12:00:00.000Z",
+          modules: ["catalog"],
+        },
+      ],
+      recentArchivedEvents: [
+        {
+          id: event.id,
+          sourceEventId: event.sourceEventId,
+          module: event.module,
+          action: event.action,
+          resource: event.resource,
+          occurredAt: event.occurredAt,
+          archivedAt: "2026-05-14T12:00:00.000Z",
+          batchId: "audit_archive_20260514120000",
+        },
+      ],
+      privacyNotice: "归档校验只返回摘要和计数。",
+    });
+
+    expect(parsed.totalDifference).toBe(1);
+    expect(parsed.recentBatches[0]?.modules).toEqual(["catalog"]);
+    expect(JSON.stringify(parsed)).not.toContain("咨询说明原文");
+    expect(JSON.stringify(parsed)).not.toContain("测评答案原文");
+    expect(JSON.stringify(parsed)).not.toContain("风险信号原文");
   });
 });

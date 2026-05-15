@@ -255,13 +255,14 @@
 - 导出和事件详情基础能力。M9-B 已完成 `AuditCenterExportSchema`、`AuditCenterDetailResultSchema`、`/api/audit/admin/export` 和 `/api/audit/admin/events/:eventId`，复用同一套筛选、权限和隐私边界。
 - 统一审计 Store 方案预研与只追加归档边界。M9-C 已完成 `AuditCenterArchiveEventSchema`、`docs/audit-store-architecture.md`、`audit_center_archived_events` 归档表草案和 schema 测试，明确保留现有业务 Store 真相源，只用归档表做长期检索和回填投影。
 - 审计归档任务与只读校验试点。M9-D 已完成 `AuditArchiveStore`、PostgreSQL Archive Store、`POST /api/audit/admin/archive`、`audit:archive` 权限、归档映射、幂等写入、失败摘要和隐私裁剪测试，不做业务双写和读取切换。
-- 下一步 M9-E 建议做归档后台入口与归档只读校验：在 `/admin/audit` 增加管理员可见的归档触发/批次结果区，并提供归档表只读校验接口，默认仍不切换主列表数据源。
+- 归档后台入口与归档只读校验。M9-E 已完成 `/admin/audit` 管理员可见的归档触发/批次结果区、`GET /api/audit/admin/archive/verification`、归档/校验前端仓储和权限测试，默认仍不切换主列表数据源。
+- 下一步 M9-F 建议做审计归档读取策略预研：设计归档表长期检索、按时间窗口读取切换、留存告警和迁移回滚方案，先形成可维护设计和小范围只读试点，不直接替换全量主列表。
 
 验收标准：
 
 - 敏感后台动作都能在审计中心追踪。
 - 审计事件不可被普通后台操作修改。
-- 审计查询性能有基础索引设计；当前归档表已包含模块、动作、资源、操作者、来源和归档时间索引，手动归档任务可验证幂等写入与回填性能。
+- 审计查询性能有基础索引设计；当前归档表已包含模块、动作、资源、操作者、来源和归档时间索引，手动归档任务与只读校验可验证幂等写入、回填覆盖和归档差异。
 
 ## 每阶段固定交付清单
 

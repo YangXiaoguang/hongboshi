@@ -37,6 +37,7 @@ import {
   getAuditCenterEventsPayload,
   getAuditCenterExportPayload,
   getAuditCenterArchivePayload,
+  getAuditCenterArchiveVerificationPayload,
 } from "./auditAdminApi";
 import {
   InMemoryAuditArchiveStore,
@@ -489,6 +490,118 @@ describe("audit admin api payloads", () => {
     expect((await getAuditCenterArchivePayload(admin, {}, now)).status).toBe(
       200
     );
+  });
+
+  it("requires archive permission for archive verification", async () => {
+    expect(
+      (await getAuditCenterArchiveVerificationPayload(null, now)).status
+    ).toBe(401);
+    expect(
+      (await getAuditCenterArchiveVerificationPayload(operator, now)).status
+    ).toBe(403);
+    expect(
+      (await getAuditCenterArchiveVerificationPayload(admin, now)).status
+    ).toBe(200);
+  });
+
+  it("returns archive verification summaries without changing audit reads", async () => {
+    await seedAuditFacts();
+
+    await getAuditCenterArchivePayload(
+      admin,
+      {
+        module: "transaction",
+        batchId: "audit_archive_20260514120000",
+      },
+      now
+    );
+
+    const verificationPayload = await getAuditCenterArchiveVerificationPayload(
+      admin,
+      "2026-05-14T12:05:00.000Z"
+    );
+    const readPayload = await getAuditCenterEventsPayload(operator, {}, now);
+
+    expect(verificationPayload.status).toBe(200);
+    expect(verificationPayload.body.ok).toBe(true);
+    expect(readPayload.body.ok).toBe(true);
+    if (!verificationPayload.body.ok || !readPayload.body.ok) {
+      throw new Error("expected archive verification payload");
+    }
+
+    expect(verificationPayload.body.data).toMatchObject({
+      currentAggregateTotalCount: 6,
+      archiveTotalCount: 1,
+      totalDifference: 5,
+    });
+    expect(
+      verificationPayload.body.data.moduleDifferences.find(
+        item => item.module === "transaction"
+      )
+    ).toMatchObject({
+      currentAggregateCount: 1,
+      archivedCount: 1,
+      difference: 0,
+    });
+    expect(verificationPayload.body.data.recentBatches[0]).toMatchObject({
+      batchId: "audit_archive_20260514120000",
+      archivedCount: 1,
+      modules: ["transaction"],
+    });
+    expect(verificationPayload.body.data.recentArchivedEvents[0]).toMatchObject(
+      {
+        id: "transaction:transaction_audit_1",
+        sourceEventId: "transaction_audit_1",
+        module: "transaction",
+        batchId: "audit_archive_20260514120000",
+      }
+    );
+    expect(readPayload.body.data.summary.totalCount).toBe(6);
+    expect(JSON.stringify(verificationPayload.body.data)).not.toContain(
+      "原始敏感风险信号"
+    );
+  });
+
+  it("keeps audit reads available when archive verification store fails", async () => {
+    class FailingVerificationStore implements AuditArchiveStore {
+      async upsertArchivedEvents() {
+        return {
+          archivedCount: 0,
+          skippedCount: 0,
+        };
+      }
+
+      async listArchivedEvents() {
+        throw new Error("归档表异常：原始敏感风险信号");
+      }
+
+      async countArchivedEvents() {
+        throw new Error("归档表异常：原始敏感风险信号");
+      }
+
+      async clear() {}
+    }
+
+    await seedAuditFacts();
+    setAuditArchiveStore(new FailingVerificationStore());
+
+    const verificationPayload = await getAuditCenterArchiveVerificationPayload(
+      admin,
+      now
+    );
+    const readPayload = await getAuditCenterEventsPayload(operator, {}, now);
+
+    expect(verificationPayload.status).toBe(500);
+    expect(verificationPayload.body.ok).toBe(false);
+    expect(readPayload.body.ok).toBe(true);
+    if (!verificationPayload.body.ok) {
+      expect(verificationPayload.body.error.message).toBe(
+        "审计归档校验暂时不可用"
+      );
+      expect(JSON.stringify(verificationPayload.body)).not.toContain(
+        "原始敏感风险信号"
+      );
+    }
   });
 
   it("returns archive failure summaries without leaking source payloads", async () => {

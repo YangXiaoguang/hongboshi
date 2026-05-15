@@ -322,6 +322,47 @@ export const AuditCenterArchiveResultSchema = z.object({
   privacyNotice: z.string().min(1),
 });
 
+export const AuditCenterArchiveModuleVerificationSchema = z.object({
+  module: AuditCenterModuleSchema,
+  currentAggregateCount: z.number().int().nonnegative(),
+  archivedCount: z.number().int().nonnegative(),
+  difference: z.number().int(),
+});
+
+export const AuditCenterArchiveBatchSummarySchema = z.object({
+  batchId: EntityIdSchema.optional(),
+  archivedCount: z.number().int().nonnegative(),
+  firstArchivedAt: DateTimeLikeSchema,
+  lastArchivedAt: DateTimeLikeSchema,
+  modules: z.array(AuditCenterModuleSchema).default([]),
+});
+
+export const AuditCenterArchivedEventSummarySchema = z.object({
+  id: EntityIdSchema,
+  sourceEventId: EntityIdSchema,
+  module: AuditCenterModuleSchema,
+  action: z.string().min(1).max(80),
+  resource: AuditCenterResourceSchema,
+  occurredAt: DateTimeLikeSchema,
+  archivedAt: DateTimeLikeSchema,
+  batchId: EntityIdSchema.optional(),
+});
+
+export const AuditCenterArchiveVerificationResultSchema = z.object({
+  generatedAt: DateTimeLikeSchema,
+  generatedBy: z.object({
+    id: EntityIdSchema,
+    roles: z.array(z.string().min(1)).min(1),
+  }),
+  currentAggregateTotalCount: z.number().int().nonnegative(),
+  archiveTotalCount: z.number().int().nonnegative(),
+  totalDifference: z.number().int(),
+  moduleDifferences: z.array(AuditCenterArchiveModuleVerificationSchema),
+  recentBatches: z.array(AuditCenterArchiveBatchSummarySchema),
+  recentArchivedEvents: z.array(AuditCenterArchivedEventSummarySchema),
+  privacyNotice: z.string().min(1),
+});
+
 export type AuditCenterModule = z.infer<typeof AuditCenterModuleSchema>;
 export type AuditCenterQuery = z.infer<typeof AuditCenterQuerySchema>;
 export type AuditCenterEvent = z.infer<typeof AuditCenterEventSchema>;
@@ -337,6 +378,9 @@ export type AuditCenterArchiveRequest = z.infer<
 >;
 export type AuditCenterArchiveResult = z.infer<
   typeof AuditCenterArchiveResultSchema
+>;
+export type AuditCenterArchiveVerificationResult = z.infer<
+  typeof AuditCenterArchiveVerificationResultSchema
 >;
 export type AuditCenterExportQuery = z.infer<
   typeof AuditCenterExportQuerySchema

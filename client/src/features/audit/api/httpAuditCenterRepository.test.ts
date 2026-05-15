@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   httpAuditCenterRepository,
+  parseAuditCenterArchiveResponse,
+  parseAuditCenterArchiveVerificationResponse,
   parseAuditCenterDetailResponse,
   parseAuditCenterListResponse,
 } from "./httpAuditCenterRepository";
@@ -89,6 +91,79 @@ const detailPayload = {
   },
 };
 
+const archivePayload = {
+  ok: true,
+  data: {
+    batchId: "audit_archive_20260514120000",
+    requestedAt: "2026-05-14T12:00:00.000Z",
+    archivedAt: "2026-05-14T12:00:00.000Z",
+    archivedBy: {
+      id: "admin_1",
+      roles: ["admin"],
+    },
+    query: {
+      module: "catalog",
+      resourceKeyword: "course_product_1",
+    },
+    scannedCount: 1,
+    archivedCount: 1,
+    skippedCount: 0,
+    failedCount: 0,
+    failures: [],
+    privacyNotice: "审计中心只聚合后台操作摘要。",
+  },
+};
+
+const verificationPayload = {
+  ok: true,
+  data: {
+    generatedAt: "2026-05-14T12:05:00.000Z",
+    generatedBy: {
+      id: "admin_1",
+      roles: ["admin"],
+    },
+    currentAggregateTotalCount: 2,
+    archiveTotalCount: 1,
+    totalDifference: 1,
+    moduleDifferences: [
+      {
+        module: "catalog",
+        currentAggregateCount: 1,
+        archivedCount: 1,
+        difference: 0,
+      },
+      {
+        module: "risk",
+        currentAggregateCount: 1,
+        archivedCount: 0,
+        difference: 1,
+      },
+    ],
+    recentBatches: [
+      {
+        batchId: "audit_archive_20260514120000",
+        archivedCount: 1,
+        firstArchivedAt: "2026-05-14T12:00:00.000Z",
+        lastArchivedAt: "2026-05-14T12:00:00.000Z",
+        modules: ["catalog"],
+      },
+    ],
+    recentArchivedEvents: [
+      {
+        id: "catalog:audit_1",
+        sourceEventId: "audit_1",
+        module: "catalog",
+        action: "status_update",
+        resource: auditEvent.resource,
+        occurredAt: auditEvent.occurredAt,
+        archivedAt: "2026-05-14T12:00:00.000Z",
+        batchId: "audit_archive_20260514120000",
+      },
+    ],
+    privacyNotice: "审计中心只聚合后台操作摘要。",
+  },
+};
+
 describe("http audit center repository", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -114,6 +189,20 @@ describe("http audit center repository", () => {
     expect(parsed.source).toMatchObject({
       module: "catalog",
       sourceEventId: "audit_1",
+    });
+  });
+
+  it("parses archive task and verification responses", () => {
+    expect(parseAuditCenterArchiveResponse(archivePayload)).toMatchObject({
+      batchId: "audit_archive_20260514120000",
+      archivedCount: 1,
+    });
+    expect(
+      parseAuditCenterArchiveVerificationResponse(verificationPayload)
+    ).toMatchObject({
+      currentAggregateTotalCount: 2,
+      archiveTotalCount: 1,
+      totalDifference: 1,
     });
   });
 
@@ -210,6 +299,55 @@ describe("http audit center repository", () => {
         headers: {
           Accept: "text/csv",
         },
+      })
+    );
+  });
+
+  it("archives audit events with current filters and strips pagination", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => archivePayload,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await httpAuditCenterRepository.archiveEvents({
+      module: "catalog",
+      resourceKeyword: "course_product_1",
+      page: 3,
+      pageSize: 20,
+    });
+
+    expect(result.archivedCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/audit/admin/archive",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+      })
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).toMatchObject({
+      module: "catalog",
+      resourceKeyword: "course_product_1",
+    });
+    expect(body).not.toHaveProperty("page");
+    expect(body).not.toHaveProperty("pageSize");
+  });
+
+  it("loads archive verification summaries", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => verificationPayload,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await httpAuditCenterRepository.loadArchiveVerification();
+
+    expect(result.totalDifference).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/audit/admin/archive/verification",
+      expect.objectContaining({
+        credentials: "same-origin",
       })
     );
   });

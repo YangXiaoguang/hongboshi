@@ -12,6 +12,7 @@ export type AuditArchiveListQuery = {
   module?: AuditCenterModule;
   batchId?: string;
   limit?: number;
+  sortBy?: "occurredAt" | "archivedAt";
 };
 
 export type AuditArchiveUpsertResult = {
@@ -34,11 +35,18 @@ function cloneArchiveEvent(event: AuditCenterArchiveEvent) {
   return AuditCenterArchiveEventSchema.parse(JSON.parse(JSON.stringify(event)));
 }
 
-function sortArchiveEvents(events: AuditCenterArchiveEvent[]) {
+function sortArchiveEvents(
+  events: AuditCenterArchiveEvent[],
+  sortBy: AuditArchiveListQuery["sortBy"] = "occurredAt"
+) {
   return [...events].sort(
     (left, right) =>
-      Date.parse(right.occurredAt) - Date.parse(left.occurredAt) ||
-      right.id.localeCompare(left.id)
+      Date.parse(
+        sortBy === "archivedAt" ? right.archivedAt : right.occurredAt
+      ) -
+        Date.parse(
+          sortBy === "archivedAt" ? left.archivedAt : left.occurredAt
+        ) || right.id.localeCompare(left.id)
   );
 }
 
@@ -83,7 +91,8 @@ export class InMemoryAuditArchiveStore implements AuditArchiveStore {
     return sortArchiveEvents(
       Array.from(this.eventsByIdempotencyKey.values()).filter(event =>
         matchesArchiveQuery(event, query)
-      )
+      ),
+      query?.sortBy
     )
       .slice(0, limit)
       .map(cloneArchiveEvent);

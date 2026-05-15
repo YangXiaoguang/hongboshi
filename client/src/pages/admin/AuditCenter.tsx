@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Archive,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Database,
   Download,
   Eye,
   FileClock,
@@ -14,12 +16,19 @@ import {
 } from "lucide-react";
 import {
   ALL_AUDIT_CENTER_MODULE,
+  AUDIT_CENTER_PERMISSIONS,
+  userCan,
+  type AuditCenterArchiveRequest,
+  type AuditCenterArchiveResult,
+  type AuditCenterArchiveVerificationResult,
   type AuditCenterDetailResult,
   type AuditCenterEvent,
   type AuditCenterListResult,
   type AuditCenterModule,
   type AuditCenterQuery,
+  type UserProfile,
 } from "@shared/domain";
+import { useAuth } from "@/contexts/AuthContext";
 import { httpAuditCenterRepository } from "@/features/audit";
 
 const moduleLabels = {
@@ -86,6 +95,39 @@ function snapshotDetailText(value: unknown) {
   const text = JSON.stringify(value, null, 2);
   if (!text || text === "{}") return "无";
   return text;
+}
+
+export function buildAuditArchiveRequest(
+  query: Partial<AuditCenterQuery>
+): Partial<AuditCenterArchiveRequest> {
+  const { page: _page, pageSize: _pageSize, ...filters } = query;
+  return Object.fromEntries(
+    Object.entries(filters).filter(
+      ([, value]) => value !== undefined && value !== null && value !== ""
+    )
+  ) as Partial<AuditCenterArchiveRequest>;
+}
+
+export function canShowAuditArchivePanel(
+  user: Pick<UserProfile, "roles"> | null | undefined
+) {
+  return Boolean(user && userCan(user, AUDIT_CENTER_PERMISSIONS.archive));
+}
+
+export function auditArchiveFilterSummary(query: Partial<AuditCenterQuery>) {
+  const request = buildAuditArchiveRequest(query);
+  const parts = [
+    request.module && request.module !== ALL_AUDIT_CENTER_MODULE
+      ? `模块：${moduleLabels[request.module]}`
+      : "模块：全部",
+    request.action ? `动作：${actionLabel(request.action)}` : undefined,
+    request.actorId ? `操作者：${request.actorId}` : undefined,
+    request.resourceKeyword ? `关键词：${request.resourceKeyword}` : undefined,
+    request.dateFrom ? `开始：${request.dateFrom}` : undefined,
+    request.dateTo ? `结束：${request.dateTo}` : undefined,
+  ].filter(Boolean);
+
+  return parts.join(" / ");
 }
 
 function ModulePill({ module }: { module: AuditCenterModule }) {
@@ -313,12 +355,23 @@ function AuditDetailDrawer({
 }
 
 export default function AuditCenter() {
+  const { user } = useAuth();
   const [data, setData] = useState<AuditCenterListResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [archiveResult, setArchiveResult] =
+    useState<AuditCenterArchiveResult | null>(null);
+  const [verification, setVerification] =
+    useState<AuditCenterArchiveVerificationResult | null>(null);
+  const [isVerificationLoading, setIsVerificationLoading] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(
+    null
+  );
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AuditCenterDetailResult | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
@@ -328,6 +381,7 @@ export default function AuditCenter() {
     page: 1,
     pageSize: 20,
   });
+  const canArchive = canShowAuditArchivePanel(user);
 
   async function load(nextQuery = query) {
     setIsLoading(true);
@@ -388,10 +442,59 @@ export default function AuditCenter() {
     }
   }
 
+  async function loadArchiveVerification() {
+    if (!canArchive) return;
+
+    setIsVerificationLoading(true);
+    setVerificationError(null);
+    try {
+      const result = await httpAuditCenterRepository.loadArchiveVerification();
+      setVerification(result);
+    } catch (err) {
+      setVerificationError(
+        err instanceof Error ? err.message : "审计归档校验暂时不可用"
+      );
+    } finally {
+      setIsVerificationLoading(false);
+    }
+  }
+
+  async function archiveCurrentFilters() {
+    if (isArchiving || !canArchive) return;
+
+    setIsArchiving(true);
+    setArchiveError(null);
+    setArchiveResult(null);
+    try {
+      const result = await httpAuditCenterRepository.archiveEvents(
+        buildAuditArchiveRequest(query)
+      );
+      setArchiveResult(result);
+      await loadArchiveVerification();
+    } catch (err) {
+      setArchiveError(
+        err instanceof Error ? err.message : "审计归档暂时不可用"
+      );
+    } finally {
+      setIsArchiving(false);
+    }
+  }
+
   useEffect(() => {
     void load(query);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
+
+  useEffect(() => {
+    if (!canArchive) {
+      setVerification(null);
+      setVerificationError(null);
+      return;
+    }
+
+    void loadArchiveVerification();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canArchive]);
 
   const moduleCounts = useMemo(() => {
     const counts = new Map(
@@ -415,6 +518,7 @@ export default function AuditCenter() {
 
   const currentPage = data?.meta.page ?? Number(query.page ?? 1);
   const totalPages = data?.meta.totalPages ?? 0;
+  const archiveFilterSummary = auditArchiveFilterSummary(query);
 
   return (
     <div className="text-[#243B35]">
@@ -469,6 +573,197 @@ export default function AuditCenter() {
           <span>{exportError ?? exportSuccess}</span>
         </div>
       )}
+
+      {canArchive ? (
+        <section className="mt-6 border border-[#D9CDC0] bg-[#FFFDF8] p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#E5ECE1] text-[#41675A]">
+                  <Archive className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold">归档控制台</h2>
+                  <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                    手动归档只使用当前筛选条件，不自动扫描全量历史或切换主审计列表来源。
+                  </p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => void archiveCurrentFilters()}
+              disabled={isArchiving}
+              className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-70"
+            >
+              {isArchiving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Archive className="h-4 w-4" />
+              )}
+              按当前筛选归档
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+            <div>
+              <p className="text-xs font-semibold text-[#8A8176]">当前筛选</p>
+              <p className="mt-2 break-all text-sm font-semibold leading-6 text-[#243B35]">
+                {archiveFilterSummary}
+              </p>
+
+              {archiveError ? (
+                <div className="mt-4 flex items-center gap-2 rounded-lg border border-[#F0C7B7] bg-[#FFF0EA] px-4 py-3 text-sm text-[#AD503A]">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>{archiveError}</span>
+                </div>
+              ) : null}
+
+              {archiveResult ? (
+                <div
+                  className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
+                    archiveResult.failedCount
+                      ? "border-[#F0C7B7] bg-[#FFF0EA] text-[#8A4D3C]"
+                      : "border-[#C9DDC8] bg-[#F2F8EF] text-[#41675A]"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-semibold">
+                    {archiveResult.failedCount ? (
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    )}
+                    <span>批次 {archiveResult.batchId}</span>
+                  </div>
+                  <p className="mt-2 leading-6">
+                    扫描 {archiveResult.scannedCount} 条，成功{" "}
+                    {archiveResult.archivedCount} 条，跳过{" "}
+                    {archiveResult.skippedCount} 条，失败{" "}
+                    {archiveResult.failedCount} 条。
+                  </p>
+                  {archiveResult.failures.length ? (
+                    <ul className="mt-2 space-y-1 text-xs leading-5">
+                      {archiveResult.failures
+                        .slice(0, 3)
+                        .map((failure, index) => (
+                          <li
+                            key={`${index}-${failure.module}-${failure.eventId}`}
+                          >
+                            {failure.module ?? "unknown"} /{" "}
+                            {failure.eventId ??
+                              failure.sourceEventId ??
+                              "unknown"}
+                            ：{failure.message}
+                          </li>
+                        ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="border-t border-[#E8DED0] pt-5 xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Database className="h-4 w-4 text-[#6F8F83]" />
+                    <h3 className="text-sm font-semibold">只读校验</h3>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                    对比归档表和当前聚合口径，只返回计数和摘要。
+                  </p>
+                </div>
+                <button
+                  onClick={() => void loadArchiveVerification()}
+                  disabled={isVerificationLoading}
+                  title="刷新归档校验"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#CAD8D2] bg-white text-[#41675A] transition hover:bg-[#F4F8F5] disabled:cursor-wait disabled:opacity-70"
+                >
+                  {isVerificationLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+
+              {verificationError ? (
+                <div className="mt-4 flex items-center gap-2 rounded-lg border border-[#F0C7B7] bg-[#FFF0EA] px-4 py-3 text-sm text-[#AD503A]">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>{verificationError}</span>
+                </div>
+              ) : verification ? (
+                <div className="mt-4">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="bg-[#F7F4EF] px-3 py-3">
+                      <p className="text-xs text-[#8A8176]">当前聚合</p>
+                      <p className="mt-1 text-xl font-semibold">
+                        {verification.currentAggregateTotalCount}
+                      </p>
+                    </div>
+                    <div className="bg-[#F4F7F3] px-3 py-3">
+                      <p className="text-xs text-[#8A8176]">已归档</p>
+                      <p className="mt-1 text-xl font-semibold">
+                        {verification.archiveTotalCount}
+                      </p>
+                    </div>
+                    <div className="bg-[#F8F3EA] px-3 py-3">
+                      <p className="text-xs text-[#8A8176]">差异</p>
+                      <p className="mt-1 text-xl font-semibold">
+                        {verification.totalDifference}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 text-xs leading-5 text-[#66716A]">
+                    {verification.moduleDifferences
+                      .filter(
+                        item =>
+                          item.currentAggregateCount > 0 ||
+                          item.archivedCount > 0
+                      )
+                      .slice(0, 6)
+                      .map(item => (
+                        <div
+                          key={item.module}
+                          className="flex items-center justify-between gap-3 border-b border-[#E8DED0] py-1 last:border-b-0"
+                        >
+                          <span>{moduleLabels[item.module]}</span>
+                          <span>
+                            当前 {item.currentAggregateCount} / 归档{" "}
+                            {item.archivedCount} / 差异 {item.difference}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="mt-4 text-xs leading-5 text-[#66716A]">
+                    <p className="font-semibold text-[#243B35]">最近批次</p>
+                    {verification.recentBatches.length ? (
+                      <ul className="mt-2 space-y-1">
+                        {verification.recentBatches.slice(0, 3).map(batch => (
+                          <li key={batch.batchId ?? batch.lastArchivedAt}>
+                            {batch.batchId ?? "无批次"}：{batch.archivedCount}{" "}
+                            条，
+                            {batch.modules
+                              .map(item => moduleLabels[item])
+                              .join(" / ")}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-[#8A8176]">暂无归档批次。</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 text-sm text-[#8A8176]">
+                  正在读取归档校验摘要
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-6 grid border-y border-[#E1D7C8] bg-[#FFFDF8] md:grid-cols-3 xl:grid-cols-6">
         {moduleCounts.map(item => (

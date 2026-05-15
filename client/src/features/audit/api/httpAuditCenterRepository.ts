@@ -1,9 +1,15 @@
 import {
   ApiResponseSchema,
+  AuditCenterArchiveRequestSchema,
+  AuditCenterArchiveResultSchema,
+  AuditCenterArchiveVerificationResultSchema,
   AuditCenterDetailResultSchema,
   AuditCenterExportQuerySchema,
   AuditCenterListResultSchema,
   AuditCenterQuerySchema,
+  type AuditCenterArchiveRequest,
+  type AuditCenterArchiveResult,
+  type AuditCenterArchiveVerificationResult,
   type AuditCenterDetailResult,
   type AuditCenterListResult,
   type AuditCenterQuery,
@@ -15,6 +21,12 @@ const AuditCenterListResponseSchema = ApiResponseSchema(
 const AuditCenterDetailResponseSchema = ApiResponseSchema(
   AuditCenterDetailResultSchema
 );
+const AuditCenterArchiveResponseSchema = ApiResponseSchema(
+  AuditCenterArchiveResultSchema
+);
+const AuditCenterArchiveVerificationResponseSchema = ApiResponseSchema(
+  AuditCenterArchiveVerificationResultSchema
+);
 const API_BASE = "/api/audit/admin";
 
 export type AuditCenterCsvDownload = {
@@ -24,6 +36,9 @@ export type AuditCenterCsvDownload = {
   exportId?: string;
   policyVersion?: string;
 };
+
+type AuditCenterArchiveRequestInput = Partial<AuditCenterArchiveRequest> &
+  Partial<Pick<AuditCenterQuery, "page" | "pageSize">>;
 
 async function readJson(response: Response): Promise<unknown> {
   try {
@@ -49,10 +64,28 @@ export function parseAuditCenterDetailResponse(
   return parsed.data;
 }
 
+export function parseAuditCenterArchiveResponse(
+  payload: unknown
+): AuditCenterArchiveResult {
+  const parsed = AuditCenterArchiveResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseAuditCenterArchiveVerificationResponse(
+  payload: unknown
+): AuditCenterArchiveVerificationResult {
+  const parsed = AuditCenterArchiveVerificationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
-  const parsed = AuditCenterListResponseSchema.safeParse(payload);
-  if (parsed.success && !parsed.data.ok) {
-    return parsed.data.error.message;
+  if (typeof payload === "object" && payload !== null) {
+    const error = (payload as { error?: { message?: unknown } }).error;
+    if (typeof error?.message === "string" && error.message.length > 0) {
+      return error.message;
+    }
   }
 
   return fallback;
@@ -82,6 +115,17 @@ function queryStringFromAuditCenterExportQuery(
   });
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
+}
+
+function auditCenterArchiveRequestBody(
+  query: AuditCenterArchiveRequestInput = {}
+) {
+  const normalized = AuditCenterArchiveRequestSchema.partial().parse(query);
+  return Object.fromEntries(
+    Object.entries(normalized).filter(
+      ([, value]) => value !== undefined && value !== null && value !== ""
+    )
+  );
 }
 
 function filenameFromContentDisposition(value: string | null) {
@@ -162,5 +206,40 @@ export const httpAuditCenterRepository = {
       policyVersion:
         response.headers.get("X-Hongboshi-Audit-Policy-Version") ?? undefined,
     };
+  },
+
+  async archiveEvents(
+    query: AuditCenterArchiveRequestInput = {}
+  ): Promise<AuditCenterArchiveResult> {
+    const response = await fetch(`${API_BASE}/archive`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(auditCenterArchiveRequestBody(query)),
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "审计归档暂时不可用"));
+    }
+    return parseAuditCenterArchiveResponse(payload);
+  },
+
+  async loadArchiveVerification(): Promise<AuditCenterArchiveVerificationResult> {
+    const response = await fetch(`${API_BASE}/archive/verification`, {
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "审计归档校验暂时不可用"));
+    }
+    return parseAuditCenterArchiveVerificationResponse(payload);
   },
 };

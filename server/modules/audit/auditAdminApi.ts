@@ -13,6 +13,7 @@ import {
   AuditCenterArchiveEventSchema,
   AuditCenterArchiveRequestSchema,
   AuditCenterArchiveResultSchema,
+  AuditCenterArchiveVerificationResultSchema,
   AuditCenterDetailResultSchema,
   AuditCenterEventSchema,
   AuditCenterExportQuerySchema,
@@ -25,6 +26,7 @@ import {
   type AuditCenterArchiveEvent,
   type AuditCenterArchiveRequest,
   type AuditCenterArchiveResult,
+  type AuditCenterArchiveVerificationResult,
   type AuditCenterDetailResult,
   type AuditCenterEvent,
   type AuditCenterExport,
@@ -65,6 +67,9 @@ const AuditCenterDetailResponseSchema = ApiResponseSchema(
 );
 const AuditCenterArchiveResponseSchema = ApiResponseSchema(
   AuditCenterArchiveResultSchema
+);
+const AuditCenterArchiveVerificationResponseSchema = ApiResponseSchema(
+  AuditCenterArchiveVerificationResultSchema
 );
 
 const privacyNotice =
@@ -836,6 +841,124 @@ async function buildAuditCenterArchiveResult(
   });
 }
 
+function archivedEventSummary(event: AuditCenterArchiveEvent) {
+  return {
+    id: event.id,
+    sourceEventId: event.source.sourceEventId,
+    module: event.module,
+    action: event.action,
+    resource: event.resource,
+    occurredAt: event.occurredAt,
+    archivedAt: event.archivedAt,
+    batchId: event.backfillBatchId,
+  };
+}
+
+function recentBatchSummaries(events: AuditCenterArchiveEvent[]) {
+  const batches = new Map<
+    string,
+    {
+      batchId?: string;
+      archivedCount: number;
+      firstArchivedAt: string;
+      lastArchivedAt: string;
+      modules: Set<AuditCenterModule>;
+    }
+  >();
+
+  for (const event of events) {
+    const key = event.backfillBatchId ?? "unbatched";
+    const existing = batches.get(key);
+    const archivedAt = event.archivedAt;
+
+    if (!existing) {
+      batches.set(key, {
+        batchId: event.backfillBatchId,
+        archivedCount: 1,
+        firstArchivedAt: archivedAt,
+        lastArchivedAt: archivedAt,
+        modules: new Set([event.module]),
+      });
+      continue;
+    }
+
+    existing.archivedCount += 1;
+    existing.modules.add(event.module);
+    if (Date.parse(archivedAt) < Date.parse(existing.firstArchivedAt)) {
+      existing.firstArchivedAt = archivedAt;
+    }
+    if (Date.parse(archivedAt) > Date.parse(existing.lastArchivedAt)) {
+      existing.lastArchivedAt = archivedAt;
+    }
+  }
+
+  return Array.from(batches.values())
+    .map(batch => ({
+      batchId: batch.batchId,
+      archivedCount: batch.archivedCount,
+      firstArchivedAt: batch.firstArchivedAt,
+      lastArchivedAt: batch.lastArchivedAt,
+      modules: Array.from(batch.modules).sort(),
+    }))
+    .sort(
+      (left, right) =>
+        Date.parse(right.lastArchivedAt) - Date.parse(left.lastArchivedAt)
+    )
+    .slice(0, 5);
+}
+
+async function buildAuditCenterArchiveVerification(
+  actor: AuditCenterActor,
+  now: string
+): Promise<AuditCenterArchiveVerificationResult> {
+  const currentEvents = await collectAuditCenterEvents();
+  const currentSummary = buildSummary(currentEvents);
+  const archiveStore = getAuditArchiveStore();
+  const [archiveTotalCount, recentArchivedEvents, archivedModuleCounts] =
+    await Promise.all([
+      archiveStore.countArchivedEvents(),
+      archiveStore.listArchivedEvents({
+        limit: 200,
+        sortBy: "archivedAt",
+      }),
+      Promise.all(
+        AuditCenterModuleSchema.options.map(module =>
+          archiveStore.countArchivedEvents({ module })
+        )
+      ),
+    ]);
+  const currentCountByModule = new Map(
+    currentSummary.moduleCounts.map(item => [item.module, item.count])
+  );
+
+  return AuditCenterArchiveVerificationResultSchema.parse({
+    generatedAt: now,
+    generatedBy: {
+      id: actor.id,
+      roles: [...actor.roles],
+    },
+    currentAggregateTotalCount: currentSummary.totalCount,
+    archiveTotalCount,
+    totalDifference: currentSummary.totalCount - archiveTotalCount,
+    moduleDifferences: AuditCenterModuleSchema.options.map((module, index) => {
+      const currentAggregateCount = currentCountByModule.get(module) ?? 0;
+      const archivedCount = archivedModuleCounts[index] ?? 0;
+
+      return {
+        module,
+        currentAggregateCount,
+        archivedCount,
+        difference: currentAggregateCount - archivedCount,
+      };
+    }),
+    recentBatches: recentBatchSummaries(recentArchivedEvents),
+    recentArchivedEvents: recentArchivedEvents
+      .slice(0, 10)
+      .map(archivedEventSummary),
+    privacyNotice,
+  });
+}
+
 function stringValue(value: unknown) {
   if (Array.isArray(value)) return stringValue(value[0]);
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -949,6 +1072,40 @@ export async function getAuditCenterArchivePayload(
   } as const;
 }
 
+export async function getAuditCenterArchiveVerificationPayload(
+  actor: AuditCenterActor | null | undefined,
+  now = new Date().toISOString()
+) {
+  const denied = denyUnauthorizedArchiveActor(actor);
+  if (denied) {
+    return {
+      ...denied,
+      body:
+        denied.status === 401
+          ? errorPayload("UNAUTHORIZED", "请先登录后校验审计归档")
+          : errorPayload("FORBIDDEN", "当前账号暂无审计归档校验权限"),
+    } as const;
+  }
+
+  try {
+    return {
+      status: 200,
+      body: AuditCenterArchiveVerificationResponseSchema.parse({
+        ok: true,
+        data: await buildAuditCenterArchiveVerification(
+          actor as AuditCenterActor,
+          now
+        ),
+      }),
+    } as const;
+  } catch {
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "审计归档校验暂时不可用"),
+    } as const;
+  }
+}
+
 export async function getAuditCenterExportPayload(
   actor: AuditCenterActor | null | undefined,
   rawQuery: Record<string, unknown>,
@@ -1023,6 +1180,17 @@ export function registerAuditAdminApi(app: Express) {
     sendJson(res, payload.status, payload.body);
   });
 
+  app.get(
+    "/api/audit/admin/archive/verification",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getAuditCenterArchiveVerificationPayload(
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
   app.get("/api/audit/admin/export", async (req: Request, res: Response) => {
     const session = await getLoginSessionFromRequest(req);
     const payload = await getAuditCenterExportPayload(
@@ -1076,6 +1244,23 @@ export function handleAuditAdminApiRequest(
     })().catch(err => {
       console.error(err instanceof Error ? err.message : "审计事件归档失败");
       sendJson(res, 500, errorPayload("INTERNAL_ERROR", "审计事件归档失败"));
+    });
+    return true;
+  }
+
+  if (
+    req.method === "GET" &&
+    url.pathname === "/api/audit/admin/archive/verification"
+  ) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getAuditCenterArchiveVerificationPayload(
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "审计归档校验失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "审计归档校验失败"));
     });
     return true;
   }

@@ -215,12 +215,14 @@ export class PostgresAuditArchiveStore implements AuditArchiveStore {
   async listArchivedEvents(query?: AuditArchiveListQuery) {
     const where = listWhereClause(query);
     const limit = query?.limit ?? 100;
+    const orderColumn =
+      query?.sortBy === "archivedAt" ? "archived_at" : "occurred_at";
     const result = await this.db.query<AuditArchiveRow>(
       `
         SELECT ${archiveReturningSql}
         FROM audit_center_archived_events
         ${where.text}
-        ORDER BY occurred_at DESC, id DESC
+        ORDER BY ${orderColumn} DESC, id DESC
         LIMIT $3
       `,
       [...where.values, limit]
