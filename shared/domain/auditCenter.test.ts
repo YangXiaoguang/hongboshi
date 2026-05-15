@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  AuditCenterDetailResultSchema,
+  AuditCenterExportQuerySchema,
+  AuditCenterExportSchema,
   AuditCenterListResultSchema,
   AuditCenterQuerySchema,
   type AuditCenterEvent,
@@ -99,6 +102,101 @@ describe("audit center domain contract", () => {
       resource: {
         type: "course_product",
       },
+    });
+  });
+
+  it("validates export metadata and strips pagination from export queries", () => {
+    const query = AuditCenterExportQuerySchema.parse({
+      module: "catalog",
+      resourceKeyword: "course_product_1",
+      page: 8,
+    });
+
+    expect(query).toMatchObject({
+      module: "catalog",
+      resourceKeyword: "course_product_1",
+      format: "csv",
+    });
+    expect(query).not.toHaveProperty("page");
+
+    const parsed = AuditCenterExportSchema.parse({
+      metadata: {
+        exportId: "audit_export_20260514100100",
+        format: "csv",
+        filename: "hongboshi-audit-20260514100100.csv",
+        generatedAt: "2026-05-14T10:01:00.000Z",
+        generatedBy: {
+          id: "operator_1",
+          roles: ["operator"],
+        },
+        query,
+        summary: {
+          totalCount: 1,
+          moduleCounts: [
+            { module: "catalog", count: 1 },
+            { module: "user", count: 0 },
+            { module: "order", count: 0 },
+            { module: "transaction", count: 0 },
+            { module: "counseling", count: 0 },
+            { module: "risk", count: 0 },
+          ],
+        },
+        rowCount: 1,
+        policyVersion: "audit-center-csv-v1",
+        fields: [
+          {
+            key: "occurredAt",
+            label: "发生时间",
+            description: "审计事件发生时间。",
+          },
+        ],
+        privacyNotice: "审计中心只聚合后台操作摘要。",
+      },
+      rows: [
+        {
+          occurredAt: event.occurredAt,
+          module: event.module,
+          action: event.action,
+          resourceType: event.resource.type,
+          resourceId: event.resource.id,
+          resourceLabel: event.resource.label,
+          actorId: event.actor.id,
+          actorRoles: event.actor.roles,
+          reason: event.reason,
+          summary: event.summary,
+          sourceEventId: event.sourceEventId,
+          auditEventId: event.id,
+          beforeSummary: '{"status":"draft"}',
+          afterSummary: '{"status":"published"}',
+        },
+      ],
+      csv: "metadata_key,metadata_value\npolicyVersion,audit-center-csv-v1",
+      filename: "hongboshi-audit-20260514100100.csv",
+      contentType: "text/csv; charset=utf-8",
+    });
+
+    expect(parsed.metadata.rowCount).toBe(1);
+    expect(parsed.rows[0].auditEventId).toBe("catalog:audit_1");
+  });
+
+  it("validates event detail payloads with source trace hints", () => {
+    const parsed = AuditCenterDetailResultSchema.parse({
+      event,
+      source: {
+        module: "catalog",
+        sourceEventId: "audit_1",
+        resourceType: "course_product",
+        resourceId: "course_product_1",
+        resourceLabel: "亲密关系修复课",
+        traceHint: "来源模块 catalog 的原始事件 audit_1",
+      },
+      privacyNotice: "审计中心只聚合后台操作摘要。",
+      generatedAt: "2026-05-14T10:01:00.000Z",
+    });
+
+    expect(parsed.source).toMatchObject({
+      module: "catalog",
+      sourceEventId: "audit_1",
     });
   });
 });

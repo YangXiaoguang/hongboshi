@@ -4,13 +4,13 @@
 
 ## 当前指针
 
-- 最后更新时间：2026-05-14 Asia/Shanghai
+- 最后更新时间：2026-05-15 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M9-B 审计导出与事件详情追踪基础`
-- 当前状态：`M9-A 统一审计中心只读聚合基础` 已完成，审计中心已可只读聚合课程商品、会员、订单、交易、咨询运营和风险复核既有审计事实。
-- 本轮完成后下一步：执行 `M9-B 审计导出与事件详情追踪基础`
+- 当前阶段：`M9-C 统一审计 Store 方案与归档边界预研`
+- 当前状态：`M9-B 审计导出与事件详情追踪基础` 已完成，审计中心已可按当前筛选条件导出 CSV，并可按归一化事件 ID 查看来源详情。
+- 本轮完成后下一步：执行 `M9-C 统一审计 Store 方案与归档边界预研`
 
 ## 已完成关键能力
 
@@ -144,57 +144,59 @@
 - 课程权益 Store 与交易操作 Store 已补充全量审计读取方法，PostgreSQL Store 同步支持审计中心聚合所需读取边界。
 - 新增 `/admin/audit` 审计中心页面，支持模块、动作、操作者、资源关键词和日期范围筛选，展示资源摘要、操作者、原因和 before/after 摘要。
 - 后台导航已将审计中心从“规划”切换为“可用”，后台首页实施路线已同步到 M9-A。
+- 建立审计中心导出契约 `AuditCenterExportSchema`，导出剥离分页并包含生成时间、操作者、筛选快照、口径版本、字段定义、模块汇总和 before/after 摘要。
+- 新增 `/api/audit/admin/export`，复用 `audit:read` 权限和 M9-A 聚合筛选逻辑，输出 CSV 且保持只读隐私边界。
+- 建立审计事件详情契约 `AuditCenterDetailResultSchema` 和 `/api/audit/admin/events/:eventId`，可按归一化事件 ID 定位来源模块、源事件 ID 和资源摘要。
+- `/admin/audit` 已加入导出 CSV 入口、导出反馈、事件详情抽屉和来源定位提示。
+- Vite 开发中间件已接入 `handleAuditAdminApiRequest`，开发环境 `/api/audit/admin/*` 与生产 Express 保持一致。
 
 ## 最近完成阶段
 
-M9-A 统一审计中心只读聚合基础已交付：
+M9-B 审计导出与事件详情追踪基础已交付：
 
-- `shared/domain/auditCenter.ts`：新增审计中心模块、查询、事件、摘要、筛选项和列表结果契约，并从 `shared/domain/index.ts` 导出。
-- `shared/domain/user.ts`：新增 `audit:read` 权限和 `AUDIT_CENTER_PERMISSIONS`，默认授予 `operator` 与 `admin`。
-- `server/modules/audit/auditAdminApi.ts`：新增审计中心服务端聚合器和 `/api/audit/admin/events`，统一读取课程商品、会员、订单、交易、咨询运营和风险复核既有审计事实。
-- `server/modules/courses/*` 与 `server/modules/transactions/*`：补齐审计中心所需的全量审计读取方法，内存、JSON 和 PostgreSQL Store 保持同一接口。
-- `server/modules/counseling/counselingApi.ts` 与 `server/modules/risk/riskAdminApi.ts`：开放咨询运营审计和风险复核记录的只读聚合边界。
-- `client/src/features/audit` 与 `client/src/pages/admin/AuditCenter.tsx`：新增前端仓储和审计中心页面，支持筛选、摘要统计、事件列表和 before/after 摘要展示。
-- `client/src/features/admin/adminNavigation.ts`、`client/src/App.tsx` 与 `client/src/pages/admin/AdminHome.tsx`：审计中心切换为可用模块，并接入 `/admin/audit` 路由和后台首页状态。
-- README、领域契约、数据库说明、产品路线、后台路线图和本文件已同步 M9-A 状态与下一步。
-- 新增 `shared/domain/auditCenter.test.ts`、`server/modules/audit/auditAdminApi.test.ts` 和 `client/src/features/audit/api/httpAuditCenterRepository.test.ts`，并更新权限、导航、Store 全量审计读取测试。
+- `shared/domain/auditCenter.ts`：新增 `AuditCenterExportSchema`、`AuditCenterExportQuerySchema`、`AuditCenterDetailResultSchema`、导出字段定义、口径版本和 CSV content type。
+- `server/modules/audit/auditAdminApi.ts`：新增 `/api/audit/admin/export` 和 `/api/audit/admin/events/:eventId`，复用 `audit:read`、同一套筛选逻辑和隐私边界。
+- `client/src/features/audit/api/httpAuditCenterRepository.ts`：新增 CSV 导出下载解析和事件详情读取，并保持 API 错误透传。
+- `client/src/pages/admin/AuditCenter.tsx`：新增导出按钮、导出中/成功/失败状态、筛选快照提示、事件详情抽屉和来源定位提示。
+- `vite.config.ts`：开发服务已接入 `handleAuditAdminApiRequest`，避免本地 `/api/audit/admin/*` 走 Vite HTML fallback。
+- `client/src/pages/admin/AdminHome.tsx`、README、领域契约、数据库说明、产品路线、后台路线图和本文件已同步 M9-B 状态与下一步。
+- 更新 `shared/domain/auditCenter.test.ts`、`server/modules/audit/auditAdminApi.test.ts` 和 `client/src/features/audit/api/httpAuditCenterRepository.test.ts`，覆盖导出、详情、权限、参数、CSV 元数据和前端仓储。
 
-M9-A 验收结果：
+M9-B 验收结果：
 
-- 运营或管理员可在 `/admin/audit` 查看跨模块审计事件，普通会员不可读取 API。
-- 审计列表能解释事件来自哪个模块、谁操作、操作了什么资源、发生时间、原因和状态摘要。
-- 课程商品、会员、订单、交易、咨询运营和风险复核均已有审计事实进入统一列表。
-- 审计中心只读，不改写业务 Store 或审计事实。
+- 运营或管理员可按当前筛选条件导出审计 CSV，普通会员和咨询师不可导出。
+- 导出文件包含生成时间、筛选条件、口径版本、字段定义和模块汇总，且导出不受当前分页影响。
+- 单条审计事件详情能定位来源模块和源事件 ID，并解释资源、操作者、动作、原因、时间和 before/after 摘要。
+- 审计导出和详情只读，不改写业务 Store 或审计事实。
 - 隐私最小化边界不回退，不展示测评答案、咨询说明、风险信号原文和支付敏感原文。
 - 现有后台模块能力不回退。
-- `pnpm run ci` 已通过：类型检查、76 个测试文件 / 338 个测试和生产构建均完成。
+- `pnpm run ci` 已通过：类型检查、76 个测试文件 / 347 个测试和生产构建均完成。
 
 ## 下一步任务包
 
-### M9-B: 审计导出与事件详情追踪基础
+### M9-C: 统一审计 Store 方案与归档边界预研
 
 业务目标：
 
-在 M9-A 只读聚合基础上，补齐运营审计常用的“可带走”和“可定位”能力。第一步继续保持只读，不引入跨模块写入真相源：基于同一套筛选条件输出 CSV 导出，并提供单条审计事件详情读取/定位契约，为后续统一审计 Store、长期归档和合规审计报告打基础。
+在 M9-A/M9-B 的只读聚合、导出和详情基础上，设计统一审计 Store 的可维护落地方案。当前阶段优先做方案化和最小归档边界，不急于替换各业务 Store 的审计事实源：明确只追加归档表、回填策略、索引、幂等键、隐私字段白名单和迁移风险，为后续长期合规审计、性能优化和跨模块检索打基础。
 
 实施范围：
 
-- 在 `shared/domain/auditCenter.ts` 扩展导出契约，例如 `AuditCenterExportSchema`、导出字段定义、筛选快照、生成时间、操作者和口径版本。
-- 新增 `/api/audit/admin/export`，复用 `audit:read` 权限和 M9-A 聚合筛选逻辑，输出 CSV，字段包含时间、模块、动作、资源类型/ID/名称、操作者、原因、摘要和 source event ID。
-- 新增单条事件详情读取能力，例如 `/api/audit/admin/events/:eventId`，从聚合列表按归一化事件 ID 定位源事件，返回同一隐私边界下的详情摘要和来源模块提示。
-- `/admin/audit` 增加导出入口、导出中/失败状态、筛选快照提示和事件详情抽屉。
-- 导出和详情仍不展示咨询说明、测评答案、风险信号原文和支付敏感原文；before/after 继续使用摘要快照。
-- 补充导出、详情、权限失败、参数失败、前端 repository 和页面状态测试。
+- 新增 `docs/audit-store-architecture.md`，明确统一审计 Store 的业务目标、非目标、数据流、写入模式、回填模式、索引策略、隐私白名单和失败恢复策略。
+- 在 `shared/domain/auditCenter.ts` 评估是否需要补充归档事件版本、幂等键或 source descriptor 契约；若需要，保持向前兼容。
+- 设计 PostgreSQL 归档表草案，但本阶段默认不把业务写动作切换到新表；如新增 migration，应只建只追加归档表和索引，不改写既有业务表。
+- 明确 M9-D 的最小落地切片：优先选择一个低风险模块做双写/回填试点，还是先做定时归档任务。
+- 补充方案测试或 schema 测试，确保归档表草案包含唯一幂等键、模块/动作/资源/操作者/时间索引和隐私摘要字段。
 - 更新 README、`docs/domain-contracts.md`、`docs/database-schema.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
 - 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add audit center export flow`
+- 提交并推送，建议 commit message：`Document audit store architecture`
 
 验收标准：
 
-- 运营或管理员可按当前筛选条件导出审计 CSV，普通会员和咨询师不可导出。
-- 导出文件包含生成时间、筛选条件、口径版本和稳定字段定义，便于后续合规归档。
-- 单条审计事件详情能定位来源模块和源事件 ID，并解释资源、操作者、动作、原因、时间和 before/after 摘要。
-- 审计导出和详情只读，不会改写任何业务 Store 或审计事实。
+- 统一审计 Store 方案能解释为什么当前不直接替换各业务 Store 真相源。
+- 归档表草案包含稳定事件 ID、source event ID、模块、动作、资源、操作者、角色、原因、摘要、before/after 摘要、发生时间、归档时间和口径版本。
+- 隐私白名单明确禁止咨询说明、测评答案、风险信号原文和支付敏感原文进入统一归档。
+- 后续 M9-D 的实现切片足够小，可一次完成、测试、提交和回滚。
 - 隐私最小化边界不回退，不展示测评答案、咨询说明、风险信号原文和支付敏感原文。
 - 现有后台模块能力不回退。
 - CI 通过。

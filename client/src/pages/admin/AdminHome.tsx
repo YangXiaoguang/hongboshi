@@ -53,6 +53,7 @@ const implementationRows = [
   ["M8-B", "风险 SOP", "已完成", "SOP 模板、结果模板和升级队列"],
   ["M8-C", "风险持久化", "已完成", "PostgreSQL Store 和审计投影字段"],
   ["M9-A", "审计中心", "已完成", "跨模块操作日志只读聚合和隐私边界"],
+  ["M9-B", "审计导出", "已完成", "CSV 导出、事件详情和来源定位"],
 ] as const;
 
 const overviewMetrics: {
@@ -61,7 +62,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "M9-B", icon: GitBranch },
+  { label: "下一阶段", value: "M9-C", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -86,7 +87,7 @@ export default function AdminHome() {
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
             当前后台已接入咨询师档案、咨询排班运营、服务记录与履约异常、支付对账、课程商品、用户会员、订单管理、交易退款、财务管理、风险复核、风险
-            SOP、升级队列、风险持久化和审计中心，后续按导出闭环、协作通知和质检继续扩展。
+            SOP、升级队列、风险持久化和审计中心，后续按统一归档、协作通知和质检继续扩展。
           </p>
         </div>
         <button
@@ -200,8 +201,9 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经完成 M9-A
-              统一审计中心只读聚合基础，下一步进入审计导出、通知协作或质检运营。
+              当前连续执行状态已经完成 M9-B
+              审计导出与事件详情追踪基础，下一步进入统一审计 Store
+              方案或风险通知协作。
             </p>
           </div>
           <div className="overflow-x-auto">

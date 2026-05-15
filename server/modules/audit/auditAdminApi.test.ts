@@ -32,7 +32,11 @@ import {
   setTransactionOperationStore,
   type TransactionOperationStore,
 } from "../transactions/transactionOperationStore";
-import { getAuditCenterEventsPayload } from "./auditAdminApi";
+import {
+  getAuditCenterEventDetailPayload,
+  getAuditCenterEventsPayload,
+  getAuditCenterExportPayload,
+} from "./auditAdminApi";
 
 const operator = { id: "operator_1", roles: ["operator" as const] };
 const admin = { id: "admin_1", roles: ["admin" as const] };
@@ -278,6 +282,110 @@ describe("audit admin api payloads", () => {
     expect(datePayload.body.data.summary.totalCount).toBe(6);
   });
 
+  it("exports filtered audit events as CSV with metadata", async () => {
+    await seedAuditFacts();
+
+    const payload = await getAuditCenterExportPayload(
+      operator,
+      {
+        module: "transaction",
+        resourceKeyword: "txn_1",
+        page: 9,
+      },
+      now
+    );
+
+    expect(payload.status).toBe(200);
+    expect("csv" in payload.body).toBe(true);
+    if (!("csv" in payload.body)) throw new Error("expected CSV export");
+
+    expect(payload.body.filename).toBe("hongboshi-audit-20260514120000.csv");
+    expect(payload.body.contentType).toBe("text/csv; charset=utf-8");
+    expect(payload.body.metadata).toMatchObject({
+      generatedAt: now,
+      generatedBy: {
+        id: "operator_1",
+        roles: ["operator"],
+      },
+      rowCount: 1,
+      policyVersion: "audit-center-csv-v1",
+    });
+    expect(payload.body.metadata.query).toMatchObject({
+      module: "transaction",
+      resourceKeyword: "txn_1",
+      format: "csv",
+    });
+    expect(payload.body.metadata.query).not.toHaveProperty("page");
+    expect(payload.body.rows[0]).toMatchObject({
+      module: "transaction",
+      sourceEventId: "transaction_audit_1",
+      auditEventId: "transaction:transaction_audit_1",
+      resourceId: "txn_1",
+    });
+    expect(payload.body.csv).toContain("metadata_key,metadata_value");
+    expect(payload.body.csv).toContain("policyVersion,audit-center-csv-v1");
+    expect(payload.body.csv).toContain("发生时间,模块,动作");
+    expect(payload.body.csv).toContain("request_refund");
+    expect(payload.body.csv).not.toContain("原始敏感风险信号");
+  });
+
+  it("requires audit read permission for CSV export and event details", async () => {
+    expect((await getAuditCenterExportPayload(null, {})).status).toBe(401);
+    expect((await getAuditCenterExportPayload(member, {})).status).toBe(403);
+
+    expect(
+      (await getAuditCenterEventDetailPayload(null, "risk:risk_record_1"))
+        .status
+    ).toBe(401);
+    expect(
+      (await getAuditCenterEventDetailPayload(member, "risk:risk_record_1"))
+        .status
+    ).toBe(403);
+  });
+
+  it("returns event details with source trace information", async () => {
+    await seedAuditFacts();
+
+    const payload = await getAuditCenterEventDetailPayload(
+      operator,
+      "risk:risk_record_1",
+      now
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (!payload.body.ok) throw new Error("expected audit event detail");
+
+    expect(payload.body.data.event).toMatchObject({
+      id: "risk:risk_record_1",
+      module: "risk",
+      action: "escalate",
+      sourceEventId: "risk_record_1",
+    });
+    expect(payload.body.data.source).toMatchObject({
+      module: "risk",
+      sourceEventId: "risk_record_1",
+      resourceType: "risk_event",
+      resourceId: "risk_event_1",
+    });
+    expect(payload.body.data.source.traceHint).toContain("risk_record_1");
+    expect(JSON.stringify(payload.body.data)).not.toContain("原始敏感风险信号");
+  });
+
+  it("returns not found for missing audit event details", async () => {
+    const payload = await getAuditCenterEventDetailPayload(
+      operator,
+      "risk:missing",
+      now
+    );
+
+    expect(payload.status).toBe(404);
+    expect(payload.body.ok).toBe(false);
+    if (!payload.body.ok) {
+      expect(payload.body.error.code).toBe("NOT_FOUND");
+    }
+  });
+
   it("rejects invalid audit center query values", async () => {
     const payload = await getAuditCenterEventsPayload(
       admin,
@@ -290,5 +398,10 @@ describe("audit admin api payloads", () => {
     if (!payload.body.ok) {
       expect(payload.body.error.code).toBe("BAD_REQUEST");
     }
+
+    expect(
+      (await getAuditCenterExportPayload(admin, { module: "finance" }, now))
+        .status
+    ).toBe(400);
   });
 });
