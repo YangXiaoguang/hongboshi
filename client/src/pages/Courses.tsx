@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -9,10 +10,15 @@ import { useLocation } from "wouter";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
 import CourseDiscoverySection from "@/components/CourseDiscoverySection";
+import CoursePathSection from "@/components/CoursePathSection";
+import CourseStarterLanes from "@/components/CourseStarterLanes";
 import {
+  DEFAULT_COURSE_LEARNING_PATH_ID,
+  getCourseLearningPath,
   useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
+  type CourseLearningPath,
 } from "@/features/courses";
 
 const courseHeroImage =
@@ -20,6 +26,9 @@ const courseHeroImage =
 
 export default function Courses() {
   const [, navigate] = useLocation();
+  const [selectedPathId, setSelectedPathId] = useState(
+    DEFAULT_COURSE_LEARNING_PATH_ID
+  );
   const {
     selectedCategory,
     selectedType,
@@ -30,6 +39,7 @@ export default function Courses() {
     paginatedCourses,
     totalCount,
     pageNumbers,
+    allCourses,
     setCategory,
     setType,
     setSort,
@@ -41,6 +51,22 @@ export default function Courses() {
     useCourseEngagement();
   const { getCourseAccess, hasActiveMembership, ownedCourseCount } =
     useCourseAccess();
+  const selectedPath = getCourseLearningPath(selectedPathId);
+
+  const applyCoursePath = (path: CourseLearningPath) => {
+    setSelectedPathId(path.id);
+    setCategory(path.primaryCategory);
+    setType("全部");
+    setSort("hottest");
+    setKeyword("");
+  };
+
+  const handleExploreCoursePath = (path: CourseLearningPath) => {
+    applyCoursePath(path);
+    document
+      .getElementById("courses")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div className="min-h-screen bg-[#F9F5EE] text-[#243B35]">
@@ -125,12 +151,26 @@ export default function Courses() {
           </div>
         </section>
 
+        <CoursePathSection
+          courses={allCourses}
+          selectedPathId={selectedPathId}
+          onPathChange={applyCoursePath}
+          onExplorePath={handleExploreCoursePath}
+          onCourseSelect={course => navigate(`/courses/${course.id}`)}
+          onAssessment={() => navigate("/assessment")}
+        />
+
+        <CourseStarterLanes
+          courses={allCourses}
+          onCourseSelect={course => navigate(`/courses/${course.id}`)}
+        />
+
         <CourseDiscoverySection
           id="courses"
           className="bg-[#F3EDE4]"
-          eyebrow="全部课程"
-          title="按主题、形式和权益筛选课程"
-          description="课程列表会同步课程权益、收藏和会员状态，后续可以继续承接真实购买、学习进度和运营推荐。"
+          eyebrow="路径匹配课程"
+          title={selectedPath.discoveryTitle}
+          description={selectedPath.discoveryDescription}
           favoriteCount={favoriteCount}
           ownedCourseCount={ownedCourseCount}
           hasActiveMembership={hasActiveMembership}

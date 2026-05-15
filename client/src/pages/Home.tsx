@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { useLocation } from "wouter";
 import {
@@ -15,61 +15,19 @@ import {
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
 import CourseDiscoverySection from "@/components/CourseDiscoverySection";
+import CoursePathSection from "@/components/CoursePathSection";
 import MobileView from "@/components/MobileView";
 import {
-  getRecommendedCourses,
+  DEFAULT_COURSE_LEARNING_PATH_ID,
+  getCourseLearningPath,
   useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
-  type CourseCategory,
+  type CourseLearningPath,
 } from "@/features/courses";
 
 const heroImage =
   "https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1800&q=86";
-
-const supportNeeds = [
-  {
-    label: "情绪低落",
-    title: "先稳定情绪，再慢慢看见自己",
-    description: "适合从情绪管理、正念和心理科普开始。",
-    category: "情绪管理",
-  },
-  {
-    label: "关系困扰",
-    title: "把关系里的反复拉扯说清楚",
-    description: "适合亲密关系、婚姻关系和家庭沟通主题。",
-    category: "婚姻关系",
-  },
-  {
-    label: "亲子压力",
-    title: "在教育焦虑里重新找到连接",
-    description: "适合家庭教育和青少年心理课程。",
-    category: "家庭教育",
-  },
-  {
-    label: "职场耗竭",
-    title: "恢复边界感与心理韧性",
-    description: "适合职场心理、压力管理和个人成长主题。",
-    category: "职场心理",
-  },
-  {
-    label: "睡眠焦虑",
-    title: "让身体重新学会放松",
-    description: "适合正念冥想和情绪调节练习。",
-    category: "正念冥想",
-  },
-  {
-    label: "自我怀疑",
-    title: "用更温和的方式理解自己",
-    description: "适合个人成长、认知行为和心理科普主题。",
-    category: "个人成长",
-  },
-] satisfies Array<{
-  label: string;
-  title: string;
-  description: string;
-  category: CourseCategory;
-}>;
 
 const servicePaths = [
   {
@@ -94,7 +52,7 @@ const servicePaths = [
 
 const featuredJourney = [
   "7 分钟完成初步心理状态评估",
-  "根据困扰类型推荐咨询或课程路径",
+  "根据困扰类型推荐课程路径",
   "收藏内容，形成自己的成长清单",
 ];
 
@@ -124,20 +82,28 @@ export default function Home() {
   const { getCourseAccess, hasActiveMembership, ownedCourseCount } =
     useCourseAccess();
   const [viewMode, setViewMode] = useState<"pc" | "mobile">("pc");
-  const [selectedNeed, setSelectedNeed] = useState(supportNeeds[0]);
+  const [selectedPathId, setSelectedPathId] = useState(
+    DEFAULT_COURSE_LEARNING_PATH_ID
+  );
 
   const { scrollYProgress } = useScroll();
   const heroScale = useTransform(scrollYProgress, [0, 0.35], [1, 1.08]);
   const heroY = useTransform(scrollYProgress, [0, 0.35], [0, 38]);
+  const selectedPath = getCourseLearningPath(selectedPathId);
 
-  const recommendedCourses = useMemo(() => {
-    return getRecommendedCourses(allCourses, selectedNeed.category);
-  }, [allCourses, selectedNeed.category]);
-
-  const handleNeedSelect = (need: (typeof supportNeeds)[number]) => {
-    setSelectedNeed(need);
-    setCategory(need.category);
+  const applyCoursePath = (path: CourseLearningPath) => {
+    setSelectedPathId(path.id);
+    setCategory(path.primaryCategory);
     setType("全部");
+    setSort("hottest");
+    setKeyword("");
+  };
+
+  const handleExploreCoursePath = (path: CourseLearningPath) => {
+    applyCoursePath(path);
+    document
+      .getElementById("courses")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   if (viewMode === "mobile") {
@@ -240,12 +206,21 @@ export default function Home() {
           </div>
         </section>
 
+        <CoursePathSection
+          courses={allCourses}
+          selectedPathId={selectedPathId}
+          onPathChange={applyCoursePath}
+          onExplorePath={handleExploreCoursePath}
+          onCourseSelect={course => navigate(`/courses/${course.id}`)}
+          onAssessment={() => navigate("/assessment")}
+        />
+
         <CourseDiscoverySection
           id="courses"
           className="bg-[#F3EDE4]"
           eyebrow="课程学习中心"
-          title="先找到一门真正适合你的心理课"
-          description="按困扰、主题和学习形式筛选课程，让成长从可以完成的一小步开始。"
+          title={selectedPath.discoveryTitle}
+          description={selectedPath.discoveryDescription}
           actionSlot={
             <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
           }
@@ -271,100 +246,6 @@ export default function Home() {
           onVipToggle={setVipOnlyFilter}
           onPageChange={setCurrentPage}
         />
-
-        <section className="px-5 pb-14 pt-8 sm:px-8 sm:pb-16 sm:pt-10 lg:px-12">
-          <div className="mx-auto max-w-[1200px]">
-            <motion.div
-              initial={{ opacity: 0, y: 18 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.25 }}
-              transition={{ duration: 0.55 }}
-              className="grid gap-12 lg:grid-cols-[0.85fr_1.15fr]"
-            >
-              <div>
-                <p className="text-sm font-semibold text-[#6F8F83]">
-                  从真实困扰开始
-                </p>
-                <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35] sm:text-4xl">
-                  你最近最需要被照顾的是哪一部分？
-                </h2>
-                <p className="mt-5 max-w-[430px] text-sm leading-7 text-[#6D746F]">
-                  不必先知道答案。选择一个更接近当下的状态，我们会把课程和支持路径整理得更清楚。
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                {supportNeeds.map(need => {
-                  const active = selectedNeed.label === need.label;
-                  return (
-                    <button
-                      key={need.label}
-                      onClick={() => handleNeedSelect(need)}
-                      className={`group min-h-[118px] rounded-[22px] border px-5 py-4 text-left transition duration-300 ${
-                        active
-                          ? "border-[#6F8F83] bg-[#EEF4EA] text-[#243B35]"
-                          : "border-[#E4DCCF] bg-white/45 text-[#55605A] hover:border-[#AFC2AB] hover:bg-white/75"
-                      }`}
-                    >
-                      <span className="text-sm font-semibold">
-                        {need.label}
-                      </span>
-                      <span className="mt-3 block text-lg font-semibold leading-snug">
-                        {need.title}
-                      </span>
-                      <span className="mt-2 block text-xs leading-5 text-[#7B817C]">
-                        {need.description}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 18 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.25 }}
-              transition={{ duration: 0.55, delay: 0.08 }}
-              className="mt-10 border-y border-[#E4DCCF] py-7"
-            >
-              <div className="grid gap-8 lg:grid-cols-[0.7fr_1.3fr]">
-                <div>
-                  <p className="text-sm font-semibold text-[#6F8F83]">
-                    推荐路径
-                  </p>
-                  <h3 className="mt-3 text-2xl font-semibold text-[#243B35]">
-                    {selectedNeed.title}
-                  </h3>
-                  <p className="mt-3 text-sm leading-7 text-[#6D746F]">
-                    {selectedNeed.description}
-                  </p>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-3">
-                  {recommendedCourses.map(course => (
-                    <button
-                      key={course.id}
-                      onClick={() => navigate(`/courses/${course.id}`)}
-                      className="group border-l border-[#DCD3C4] pl-5 text-left"
-                    >
-                      <span className="text-xs font-medium text-[#6F8F83]">
-                        {course.category}
-                      </span>
-                      <span className="mt-2 line-clamp-2 block text-base font-semibold leading-snug text-[#243B35] group-hover:text-[#5F7F73]">
-                        {course.title}
-                      </span>
-                      <span className="mt-3 inline-flex items-center text-xs font-semibold text-[#8C6E4A]">
-                        查看适合原因
-                        <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        </section>
 
         <section className="bg-[#243B35] px-5 py-20 text-white sm:px-8 lg:px-12">
           <div className="mx-auto max-w-[1200px]">

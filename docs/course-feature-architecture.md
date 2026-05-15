@@ -26,6 +26,8 @@ client/src/features/courses/
     courseDetail.test.ts     # 详情构造与相关课程单测
     courseEngagement.ts      # 收藏、学习进度纯逻辑
     courseEngagement.test.ts # 参与度状态单测
+    coursePath.ts            # 用户端课程路径、路径筛选和路径课程推荐逻辑
+    coursePath.test.ts       # 路径稳定性、fallback 和课程挑选单测
   index.ts                   # feature 对外出口
 ```
 
@@ -37,6 +39,7 @@ client/src/features/courses/
 - `shared/domain/course.ts`、`courseCatalog.ts`、`courseAccess.ts` 负责跨端契约和纯业务规则，`features/courses/model` 只保留前端 feature 出口。
 - 后续接后端时，优先替换 `httpCourseRepository` 和 `/api/courses` 实现，保留 mock repository 作为本地 fallback。
 - 课程详情页位于 `client/src/pages/CourseDetail.tsx`，当前通过 `useCourseDetail` 读取 API/fallback 数据。
+- 用户端课程路径当前位于前端 feature model，首页和 `/courses` 通过 `CoursePathSection` 选择路径并驱动课程列表筛选；后续可平滑迁移为运营后台可配置路径。
 - 收藏与学习进度当前写入 localStorage；接入用户系统后替换 engagement repository 即可。
 - 购买状态与会员权益优先同步 `/api/course-access`，服务端优先通过 auth session cookie 识别用户；请求头 `x-hongboshi-user-id` 仅作为读取场景的开发期兜底。
 - 课程购买和会员开通要求 `member` 权限，未登录会返回 `UNAUTHORIZED`，前端打开登录弹窗，不再本地解锁；服务不可用时才回落当前用户的 localStorage。
@@ -62,3 +65,4 @@ client/src/features/courses/
 3. 扩展 loading、empty、error 和权限状态到订单、会员、学习记录。
 4. 把移动预览里的课程卡片继续拆成可复用组件。
 5. 将素材占位升级为真实资料管理，补齐资料下载、学习记录和课程内容完成度统计。
+6. 将课程路径从前端配置升级为后台运营配置，并接入测评推荐规则。

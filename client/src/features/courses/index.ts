@@ -36,6 +36,14 @@ export {
   type CourseTypeFilter,
 } from "./model/courseCatalog";
 export {
+  DEFAULT_COURSE_LEARNING_PATH_ID,
+  courseLearningPaths,
+  getCourseLearningPath,
+  getCoursesForLearningPath,
+  type CourseLearningPath,
+  type CourseLearningPathId,
+} from "./model/coursePath";
+export {
   LOCAL_COURSE_USER_ID,
   completeCourseChapter,
   createEmptyCourseEngagementState,
