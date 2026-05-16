@@ -208,10 +208,12 @@ function Metric({
 function CourseRow({
   item,
   onOpen,
+  onLearn,
   onStart,
 }: {
   item: LearningPlanCourseItem;
   onOpen: () => void;
+  onLearn: () => void;
   onStart: () => void;
 }) {
   const progressLabel = item.progress
@@ -220,8 +222,11 @@ function CourseRow({
   const completedCount = item.progress?.completedChapterIds.length ?? 0;
   const locked = !item.access.canStart;
   const primaryLabel = getPlanActionLabel(item);
-  const handlePrimaryAction =
-    item.bucket === "saved" && item.access.canStart ? onStart : onOpen;
+  const handlePrimaryAction = !item.access.canStart
+    ? onOpen
+    : item.bucket === "saved"
+      ? onStart
+      : onLearn;
 
   return (
     <motion.article
@@ -326,6 +331,7 @@ function PlanSection({
   emptyText,
   icon,
   onOpenCourse,
+  onLearnCourse,
   onStartCourse,
 }: {
   title: string;
@@ -334,6 +340,7 @@ function PlanSection({
   emptyText: string;
   icon: ElementType;
   onOpenCourse: (course: Course) => void;
+  onLearnCourse: (course: Course) => void;
   onStartCourse: (course: Course) => void;
 }) {
   const Icon = icon;
@@ -360,6 +367,7 @@ function PlanSection({
               key={item.course.id}
               item={item}
               onOpen={() => onOpenCourse(item.course)}
+              onLearn={() => onLearnCourse(item.course)}
               onStart={() => onStartCourse(item.course)}
             />
           ))}
@@ -555,6 +563,20 @@ export default function MyCourses() {
     navigate(`/courses/${course.id}`);
   };
 
+  const handleLearnCourse = (course: Course) => {
+    const access = getCourseAccess(course);
+    if (!access.canStart) {
+      toast("请先解锁课程", {
+        description: getCourseAccessDescription(access.status),
+      });
+      navigate(`/courses/${course.id}`);
+      return;
+    }
+
+    startCourse(course.id);
+    navigate(`/courses/${course.id}/learn`);
+  };
+
   const handleStartCourse = (course: Course) => {
     const access = getCourseAccess(course);
     if (!access.canStart) {
@@ -567,8 +589,9 @@ export default function MyCourses() {
 
     startCourse(course.id);
     toast("已加入学习计划", {
-      description: `「${course.title}」已放入进行中课程，可以从成长空间继续。`,
+      description: `「${course.title}」已放入进行中课程，即将进入学习页。`,
     });
+    navigate(`/courses/${course.id}/learn`);
   };
 
   const handleAppointmentAction = async (
@@ -726,7 +749,9 @@ export default function MyCourses() {
                         focusItem.bucket === "saved" &&
                         focusItem.access.canStart
                           ? handleStartCourse(focusItem.course)
-                          : handleOpenCourse(focusItem.course)
+                          : focusItem.access.canStart
+                            ? handleLearnCourse(focusItem.course)
+                            : handleOpenCourse(focusItem.course)
                       }
                       className="inline-flex h-11 items-center justify-center rounded-full bg-[#DDE8D9] px-5 text-sm font-semibold text-[#20362F] transition hover:bg-white"
                     >
@@ -915,6 +940,7 @@ export default function MyCourses() {
                   items={learningPlan.active}
                   emptyText="还没有进行中的课程。可以从收藏待学里加入，或去课程中心选择一门免费课开始。"
                   onOpenCourse={handleOpenCourse}
+                  onLearnCourse={handleLearnCourse}
                   onStartCourse={handleStartCourse}
                 />
                 <PlanSection
@@ -924,6 +950,7 @@ export default function MyCourses() {
                   items={learningPlan.saved}
                   emptyText="暂无收藏待学课程。看到合适的课程时可以先收藏，不必马上购买或学习。"
                   onOpenCourse={handleOpenCourse}
+                  onLearnCourse={handleLearnCourse}
                   onStartCourse={handleStartCourse}
                 />
                 <PlanSection
@@ -933,6 +960,7 @@ export default function MyCourses() {
                   items={learningPlan.completed}
                   emptyText="完成第一门课程后，这里会形成你的阶段性成长记录。"
                   onOpenCourse={handleOpenCourse}
+                  onLearnCourse={handleLearnCourse}
                   onStartCourse={handleStartCourse}
                 />
               </div>

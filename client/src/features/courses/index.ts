@@ -58,6 +58,12 @@ export {
   type LearningPlanWorkspaceSummary,
 } from "./model/courseLearningPlan";
 export {
+  canEnterCourseLearning,
+  createCourseLearningSession,
+  type CourseLearningChapterItem,
+  type CourseLearningSession,
+} from "./model/courseLearningSession";
+export {
   LOCAL_COURSE_USER_ID,
   completeCourseChapter,
   createEmptyCourseEngagementState,

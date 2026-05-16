@@ -151,9 +151,10 @@ export default function CourseDetail() {
     startCourse(course.id);
     toast(hasStarted ? "继续学习" : "已加入学习计划", {
       description: hasStarted
-        ? "已为你更新最近学习时间。"
-        : "课程已放入成长空间，学习进度会在本机保存。",
+        ? "即将进入学习页，继续当前章节。"
+        : "课程已放入成长空间，即将进入第一章。",
     });
+    navigate(`/courses/${course.id}/learn`);
   };
 
   const handleToggleFavorite = () => {
