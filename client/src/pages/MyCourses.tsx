@@ -705,8 +705,15 @@ export default function MyCourses() {
     accessError,
     getCourseAccess,
   } = useCourseAccess();
-  const { engagementState, startCourse } = useCourseEngagement();
-  const { practiceState } = useCoursePractice();
+  const { engagementState, engagementSyncError, startCourse } =
+    useCourseEngagement({
+      userId: user?.id,
+      enableRemoteSync: isLoggedIn,
+    });
+  const { practiceState, practiceSyncError } = useCoursePractice({
+    userId: user?.id,
+    enableRemoteSync: isLoggedIn,
+  });
   const {
     profile: growthProfile,
     isLoading: isGrowthProfileLoading,
@@ -1090,6 +1097,14 @@ export default function MyCourses() {
         {growthProfileError && (
           <div className="mt-5 rounded-[20px] border border-[#F0D6C9] bg-[#FFF5EF] px-5 py-4 text-sm text-[#A65F48]">
             {growthProfileError}
+          </div>
+        )}
+
+        {(engagementSyncError || practiceSyncError) && (
+          <div className="mt-5 rounded-[20px] border border-[#F0D6C9] bg-[#FFF5EF] px-5 py-4 text-sm text-[#A65F48]">
+            学习记录暂未完成服务端同步：
+            {engagementSyncError ?? practiceSyncError}
+            。本机记录已保留，稍后可继续同步。
           </div>
         )}
 

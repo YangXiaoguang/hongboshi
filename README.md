@@ -1,6 +1,6 @@
 # 红博士心理小讲堂
 
-心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估、咨询预约入口和运营管理后台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、成长档案聚合、测评推荐基础链路、咨询预约雏形、课程商品后台列表、用户会员后台、统一订单后台、交易退款后台、财务管理只读台、CSV 导出、账期手续费规则、结算预览、咨询排班运营、咨询师档案与资质服务状态、服务记录与履约异常、风险复核台、风险 SOP 模板、升级队列、审计中心、审计 CSV 导出、审计事件详情追踪、统一审计 Store 架构方案、审计归档表草案、审计归档任务试点、退款申请、异常工单、会员权益操作审计、订单操作审计、交易操作审计、风险处理记录、跨模块审计聚合、资源级权限、上下架、改价、基础信息编辑、内容审核流、详情内容管理、内容质量校验、审计记录、前台课程发布联动和 PostgreSQL Store。
+心理咨询与成长陪伴项目，包含 PC 课程中心、小程序端预览、个人成长空间、心理状态快速评估、咨询预约入口和运营管理后台。当前版本已完成课程目录、课程详情、课程权益 API adapter、本地开发期持久化、基础登录会话、课程权益权限守卫、课程学习记录服务端同步、阶段证明预览签发准备、成长档案聚合、测评推荐基础链路、咨询预约雏形、课程商品后台列表、用户会员后台、统一订单后台、交易退款后台、财务管理只读台、CSV 导出、账期手续费规则、结算预览、咨询排班运营、咨询师档案与资质服务状态、服务记录与履约异常、风险复核台、风险 SOP 模板、升级队列、审计中心、审计 CSV 导出、审计事件详情追踪、统一审计 Store 架构方案、审计归档表草案、审计归档任务试点、退款申请、异常工单、会员权益操作审计、订单操作审计、交易操作审计、风险处理记录、跨模块审计聚合、资源级权限、上下架、改价、基础信息编辑、内容审核流、详情内容管理、内容质量校验、审计记录、前台课程发布联动和 PostgreSQL Store。
 
 ## 技术栈
 
@@ -95,6 +95,8 @@ docs/
 - `VITE_ANALYTICS_WEBSITE_ID`
 - `HONGBOSHI_COURSE_ACCESS_STORE`
 - `HONGBOSHI_COURSE_ACCESS_FILE`
+- `HONGBOSHI_COURSE_LEARNING_RECORD_STORE`
+- `HONGBOSHI_COURSE_LEARNING_RECORD_FILE`
 - `HONGBOSHI_COURSE_PRODUCT_STORE`
 - `HONGBOSHI_COURSE_PRODUCT_FILE`
 - `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE`
@@ -120,7 +122,7 @@ docs/
 - `HONGBOSHI_COUNSELING_OPERATION_STORE`
 - `HONGBOSHI_PAYMENT_WEBHOOK_STORE`
 
-切换 PostgreSQL 时，先配置 `DATABASE_URL`，再按需将对应 Store 变量设置为 `postgres`。课程商品、课程商品详情内容、交易操作、风险复核处理记录、风险 SOP 模板与升级队列均支持 `file`、`memory` 和 `postgres`；统一审计归档支持 `memory` 和 `postgres`，配置 `DATABASE_URL` 后可自动选择 PostgreSQL；财务账期与手续费规则、咨询师档案 overlay 当前支持 `file` 和 `memory`。本地开发仍可用 `.env.example` 中的文件模式。运行：
+切换 PostgreSQL 时，先配置 `DATABASE_URL`，再按需将对应 Store 变量设置为 `postgres`。课程商品、课程商品详情内容、交易操作、风险复核处理记录、风险 SOP 模板与升级队列均支持 `file`、`memory` 和 `postgres`；统一审计归档支持 `memory` 和 `postgres`，配置 `DATABASE_URL` 后可自动选择 PostgreSQL；财务账期与手续费规则、咨询师档案 overlay、课程学习记录当前支持 `file` 和 `memory`。本地开发仍可用 `.env.example` 中的文件模式。运行：
 
 ```bash
 pnpm db:doctor
@@ -136,7 +138,7 @@ pnpm db:migrate
 - 课程 seed 来自 `shared/data/mockCourses.ts`，当前用于课程商品 Store 初始化和测试 fallback；前台课程列表/详情通过课程商品 Store 读取已审核通过且已上架商品
 - 共享业务类型位于 `shared/domain`
 - PC 端主页面位于 `client/src/pages/Home.tsx`
-- 个人成长空间位于 `client/src/pages/MyCourses.tsx`，通过 `/me/courses` 展示课程权益、学习进度、测评报告、咨询预约、会员和订单
+- 个人成长空间位于 `client/src/pages/MyCourses.tsx`，通过 `/me/courses` 展示课程权益、学习进度、练习沉淀、阶段证明预览、测评报告、咨询预约、会员和订单；登录用户的章节进度和练习记录会优先同步到服务端，网络失败时保留本机记录
 - 心理状态快速评估位于 `client/src/pages/Assessment.tsx`，通过 `/assessment` 生成维度分、风险等级和推荐路径
 - 咨询预约入口位于 `client/src/pages/Consulting.tsx`，通过 `/consulting` 选择咨询师、时段和咨询前信息
 - 咨询师工作台位于 `client/src/pages/CounselorWorkbench.tsx`，通过 `/counselor/workbench` 处理分配预约、履约状态和退款中订单
@@ -152,8 +154,9 @@ pnpm db:migrate
 - 支付对账位于 `client/src/pages/PaymentReconciliation.tsx`，通过 `/admin/payments` 对比支付回调收据、业务订单和咨询预约状态
 - 小程序端预览位于 `client/src/components/MobileView.tsx`
 - 登录状态由 `/api/auth/session`、`/api/auth/login/phone`、`/api/auth/login/wechat` 和 `AuthContext` 共同管理，服务端会话可切换到 PostgreSQL
-- 课程目录、课程详情、课程权益、后台课程商品、后台用户会员、后台订单、后台交易流水、后台财务概览/导出/规则、后台风险复核/SOP、后台审计中心、快速测评、咨询预约、咨询运营排班/咨询师档案/服务记录和成长档案分别由 `/api/courses`、`/api/course-access`、`/api/catalog/admin/course-products`、`/api/users/admin/users`、`/api/users/admin/users/:userId/membership`、`/api/orders/admin/orders`、`/api/transactions/admin/transactions`、`/api/finance/admin/overview`、`/api/finance/admin/export`、`/api/finance/admin/rules`、`/api/risk/admin/events`、`/api/risk/admin/sop`、`/api/audit/admin/events`、`/api/audit/admin/events/:eventId`、`/api/audit/admin/export`、`/api/audit/admin/archive`、`/api/audit/admin/archive/verification`、`/api/assessments/quick`、`/api/counseling/availability`、`/api/counseling/appointments`、`/api/counseling/admin/schedules`、`/api/counseling/admin/counselors`、`/api/counseling/admin/service-records` 和 `/api/growth/profile` 提供；`/api/courses` 已联动课程商品发布状态、审核状态、价格、会员权益和详情内容
+- 课程目录、课程详情、课程权益、课程学习记录、后台课程商品、后台用户会员、后台订单、后台交易流水、后台财务概览/导出/规则、后台风险复核/SOP、后台审计中心、快速测评、咨询预约、咨询运营排班/咨询师档案/服务记录和成长档案分别由 `/api/courses`、`/api/course-access`、`/api/course-learning/records`、`/api/catalog/admin/course-products`、`/api/users/admin/users`、`/api/users/admin/users/:userId/membership`、`/api/orders/admin/orders`、`/api/transactions/admin/transactions`、`/api/finance/admin/overview`、`/api/finance/admin/export`、`/api/finance/admin/rules`、`/api/risk/admin/events`、`/api/risk/admin/sop`、`/api/audit/admin/events`、`/api/audit/admin/events/:eventId`、`/api/audit/admin/export`、`/api/audit/admin/archive`、`/api/audit/admin/archive/verification`、`/api/assessments/quick`、`/api/counseling/availability`、`/api/counseling/appointments`、`/api/counseling/admin/schedules`、`/api/counseling/admin/counselors`、`/api/counseling/admin/service-records` 和 `/api/growth/profile` 提供；`/api/courses` 已联动课程商品发布状态、审核状态、价格、会员权益和详情内容
 - 课程权益和会员操作审计开发期默认写入 `.hongboshi-data/course-access.json`，也可通过 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 切到 PostgreSQL
+- 课程学习记录开发期默认写入 `.hongboshi-data/course-learning-records.json`，也可通过 `HONGBOSHI_COURSE_LEARNING_RECORD_STORE=memory` 临时切回内存；第一版保存登录用户的章节进度、练习记录、完成快照和阶段证明预览准备字段，并要求课程已解锁后才能写入
 - 课程商品开发期默认写入 `.hongboshi-data/course-products.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_STORE=memory` 临时切回内存，或通过 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 写入 PostgreSQL
 - 课程商品详情内容开发期默认写入 `.hongboshi-data/course-product-content.json`，也可通过 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 临时切回内存，或通过 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 写入 PostgreSQL；后台会展示批量内容校验状态，提交审核前会拦截摘要、适合人群、章节、时长和素材占位等硬性问题，并已为素材资料 ID、资料地址、下载开关和合规审核状态预留字段
 - 测评结果、咨询预约、咨询运营配置、咨询审计、咨询师档案 overlay、风险事件、风险复核处理记录、风险 SOP 模板与升级队列、支付回调收据、交易操作工单、交易操作审计和财务规则已抽象为服务端 Store 接口；咨询师档案 overlay 和财务规则当前先提供内存/JSON 文件实现，其余核心 Store 均已有 PostgreSQL 实现

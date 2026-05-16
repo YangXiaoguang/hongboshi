@@ -26,6 +26,7 @@ import {
 import { toast } from "sonner";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
+import { useAuth } from "@/contexts/AuthContext";
 import NotFound from "@/pages/NotFound";
 import {
   canEnterCourseLearning,
@@ -47,6 +48,7 @@ import {
   type CoursePracticeRecord,
   type CoursePracticeSummary,
 } from "@/features/courses";
+import { httpCourseLearningRecordRepository } from "@/features/courses/api/httpCourseLearningRecordRepository";
 
 function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes} 分钟`;
@@ -698,24 +700,52 @@ function NextCoursePreview({
 export default function CourseLearning() {
   const [, navigate] = useLocation();
   const [, params] = useRoute("/courses/:courseId/learn");
+  const { user, isLoggedIn } = useAuth();
+  const remoteUserId = isLoggedIn ? user?.id : undefined;
   const courseId = Number(params?.courseId);
   const { course, allCourses, isLoading } = useCourseDetail(
     Number.isInteger(courseId) ? courseId : undefined
   );
   const { getCourseAccess, isSyncing: isAccessSyncing } = useCourseAccess();
-  const { completeChapter, getProgress, startCourse } = useCourseEngagement();
+  const { completeChapter, engagementSyncError, getProgress, startCourse } =
+    useCourseEngagement({
+      userId: remoteUserId,
+      enableRemoteSync: Boolean(remoteUserId),
+    });
   const {
+    practiceSyncError,
     getRecord,
     getSummary,
     materialForChapter,
     saveDraft,
     setPracticeCompleted,
-  } = useCoursePractice();
+  } = useCoursePractice({
+    userId: remoteUserId,
+    enableRemoteSync: Boolean(remoteUserId),
+  });
   const [activeChapterId, setActiveChapterId] = useState<string | undefined>();
   const [practiceDraft, setPracticeDraft] = useState("");
+  const [completionSyncKey, setCompletionSyncKey] = useState<
+    string | undefined
+  >();
+  const [completionSyncStatus, setCompletionSyncStatus] = useState<
+    "local" | "syncing" | "synced" | "failed"
+  >(remoteUserId ? "syncing" : "local");
   const access = course ? getCourseAccess(course) : undefined;
   const canLearn = access ? canEnterCourseLearning(access) : false;
   const progress = course ? getProgress(course.id) : undefined;
+  const syncError = engagementSyncError ?? practiceSyncError;
+  const learningRecordLabel =
+    !remoteUserId || completionSyncStatus === "local"
+      ? "本机保存"
+      : syncError || completionSyncStatus === "failed"
+        ? "待同步"
+        : "服务端同步";
+  const completionPracticeSummary =
+    course && canLearn ? getSummary(course) : undefined;
+  const completionLearningPath = course
+    ? getLearningPathForCourse(course)
+    : undefined;
 
   useEffect(() => {
     if (!course || !canLearn || progress) return;
@@ -746,6 +776,56 @@ export default function CourseLearning() {
       createCourseLearningSession(course, progress).currentChapter.id;
     setPracticeDraft(getRecord(course.id, targetChapterId)?.note ?? "");
   }, [activeChapterId, canLearn, course, getRecord, progress]);
+
+  useEffect(() => {
+    if (!remoteUserId) {
+      setCompletionSyncStatus("local");
+      return;
+    }
+
+    if (
+      !course ||
+      !canLearn ||
+      !progress ||
+      progress.status !== "completed" ||
+      !completionPracticeSummary ||
+      !completionLearningPath
+    ) {
+      setCompletionSyncStatus("syncing");
+      return;
+    }
+
+    const nextSyncKey = `${course.id}:${progress.updatedAt}`;
+    if (completionSyncKey === nextSyncKey) return;
+
+    setCompletionSyncStatus("syncing");
+    httpCourseLearningRecordRepository
+      .submitCompletion(
+        course.id,
+        {
+          learningPathTitle: completionLearningPath.title,
+          learningPathLabel: completionLearningPath.label,
+          practiceDraftedCount: completionPracticeSummary.draftedCount,
+          practiceCompletedCount: completionPracticeSummary.completedCount,
+        },
+        remoteUserId
+      )
+      .then(() => {
+        setCompletionSyncKey(nextSyncKey);
+        setCompletionSyncStatus("synced");
+      })
+      .catch(() => {
+        setCompletionSyncStatus("failed");
+      });
+  }, [
+    canLearn,
+    completionLearningPath,
+    completionPracticeSummary,
+    completionSyncKey,
+    course,
+    progress,
+    remoteUserId,
+  ]);
 
   if (!course && isLoading) return <LoadingLearningPage />;
   if (!course) return <NotFound />;
@@ -934,7 +1014,7 @@ export default function CourseLearning() {
                 <LearningStat
                   icon={ShieldCheck}
                   label="学习记录"
-                  value="本机保存"
+                  value={learningRecordLabel}
                 />
               </div>
             </div>
@@ -1017,6 +1097,12 @@ export default function CourseLearning() {
               </div>
 
               <div className="mt-2">
+                {syncError && (
+                  <p className="mb-4 rounded-[18px] bg-[#FFF5EF] px-4 py-3 text-xs leading-5 text-[#A65F48]">
+                    服务端学习记录暂未同步：{syncError}
+                    。本机记录已保留，稍后可继续同步。
+                  </p>
+                )}
                 {session.chapterItems.map(item => (
                   <ChapterRow
                     key={item.chapter.id}

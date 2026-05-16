@@ -3,6 +3,7 @@ export {
   type CourseRepository,
 } from "./api/mockCourseRepository";
 export { httpCourseAccessRepository } from "./api/httpCourseAccessRepository";
+export { httpCourseLearningRecordRepository } from "./api/httpCourseLearningRecordRepository";
 export { httpCourseRepository } from "./api/httpCourseRepository";
 export { useCourseCatalog } from "./hooks/useCourseCatalog";
 export { useCourseDetail } from "./hooks/useCourseDetail";
@@ -157,4 +158,13 @@ export type {
   CourseProgressStatus,
   CourseSort,
   CourseType,
+  CourseLearningCertificateIssuerStatus,
+  CourseLearningCertificatePreview as RemoteCourseLearningCertificatePreview,
+  CourseLearningCompletionSnapshot,
+  CourseLearningPracticeRecord as RemoteCourseLearningPracticeRecord,
+  CourseLearningRecord,
+  CourseLearningRecordListResult,
+  CourseLearningRecordResult,
+  CourseLearningRecordSource,
+  CourseLearningSyncStatus,
 } from "@shared/domain";

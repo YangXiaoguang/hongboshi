@@ -18,6 +18,9 @@ export const CourseCompletionCertificatePreviewSchema = z.object({
     .enum(["local_only", "sync_pending", "synced"])
     .default("local_only"),
   issueStatus: z.enum(["preview", "issued"]).default("preview"),
+  issuerStatus: z
+    .enum(["preview", "pending_review", "issued"])
+    .default("preview"),
   certificateId: z.string().min(1).optional(),
   issuedAt: z.string().min(1).optional(),
 });
@@ -151,6 +154,7 @@ export function createCourseCompletionFeedback({
     source: "local",
     syncStatus: "local_only",
     issueStatus: "preview",
+    issuerStatus: "preview",
   });
 
   return {

@@ -4,22 +4,23 @@
 
 ## 当前模块
 
-| 文件                  | 责任                                                             |
-| --------------------- | ---------------------------------------------------------------- |
-| `common.ts`           | ID、日期、分页、金额、API 响应和错误结构                         |
-| `course.ts`           | 课程、优惠、折扣、学习进度                                       |
-| `courseCatalog.ts`    | 课程目录筛选、搜索、排序、分页                                   |
-| `courseProduct.ts`    | 后台课程商品、价格、状态、审核、详情内容和列表查询               |
-| `courseAccess.ts`     | 课程购买权益、会员权益、访问判断                                 |
-| `user.ts`             | 用户资料、角色、权限、登录来源、协议同意、登录请求和用户后台聚合 |
-| `assessment.ts`       | 测评题目、答案、报告、推荐、风险等级                             |
-| `assessmentEngine.ts` | 测评维度评分、风险分级、推荐路径生成                             |
-| `counseling.ts`       | 咨询师、擅长方向、时段、预约状态、预约请求与结果                 |
-| `growthProfile.ts`    | 成长档案聚合、摘要指标和用户成长时间线                           |
-| `order.ts`            | 可购买对象、订单、支付、订单后台和交易后台聚合契约               |
-| `finance.ts`          | 财务后台查询、汇总、导出、账期规则、手续费和结算预览             |
-| `risk.ts`             | 风险事件、风险复核后台、SOP 模板、升级队列和审计日志             |
-| `auditCenter.ts`      | 统一审计中心只读聚合、导出、详情追踪、归档事件和隐私边界         |
+| 文件                      | 责任                                                             |
+| ------------------------- | ---------------------------------------------------------------- |
+| `common.ts`               | ID、日期、分页、金额、API 响应和错误结构                         |
+| `course.ts`               | 课程、优惠、折扣、学习进度                                       |
+| `courseCatalog.ts`        | 课程目录筛选、搜索、排序、分页                                   |
+| `courseProduct.ts`        | 后台课程商品、价格、状态、审核、详情内容和列表查询               |
+| `courseAccess.ts`         | 课程购买权益、会员权益、访问判断                                 |
+| `courseLearningRecord.ts` | 课程学习进度、练习记录、完成快照和阶段证明预览准备               |
+| `user.ts`                 | 用户资料、角色、权限、登录来源、协议同意、登录请求和用户后台聚合 |
+| `assessment.ts`           | 测评题目、答案、报告、推荐、风险等级                             |
+| `assessmentEngine.ts`     | 测评维度评分、风险分级、推荐路径生成                             |
+| `counseling.ts`           | 咨询师、擅长方向、时段、预约状态、预约请求与结果                 |
+| `growthProfile.ts`        | 成长档案聚合、摘要指标和用户成长时间线                           |
+| `order.ts`                | 可购买对象、订单、支付、订单后台和交易后台聚合契约               |
+| `finance.ts`              | 财务后台查询、汇总、导出、账期规则、手续费和结算预览             |
+| `risk.ts`                 | 风险事件、风险复核后台、SOP 模板、升级队列和审计日志             |
+| `auditCenter.ts`          | 统一审计中心只读聚合、导出、详情追踪、归档事件和隐私边界         |
 
 ## 使用约定
 
@@ -42,6 +43,8 @@
 `FinanceAdminExportSchema` 是财务 CSV 导出的稳定契约，复用 `FinanceAdminExportQuerySchema` 的筛选条件和同一套服务端财务口径。导出文件包含生成时间、操作者、筛选条件、汇总金额、口径版本、字段定义和明细行；明细行保留发生时间、事项类型、订单 ID、用户脱敏摘要、业务类型、商品标题、渠道、金额、来源状态、异常等级、交易号、回调收据 ID 和财务备注，并预留账期、手续费、结算批次和发票状态字段。导出不会新增敏感字段，也不在前端重新计算金额口径。
 
 `FinanceAdminRuleConfigSchema`、`FinanceAdminChannelFeeRuleSchema`、`FinanceAdminSettlementPreviewSchema` 和 `FinanceAdminRuleConsoleSchema` 是财务账期与手续费规则的第一版契约。当前账期策略固定为自然月，按中国业务时间生成 `YYYY-MM` 账期；渠道规则包含渠道、费率、固定手续费、最低手续费、生效时间、规则版本和备注。结算预览复用服务端财务明细口径，按账期和渠道估算手续费、预计结算金额、退款中金额和异常未结算金额。规则写入只更新规则 Store，不修改历史订单、支付回调、交易流水或 CSV 明细事实。
+
+`CourseLearningRecordSchema` 是用户端课程学习记录同步契约，按 `userId + courseId` 保存章节进度、练习记录、课程完成快照和阶段证明预览。`CourseLearningProgressSyncRequestSchema`、`CourseLearningPracticeSyncRequestSchema` 与 `CourseLearningCompletionSubmitRequestSchema` 分别描述章节完成同步、章节练习保存和课程完成反馈提交；服务端必须校验登录态、课程已发布已审核、课程权益可学习、章节 ID 属于当前课程，才能写入记录。阶段证明当前只允许 `preview`/`pending_review`/`issued` 的准备字段，第一版只生成预览，不签发正式证书编号。
 
 `CounselingServiceRecordConsoleSchema` 是咨询服务记录与履约异常后台的聚合契约，包含咨询师筛选项、筛选条件、服务记录行、异常摘要和服务端时间。服务记录行只输出履约运营所需字段：预约 ID、用户 ID、咨询师、时段、预约状态、订单状态、支付锁定截止时间、风险等级摘要、最近审计动作和异常标签；不会输出咨询说明、测评答案或风险信号原文。当前异常类型覆盖待支付锁定临近/过期/关闭、临近开始仍未确认、已取消待退款、退款中和未到访。
 
@@ -87,6 +90,7 @@ server/
 ## 服务端 Store 边界
 
 - 课程权益：`server/modules/courses/courseAccessStore.ts` 已支持 JSON 文件和内存实现，并保存会员后台操作审计事件。
+- 课程学习记录：`server/modules/courses/courseLearningRecordStore.ts` 负责登录用户的章节进度、练习记录、课程完成快照和阶段证明预览准备；当前支持内存/JSON 文件 `.hongboshi-data/course-learning-records.json`，API 写入前会读取课程权益 Store 校验用户已解锁课程。后续接 PostgreSQL 时应新增独立 Store，而不是把学习进度混入课程权益订单事实。
 - 用户会员后台：`server/modules/users/userAdminApi.ts` 负责用户会员聚合与会员权益后台动作，读取 auth 用户目录、课程权益、咨询预约和风险事件 Store，只输出脱敏手机号和摘要字段；会员操作由服务端计算状态、校验原因并写入审计。
 - 订单后台：`server/modules/orders/orderAdminApi.ts` 负责课程、会员和咨询订单聚合，读取课程权益订单、咨询预约记录、支付回调收据和 auth 用户目录，只输出履约与对账所需摘要；订单写动作只接受受控意图，关闭待支付订单复用订单状态机，异常标记写入异常摘要与审计事件。
 - 交易后台：`server/modules/transactions/transactionAdminApi.ts` 负责支付/退款流水聚合与受控交易动作，读取支付回调收据、课程权益订单、咨询预约快照、订单异常标记、交易异常工单和 auth 用户目录，只输出对账、履约排障和客服核查所需摘要；写动作通过 `server/modules/transactions/transactionOperationStore.ts` 保存交易异常工单和操作审计，通过 `server/modules/transactions/transactionRefundProvider.ts` 调用人工/模拟退款受理接口。退款申请只在渠道受理成功后把合规订单推进到 `refunding`，不直接完成退款或伪造渠道成功；渠道失败会写入受理摘要审计。
@@ -141,6 +145,8 @@ client/src/
 - 风险事件：`open -> reviewing -> resolved / escalated`
 - 课程权益：`requires_purchase / requires_membership -> owned / member_included`
 - 学习进度：`not_started -> in_progress -> completed`
+- 学习记录同步：`local_only / sync_pending -> synced`
+- 阶段证明：`preview -> pending_review -> issued`
 - 测评风险：`low -> medium -> high -> urgent`
 
 这些流程后续不要依赖零散布尔字段，应集中在 service 或状态机函数中维护。

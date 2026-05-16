@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。M9-A/M9-B 审计中心仍是只读聚合模型，列表、详情和 CSV 导出直接消费各业务 Store/表中的既有审计事实。M9-C 新增统一审计 Store 方案与 `audit_center_archived_events` 只追加归档表草案；M9-D 新增 Archive Store 和手动归档任务；M9-E 新增归档后台入口和只读校验接口，但当前仍不把业务写动作或审计真相源切换到该表。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。课程学习记录已新增独立内存/JSON Store，先保存章节进度、练习记录、完成快照和阶段证明预览准备字段，后续再补专用 PostgreSQL 表。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。M9-A/M9-B 审计中心仍是只读聚合模型，列表、详情和 CSV 导出直接消费各业务 Store/表中的既有审计事实。M9-C 新增统一审计 Store 方案与 `audit_center_archived_events` 只追加归档表草案；M9-D 新增 Archive Store 和手动归档任务；M9-E 新增归档后台入口和只读校验接口，但当前仍不把业务写动作或审计真相源切换到该表。
 
 ## 文件位置
 
@@ -58,7 +58,7 @@
 ## 后续接入顺序
 
 1. 选择 Prisma 或 Drizzle，并让其 migration 与 `0001_core_tables.sql` 对齐。
-2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、交易操作审计、课程商品、课程商品详情内容、风险事件、风险复核记录、风险 SOP 模板、风险升级队列、测评结果、咨询预约、咨询运营配置/审计、支付回调收据和审计归档已经完成第一版，且已能支撑用户会员后台、统一订单后台、交易流水聚合、风险复核台、审计中心只读聚合、详情定位、CSV 导出、手动归档和归档只读校验；咨询师档案 overlay 当前先使用内存/JSON Store，后续可补 PostgreSQL 表。
+2. 扩展 PostgreSQL 版 Store：登录会话、课程权益、会员操作审计、订单操作审计、交易操作审计、课程商品、课程商品详情内容、风险事件、风险复核记录、风险 SOP 模板、风险升级队列、测评结果、咨询预约、咨询运营配置/审计、支付回调收据和审计归档已经完成第一版，且已能支撑用户会员后台、统一订单后台、交易流水聚合、风险复核台、审计中心只读聚合、详情定位、CSV 导出、手动归档和归档只读校验；课程学习记录和咨询师档案 overlay 当前先使用内存/JSON Store，后续可补 PostgreSQL 表。
 3. 使用 `DATABASE_URL` 控制 Store 实现，开发期保留内存/JSON fallback。
 4. 增加集成测试：登录 -> 购买课程 -> 测评 -> 咨询预约 -> 成长档案聚合。
 5. 上线前补齐迁移回滚策略、备份策略、PII 最小化和日志脱敏。
@@ -81,6 +81,8 @@
 
 `server/modules/courses/postgresCourseAccessStore.ts` 已实现课程会员、课程授权、订单、订单明细、会员操作审计、订单异常标记和订单操作审计事件的保存、单用户读取与后台聚合所需的用户权益快照列表能力。开发期默认仍可使用 JSON Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_ACCESS_STORE=postgres` 时，课程权益、会员操作审计和订单操作审计会写入 PostgreSQL。
 
+`server/modules/courses/courseLearningRecordStore.ts` 已实现课程学习记录的内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/course-learning-records.json` 保存登录用户的章节进度、练习记录、完成快照和阶段证明预览准备字段；当设置 `HONGBOSHI_COURSE_LEARNING_RECORD_STORE=memory` 时可临时切回内存。当前没有 PostgreSQL 表，后续可新增 `course_learning_records` 和 `course_learning_practice_records` 等专用表，并继续由 API 层校验课程权益后写入。
+
 `server/modules/auth/postgresAuthSessionStore.ts` 已实现用户、角色、协议同意和登录会话的保存、读取、注销与用户目录列表能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_AUTH_SESSION_STORE=postgres` 时，登录会话会写入 PostgreSQL，并只保存 session token 的哈希值。
 
 `server/modules/payments/postgresPaymentWebhookEventStore.ts` 已实现支付回调事件的登记、重复事件读取、处理结果保存和清空能力。默认仍使用内存 Store；当配置 `DATABASE_URL`，且 `HONGBOSHI_PAYMENT_WEBHOOK_STORE=postgres` 时，支付回调收据会写入 PostgreSQL，避免服务重启后重复处理同一支付事件。
@@ -99,4 +101,4 @@
 
 `server/modules/audit/auditArchiveStore.ts` 已实现统一审计归档 Store 接口和内存实现，`server/modules/audit/postgresAuditArchiveStore.ts` 已实现 `audit_center_archived_events` 的幂等写入、列表、计数和测试清理能力，列表可按发生时间或归档时间排序。手动归档任务通过 `AuditCenterArchiveEventSchema` 校验后写入，只保存稳定事件 ID、唯一幂等键、来源模块/源事件 ID、来源 Store/表、模块、动作、资源、操作者、角色、原因、summary-only 前后摘要、发生时间、归档时间、结构版本和隐私口径版本，并使用模块、动作、资源、操作者、来源和归档时间索引。归档只读校验通过 Archive Store 读取总数、模块计数、最近批次和最近归档事件摘要，用于解释归档表和当前聚合口径的差异。当前没有对应业务写入切换，审计中心列表/导出/详情仍读取现有聚合逻辑。
 
-当前实现已覆盖登录会话、课程权益、会员操作审计、订单异常标记、订单操作审计、交易操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件、风险复核记录、风险 SOP 模板、风险升级队列、审计归档与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作、`/admin/orders` 统一订单聚合及受控订单动作、`/admin/transactions` 交易流水聚合、退款申请和异常工单动作、`/admin/risk` 风险复核、SOP 模板和升级队列，以及 `/admin/audit` 审计中心只读聚合、详情定位、CSV 导出、手动归档和归档校验控制台。咨询师档案 overlay 仍先使用内存/JSON Store，为后续资质审核流留下边界。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
+当前实现已覆盖登录会话、课程权益、课程学习记录、会员操作审计、订单异常标记、订单操作审计、交易操作审计、课程商品、课程详情内容、测评报告、咨询预约、咨询运营配置/审计、风险事件、风险复核记录、风险 SOP 模板、风险升级队列、审计归档与支付回调收据持久化，并支撑 `/admin/users` 用户会员聚合、会员权益后台动作、`/admin/orders` 统一订单聚合及受控订单动作、`/admin/transactions` 交易流水聚合、退款申请和异常工单动作、`/admin/risk` 风险复核、SOP 模板和升级队列，以及 `/admin/audit` 审计中心只读聚合、详情定位、CSV 导出、手动归档和归档校验控制台。课程学习记录和咨询师档案 overlay 仍先使用内存/JSON Store，为后续学习档案持久化、正式证书签发和资质审核流留下边界。这个试点用于先验证连接池、SQL 映射、领域 schema 校验和后续数据库 Store 的测试模式。
