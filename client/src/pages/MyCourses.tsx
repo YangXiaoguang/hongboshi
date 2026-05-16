@@ -5,17 +5,20 @@ import { toast } from "sonner";
 import {
   ArrowRight,
   BarChart3,
+  BookmarkCheck,
   BookOpenCheck,
   CalendarCheck,
   CalendarClock,
   CheckCircle2,
+  Compass,
   Crown,
   Heart,
   Loader2,
   LockKeyhole,
+  PlayCircle,
   ReceiptText,
-  ShieldCheck,
-  Sparkles,
+  Route,
+  Trophy,
   UserRound,
   XCircle,
 } from "lucide-react";
@@ -24,13 +27,14 @@ import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/contexts/AuthContext";
 import type { OrderStatus, UserRole } from "@shared/domain";
 import {
-  buildCourseDetail,
+  createLearningPlanWorkspace,
+  getCourseAccessDescription,
   useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
   type Course,
   type CourseAccessStatus,
-  type CourseProgress,
+  type LearningPlanCourseItem,
 } from "@/features/courses";
 import {
   getTopAssessmentDimensions,
@@ -47,16 +51,6 @@ import {
 } from "@/features/counseling";
 import { useGrowthProfile } from "@/features/growth";
 
-type LearningRow = {
-  course: Course;
-  accessStatus: CourseAccessStatus;
-  canStart: boolean;
-  totalChapters: number;
-  progress?: CourseProgress;
-  progressPercent: number;
-  isFavorited: boolean;
-};
-
 const accessStatusCopy = {
   free: "免费课程",
   owned: "已购买",
@@ -70,6 +64,15 @@ const progressStatusCopy = {
   in_progress: "学习中",
   completed: "已完成",
 } satisfies Record<"not_started" | "in_progress" | "completed", string>;
+
+function getPlanActionLabel(item: LearningPlanCourseItem): string {
+  if (!item.access.canStart) return "查看详情";
+  if (item.bucket === "saved") {
+    return "加入学习计划";
+  }
+
+  return item.bucket === "completed" ? "复习课程" : "继续学习";
+}
 
 const roleCopy = {
   visitor: "访客",
@@ -137,14 +140,6 @@ function formatDate(value?: string): string {
   }).format(date);
 }
 
-function getLearningSortValue(row: LearningRow): number {
-  if (row.progress?.lastViewedAt) return Date.parse(row.progress.lastViewedAt);
-  if (row.progress?.updatedAt) return Date.parse(row.progress.updatedAt);
-  if (row.canStart) return 1;
-  if (row.isFavorited) return 0;
-  return -1;
-}
-
 function EmptyState({
   icon,
   title,
@@ -210,12 +205,23 @@ function Metric({
   );
 }
 
-function CourseRow({ row, onOpen }: { row: LearningRow; onOpen: () => void }) {
-  const progressLabel = row.progress
-    ? progressStatusCopy[row.progress.status]
+function CourseRow({
+  item,
+  onOpen,
+  onStart,
+}: {
+  item: LearningPlanCourseItem;
+  onOpen: () => void;
+  onStart: () => void;
+}) {
+  const progressLabel = item.progress
+    ? progressStatusCopy[item.progress.status]
     : "未开始";
-  const completedCount = row.progress?.completedChapterIds.length ?? 0;
-  const locked = !row.canStart;
+  const completedCount = item.progress?.completedChapterIds.length ?? 0;
+  const locked = !item.access.canStart;
+  const primaryLabel = getPlanActionLabel(item);
+  const handlePrimaryAction =
+    item.bucket === "saved" && item.access.canStart ? onStart : onOpen;
 
   return (
     <motion.article
@@ -228,10 +234,10 @@ function CourseRow({ row, onOpen }: { row: LearningRow; onOpen: () => void }) {
       <button
         onClick={onOpen}
         className="relative h-[82px] w-full overflow-hidden rounded-[18px] bg-[#E7DED0] md:w-[112px]"
-        aria-label={`查看${row.course.title}`}
+        aria-label={`查看${item.course.title}`}
       >
         <img
-          src={row.course.coverUrl}
+          src={item.course.coverUrl}
           alt=""
           className="h-full w-full object-cover transition duration-300 hover:scale-105"
         />
@@ -245,12 +251,15 @@ function CourseRow({ row, onOpen }: { row: LearningRow; onOpen: () => void }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-[#E6EDDF] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
-            {accessStatusCopy[row.accessStatus]}
+            {accessStatusCopy[item.access.status]}
           </span>
           <span className="rounded-full bg-[#F4E5DE] px-2.5 py-1 text-xs font-semibold text-[#A65F48]">
-            {row.course.category}
+            {item.learningPath.label}
           </span>
-          {row.isFavorited && (
+          <span className="rounded-full bg-[#F7EFE6] px-2.5 py-1 text-xs font-semibold text-[#8B6F46]">
+            {item.course.category}
+          </span>
+          {item.isFavorited && (
             <span className="inline-flex items-center gap-1 rounded-full bg-[#F7EFE6] px-2.5 py-1 text-xs font-semibold text-[#8B6F46]">
               <Heart className="h-3 w-3 fill-current" />
               已收藏
@@ -261,10 +270,11 @@ function CourseRow({ row, onOpen }: { row: LearningRow; onOpen: () => void }) {
           onClick={onOpen}
           className="mt-3 block max-w-full truncate text-left text-lg font-semibold text-[#243B35] transition hover:text-[#6F8F83]"
         >
-          {row.course.title}
+          {item.course.title}
         </button>
         <p className="mt-2 text-sm text-[#767F78]">
-          {row.course.teacher} · {row.course.type} · {row.totalChapters} 个阶段
+          {item.course.teacher} · {item.course.type} · {item.totalChapters}{" "}
+          个阶段
         </p>
 
         <div className="mt-4 flex items-center gap-3">
@@ -273,32 +283,93 @@ function CourseRow({ row, onOpen }: { row: LearningRow; onOpen: () => void }) {
               className={`block h-full rounded-full ${
                 locked ? "bg-[#CDBEA9]" : "bg-[#6F8F83]"
               }`}
-              style={{ width: `${row.progressPercent}%` }}
+              style={{ width: `${item.progressPercent}%` }}
             />
           </div>
           <span className="w-12 shrink-0 text-right text-xs font-semibold text-[#667069]">
-            {row.progressPercent}%
+            {item.progressPercent}%
           </span>
         </div>
         <p className="mt-2 text-xs text-[#8A918B]">
-          {progressLabel} · 已完成 {completedCount} / {row.totalChapters} 个阶段
+          {progressLabel} · 已完成 {completedCount} / {item.totalChapters}{" "}
+          个阶段
         </p>
+        {item.nextCourse && (
+          <p className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#F4EFE6] px-3 py-1 text-xs font-semibold text-[#6D746F]">
+            <Route className="h-3.5 w-3.5 shrink-0 text-[#6F8F83]" />
+            <span className="truncate">下一门：{item.nextCourse.title}</span>
+          </p>
+        )}
       </div>
 
       <div className="flex items-center md:justify-end">
         <button
-          onClick={onOpen}
+          onClick={handlePrimaryAction}
           className={`inline-flex h-11 min-w-[116px] items-center justify-center rounded-full px-4 text-sm font-semibold transition ${
             locked
               ? "border border-[#D8CEC0] text-[#6D746F] hover:bg-[#FFFDF8]"
               : "bg-[#243B35] text-white hover:bg-[#315047]"
           }`}
         >
-          {locked ? "查看详情" : "继续学习"}
+          {primaryLabel}
           <ArrowRight className="ml-2 h-4 w-4" />
         </button>
       </div>
     </motion.article>
+  );
+}
+
+function PlanSection({
+  title,
+  description,
+  items,
+  emptyText,
+  icon,
+  onOpenCourse,
+  onStartCourse,
+}: {
+  title: string;
+  description: string;
+  items: LearningPlanCourseItem[];
+  emptyText: string;
+  icon: ElementType;
+  onOpenCourse: (course: Course) => void;
+  onStartCourse: (course: Course) => void;
+}) {
+  const Icon = icon;
+
+  return (
+    <section className="border-t border-[#E7DED0] pt-6 first:border-t-0 first:pt-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
+            <Icon className="h-4 w-4" />
+            {title}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-[#767F78]">{description}</p>
+        </div>
+        <span className="w-fit rounded-full bg-[#F4EFE6] px-3 py-1 text-xs font-semibold text-[#6D746F]">
+          {items.length} 门
+        </span>
+      </div>
+
+      {items.length ? (
+        <div className="mt-2">
+          {items.map(item => (
+            <CourseRow
+              key={item.course.id}
+              item={item}
+              onOpen={() => onOpenCourse(item.course)}
+              onStart={() => onStartCourse(item.course)}
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="mt-5 rounded-[18px] bg-[#F9F5EE] px-4 py-3 text-sm leading-6 text-[#767F78]">
+          {emptyText}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -431,13 +502,11 @@ export default function MyCourses() {
     accessState,
     hasActiveMembership,
     membership,
-    ownedCourseCount,
-    orderCount,
     isSyncing: isAccessSyncing,
     accessError,
     getCourseAccess,
   } = useCourseAccess();
-  const { favoriteCourseIds, getProgress } = useCourseEngagement();
+  const { engagementState, startCourse } = useCourseEngagement();
   const {
     profile: growthProfile,
     isLoading: isGrowthProfileLoading,
@@ -449,32 +518,15 @@ export default function MyCourses() {
   const profileSummary = growthProfile?.summary;
   const profileCourseAccess = growthProfile?.courseAccess;
 
-  const learningRows = useMemo(() => {
-    return allCourses
-      .map(course => {
-        const access = getCourseAccess(course);
-        const detail = buildCourseDetail(course);
-        const progress = getProgress(course.id);
-        const totalChapters = detail.chapters.length;
-        const completedCount = progress?.completedChapterIds.length ?? 0;
-        const progressPercent =
-          !access.canStart && !progress
-            ? 0
-            : Math.min(100, Math.round((completedCount / totalChapters) * 100));
-
-        return {
-          course,
-          accessStatus: access.status,
-          canStart: access.canStart,
-          totalChapters,
-          progress,
-          progressPercent,
-          isFavorited: favoriteCourseIds.has(course.id),
-        } satisfies LearningRow;
-      })
-      .filter(row => row.canStart || row.progress || row.isFavorited)
-      .sort((a, b) => getLearningSortValue(b) - getLearningSortValue(a));
-  }, [allCourses, favoriteCourseIds, getCourseAccess, getProgress]);
+  const learningPlan = useMemo(
+    () =>
+      createLearningPlanWorkspace({
+        courses: allCourses,
+        engagementState,
+        resolveAccess: getCourseAccess,
+      }),
+    [allCourses, engagementState, getCourseAccess]
+  );
 
   const recentOrders = useMemo(() => {
     return (profileCourseAccess?.orders ?? accessState.orders).slice(0, 4);
@@ -496,6 +548,28 @@ export default function MyCourses() {
     isCatalogLoading ||
     isAccessSyncing ||
     isGrowthProfileLoading;
+  const focusItem = learningPlan.focusItem;
+  const nextCourse = learningPlan.nextCourse;
+
+  const handleOpenCourse = (course: Course) => {
+    navigate(`/courses/${course.id}`);
+  };
+
+  const handleStartCourse = (course: Course) => {
+    const access = getCourseAccess(course);
+    if (!access.canStart) {
+      toast("请先解锁课程", {
+        description: getCourseAccessDescription(access.status),
+      });
+      navigate(`/courses/${course.id}`);
+      return;
+    }
+
+    startCourse(course.id);
+    toast("已加入学习计划", {
+      description: `「${course.title}」已放入进行中课程，可以从成长空间继续。`,
+    });
+  };
 
   const handleAppointmentAction = async (
     appointmentId: string,
@@ -565,7 +639,7 @@ export default function MyCourses() {
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </button>
                 <button
-                  onClick={() => navigate("/")}
+                  onClick={() => navigate("/courses")}
                   className="inline-flex h-12 items-center justify-center rounded-full border border-[#D8CEC0] px-6 text-sm font-semibold text-[#4F5B54] transition hover:bg-[#F4EFE6]"
                 >
                   先看看课程
@@ -607,12 +681,12 @@ export default function MyCourses() {
           transition={{ duration: 0.48, ease: [0.16, 1, 0.3, 1] }}
           className="rounded-[32px] bg-[#243B35] p-6 text-white shadow-xl shadow-[#243B35]/10 sm:p-8 lg:p-10"
         >
-          <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
+          <div className="grid gap-8 lg:grid-cols-[1fr_390px]">
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-[#DDE8D9]">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  已同步账号
+                  <BookOpenCheck className="h-3.5 w-3.5" />
+                  学习计划
                 </span>
                 {isBusy && (
                   <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/72">
@@ -622,11 +696,71 @@ export default function MyCourses() {
                 )}
               </div>
               <h1 className="mt-6 text-3xl font-semibold tracking-normal sm:text-4xl lg:text-5xl">
-                {user?.nickname ?? "成长空间"}
+                {user?.nickname ? `${user.nickname}的成长空间` : "成长空间"}
               </h1>
               <p className="mt-4 max-w-[660px] text-sm leading-7 text-white/72">
-                这里沉淀课程学习、测评报告、咨询预约和购买记录，让每一次开始和继续都更清楚。
+                这里优先整理已加入学习计划、收藏待学和已完成课程，再把测评与咨询放在辅助位置，帮助你知道下一步接着学什么。
               </p>
+
+              {focusItem ? (
+                <div className="mt-8 max-w-[700px] border-l border-[#BFD0B8]/45 pl-5">
+                  <p className="text-xs font-semibold text-[#BFD0B8]">
+                    本次继续
+                  </p>
+                  <button
+                    onClick={() => handleOpenCourse(focusItem.course)}
+                    className="mt-3 block text-left text-2xl font-semibold leading-snug text-white transition hover:text-[#DDE8D9]"
+                  >
+                    {focusItem.course.title}
+                  </button>
+                  <p className="mt-3 text-sm leading-6 text-white/68">
+                    {focusItem.learningPath.title} · 已完成{" "}
+                    {focusItem.progressPercent}% ·{" "}
+                    {focusItem.nextCourse
+                      ? `下一门建议 ${focusItem.nextCourse.title}`
+                      : "当前路径暂无更多课程"}
+                  </p>
+                  <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                    <button
+                      onClick={() =>
+                        focusItem.bucket === "saved" &&
+                        focusItem.access.canStart
+                          ? handleStartCourse(focusItem.course)
+                          : handleOpenCourse(focusItem.course)
+                      }
+                      className="inline-flex h-11 items-center justify-center rounded-full bg-[#DDE8D9] px-5 text-sm font-semibold text-[#20362F] transition hover:bg-white"
+                    >
+                      <PlayCircle className="mr-2 h-4 w-4" />
+                      {getPlanActionLabel(focusItem)}
+                    </button>
+                    {nextCourse && (
+                      <button
+                        onClick={() => handleOpenCourse(nextCourse)}
+                        className="inline-flex h-11 items-center justify-center rounded-full border border-white/18 px-5 text-sm font-semibold text-white/82 transition hover:bg-white/10 hover:text-white"
+                      >
+                        查看下一门
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-8 max-w-[680px] border-l border-[#BFD0B8]/45 pl-5">
+                  <p className="text-xs font-semibold text-[#BFD0B8]">
+                    尚未建立学习计划
+                  </p>
+                  <p className="mt-3 text-sm leading-6 text-white/68">
+                    可以先收藏一门课程，或从免费课程加入学习计划，成长空间会自动生成继续学习和下一步建议。
+                  </p>
+                  <button
+                    onClick={() => navigate("/courses")}
+                    className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-[#DDE8D9] px-5 text-sm font-semibold text-[#20362F] transition hover:bg-white"
+                  >
+                    去课程中心
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </button>
+                </div>
+              )}
 
               <div className="mt-7 flex flex-wrap gap-2">
                 {(user?.roles ?? []).map(role => (
@@ -644,27 +778,68 @@ export default function MyCourses() {
             </div>
 
             <div className="rounded-[28px] border border-white/12 bg-white/8 p-5">
-              <p className="text-sm font-semibold text-[#DDE8D9]">会员权益</p>
-              <div className="mt-5 flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-2xl font-semibold">{membershipLabel}</p>
-                  <p className="mt-2 text-xs text-white/62">
-                    {hasActiveMembership
-                      ? `有效期至 ${formatDate(membership.expiresAt)}`
-                      : "开通后可学习会员课程"}
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-semibold text-[#DDE8D9]">
+                  下一步建议
+                </p>
+                <Compass className="h-5 w-5 text-[#DDE8D9]" />
+              </div>
+
+              {nextCourse ? (
+                <button
+                  onClick={() => handleOpenCourse(nextCourse)}
+                  className="group mt-5 block w-full text-left"
+                >
+                  <img
+                    src={nextCourse.coverUrl}
+                    alt=""
+                    className="h-36 w-full rounded-[22px] object-cover opacity-90 transition duration-300 group-hover:opacity-100"
+                  />
+                  <span className="mt-4 inline-flex rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-[#DDE8D9]">
+                    同路径下一课
+                  </span>
+                  <span className="mt-3 block text-xl font-semibold leading-snug text-white group-hover:text-[#DDE8D9]">
+                    {nextCourse.title}
+                  </span>
+                  <span className="mt-3 block text-xs leading-5 text-white/62">
+                    {nextCourse.teacher} · {nextCourse.category} ·{" "}
+                    {nextCourse.isFree
+                      ? "免费"
+                      : `¥${nextCourse.price.toFixed(1)}`}
+                  </span>
+                </button>
+              ) : (
+                <div className="mt-5 rounded-[22px] bg-white/8 p-5">
+                  <p className="text-lg font-semibold text-white">先选一门课</p>
+                  <p className="mt-3 text-sm leading-6 text-white/64">
+                    加入学习计划后，这里会出现同路径下一门课程。
                   </p>
                 </div>
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F2E6C9] text-[#6C5526]">
-                  <Crown className="h-5 w-5" />
-                </span>
+              )}
+
+              <div className="mt-6 border-t border-white/12 pt-5">
+                <p className="text-xs font-semibold text-[#BFD0B8]">计划概览</p>
+                <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+                  <div>
+                    <p className="text-2xl font-semibold">
+                      {learningPlan.summary.activeCount}
+                    </p>
+                    <p className="mt-1 text-xs text-white/58">进行中</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-semibold">
+                      {learningPlan.summary.savedCount}
+                    </p>
+                    <p className="mt-1 text-xs text-white/58">待学</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-semibold">
+                      {learningPlan.summary.completedCount}
+                    </p>
+                    <p className="mt-1 text-xs text-white/58">完成</p>
+                  </div>
+                </div>
               </div>
-              <button
-                onClick={() => navigate("/")}
-                className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#DDE8D9] px-5 text-sm font-semibold text-[#20362F] transition hover:bg-white"
-              >
-                {hasActiveMembership ? "查看会员课程" : "了解会员课程"}
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </button>
             </div>
           </div>
         </motion.section>
@@ -683,33 +858,33 @@ export default function MyCourses() {
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <Metric
-            icon={BookOpenCheck}
-            label="已拥有课程"
-            value={profileSummary?.ownedCourseCount ?? ownedCourseCount}
+            icon={PlayCircle}
+            label="进行中课程"
+            value={learningPlan.summary.activeCount}
             accent="sage"
           />
           <Metric
-            icon={Sparkles}
-            label="学习清单"
-            value={learningRows.length}
+            icon={BookmarkCheck}
+            label="收藏待学"
+            value={learningPlan.summary.savedCount}
             accent="gold"
+          />
+          <Metric
+            icon={Trophy}
+            label="已完成"
+            value={learningPlan.summary.completedCount}
+            accent="clay"
+          />
+          <Metric
+            icon={BarChart3}
+            label="平均进度"
+            value={`${learningPlan.summary.averageProgressPercent}%`}
+            accent="sage"
           />
           <Metric
             icon={CalendarCheck}
             label="咨询预约"
             value={profileSummary?.upcomingCounselingCount ?? 0}
-            accent="clay"
-          />
-          <Metric
-            icon={BarChart3}
-            label="最近测评"
-            value={latestAssessment ? "已生成" : "待开始"}
-            accent="sage"
-          />
-          <Metric
-            icon={ReceiptText}
-            label="订单记录"
-            value={profileSummary?.orderCount ?? orderCount}
             accent="ink"
           />
         </section>
@@ -718,30 +893,48 @@ export default function MyCourses() {
           <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5 sm:p-6">
             <div className="flex flex-col gap-3 border-b border-[#E7DED0] pb-5 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="text-sm font-semibold text-[#6F8F83]">
-                  学习中的课程
-                </p>
+                <p className="text-sm font-semibold text-[#6F8F83]">学习计划</p>
                 <h2 className="mt-2 text-2xl font-semibold text-[#243B35]">
-                  继续你的成长节奏
+                  按状态整理课程，不再混在一个清单里
                 </h2>
               </div>
               <button
-                onClick={() => navigate("/")}
+                onClick={() => navigate("/courses")}
                 className="inline-flex h-10 items-center justify-center rounded-full border border-[#D8CEC0] px-4 text-sm font-semibold text-[#4F5B54] transition hover:bg-[#F4EFE6]"
               >
                 发现更多课程
               </button>
             </div>
 
-            {learningRows.length ? (
-              <div className="mt-1">
-                {learningRows.map(row => (
-                  <CourseRow
-                    key={row.course.id}
-                    row={row}
-                    onOpen={() => navigate(`/courses/${row.course.id}`)}
-                  />
-                ))}
+            {learningPlan.summary.totalPlanCount ? (
+              <div className="mt-6 space-y-7">
+                <PlanSection
+                  icon={PlayCircle}
+                  title="进行中"
+                  description="已经加入学习计划的课程会优先展示，方便继续学习和记录进度。"
+                  items={learningPlan.active}
+                  emptyText="还没有进行中的课程。可以从收藏待学里加入，或去课程中心选择一门免费课开始。"
+                  onOpenCourse={handleOpenCourse}
+                  onStartCourse={handleStartCourse}
+                />
+                <PlanSection
+                  icon={BookmarkCheck}
+                  title="收藏待学"
+                  description="收藏课程先保留为待学清单，确认适合后再加入学习计划。"
+                  items={learningPlan.saved}
+                  emptyText="暂无收藏待学课程。看到合适的课程时可以先收藏，不必马上购买或学习。"
+                  onOpenCourse={handleOpenCourse}
+                  onStartCourse={handleStartCourse}
+                />
+                <PlanSection
+                  icon={Trophy}
+                  title="已完成"
+                  description="完成课程保留在这里，用来复习章节和继续同路径下一门课程。"
+                  items={learningPlan.completed}
+                  emptyText="完成第一门课程后，这里会形成你的阶段性成长记录。"
+                  onOpenCourse={handleOpenCourse}
+                  onStartCourse={handleStartCourse}
+                />
               </div>
             ) : (
               <div className="pt-6">
@@ -751,7 +944,7 @@ export default function MyCourses() {
                   description="可以先从免费课程或与你当下困扰相关的主题开始，形成一份低压力的学习清单。"
                   action={
                     <button
-                      onClick={() => navigate("/")}
+                      onClick={() => navigate("/courses")}
                       className="inline-flex h-11 items-center justify-center rounded-full bg-[#243B35] px-5 text-sm font-semibold text-white transition hover:bg-[#315047]"
                     >
                       去课程中心
@@ -764,6 +957,34 @@ export default function MyCourses() {
           </div>
 
           <aside className="space-y-6">
+            <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-6 shadow-sm shadow-[#243B35]/5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-[#6F8F83]">
+                    会员权益
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                    {membershipLabel}
+                  </h2>
+                </div>
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F2E6C9] text-[#81652C]">
+                  <Crown className="h-5 w-5" />
+                </span>
+              </div>
+              <p className="mt-4 text-sm leading-6 text-[#6D746F]">
+                {hasActiveMembership
+                  ? `有效期至 ${formatDate(membership.expiresAt)}，会员课程会自动进入可学习权益。`
+                  : "开通后可学习会员课程，收藏中的会员课会更容易转入学习计划。"}
+              </p>
+              <button
+                onClick={() => navigate("/courses")}
+                className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-full border border-[#D8CEC0] text-xs font-semibold text-[#4F5B54] transition hover:bg-[#F4EFE6]"
+              >
+                {hasActiveMembership ? "查看会员课程" : "了解会员课程"}
+                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+              </button>
+            </div>
+
             <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-6 shadow-sm shadow-[#243B35]/5">
               <div className="flex items-center justify-between gap-4">
                 <div>

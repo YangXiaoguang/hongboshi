@@ -51,6 +51,13 @@ export {
   type CourseDetailPrimaryActionCopy,
 } from "./model/courseDetailConversion";
 export {
+  createLearningPlanWorkspace,
+  type LearningPlanBucket,
+  type LearningPlanCourseItem,
+  type LearningPlanWorkspace,
+  type LearningPlanWorkspaceSummary,
+} from "./model/courseLearningPlan";
+export {
   LOCAL_COURSE_USER_ID,
   completeCourseChapter,
   createEmptyCourseEngagementState,
