@@ -63,6 +63,12 @@ export {
   type LearningPlanWorkspaceSummary,
 } from "./model/courseLearningPlan";
 export {
+  createLearningArchiveWorkspace,
+  type LearningArchiveItem,
+  type LearningArchiveSummary,
+  type LearningArchiveWorkspace,
+} from "./model/courseLearningArchive";
+export {
   canEnterCourseLearning,
   createCourseLearningSession,
   type CourseLearningChapterItem,

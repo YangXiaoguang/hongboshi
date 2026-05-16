@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 import {
   ArrowRight,
+  Award,
   BarChart3,
   BookmarkCheck,
   BookOpenCheck,
@@ -28,12 +29,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import type { OrderStatus, UserRole } from "@shared/domain";
 import {
   createLearningPlanWorkspace,
+  createLearningArchiveWorkspace,
   getCourseAccessDescription,
   useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
+  useCoursePractice,
   type Course,
   type CourseAccessStatus,
+  type LearningArchiveItem,
   type LearningPlanCourseItem,
 } from "@/features/courses";
 import {
@@ -381,6 +385,193 @@ function PlanSection({
   );
 }
 
+function ArchiveCourseCard({
+  item,
+  onReview,
+  onOpenNext,
+}: {
+  item: LearningArchiveItem;
+  onReview: () => void;
+  onOpenNext: () => void;
+}) {
+  const certificate = item.certificatePreview;
+
+  return (
+    <motion.article
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+      className="grid gap-5 border-b border-[#E7DED0] py-6 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_280px]"
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#E6EDDF] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
+            <Trophy className="h-3.5 w-3.5" />
+            已完成
+          </span>
+          <span className="rounded-full bg-[#F2E6C9] px-2.5 py-1 text-xs font-semibold text-[#81652C]">
+            {item.learningPlanItem.learningPath.label}
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#F4EFE6] px-2.5 py-1 text-xs font-semibold text-[#6D746F]">
+            <Award className="h-3.5 w-3.5" />
+            阶段证明预览
+          </span>
+          {item.needsPracticeFollowUp && (
+            <span className="rounded-full bg-[#F4E5DE] px-2.5 py-1 text-xs font-semibold text-[#A65F48]">
+              待补练习
+            </span>
+          )}
+        </div>
+
+        <button
+          onClick={onReview}
+          className="mt-3 block max-w-full break-words text-left text-xl font-semibold leading-snug text-[#243B35] transition hover:text-[#6F8F83]"
+        >
+          {item.course.title}
+        </button>
+        <p className="mt-2 text-sm leading-6 text-[#767F78]">
+          完成于 {formatDate(item.completedAt)} · {item.course.teacher} ·{" "}
+          {item.course.category}
+        </p>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-[18px] bg-[#F9F5EE] px-4 py-3">
+            <p className="text-xs font-semibold text-[#7B817C]">章节</p>
+            <p className="mt-2 text-lg font-semibold text-[#243B35]">
+              {item.session.completedCount}/{item.session.totalChapters}
+            </p>
+          </div>
+          <div className="rounded-[18px] bg-[#F9F5EE] px-4 py-3">
+            <p className="text-xs font-semibold text-[#7B817C]">练习</p>
+            <p className="mt-2 text-lg font-semibold text-[#243B35]">
+              {item.practiceSummary.completedCount}/
+              {item.practiceSummary.totalChapters}
+            </p>
+          </div>
+          <div className="rounded-[18px] bg-[#F9F5EE] px-4 py-3">
+            <p className="text-xs font-semibold text-[#7B817C]">证明状态</p>
+            <p className="mt-2 text-lg font-semibold text-[#243B35]">
+              {certificate.issueStatus === "issued" ? "已签发" : "待签发"}
+            </p>
+          </div>
+        </div>
+
+        {item.needsPracticeFollowUp ? (
+          <p className="mt-4 rounded-[18px] bg-[#FFF5EF] px-4 py-3 text-xs leading-5 text-[#A65F48]">
+            还有{" "}
+            {item.practiceSummary.totalChapters -
+              item.practiceSummary.completedCount}{" "}
+            章练习未标记完成，补齐后学习档案会更适合生成正式报告。
+          </p>
+        ) : (
+          <p className="mt-4 rounded-[18px] bg-[#EEF4EA] px-4 py-3 text-xs leading-5 text-[#41675A]">
+            章节和练习已经完整，后续接入正式签发规则后可直接进入证书生成流程。
+          </p>
+        )}
+      </div>
+
+      <aside className="rounded-[24px] bg-[#243B35] p-5 text-white">
+        <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#C8D8C0]">
+          <Award className="h-4 w-4" />
+          阶段证明
+        </p>
+        <p className="mt-5 text-xs text-white/52">证书编号</p>
+        <p className="mt-2 break-words text-lg font-semibold">
+          {certificate.certificateId ?? "正式签发后生成"}
+        </p>
+        <div className="mt-5 border-t border-white/12 pt-4 text-xs leading-5 text-white/62">
+          <p>{certificate.learningPathTitle}</p>
+          <p className="mt-2">
+            预览字段已保存在本地口径，正式签发需要后续服务端学习档案确认。
+          </p>
+        </div>
+        <div className="mt-5 grid gap-2">
+          <button
+            onClick={onReview}
+            className="inline-flex h-10 items-center justify-center rounded-full bg-[#DDE8D9] px-4 text-xs font-semibold text-[#20362F] transition hover:bg-white"
+          >
+            查看完成反馈
+            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+          </button>
+          {item.nextCourse && (
+            <button
+              onClick={onOpenNext}
+              className="inline-flex h-10 items-center justify-center rounded-full border border-white/16 px-4 text-xs font-semibold text-white/82 transition hover:bg-white/10"
+            >
+              继续路径
+            </button>
+          )}
+        </div>
+      </aside>
+    </motion.article>
+  );
+}
+
+function LearningArchiveSection({
+  items,
+  summary,
+  onReviewCourse,
+  onOpenNextCourse,
+}: {
+  items: LearningArchiveItem[];
+  summary: {
+    completedCourseCount: number;
+    certificatePreviewCount: number;
+    needsPracticeCount: number;
+  };
+  onReviewCourse: (course: Course) => void;
+  onOpenNextCourse: (course: Course) => void;
+}) {
+  return (
+    <section className="border-t border-[#E7DED0] pt-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
+            <Award className="h-4 w-4" />
+            学习档案
+          </p>
+          <p className="mt-2 text-sm leading-6 text-[#767F78]">
+            已完成课程会沉淀为档案，承接完成反馈、练习状态和阶段证明预览。
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full bg-[#F4EFE6] px-3 py-1 text-xs font-semibold text-[#6D746F]">
+            {summary.completedCourseCount} 门完成
+          </span>
+          <span className="rounded-full bg-[#E6EDDF] px-3 py-1 text-xs font-semibold text-[#41675A]">
+            {summary.certificatePreviewCount} 个预览
+          </span>
+          {summary.needsPracticeCount > 0 && (
+            <span className="rounded-full bg-[#F4E5DE] px-3 py-1 text-xs font-semibold text-[#A65F48]">
+              {summary.needsPracticeCount} 门待补练习
+            </span>
+          )}
+        </div>
+      </div>
+
+      {items.length ? (
+        <div className="mt-2">
+          {items.map(item => (
+            <ArchiveCourseCard
+              key={item.course.id}
+              item={item}
+              onReview={() => onReviewCourse(item.course)}
+              onOpenNext={() =>
+                item.nextCourse ? onOpenNextCourse(item.nextCourse) : undefined
+              }
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="mt-5 rounded-[18px] bg-[#F9F5EE] px-4 py-3 text-sm leading-6 text-[#767F78]">
+          完成第一门课程后，这里会显示完成时间、练习沉淀和阶段证明预览。
+        </p>
+      )}
+    </section>
+  );
+}
+
 function AppointmentRow({
   record,
   onOpen,
@@ -515,6 +706,7 @@ export default function MyCourses() {
     getCourseAccess,
   } = useCourseAccess();
   const { engagementState, startCourse } = useCourseEngagement();
+  const { practiceState } = useCoursePractice();
   const {
     profile: growthProfile,
     isLoading: isGrowthProfileLoading,
@@ -534,6 +726,14 @@ export default function MyCourses() {
         resolveAccess: getCourseAccess,
       }),
     [allCourses, engagementState, getCourseAccess]
+  );
+  const learningArchive = useMemo(
+    () =>
+      createLearningArchiveWorkspace({
+        learningPlan,
+        practiceState,
+      }),
+    [learningPlan, practiceState]
   );
 
   const recentOrders = useMemo(() => {
@@ -844,7 +1044,7 @@ export default function MyCourses() {
 
               <div className="mt-6 border-t border-white/12 pt-5">
                 <p className="text-xs font-semibold text-[#BFD0B8]">计划概览</p>
-                <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+                <div className="mt-4 grid grid-cols-4 gap-3 text-center">
                   <div>
                     <p className="text-2xl font-semibold">
                       {learningPlan.summary.activeCount}
@@ -863,7 +1063,19 @@ export default function MyCourses() {
                     </p>
                     <p className="mt-1 text-xs text-white/58">完成</p>
                   </div>
+                  <div>
+                    <p className="text-2xl font-semibold">
+                      {learningArchive.summary.certificatePreviewCount}
+                    </p>
+                    <p className="mt-1 text-xs text-white/58">证明</p>
+                  </div>
                 </div>
+                {learningArchive.summary.needsPracticeCount > 0 && (
+                  <p className="mt-4 rounded-[16px] bg-white/8 px-3 py-2 text-xs leading-5 text-white/62">
+                    {learningArchive.summary.needsPracticeCount}{" "}
+                    门已完成课程还有练习可补齐。
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -881,7 +1093,7 @@ export default function MyCourses() {
           </div>
         )}
 
-        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
           <Metric
             icon={PlayCircle}
             label="进行中课程"
@@ -899,6 +1111,12 @@ export default function MyCourses() {
             label="已完成"
             value={learningPlan.summary.completedCount}
             accent="clay"
+          />
+          <Metric
+            icon={Award}
+            label="阶段证明"
+            value={learningArchive.summary.certificatePreviewCount}
+            accent="gold"
           />
           <Metric
             icon={BarChart3}
@@ -953,15 +1171,11 @@ export default function MyCourses() {
                   onLearnCourse={handleLearnCourse}
                   onStartCourse={handleStartCourse}
                 />
-                <PlanSection
-                  icon={Trophy}
-                  title="已完成"
-                  description="完成课程保留在这里，用来复习章节和继续同路径下一门课程。"
-                  items={learningPlan.completed}
-                  emptyText="完成第一门课程后，这里会形成你的阶段性成长记录。"
-                  onOpenCourse={handleOpenCourse}
-                  onLearnCourse={handleLearnCourse}
-                  onStartCourse={handleStartCourse}
+                <LearningArchiveSection
+                  items={learningArchive.items}
+                  summary={learningArchive.summary}
+                  onReviewCourse={handleLearnCourse}
+                  onOpenNextCourse={handleOpenCourse}
                 />
               </div>
             ) : (
