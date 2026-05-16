@@ -8,6 +8,7 @@ export { useCourseCatalog } from "./hooks/useCourseCatalog";
 export { useCourseDetail } from "./hooks/useCourseDetail";
 export { useCourseAccess } from "./hooks/useCourseAccess";
 export { useCourseEngagement } from "./hooks/useCourseEngagement";
+export { useCoursePractice } from "./hooks/useCoursePractice";
 export {
   localCourseAccessRepository,
   type CourseAccessRepository,
@@ -16,6 +17,10 @@ export {
   localCourseEngagementRepository,
   type CourseEngagementRepository,
 } from "./api/localCourseEngagementRepository";
+export {
+  localCoursePracticeRepository,
+  type CoursePracticeRepository,
+} from "./api/localCoursePracticeRepository";
 export {
   ALL_COURSE_CATEGORY,
   ALL_COURSE_TYPE,
@@ -63,6 +68,24 @@ export {
   type CourseLearningChapterItem,
   type CourseLearningSession,
 } from "./model/courseLearningSession";
+export {
+  CoursePracticeRecordSchema,
+  CoursePracticeStateSchema,
+  createCourseChapterMaterial,
+  createEmptyCoursePracticeState,
+  getCoursePracticeKey,
+  getCoursePracticeRecord,
+  getCoursePracticeSummary,
+  normalizeCoursePracticeRecord,
+  normalizeCoursePracticeRecords,
+  normalizeCoursePracticeState,
+  saveCoursePracticeDraft,
+  setCoursePracticeCompleted,
+  type CourseChapterMaterial,
+  type CoursePracticeRecord,
+  type CoursePracticeState,
+  type CoursePracticeSummary,
+} from "./model/coursePractice";
 export {
   LOCAL_COURSE_USER_ID,
   completeCourseChapter,

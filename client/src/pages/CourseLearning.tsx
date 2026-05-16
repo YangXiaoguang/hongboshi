@@ -1,4 +1,4 @@
-import { useEffect, type ElementType } from "react";
+import { useEffect, useState, type ElementType } from "react";
 import { motion } from "framer-motion";
 import { useLocation, useRoute } from "wouter";
 import {
@@ -6,6 +6,7 @@ import {
   ArrowRight,
   BookOpenCheck,
   CheckCircle2,
+  ClipboardCheck,
   Circle,
   Clock3,
   Compass,
@@ -16,8 +17,8 @@ import {
   PenLine,
   PlayCircle,
   Route,
+  Save,
   ShieldCheck,
-  Sparkles,
   Trophy,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -33,10 +34,14 @@ import {
   useCourseAccess,
   useCourseDetail,
   useCourseEngagement,
+  useCoursePractice,
   type Course,
   type CourseAccessResult,
   type CourseChapter,
+  type CourseChapterMaterial,
   type CourseDetail,
+  type CoursePracticeRecord,
+  type CoursePracticeSummary,
 } from "@/features/courses";
 
 function formatDuration(minutes: number): string {
@@ -45,6 +50,25 @@ function formatDuration(minutes: number): string {
   const rest = minutes % 60;
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
 }
+
+function formatPracticeTime(value?: string): string {
+  if (!value) return "尚未保存";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "尚未保存";
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+const practiceSyncStatusCopy = {
+  local_only: "本机保存",
+  sync_pending: "待同步",
+  synced: "已同步",
+} satisfies Record<CoursePracticeRecord["syncStatus"], string>;
 
 function LearningStat({
   icon,
@@ -178,13 +202,21 @@ function ChapterRow({
   stepNumber,
   isCompleted,
   isCurrent,
+  isActive,
+  hasPracticeDraft,
+  isPracticeCompleted,
   onComplete,
+  onSelect,
 }: {
   chapter: CourseChapter;
   stepNumber: number;
   isCompleted: boolean;
   isCurrent: boolean;
+  isActive: boolean;
+  hasPracticeDraft: boolean;
+  isPracticeCompleted: boolean;
   onComplete: () => void;
+  onSelect: () => void;
 }) {
   return (
     <motion.article
@@ -233,14 +265,42 @@ function ChapterRow({
           </span>
         </div>
         <h3 className="mt-3 break-words text-lg font-semibold leading-snug text-[#243B35]">
-          {chapter.title}
+          <button
+            onClick={onSelect}
+            className="text-left transition hover:text-[#5F7F73]"
+          >
+            {chapter.title}
+          </button>
         </h3>
         <p className="mt-2 text-sm leading-6 text-[#6D746F]">
           {chapter.description}
         </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {isActive && (
+            <span className="rounded-full bg-[#243B35] px-2.5 py-1 text-xs font-semibold text-white">
+              正在查看
+            </span>
+          )}
+          {hasPracticeDraft && (
+            <span className="rounded-full bg-[#F2E6C9] px-2.5 py-1 text-xs font-semibold text-[#7A5B31]">
+              有练习草稿
+            </span>
+          )}
+          {isPracticeCompleted && (
+            <span className="rounded-full bg-[#E6EDDF] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
+              练习完成
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center sm:justify-end">
+      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <button
+          onClick={onSelect}
+          className="inline-flex h-10 min-w-[96px] items-center justify-center rounded-full border border-[#D8CEC0] px-4 text-xs font-semibold text-[#4F5B54] transition hover:bg-[#FFFDF8]"
+        >
+          查看练习
+        </button>
         <button
           onClick={onComplete}
           className={`inline-flex h-10 min-w-[112px] items-center justify-center rounded-full px-4 text-xs font-semibold transition ${
@@ -258,6 +318,188 @@ function ChapterRow({
         </button>
       </div>
     </motion.article>
+  );
+}
+
+function PracticeStatusRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[#E7DED0] py-2 last:border-b-0">
+      <span className="text-xs font-semibold text-[#7B817C]">{label}</span>
+      <span className="text-right text-xs font-semibold text-[#243B35]">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function PracticeWorkspacePanel({
+  chapter,
+  stepNumber,
+  material,
+  record,
+  summary,
+  draft,
+  onDraftChange,
+  onSaveDraft,
+  onToggleCompleted,
+}: {
+  chapter: CourseChapter;
+  stepNumber: number;
+  material: CourseChapterMaterial;
+  record?: CoursePracticeRecord;
+  summary: CoursePracticeSummary;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSaveDraft: () => void;
+  onToggleCompleted: (isCompleted: boolean) => void;
+}) {
+  const isCompleted = record?.isPracticeCompleted ?? false;
+
+  return (
+    <motion.div
+      key={chapter.id}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+      className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-6 shadow-sm shadow-[#243B35]/5"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
+          <FileText className="h-4 w-4" />
+          资料与练习
+        </p>
+        <span className="shrink-0 rounded-full bg-[#F4EFE6] px-2.5 py-1 text-xs font-semibold text-[#6D746F]">
+          第 {stepNumber} 章
+        </span>
+      </div>
+
+      <div className="mt-5 rounded-[20px] bg-[#F7F1E8] p-4">
+        <p className="text-xs font-semibold text-[#6F8F83]">当前查看</p>
+        <h2 className="mt-2 break-words text-xl font-semibold leading-snug text-[#243B35]">
+          {chapter.title}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+          {chapter.description}
+        </p>
+      </div>
+
+      <section className="mt-5 rounded-[20px] border border-[#E4DCCF] p-4">
+        <p className="inline-flex items-center gap-2 text-xs font-semibold text-[#6F8F83]">
+          <FileText className="h-3.5 w-3.5" />
+          章节讲义
+        </p>
+        <h3 className="mt-3 text-base font-semibold text-[#243B35]">
+          {material.title}
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+          {material.summary}
+        </p>
+        <div className="mt-4 space-y-2">
+          {material.keyPoints.map((point, index) => (
+            <p
+              key={`${point}-${index}`}
+              className="flex gap-2 text-xs leading-5 text-[#6D746F]"
+            >
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#6F8F83]" />
+              <span>{point}</span>
+            </p>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-5">
+        <label
+          htmlFor="course-practice-note"
+          className="inline-flex items-center gap-2 text-xs font-semibold text-[#6F8F83]"
+        >
+          <PenLine className="h-3.5 w-3.5" />
+          练习记录
+        </label>
+        <textarea
+          id="course-practice-note"
+          value={draft}
+          onChange={event => onDraftChange(event.target.value)}
+          placeholder="写下本章行动计划、触发点、身体感受或想继续观察的问题。"
+          className="mt-3 min-h-[138px] w-full resize-y rounded-[18px] border border-[#D8CEC0] bg-[#FFFDF8] px-4 py-3 text-sm leading-6 text-[#243B35] outline-none transition placeholder:text-[#A0A8A1] focus:border-[#6F8F83] focus:ring-2 focus:ring-[#DDE8D9]"
+        />
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <button
+            onClick={onSaveDraft}
+            className="inline-flex h-10 flex-1 items-center justify-center rounded-full bg-[#243B35] px-4 text-xs font-semibold text-white transition hover:bg-[#315047]"
+          >
+            <Save className="mr-1.5 h-3.5 w-3.5" />
+            保存草稿
+          </button>
+          <button
+            onClick={() => onToggleCompleted(!isCompleted)}
+            className={`inline-flex h-10 flex-1 items-center justify-center rounded-full px-4 text-xs font-semibold transition ${
+              isCompleted
+                ? "bg-[#E6EDDF] text-[#41675A] hover:bg-[#DDE8D9]"
+                : "border border-[#D8CEC0] text-[#4F5B54] hover:bg-[#F4EFE6]"
+            }`}
+          >
+            <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" />
+            {isCompleted ? "练习已完成" : "标记练习完成"}
+          </button>
+        </div>
+      </section>
+
+      <div className="mt-5 rounded-[18px] bg-[#F9F5EE] px-4 py-3">
+        <PracticeStatusRow label="素材状态" value="占位待接真实文件" />
+        <PracticeStatusRow label="讲义来源" value={material.sourceLabel} />
+        <PracticeStatusRow
+          label="保存状态"
+          value={record ? practiceSyncStatusCopy[record.syncStatus] : "未保存"}
+        />
+        <PracticeStatusRow
+          label="最近更新"
+          value={formatPracticeTime(record?.updatedAt)}
+        />
+      </div>
+
+      <div className="mt-5 rounded-[18px] border border-[#E4DCCF] px-4 py-3">
+        <p className="text-xs font-semibold text-[#6F8F83]">练习摘要</p>
+        <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+          已保存 {summary.draftedCount} / {summary.totalChapters} 章草稿，完成{" "}
+          {summary.completedCount} / {summary.totalChapters} 章练习。
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+function PracticeCompletionSummary({
+  summary,
+}: {
+  summary: CoursePracticeSummary;
+}) {
+  return (
+    <div className="border-b border-[#D8CEC0] pb-4">
+      <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
+        <ClipboardCheck className="h-4 w-4" />
+        练习记录
+      </p>
+      <div className="mt-5 grid grid-cols-3 gap-3 text-center">
+        <div>
+          <p className="text-2xl font-semibold text-[#243B35]">
+            {summary.draftedCount}
+          </p>
+          <p className="mt-1 text-xs text-[#7B817C]">有草稿</p>
+        </div>
+        <div>
+          <p className="text-2xl font-semibold text-[#243B35]">
+            {summary.completedCount}
+          </p>
+          <p className="mt-1 text-xs text-[#7B817C]">已完成</p>
+        </div>
+        <div>
+          <p className="text-2xl font-semibold text-[#243B35]">
+            {summary.completedPercent}%
+          </p>
+          <p className="mt-1 text-xs text-[#7B817C]">完成率</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -302,6 +544,15 @@ export default function CourseLearning() {
   );
   const { getCourseAccess, isSyncing: isAccessSyncing } = useCourseAccess();
   const { completeChapter, getProgress, startCourse } = useCourseEngagement();
+  const {
+    getRecord,
+    getSummary,
+    materialForChapter,
+    saveDraft,
+    setPracticeCompleted,
+  } = useCoursePractice();
+  const [activeChapterId, setActiveChapterId] = useState<string | undefined>();
+  const [practiceDraft, setPracticeDraft] = useState("");
   const access = course ? getCourseAccess(course) : undefined;
   const canLearn = access ? canEnterCourseLearning(access) : false;
   const progress = course ? getProgress(course.id) : undefined;
@@ -310,6 +561,31 @@ export default function CourseLearning() {
     if (!course || !canLearn || progress) return;
     startCourse(course.id);
   }, [canLearn, course, progress, startCourse]);
+
+  useEffect(() => {
+    if (!course || !canLearn) return;
+
+    setActiveChapterId(prevChapterId => {
+      const hasPreviousChapter =
+        prevChapterId &&
+        course.chapters.some(chapter => chapter.id === prevChapterId);
+      if (hasPreviousChapter) return prevChapterId;
+
+      return createCourseLearningSession(course, progress).currentChapter.id;
+    });
+  }, [canLearn, course, progress]);
+
+  useEffect(() => {
+    if (!course || !canLearn) {
+      setPracticeDraft("");
+      return;
+    }
+
+    const targetChapterId =
+      activeChapterId ??
+      createCourseLearningSession(course, progress).currentChapter.id;
+    setPracticeDraft(getRecord(course.id, targetChapterId)?.note ?? "");
+  }, [activeChapterId, canLearn, course, getRecord, progress]);
 
   if (!course && isLoading) return <LoadingLearningPage />;
   if (!course) return <NotFound />;
@@ -337,12 +613,27 @@ export default function CourseLearning() {
   const currentStep = session.chapterItems.find(
     item => item.chapter.id === session.currentChapter.id
   );
+  const activeChapter =
+    course.chapters.find(chapter => chapter.id === activeChapterId) ??
+    session.currentChapter;
+  const activeChapterStep =
+    session.chapterItems.find(item => item.chapter.id === activeChapter.id) ??
+    currentStep;
+  const activePracticeRecord = getRecord(course.id, activeChapter.id);
+  const activeMaterial = materialForChapter(course, activeChapter);
+  const practiceSummary = getSummary(course);
   const currentIndex = session.chapterItems.findIndex(item => item.isCurrent);
   const nextOrderedChapter =
     currentIndex >= 0
       ? session.chapterItems[currentIndex + 1]?.chapter
       : undefined;
   const currentChapterCompleted = currentStep?.isCompleted ?? false;
+
+  const getNextIncompleteChapterAfter = (chapterId: string) => {
+    const completedIds = new Set(progress?.completedChapterIds ?? []);
+    completedIds.add(chapterId);
+    return course.chapters.find(chapter => !completedIds.has(chapter.id));
+  };
 
   const handleCompleteChapter = (
     chapter: CourseChapter,
@@ -355,13 +646,36 @@ export default function CourseLearning() {
       return;
     }
 
+    const practiceRecord = getRecord(course.id, chapter.id);
     completeChapter(course.id, chapter.id, session.totalChapters);
     const completedAfter = session.completedCount + 1;
     const isCourseDone = completedAfter >= session.totalChapters;
+    const nextIncompleteChapter = getNextIncompleteChapterAfter(chapter.id);
+    if (activeChapter.id === chapter.id && nextIncompleteChapter) {
+      setActiveChapterId(nextIncompleteChapter.id);
+    }
     toast(isCourseDone ? "课程已完成" : "已记录章节进度", {
       description: isCourseDone
-        ? "可以回到成长空间查看完成记录，或继续同路径下一门课程。"
-        : "下一章会自动成为当前学习目标。",
+        ? practiceRecord?.isPracticeCompleted
+          ? "本章练习已完成，可以回到成长空间查看记录。"
+          : "章节已完成，右侧仍可补齐练习记录。"
+        : practiceRecord?.isPracticeCompleted
+          ? "下一章会自动成为当前学习目标。"
+          : "下一章会自动成为当前学习目标，练习记录可稍后补齐。",
+    });
+  };
+
+  const handleSavePracticeDraft = () => {
+    saveDraft(course.id, activeChapter.id, practiceDraft);
+    toast(practiceDraft.trim() ? "练习草稿已保存" : "练习草稿已清空", {
+      description: `「${activeChapter.title}」的练习记录已保存在本机。`,
+    });
+  };
+
+  const handleTogglePracticeCompleted = (isPracticeCompleted: boolean) => {
+    setPracticeCompleted(course.id, activeChapter.id, isPracticeCompleted);
+    toast(isPracticeCompleted ? "练习已标记完成" : "已取消练习完成", {
+      description: `「${activeChapter.title}」的练习状态已更新。`,
     });
   };
 
@@ -528,6 +842,14 @@ export default function CourseLearning() {
                     stepNumber={item.stepNumber}
                     isCompleted={item.isCompleted}
                     isCurrent={item.isCurrent}
+                    isActive={item.chapter.id === activeChapter.id}
+                    hasPracticeDraft={Boolean(
+                      getRecord(course.id, item.chapter.id)?.note.trim()
+                    )}
+                    isPracticeCompleted={Boolean(
+                      getRecord(course.id, item.chapter.id)?.isPracticeCompleted
+                    )}
+                    onSelect={() => setActiveChapterId(item.chapter.id)}
                     onComplete={() =>
                       handleCompleteChapter(item.chapter, item.isCompleted)
                     }
@@ -537,29 +859,17 @@ export default function CourseLearning() {
             </div>
 
             <aside className="space-y-6">
-              <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-6 shadow-sm shadow-[#243B35]/5">
-                <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
-                  <FileText className="h-4 w-4" />
-                  资料与练习
-                </p>
-                <div className="mt-5 space-y-4">
-                  <SupportTile
-                    icon={FileText}
-                    title="章节讲义"
-                    description={`「${session.currentChapter.title}」摘要与关键概念占位，后续可接入真实资料文件。`}
-                  />
-                  <SupportTile
-                    icon={PenLine}
-                    title="练习记录"
-                    description="预留本章行动计划、复盘问题和自我观察记录入口。"
-                  />
-                  <SupportTile
-                    icon={Sparkles}
-                    title="素材状态"
-                    description="未来可展示资料审核、下载权限和最近更新时间。"
-                  />
-                </div>
-              </div>
+              <PracticeWorkspacePanel
+                chapter={activeChapter}
+                stepNumber={activeChapterStep?.stepNumber ?? 1}
+                material={activeMaterial}
+                record={activePracticeRecord}
+                summary={practiceSummary}
+                draft={practiceDraft}
+                onDraftChange={setPracticeDraft}
+                onSaveDraft={handleSavePracticeDraft}
+                onToggleCompleted={handleTogglePracticeCompleted}
+              />
 
               <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-6 shadow-sm shadow-[#243B35]/5">
                 <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
@@ -616,7 +926,8 @@ export default function CourseLearning() {
                   完成状态会同步到成长空间，后续可以继续补齐练习、资料下载和阶段证书。
                 </p>
               </div>
-              <div className="flex flex-col justify-center gap-3">
+              <div className="flex flex-col justify-center gap-4">
+                <PracticeCompletionSummary summary={practiceSummary} />
                 <button
                   onClick={() => navigate("/me/courses")}
                   className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] px-5 text-sm font-semibold text-white transition hover:bg-[#315047]"
