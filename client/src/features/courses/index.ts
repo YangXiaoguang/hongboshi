@@ -69,6 +69,16 @@ export {
   type CourseLearningSession,
 } from "./model/courseLearningSession";
 export {
+  CourseCompletionCertificatePreviewSchema,
+  createCourseCompletionFeedback,
+  type CourseCompletionCertificatePreview,
+  type CourseCompletionFeedback,
+  type CourseCompletionMetric,
+  type CourseCompletionNextStep,
+  type CourseCompletionPracticeInsight,
+  type CourseCompletionPracticeTone,
+} from "./model/courseCompletionFeedback";
+export {
   CoursePracticeRecordSchema,
   CoursePracticeStateSchema,
   createCourseChapterMaterial,

@@ -4,7 +4,9 @@ import { useLocation, useRoute } from "wouter";
 import {
   ArrowLeft,
   ArrowRight,
+  Award,
   BookOpenCheck,
+  CalendarCheck,
   CheckCircle2,
   ClipboardCheck,
   Circle,
@@ -27,6 +29,7 @@ import AppHeader from "@/components/AppHeader";
 import NotFound from "@/pages/NotFound";
 import {
   canEnterCourseLearning,
+  createCourseCompletionFeedback,
   createCourseLearningSession,
   getCourseAccessDescription,
   getLearningPathForCourse,
@@ -39,6 +42,7 @@ import {
   type CourseAccessResult,
   type CourseChapter,
   type CourseChapterMaterial,
+  type CourseCompletionFeedback,
   type CourseDetail,
   type CoursePracticeRecord,
   type CoursePracticeSummary,
@@ -57,6 +61,19 @@ function formatPracticeTime(value?: string): string {
   if (Number.isNaN(date.getTime())) return "尚未保存";
 
   return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatCompletionDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "本机记录";
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -468,38 +485,181 @@ function PracticeWorkspacePanel({
   );
 }
 
-function PracticeCompletionSummary({
-  summary,
+function CompletionMetricTile({
+  metric,
 }: {
-  summary: CoursePracticeSummary;
+  metric: CourseCompletionFeedback["metrics"][number];
 }) {
   return (
-    <div className="border-b border-[#D8CEC0] pb-4">
-      <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
-        <ClipboardCheck className="h-4 w-4" />
-        练习记录
+    <div className="min-w-0 border-t border-[#D8CEC0] pt-4">
+      <p className="text-xs font-semibold text-[#6F8F83]">{metric.label}</p>
+      <p className="mt-2 break-words text-2xl font-semibold text-[#243B35]">
+        {metric.value}
       </p>
-      <div className="mt-5 grid grid-cols-3 gap-3 text-center">
-        <div>
-          <p className="text-2xl font-semibold text-[#243B35]">
-            {summary.draftedCount}
+      <p className="mt-1 text-xs leading-5 text-[#7B817C]">
+        {metric.description}
+      </p>
+    </div>
+  );
+}
+
+function CertificatePreviewCard({
+  feedback,
+}: {
+  feedback: CourseCompletionFeedback;
+}) {
+  const certificate = feedback.certificatePreview;
+
+  return (
+    <div className="overflow-hidden rounded-[28px] bg-[#243B35] text-white shadow-sm shadow-[#243B35]/10">
+      <div className="relative min-h-[340px] p-6 sm:p-7">
+        <div className="absolute inset-x-0 top-0 h-1 bg-[#C8D8C0]" />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#C8D8C0]">
+            <Award className="h-4 w-4" />
+            阶段证明预览
           </p>
-          <p className="mt-1 text-xs text-[#7B817C]">有草稿</p>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/72">
+            待正式签发
+          </span>
         </div>
-        <div>
-          <p className="text-2xl font-semibold text-[#243B35]">
-            {summary.completedCount}
+
+        <div className="mt-10">
+          <p className="text-xs font-semibold text-white/52">课程名称</p>
+          <h3 className="mt-3 break-words text-2xl font-semibold leading-tight">
+            {certificate.courseTitle}
+          </h3>
+          <p className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-[#DDE8D9]">
+            <Route className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{certificate.learningPathTitle}</span>
           </p>
-          <p className="mt-1 text-xs text-[#7B817C]">已完成</p>
         </div>
-        <div>
-          <p className="text-2xl font-semibold text-[#243B35]">
-            {summary.completedPercent}%
-          </p>
-          <p className="mt-1 text-xs text-[#7B817C]">完成率</p>
+
+        <div className="mt-9 grid gap-3 text-sm text-white/78 sm:grid-cols-2">
+          <div className="border-t border-white/12 pt-3">
+            <p className="text-xs text-white/44">完成时间</p>
+            <p className="mt-1 font-semibold text-white">
+              {formatCompletionDate(certificate.completedAt)}
+            </p>
+          </div>
+          <div className="border-t border-white/12 pt-3">
+            <p className="text-xs text-white/44">章节</p>
+            <p className="mt-1 font-semibold text-white">
+              {certificate.completedChapters}/{certificate.totalChapters}
+            </p>
+          </div>
+          <div className="border-t border-white/12 pt-3">
+            <p className="text-xs text-white/44">练习</p>
+            <p className="mt-1 font-semibold text-white">
+              {certificate.practiceCompletedCount}/{certificate.totalChapters}
+            </p>
+          </div>
+          <div className="border-t border-white/12 pt-3">
+            <p className="text-xs text-white/44">证书编号</p>
+            <p className="mt-1 font-semibold text-white">
+              {certificate.certificateId ?? "正式签发后生成"}
+            </p>
+          </div>
         </div>
+
+        <p className="mt-8 border-t border-white/12 pt-4 text-xs leading-5 text-white/52">
+          本地完成证明预览，正式证书将在服务端学习档案和签发规则接入后生成。
+        </p>
       </div>
     </div>
+  );
+}
+
+function CourseCompletionFeedbackPanel({
+  feedback,
+  onGoGrowth,
+  onOpenNextCourse,
+  onReviewCourse,
+}: {
+  feedback: CourseCompletionFeedback;
+  onGoGrowth: () => void;
+  onOpenNextCourse: () => void;
+  onReviewCourse: () => void;
+}) {
+  const hasNextCourse =
+    feedback.nextStep.kind === "next_course" && feedback.nextStep.course;
+
+  return (
+    <section className="bg-[#FFFDF8] px-5 py-12 sm:px-8 lg:px-10">
+      <div className="mx-auto grid max-w-[1220px] gap-8 rounded-[32px] border border-[#E4DCCF] bg-[#F3EDE4] p-6 shadow-sm shadow-[#243B35]/5 sm:p-8 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0">
+          <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
+            <Trophy className="h-4 w-4" />
+            课程完成反馈
+          </p>
+          <h2 className="mt-3 max-w-[720px] break-words text-3xl font-semibold leading-tight text-[#243B35] sm:text-4xl">
+            {feedback.title}
+          </h2>
+          <p className="mt-4 max-w-[680px] text-sm leading-7 text-[#6D746F]">
+            {feedback.description}
+          </p>
+
+          <div className="mt-8 grid gap-5 sm:grid-cols-3">
+            {feedback.metrics.map(metric => (
+              <CompletionMetricTile key={metric.label} metric={metric} />
+            ))}
+          </div>
+
+          <div className="mt-8 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-[24px] border border-[#D8CEC0] bg-[#FFFDF8] p-5">
+              <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
+                <ClipboardCheck className="h-4 w-4" />
+                练习沉淀
+              </p>
+              <h3 className="mt-3 text-xl font-semibold text-[#243B35]">
+                {feedback.practiceInsight.title}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+                {feedback.practiceInsight.description}
+              </p>
+            </div>
+
+            <div className="rounded-[24px] border border-[#D8CEC0] bg-[#FFFDF8] p-5">
+              <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
+                <CalendarCheck className="h-4 w-4" />
+                下一步
+              </p>
+              <h3 className="mt-3 break-words text-xl font-semibold text-[#243B35]">
+                {feedback.nextStep.title}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+                {feedback.nextStep.description}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <aside className="min-w-0 space-y-4">
+          <CertificatePreviewCard feedback={feedback} />
+          <div className="grid gap-3">
+            <button
+              onClick={hasNextCourse ? onOpenNextCourse : onGoGrowth}
+              className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#243B35] px-5 text-sm font-semibold text-white transition hover:bg-[#315047]"
+            >
+              {feedback.nextStep.actionLabel}
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </button>
+            <button
+              onClick={onGoGrowth}
+              className="inline-flex min-h-12 items-center justify-center rounded-full border border-[#D8CEC0] px-5 text-sm font-semibold text-[#4F5B54] transition hover:bg-[#FFFDF8]"
+            >
+              查看成长空间
+            </button>
+            <button
+              onClick={onReviewCourse}
+              className="inline-flex min-h-12 items-center justify-center rounded-full border border-[#D8CEC0] px-5 text-sm font-semibold text-[#4F5B54] transition hover:bg-[#FFFDF8]"
+            >
+              复习本课程
+            </button>
+          </div>
+        </aside>
+      </div>
+    </section>
   );
 }
 
@@ -628,6 +788,14 @@ export default function CourseLearning() {
       ? session.chapterItems[currentIndex + 1]?.chapter
       : undefined;
   const currentChapterCompleted = currentStep?.isCompleted ?? false;
+  const completionFeedback = createCourseCompletionFeedback({
+    course,
+    session,
+    practiceSummary,
+    learningPath,
+    progress,
+    nextCourse,
+  });
 
   const getNextIncompleteChapterAfter = (chapterId: string) => {
     const completedIds = new Set(progress?.completedChapterIds ?? []);
@@ -676,6 +844,17 @@ export default function CourseLearning() {
     setPracticeCompleted(course.id, activeChapter.id, isPracticeCompleted);
     toast(isPracticeCompleted ? "练习已标记完成" : "已取消练习完成", {
       description: `「${activeChapter.title}」的练习状态已更新。`,
+    });
+  };
+
+  const handleReviewCourse = () => {
+    const firstChapter = course.chapters[0];
+    if (firstChapter) setActiveChapterId(firstChapter.id);
+
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById("course-learning-workspace")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   };
 
@@ -816,7 +995,10 @@ export default function CourseLearning() {
           </motion.div>
         </section>
 
-        <section className="px-5 py-10 sm:px-8 lg:px-10">
+        <section
+          id="course-learning-workspace"
+          className="px-5 py-10 sm:px-8 lg:px-10"
+        >
           <div className="mx-auto grid max-w-[1220px] gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
             <div className="min-w-0 self-start rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5 sm:p-6">
               <div className="flex flex-col gap-3 border-b border-[#E7DED0] pb-5 sm:flex-row sm:items-end sm:justify-between">
@@ -911,41 +1093,19 @@ export default function CourseLearning() {
           </div>
         </section>
 
-        {session.isCompleted && (
-          <section className="bg-[#FFFDF8] px-5 py-12 sm:px-8 lg:px-10">
-            <div className="mx-auto grid max-w-[1220px] gap-8 rounded-[32px] border border-[#E4DCCF] bg-[#F3EDE4] p-6 sm:p-8 lg:grid-cols-[1fr_340px]">
-              <div>
-                <p className="inline-flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
-                  <Trophy className="h-4 w-4" />
-                  课程完成
-                </p>
-                <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35]">
-                  已完成这门课，可以复习或接下一门
-                </h2>
-                <p className="mt-4 max-w-[680px] text-sm leading-7 text-[#6D746F]">
-                  完成状态会同步到成长空间，后续可以继续补齐练习、资料下载和阶段证书。
-                </p>
-              </div>
-              <div className="flex flex-col justify-center gap-4">
-                <PracticeCompletionSummary summary={practiceSummary} />
-                <button
-                  onClick={() => navigate("/me/courses")}
-                  className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] px-5 text-sm font-semibold text-white transition hover:bg-[#315047]"
-                >
-                  查看完成记录
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </button>
-                {nextCourse && (
-                  <button
-                    onClick={() => navigate(`/courses/${nextCourse.id}/learn`)}
-                    className="inline-flex h-12 items-center justify-center rounded-full border border-[#D8CEC0] px-5 text-sm font-semibold text-[#4F5B54] transition hover:bg-[#FFFDF8]"
-                  >
-                    学习下一门
-                  </button>
-                )}
-              </div>
-            </div>
-          </section>
+        {completionFeedback && (
+          <CourseCompletionFeedbackPanel
+            feedback={completionFeedback}
+            onGoGrowth={() => navigate("/me/courses")}
+            onOpenNextCourse={() =>
+              completionFeedback.nextStep.course
+                ? navigate(
+                    `/courses/${completionFeedback.nextStep.course.id}/learn`
+                  )
+                : navigate("/me/courses")
+            }
+            onReviewCourse={handleReviewCourse}
+          />
         )}
 
         <section className="px-5 pb-16 sm:px-8 lg:px-10">
