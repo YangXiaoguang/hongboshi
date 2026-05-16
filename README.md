@@ -79,6 +79,7 @@ docs/
 - [数据库 Schema 准备说明](./docs/database-schema.md)
 - [统一审计 Store 架构方案](./docs/audit-store-architecture.md)
 - [课程中心 Feature 架构](./docs/course-feature-architecture.md)
+- [课程电商化转化研究与执行方案](./docs/course-commerce-conversion-analysis.md)
 - [运营管理后台建设路线图](./docs/admin-management-roadmap.md)
 - [Codex 连续执行状态](./docs/codex-execution-state.md)
 - [Codex 连续执行协议](./docs/codex-operating-protocol.md)
@@ -135,7 +136,7 @@ pnpm db:migrate
 
 ## 当前业务状态
 
-- 课程 seed 来自 `shared/data/mockCourses.ts`，当前用于课程商品 Store 初始化和测试 fallback；前台课程列表/详情通过课程商品 Store 读取已审核通过且已上架商品
+- 课程 seed 来自 `shared/data/mockCourses.ts`，当前用于课程商品 Store 初始化和测试 fallback；前台课程列表/详情通过课程商品 Store 读取已审核通过且已上架商品，课程路径、快速开始区和课程列表卡片已支持立即购买/开通会员/开始学习的主动作，购买意图会带入详情页并自动唤起结算抽屉
 - 共享业务类型位于 `shared/domain`
 - PC 端主页面位于 `client/src/pages/Home.tsx`
 - 个人成长空间位于 `client/src/pages/MyCourses.tsx`，通过 `/me/courses` 展示课程权益、学习进度、练习沉淀、阶段证明预览、测评报告、咨询预约、会员和订单；登录用户的章节进度和练习记录会优先同步到服务端，网络失败时保留本机记录

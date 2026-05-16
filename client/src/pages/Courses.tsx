@@ -6,6 +6,7 @@ import {
   ClipboardList,
   HeartHandshake,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useLocation } from "wouter";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
@@ -14,10 +15,12 @@ import CoursePathSection from "@/components/CoursePathSection";
 import CourseStarterLanes from "@/components/CourseStarterLanes";
 import {
   DEFAULT_COURSE_LEARNING_PATH_ID,
+  getCourseDetailPrimaryActionCopy,
   getCourseLearningPath,
   useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
+  type Course,
   type CourseLearningPath,
 } from "@/features/courses";
 
@@ -47,8 +50,13 @@ export default function Courses() {
     setVipOnlyFilter,
     setCurrentPage,
   } = useCourseCatalog();
-  const { favoriteCourseIds, favoriteCount, toggleFavorite } =
-    useCourseEngagement();
+  const {
+    favoriteCourseIds,
+    favoriteCount,
+    getProgress,
+    startCourse,
+    toggleFavorite,
+  } = useCourseEngagement();
   const { getCourseAccess, hasActiveMembership, ownedCourseCount } =
     useCourseAccess();
   const selectedPath = getCourseLearningPath(selectedPathId);
@@ -66,6 +74,51 @@ export default function Courses() {
     document
       .getElementById("courses")
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const getCoursePrimaryAction = (course: Course) => {
+    const access = getCourseAccess(course);
+    const hasStarted = Boolean(getProgress(course.id));
+    const copy = getCourseDetailPrimaryActionCopy(access, hasStarted);
+
+    if (access.canStart) {
+      return {
+        label: hasStarted ? "继续学习" : "开始学习",
+        description: copy.description,
+        tone: "learn" as const,
+      };
+    }
+
+    if (access.status === "requires_membership") {
+      return {
+        label: "开通会员",
+        description: copy.description,
+        tone: "member" as const,
+      };
+    }
+
+    return {
+      label: "立即购买",
+      description: copy.description,
+      tone: "buy" as const,
+    };
+  };
+
+  const handleCoursePrimaryAction = (course: Course) => {
+    const access = getCourseAccess(course);
+
+    if (access.canStart) {
+      startCourse(course.id);
+      toast("已放入学习计划", {
+        description: `即将进入「${course.title}」学习页。`,
+      });
+      navigate(`/courses/${course.id}/learn`);
+      return;
+    }
+
+    const checkoutMode =
+      access.status === "requires_membership" ? "membership" : "course";
+    navigate(`/courses/${course.id}?checkout=${checkoutMode}&from=shelf`);
   };
 
   return (
@@ -157,12 +210,16 @@ export default function Courses() {
           onPathChange={applyCoursePath}
           onExplorePath={handleExploreCoursePath}
           onCourseSelect={course => navigate(`/courses/${course.id}`)}
+          getCourseAction={getCoursePrimaryAction}
+          onCourseAction={handleCoursePrimaryAction}
           onAssessment={() => navigate("/assessment")}
         />
 
         <CourseStarterLanes
           courses={allCourses}
           onCourseSelect={course => navigate(`/courses/${course.id}`)}
+          getCourseAction={getCoursePrimaryAction}
+          onCourseAction={handleCoursePrimaryAction}
         />
 
         <CourseDiscoverySection
@@ -185,7 +242,9 @@ export default function Courses() {
           paginatedCourses={paginatedCourses}
           favoriteCourseIds={favoriteCourseIds}
           getCourseAccessStatus={course => getCourseAccess(course).status}
+          getCoursePrimaryAction={getCoursePrimaryAction}
           onToggleFavorite={toggleFavorite}
+          onCoursePrimaryAction={handleCoursePrimaryAction}
           onCategoryChange={setCategory}
           onTypeChange={setType}
           onSortChange={setSort}

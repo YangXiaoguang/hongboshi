@@ -40,7 +40,13 @@ interface CourseDiscoverySectionProps {
   paginatedCourses: Course[];
   favoriteCourseIds: Set<number>;
   getCourseAccessStatus: (course: Course) => CourseAccessStatus | undefined;
+  getCoursePrimaryAction?: (course: Course) => {
+    label: string;
+    description: string;
+    tone: "buy" | "learn" | "member";
+  };
   onToggleFavorite: (courseId: number) => void;
+  onCoursePrimaryAction?: (course: Course) => void;
   onCategoryChange: (category: CourseCategoryFilter) => void;
   onTypeChange: (type: CourseTypeFilter) => void;
   onSortChange: (sort: CourseSort) => void;
@@ -70,7 +76,9 @@ export default function CourseDiscoverySection({
   paginatedCourses,
   favoriteCourseIds,
   getCourseAccessStatus,
+  getCoursePrimaryAction,
   onToggleFavorite,
+  onCoursePrimaryAction,
   onCategoryChange,
   onTypeChange,
   onSortChange,
@@ -137,7 +145,9 @@ export default function CourseDiscoverySection({
                   index={i}
                   isFavorited={favoriteCourseIds.has(course.id)}
                   accessStatus={getCourseAccessStatus(course)}
+                  primaryAction={getCoursePrimaryAction?.(course)}
                   onToggleFavorite={onToggleFavorite}
+                  onPrimaryAction={onCoursePrimaryAction}
                 />
               ))}
             </div>

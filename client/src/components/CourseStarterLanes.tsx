@@ -4,6 +4,11 @@ import type { Course } from "@/features/courses";
 interface CourseStarterLanesProps {
   courses: Course[];
   onCourseSelect: (course: Course) => void;
+  getCourseAction?: (course: Course) => {
+    label: string;
+    description: string;
+  };
+  onCourseAction?: (course: Course) => void;
 }
 
 function formatPrice(course: Course): string {
@@ -17,6 +22,8 @@ function pickUnique(courses: Course[], predicate: (course: Course) => boolean) {
 export default function CourseStarterLanes({
   courses,
   onCourseSelect,
+  getCourseAction,
+  onCourseAction,
 }: CourseStarterLanesProps) {
   const lanes = [
     {
@@ -62,24 +69,42 @@ export default function CourseStarterLanes({
 
               <div className="mt-5 divide-y divide-[#E4DCCF] border-y border-[#E4DCCF]">
                 {lane.courses.map(course => (
-                  <button
+                  <div
                     key={course.id}
-                    onClick={() => onCourseSelect(course)}
                     className="group flex w-full items-center justify-between gap-4 py-4 text-left"
                   >
-                    <span>
+                    <button
+                      onClick={() => onCourseSelect(course)}
+                      className="min-w-0 flex-1 text-left"
+                    >
                       <span className="line-clamp-1 block text-sm font-semibold text-[#243B35] group-hover:text-[#5F7F73]">
                         {course.title}
                       </span>
                       <span className="mt-1 block text-xs text-[#8A918B]">
                         {course.category} / {course.teacher}
                       </span>
+                    </button>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <button
+                        onClick={() => onCourseSelect(course)}
+                        className="inline-flex items-center text-sm font-semibold text-[#A65F48]"
+                      >
+                        {formatPrice(course)}
+                        <ArrowRight className="ml-1 h-3.5 w-3.5 text-[#8C6E4A]" />
+                      </button>
+                      {getCourseAction && onCourseAction && (
+                        <button
+                          onClick={() => onCourseAction(course)}
+                          title={getCourseAction(course).description}
+                          className="inline-flex h-8 max-w-[5.75rem] items-center justify-center rounded-full bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047]"
+                        >
+                          <span className="truncate">
+                            {getCourseAction(course).label}
+                          </span>
+                        </button>
+                      )}
                     </span>
-                    <span className="inline-flex shrink-0 items-center text-sm font-semibold text-[#A65F48]">
-                      {formatPrice(course)}
-                      <ArrowRight className="ml-1 h-3.5 w-3.5 text-[#8C6E4A]" />
-                    </span>
-                  </button>
+                  </div>
                 ))}
               </div>
             </div>

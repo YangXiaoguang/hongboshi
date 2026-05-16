@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation, useRoute } from "wouter";
 import {
@@ -121,6 +121,7 @@ export default function CourseDetail() {
     CourseCheckoutOrderResult | undefined
   >();
   const [checkoutError, setCheckoutError] = useState<string | undefined>();
+  const [checkoutIntentHandled, setCheckoutIntentHandled] = useState(false);
   const courseId = Number(params?.courseId);
   const { course, allCourses, relatedCourses, isLoading } = useCourseDetail(
     Number.isInteger(courseId) ? courseId : undefined
@@ -222,6 +223,40 @@ export default function CourseDetail() {
     setCheckoutOrder(undefined);
     setCheckoutError(undefined);
   };
+
+  useEffect(() => {
+    if (checkoutIntentHandled) return;
+
+    const rawMode = new URLSearchParams(window.location.search).get(
+      "checkout"
+    );
+    if (rawMode !== "course" && rawMode !== "membership") return;
+
+    setCheckoutIntentHandled(true);
+    window.history.replaceState(null, "", `/courses/${course.id}`);
+
+    if (access.canStart) return;
+
+    const requestedMode: CourseCheckoutMode =
+      rawMode === "membership" && access.canActivateMembership
+        ? "membership"
+        : "course";
+
+    if (requestedMode === "membership" && access.canActivateMembership) {
+      openCheckout("membership");
+      return;
+    }
+
+    if (requestedMode === "course" && access.canPurchase) {
+      openCheckout("course");
+    }
+  }, [
+    access.canActivateMembership,
+    access.canPurchase,
+    access.canStart,
+    checkoutIntentHandled,
+    course.id,
+  ]);
 
   const closeCheckout = () => {
     setCheckoutMode(undefined);

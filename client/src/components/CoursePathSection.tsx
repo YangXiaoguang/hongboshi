@@ -27,6 +27,11 @@ interface CoursePathSectionProps {
   onPathChange: (path: CourseLearningPath) => void;
   onExplorePath: (path: CourseLearningPath) => void;
   onCourseSelect: (course: Course) => void;
+  getCourseAction?: (course: Course) => {
+    label: string;
+    description: string;
+  };
+  onCourseAction?: (course: Course) => void;
   onAssessment?: () => void;
 }
 
@@ -45,6 +50,8 @@ export default function CoursePathSection({
   onPathChange,
   onExplorePath,
   onCourseSelect,
+  getCourseAction,
+  onCourseAction,
   onAssessment,
 }: CoursePathSectionProps) {
   const activePath = getCourseLearningPath(selectedPathId);
@@ -173,26 +180,44 @@ export default function CoursePathSection({
 
               <div className="mt-7 border-t border-[#E4DCCF]">
                 {pathCourses.map((course, index) => (
-                  <button
+                  <div
                     key={course.id}
-                    onClick={() => onCourseSelect(course)}
                     className="group grid w-full grid-cols-[2rem_1fr_auto] items-center gap-4 border-b border-[#E4DCCF] py-4 text-left"
                   >
                     <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F3EDE4] text-xs font-semibold text-[#6F8F83]">
                       {index + 1}
                     </span>
-                    <span>
+                    <button
+                      onClick={() => onCourseSelect(course)}
+                      className="min-w-0 text-left"
+                    >
                       <span className="line-clamp-1 block text-sm font-semibold text-[#243B35] group-hover:text-[#5F7F73]">
                         {course.title}
                       </span>
                       <span className="mt-1 block text-xs text-[#8A918B]">
                         {course.category} / {course.teacher}
                       </span>
+                    </button>
+                    <span className="flex items-center gap-2">
+                      <button
+                        onClick={() => onCourseSelect(course)}
+                        className="text-sm font-semibold text-[#A65F48]"
+                      >
+                        {formatPrice(course)}
+                      </button>
+                      {getCourseAction && onCourseAction && (
+                        <button
+                          onClick={() => onCourseAction(course)}
+                          title={getCourseAction(course).description}
+                          className="inline-flex h-8 max-w-[5.75rem] items-center justify-center rounded-full bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047]"
+                        >
+                          <span className="truncate">
+                            {getCourseAction(course).label}
+                          </span>
+                        </button>
+                      )}
                     </span>
-                    <span className="text-sm font-semibold text-[#A65F48]">
-                      {formatPrice(course)}
-                    </span>
-                  </button>
+                  </div>
                 ))}
               </div>
             </div>

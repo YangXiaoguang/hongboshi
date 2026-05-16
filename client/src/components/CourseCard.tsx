@@ -20,7 +20,13 @@ interface CourseCardProps {
   index: number;
   isFavorited?: boolean;
   accessStatus?: CourseAccessStatus;
+  primaryAction?: {
+    label: string;
+    description: string;
+    tone: "buy" | "learn" | "member";
+  };
   onToggleFavorite?: (courseId: number) => void;
+  onPrimaryAction?: (course: Course) => void;
 }
 
 const typeToneMap: Record<string, string> = {
@@ -33,6 +39,12 @@ const unlockedBadgeMap: Partial<Record<CourseAccessStatus, string>> = {
   owned: "已购",
   member_included: "会员可学",
 };
+
+const actionToneMap = {
+  buy: "bg-[#243B35] text-white hover:bg-[#315047]",
+  learn: "bg-[#E6EDDF] text-[#41675A] hover:bg-[#DDE8D9]",
+  member: "bg-[#F4EBD8] text-[#7A5B31] hover:bg-[#EFE1C5]",
+} satisfies Record<NonNullable<CourseCardProps["primaryAction"]>["tone"], string>;
 
 function formatLearners(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + "万";
@@ -57,7 +69,9 @@ export default function CourseCard({
   index,
   isFavorited = false,
   accessStatus,
+  primaryAction,
   onToggleFavorite,
+  onPrimaryAction,
 }: CourseCardProps) {
   const [, navigate] = useLocation();
   const [showSharePopup, setShowSharePopup] = useState(false);
@@ -123,6 +137,11 @@ export default function CourseCard({
     toast("优惠券已领取", {
       description: `「${course.coupon!.label}」已放入您的账户，下单时自动抵扣`,
     });
+  };
+
+  const handlePrimaryAction = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onPrimaryAction?.(course);
   };
 
   const discountActive = course.discount && countdown !== "已结束";
@@ -241,7 +260,7 @@ export default function CourseCard({
           )}
         </div>
 
-        <div className="mt-4 flex items-end justify-between border-t border-[#EFE6DA] pt-4">
+        <div className="mt-4 flex items-end justify-between gap-3 border-t border-[#EFE6DA] pt-4">
           <div>
             <p className="text-[11px] text-[#9AA19B]">适合自学与陪伴练习</p>
             <div className="mt-1 flex items-baseline gap-2">
@@ -261,9 +280,20 @@ export default function CourseCard({
               )}
             </div>
           </div>
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#E6EDDF] text-[#41675A] transition group-hover:bg-[#243B35] group-hover:text-white">
-            <ArrowRight className="h-4 w-4" />
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            {primaryAction && (
+              <button
+                onClick={handlePrimaryAction}
+                title={primaryAction.description}
+                className={`inline-flex h-9 max-w-[6.75rem] items-center justify-center rounded-full px-3 text-xs font-semibold transition ${actionToneMap[primaryAction.tone]}`}
+              >
+                <span className="truncate">{primaryAction.label}</span>
+              </button>
+            )}
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#E6EDDF] text-[#41675A] transition group-hover:bg-[#243B35] group-hover:text-white">
+              <ArrowRight className="h-4 w-4" />
+            </span>
+          </div>
         </div>
       </div>
 
