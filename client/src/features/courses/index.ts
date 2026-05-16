@@ -56,6 +56,17 @@ export {
   type CourseDetailPrimaryActionCopy,
 } from "./model/courseDetailConversion";
 export {
+  COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE,
+  COURSE_MEMBERSHIP_CHECKOUT_PRICE,
+  coursePaymentMethods,
+  createCourseCheckoutSummary,
+  formatCheckoutMoney,
+  type CourseCheckoutMode,
+  type CourseCheckoutPaymentChannel,
+  type CourseCheckoutSummary,
+  type CoursePaymentMethod,
+} from "./model/courseCheckout";
+export {
   createLearningPlanWorkspace,
   type LearningPlanBucket,
   type LearningPlanCourseItem,

@@ -1,37 +1,52 @@
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useLocation, useRoute } from "wouter";
 import {
   ArrowLeft,
   ArrowRight,
+  BadgeCheck,
   BookOpen,
   CalendarCheck,
   CheckCircle2,
   Clock3,
   Crown,
-  HeartHandshake,
+  FileText,
   Heart,
+  HeartHandshake,
   Lock,
   PlayCircle,
+  ReceiptText,
   Route,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
   Users,
+  WalletCards,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
 import NotFound from "@/pages/NotFound";
 import {
-  useCourseAccess,
-  useCourseDetail,
-  useCourseEngagement,
+  coursePaymentMethods,
+  createCourseCheckoutSummary,
+  formatCheckoutMoney,
   getCourseAccessDescription,
   getCourseDetailPrimaryActionCopy,
   getLearningPathForCourse,
   getNextCoursesInLearningPath,
+  useCourseAccess,
+  useCourseDetail,
+  useCourseEngagement,
   type Course,
   type CourseAccessStatus,
+  type CourseCheckoutMode,
+  type CourseCheckoutPaymentChannel,
+  type CourseCheckoutSummary,
 } from "@/features/courses";
+
+type CheckoutStatus = "idle" | "processing" | "success";
 
 function formatLearners(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
@@ -40,7 +55,7 @@ function formatLearners(n: number): string {
 }
 
 function formatPrice(course: Course): string {
-  return course.isFree ? "免费" : `¥${course.price.toFixed(1)}`;
+  return course.isFree ? "免费" : formatCheckoutMoney(course.price);
 }
 
 const accessCopy = {
@@ -68,13 +83,19 @@ export default function CourseDetail() {
     purchaseCourse,
   } = useCourseAccess();
   const {
-    completeChapter,
     getProgress,
     getProgressPercent,
     isFavorited,
     startCourse,
     toggleFavorite,
   } = useCourseEngagement();
+  const [checkoutMode, setCheckoutMode] = useState<
+    CourseCheckoutMode | undefined
+  >();
+  const [selectedPaymentChannel, setSelectedPaymentChannel] =
+    useState<CourseCheckoutPaymentChannel>("wechat_pay");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatus>("idle");
   const courseId = Number(params?.courseId);
   const { course, allCourses, relatedCourses, isLoading } = useCourseDetail(
     Number.isInteger(courseId) ? courseId : undefined
@@ -111,7 +132,6 @@ export default function CourseDetail() {
   );
   const progress = getProgress(course.id);
   const progressPercent = getProgressPercent(course.id, course.chapters.length);
-  const completedChapterIds = new Set(progress?.completedChapterIds ?? []);
   const hasStarted = Boolean(progress);
   const favorite = isFavorited(course.id);
   const access = getCourseAccess(course);
@@ -139,6 +159,9 @@ export default function CourseDetail() {
         ? "已完成"
         : "学习中"
       : "未开始";
+  const checkoutSummary = checkoutMode
+    ? createCourseCheckoutSummary(course, checkoutMode)
+    : undefined;
 
   const handleStartLearning = () => {
     if (!access.canStart) {
@@ -166,40 +189,17 @@ export default function CourseDetail() {
     });
   };
 
-  const handlePurchaseCourse = () => {
-    void purchaseCourse(course).then(syncMode => {
-      if (syncMode === "auth_required") {
-        toast("请先登录", {
-          description: "登录后即可购买课程，并同步学习权益。",
-        });
-        return;
-      }
-
-      toast("课程已解锁", {
-        description:
-          syncMode === "api"
-            ? "课程权益已同步，后续可替换为真实支付回调。"
-            : "课程权益已先保存在本机，网络恢复后可再同步。",
-      });
-    });
+  const openCheckout = (mode: CourseCheckoutMode) => {
+    setCheckoutMode(mode);
+    setCheckoutStatus("idle");
+    setAcceptedTerms(false);
+    setSelectedPaymentChannel("wechat_pay");
   };
 
-  const handleActivateMembership = () => {
-    void activateMembership().then(syncMode => {
-      if (syncMode === "auth_required") {
-        toast("请先登录", {
-          description: "登录后即可开通会员，并同步 VIP 课程权益。",
-        });
-        return;
-      }
-
-      toast("会员已开通", {
-        description:
-          syncMode === "api"
-            ? "会员权益已同步，VIP 课程会自动解锁。"
-            : "会员权益已先保存在本机，网络恢复后可再同步。",
-      });
-    });
+  const closeCheckout = () => {
+    setCheckoutMode(undefined);
+    setCheckoutStatus("idle");
+    setAcceptedTerms(false);
   };
 
   const handlePrimaryAction = () => {
@@ -208,16 +208,53 @@ export default function CourseDetail() {
       return;
     }
 
-    if (access.status === "requires_membership") {
-      handleActivateMembership();
+    openCheckout(
+      access.status === "requires_membership" ? "membership" : "course"
+    );
+  };
+
+  const handleConfirmCheckout = () => {
+    if (!checkoutMode) return;
+    if (!acceptedTerms) {
+      toast("请先确认购买须知", {
+        description: "确认订单金额、权益交付和开发期支付说明后再继续。",
+      });
       return;
     }
 
-    handlePurchaseCourse();
+    setCheckoutStatus("processing");
+    const request =
+      checkoutMode === "membership"
+        ? activateMembership()
+        : purchaseCourse(course);
+
+    void request.then(syncMode => {
+      if (syncMode === "auth_required") {
+        setCheckoutStatus("idle");
+        toast("请先登录", {
+          description: "登录后即可完成购买，并同步学习权益。",
+        });
+        return;
+      }
+
+      setCheckoutStatus("success");
+      toast(checkoutMode === "membership" ? "会员已开通" : "课程已解锁", {
+        description:
+          syncMode === "api"
+            ? "权益已同步到账户，可继续进入学习。"
+            : "权益已先保存在本机，网络恢复后可再同步。",
+      });
+    });
+  };
+
+  const handleStartAfterCheckout = () => {
+    closeCheckout();
+    startCourse(course.id);
+    navigate(`/courses/${course.id}/learn`);
   };
 
   return (
-    <div className="min-h-screen bg-[#F9F5EE] text-[#243B35]">
+    <div className="min-h-screen bg-[#F9F5EE] pb-24 text-[#243B35] lg:pb-0">
       <AppHeader />
 
       <main>
@@ -225,12 +262,17 @@ export default function CourseDetail() {
           <img
             src={course.coverUrl}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover opacity-30"
+            className="absolute inset-0 h-full w-full object-cover opacity-34"
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#13211D] via-[#243B35]/88 to-[#243B35]/48" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#13211D] via-[#243B35]/90 to-[#243B35]/54" />
 
-          <div className="relative mx-auto grid max-w-[1200px] gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[1fr_360px] lg:px-12 lg:py-20">
-            <div>
+          <div className="relative mx-auto grid max-w-[1240px] gap-10 px-5 py-14 sm:px-8 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-12 lg:py-18">
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+              className="min-w-0"
+            >
               <button
                 onClick={() => navigate("/courses")}
                 className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/78 transition hover:bg-white/10 hover:text-white"
@@ -272,11 +314,11 @@ export default function CourseDetail() {
                     .getElementById("learning-path")
                     ?.scrollIntoView({ behavior: "smooth", block: "start" })
                 }
-                className="mt-6 inline-flex items-center rounded-full bg-white/12 px-4 py-2 text-sm font-semibold text-[#DDE8D9] transition hover:bg-white/18"
+                className="mt-6 inline-flex max-w-full items-center rounded-full bg-white/12 px-4 py-2 text-sm font-semibold text-[#DDE8D9] transition hover:bg-white/18"
               >
-                <Route className="mr-2 h-4 w-4" />
-                所属路径：{learningPath.title}
-                <ArrowRight className="ml-2 h-4 w-4" />
+                <Route className="mr-2 h-4 w-4 shrink-0" />
+                <span className="truncate">所属路径：{learningPath.title}</span>
+                <ArrowRight className="ml-2 h-4 w-4 shrink-0" />
               </button>
 
               <div className="mt-9 grid max-w-[760px] grid-cols-2 gap-4 sm:grid-cols-4">
@@ -301,123 +343,51 @@ export default function CourseDetail() {
                   label="主讲老师"
                 />
               </div>
-            </div>
+            </motion.div>
 
-            <aside className="self-end rounded-[28px] border border-white/14 bg-[#FFFDF8] p-5 text-[#243B35] shadow-2xl shadow-black/20">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold text-[#6F8F83]">课程权益</p>
-                <button
-                  onClick={handleToggleFavorite}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
-                    favorite
-                      ? "bg-[#F4E5DE] text-[#A65F48]"
-                      : "bg-[#E6EDDF] text-[#41675A] hover:bg-[#DDE8D9]"
-                  }`}
-                >
-                  <Heart
-                    className={`h-3.5 w-3.5 ${favorite ? "fill-current" : ""}`}
-                  />
-                  {favorite ? "已收藏" : "收藏"}
-                </button>
-              </div>
-              <div className="mt-3 flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-3xl font-semibold text-[#A65F48]">
-                    {formatPrice(course)}
-                  </p>
-                  {!course.isFree && course.originalPrice > course.price && (
-                    <p className="mt-1 text-xs text-[#9AA19B] line-through">
-                      ¥{course.originalPrice.toFixed(1)}
-                    </p>
-                  )}
-                </div>
-                <span className="rounded-full bg-[#E6EDDF] px-3 py-1 text-xs font-semibold text-[#41675A]">
-                  {accessCopy[access.status]}
-                </span>
-              </div>
+            <CommercePanel
+              accessLabel={accessCopy[access.status]}
+              course={course}
+              favorite={favorite}
+              hasActiveMembership={hasActiveMembership}
+              isSyncing={isSyncing}
+              locked={locked}
+              primaryActionLabel={primaryAction.label}
+              primaryActionDescription={primaryAction.description}
+              PrimaryActionIcon={PrimaryActionIcon}
+              visibleLearningStatus={visibleLearningStatus}
+              visibleProgressPercent={visibleProgressPercent}
+              onActivateMembership={() => openCheckout("membership")}
+              onOpenCourseCheckout={() => openCheckout("course")}
+              onPrimaryAction={handlePrimaryAction}
+              onToggleFavorite={handleToggleFavorite}
+              onConsult={() => navigate("/consulting")}
+            />
+          </div>
+        </section>
 
-              <div className="mt-5 rounded-[20px] bg-[#F4EFE6] p-4">
-                <div className="flex items-center justify-between text-xs font-semibold">
-                  <span className="text-[#6D746F]">学习状态</span>
-                  <span
-                    className={
-                      locked
-                        ? "text-[#A65F48]"
-                        : hasStarted
-                          ? "text-[#41675A]"
-                          : "text-[#9AA19B]"
-                    }
-                  >
-                    {visibleLearningStatus}
-                  </span>
-                </div>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
-                  <div
-                    className="h-full rounded-full bg-[#6F8F83] transition-all"
-                    style={{ width: `${visibleProgressPercent}%` }}
-                  />
-                </div>
-                <p className="mt-3 text-xs leading-5 text-[#7B817C]">
-                  {locked
-                    ? getCourseAccessDescription(access.status)
-                    : hasStarted
-                      ? progressPercent > 0
-                        ? `已完成 ${progressPercent}% 的章节。`
-                        : "已加入学习计划，建议从第一章开始。"
-                      : "点击开始学习后，会在本机记录你的进度。"}
-                </p>
-              </div>
-
-              <p className="mt-4 rounded-[18px] bg-[#FFFDF8] px-4 py-3 text-xs leading-5 text-[#6D746F] ring-1 ring-[#E4DCCF]">
-                {primaryAction.description}
-              </p>
-
-              <div className="mt-5 space-y-3 text-sm text-[#5F6B64]">
-                <p className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-[#6F8F83]" />
-                  隐私友好，学习记录仅自己可见
-                </p>
-                <p className="flex items-center gap-2">
-                  <HeartHandshake className="h-4 w-4 text-[#6F8F83]" />
-                  可衔接测评与咨询支持
-                </p>
-                {course.isVip && (
-                  <p className="flex items-center gap-2">
-                    <Crown className="h-4 w-4 text-[#C4A46A]" />
-                    {hasActiveMembership
-                      ? "会员权益已生效"
-                      : "开通会员可解锁更多课程"}
-                  </p>
-                )}
-              </div>
-
-              <button
-                onClick={handlePrimaryAction}
-                disabled={isSyncing}
-                className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-65"
-              >
-                <PrimaryActionIcon className="mr-2 h-4 w-4" />
-                {isSyncing ? "同步中" : primaryAction.label}
-              </button>
-              {access.status === "requires_membership" &&
-                access.canPurchase && (
-                  <button
-                    onClick={handlePurchaseCourse}
-                    disabled={isSyncing}
-                    className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#EFE7D8] text-sm font-semibold text-[#7A5B31] transition hover:bg-[#E8D8BD] disabled:cursor-wait disabled:opacity-65"
-                  >
-                    {isSyncing
-                      ? "同步中"
-                      : `单独购买本课 ¥${course.price.toFixed(1)}`}
-                  </button>
-                )}
-              <button
-                onClick={() => navigate("/consulting")}
-                className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-full border border-[#DCD3C4] text-sm font-semibold text-[#41675A] transition hover:bg-[#EEF4EA]"
-              >
-                需要咨询师陪伴
-              </button>
-            </aside>
+        <section className="bg-[#FFFDF8] px-5 py-8 sm:px-8 lg:px-12">
+          <div className="mx-auto grid max-w-[1200px] gap-4 md:grid-cols-4">
+            <DeliveryFact
+              icon={BookOpen}
+              title="课程内容"
+              description={`${course.chapters.length} 个阶段，${totalLessons} 节内容`}
+            />
+            <DeliveryFact
+              icon={FileText}
+              title="练习资料"
+              description="章节讲义与课后练习记录"
+            />
+            <DeliveryFact
+              icon={BadgeCheck}
+              title="学习档案"
+              description="完成后沉淀进成长空间"
+            />
+            <DeliveryFact
+              icon={ShieldCheck}
+              title="隐私保障"
+              description="学习记录仅自己可见"
+            />
           </div>
         </section>
 
@@ -426,7 +396,7 @@ export default function CourseDetail() {
             <div>
               <p className="text-sm font-semibold text-[#6F8F83]">是否适合你</p>
               <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35]">
-                先判断匹配度，再开始学习
+                先判断匹配度，再决定是否购买
               </h2>
               <p className="mt-4 text-sm leading-7 text-[#6D746F]">
                 心理成长内容不应该只追求“买下”，更重要的是当下状态是否适合、学完之后能不能落地。
@@ -486,9 +456,9 @@ export default function CourseDetail() {
             </div>
 
             <div className="self-center">
-              <p className="text-sm font-semibold text-[#6F8F83]">转化路径</p>
+              <p className="text-sm font-semibold text-[#6F8F83]">购买判断</p>
               <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35]">
-                让课程不只是购买，而是进入一条可持续的成长线
+                买下这一课之前，先看清它会把你带到哪里
               </h2>
               <p className="mt-4 text-sm leading-7 text-[#6D746F]">
                 详情页优先回答“我为什么现在学这门课、学完以后接什么”，让用户从单课决策自然过渡到学习计划。
@@ -550,10 +520,25 @@ export default function CourseDetail() {
         <section className="bg-[#F3EDE4] px-5 py-16 sm:px-8 lg:px-12">
           <div className="mx-auto grid max-w-[1200px] gap-12 lg:grid-cols-[1.1fr_0.9fr]">
             <div>
-              <p className="text-sm font-semibold text-[#6F8F83]">课程路线</p>
-              <h2 className="mt-3 text-3xl font-semibold text-[#243B35]">
-                从理解到练习，逐步进入日常
-              </h2>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-[#6F8F83]">
+                    课程目录
+                  </p>
+                  <h2 className="mt-3 text-3xl font-semibold text-[#243B35]">
+                    购买前先看内容结构
+                  </h2>
+                </div>
+                {access.canStart && (
+                  <button
+                    onClick={handleStartLearning}
+                    className="inline-flex h-10 items-center justify-center rounded-full bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
+                  >
+                    进入学习页
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </button>
+                )}
+              </div>
 
               <div className="mt-8 divide-y divide-[#E1D7C7] border-y border-[#E1D7C7]">
                 {course.chapters.map((chapter, index) => (
@@ -575,50 +560,20 @@ export default function CourseDetail() {
                     <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-[#7B817C] sm:justify-end">
                       <span>{chapter.lessonCount} 节</span>
                       <span>{chapter.durationMinutes} 分钟</span>
-                      <button
-                        onClick={() => {
-                          if (!access.canStart) {
-                            toast("课程尚未解锁", {
-                              description: getCourseAccessDescription(
-                                access.status
-                              ),
-                            });
-                            return;
-                          }
-
-                          completeChapter(
-                            course.id,
-                            chapter.id,
-                            course.chapters.length
-                          );
-                          toast(
-                            completedChapterIds.has(chapter.id)
-                              ? "章节已完成"
-                              : "已记录章节进度",
-                            {
-                              description: `「${chapter.title}」已同步到本机学习记录。`,
-                            }
-                          );
-                        }}
-                        className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 transition ${
-                          !access.canStart
-                            ? "bg-[#F4E5DE] text-[#A65F48]"
-                            : completedChapterIds.has(chapter.id)
-                              ? "bg-[#DDE8D9] text-[#41675A]"
-                              : "bg-white text-[#6D746F] hover:text-[#243B35]"
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 ${
+                          access.canStart
+                            ? "bg-[#DDE8D9] text-[#41675A]"
+                            : "bg-[#F4E5DE] text-[#A65F48]"
                         }`}
                       >
-                        {!access.canStart ? (
-                          <Lock className="h-3.5 w-3.5" />
-                        ) : (
+                        {access.canStart ? (
                           <CheckCircle2 className="h-3.5 w-3.5" />
+                        ) : (
+                          <Lock className="h-3.5 w-3.5" />
                         )}
-                        {!access.canStart
-                          ? "待解锁"
-                          : completedChapterIds.has(chapter.id)
-                            ? "已完成"
-                            : "标记完成"}
-                      </button>
+                        {access.canStart ? "已解锁" : "购买后学习"}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -646,6 +601,42 @@ export default function CourseDetail() {
                   {course.supportPath}
                 </p>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="bg-[#FFFDF8] px-5 py-16 sm:px-8 lg:px-12">
+          <div className="mx-auto grid max-w-[1200px] gap-10 lg:grid-cols-[0.9fr_1.1fr]">
+            <div>
+              <p className="text-sm font-semibold text-[#6F8F83]">权益与保障</p>
+              <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35]">
+                购买前该知道的交付规则
+              </h2>
+              <p className="mt-4 text-sm leading-7 text-[#6D746F]">
+                课程交易不是一次性按钮，购买后会进入课程权益、学习记录和成长档案的连续流程。
+              </p>
+            </div>
+            <div className="divide-y divide-[#E4DCCF] border-y border-[#E4DCCF]">
+              <AssuranceRow
+                icon={ReceiptText}
+                title="订单与权益"
+                description="支付确认后课程会写入你的课程权益，并出现在成长空间。"
+              />
+              <AssuranceRow
+                icon={ShieldCheck}
+                title="隐私边界"
+                description="学习进度、练习记录和完成反馈只在本人账户内展示。"
+              />
+              <AssuranceRow
+                icon={BadgeCheck}
+                title="阶段证明"
+                description="完成课程后生成阶段证明预览，正式签发需后续服务端确认。"
+              />
+              <AssuranceRow
+                icon={HeartHandshake}
+                title="咨询衔接"
+                description="如果学习中发现需要更多支持，可从课程页进入咨询预约。"
+              />
             </div>
           </div>
         </section>
@@ -726,6 +717,464 @@ export default function CourseDetail() {
       </main>
 
       <AppFooter />
+
+      <CheckoutDrawer
+        course={course}
+        isOpen={Boolean(checkoutMode)}
+        selectedPaymentChannel={selectedPaymentChannel}
+        status={checkoutStatus}
+        summary={checkoutSummary}
+        acceptedTerms={acceptedTerms}
+        isSyncing={isSyncing}
+        onAcceptedTermsChange={setAcceptedTerms}
+        onClose={closeCheckout}
+        onConfirm={handleConfirmCheckout}
+        onPaymentChannelChange={setSelectedPaymentChannel}
+        onStartLearning={handleStartAfterCheckout}
+        onViewWorkspace={() => {
+          closeCheckout();
+          navigate("/me/courses");
+        }}
+      />
+      {!checkoutMode && (
+        <MobilePurchaseBar
+          course={course}
+          disabled={isSyncing}
+          label={isSyncing ? "同步中" : primaryAction.label}
+          onClick={handlePrimaryAction}
+        />
+      )}
+    </div>
+  );
+}
+
+function CommercePanel({
+  accessLabel,
+  course,
+  favorite,
+  hasActiveMembership,
+  isSyncing,
+  locked,
+  primaryActionLabel,
+  primaryActionDescription,
+  PrimaryActionIcon,
+  visibleLearningStatus,
+  visibleProgressPercent,
+  onActivateMembership,
+  onConsult,
+  onOpenCourseCheckout,
+  onPrimaryAction,
+  onToggleFavorite,
+}: {
+  accessLabel: string;
+  course: Course;
+  favorite: boolean;
+  hasActiveMembership: boolean;
+  isSyncing: boolean;
+  locked: boolean;
+  primaryActionLabel: string;
+  primaryActionDescription: string;
+  PrimaryActionIcon: typeof PlayCircle;
+  visibleLearningStatus: string;
+  visibleProgressPercent: number;
+  onActivateMembership: () => void;
+  onConsult: () => void;
+  onOpenCourseCheckout: () => void;
+  onPrimaryAction: () => void;
+  onToggleFavorite: () => void;
+}) {
+  return (
+    <motion.aside
+      initial={{ opacity: 0, x: 18 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1], delay: 0.08 }}
+      className="self-start rounded-[28px] border border-white/14 bg-[#FFFDF8] p-5 text-[#243B35] shadow-2xl shadow-black/20 lg:sticky lg:top-24"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold text-[#6F8F83]">课程商品</p>
+        <button
+          onClick={onToggleFavorite}
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+            favorite
+              ? "bg-[#F4E5DE] text-[#A65F48]"
+              : "bg-[#E6EDDF] text-[#41675A] hover:bg-[#DDE8D9]"
+          }`}
+        >
+          <Heart className={`h-3.5 w-3.5 ${favorite ? "fill-current" : ""}`} />
+          {favorite ? "已收藏" : "收藏"}
+        </button>
+      </div>
+
+      <div className="mt-3 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-3xl font-semibold text-[#A65F48]">
+            {formatPrice(course)}
+          </p>
+          {!course.isFree && course.originalPrice > course.price && (
+            <p className="mt-1 text-xs text-[#9AA19B] line-through">
+              {formatCheckoutMoney(course.originalPrice)}
+            </p>
+          )}
+        </div>
+        <span className="rounded-full bg-[#E6EDDF] px-3 py-1 text-xs font-semibold text-[#41675A]">
+          {accessLabel}
+        </span>
+      </div>
+
+      {course.coupon && (
+        <div className="mt-4 rounded-[18px] bg-[#FFF5EF] px-4 py-3 text-xs leading-5 text-[#A65F48]">
+          {course.coupon.label} · 下单可抵扣{" "}
+          {formatCheckoutMoney(course.coupon.amount)}
+        </div>
+      )}
+
+      <div className="mt-5 rounded-[20px] bg-[#F4EFE6] p-4">
+        <div className="flex items-center justify-between text-xs font-semibold">
+          <span className="text-[#6D746F]">学习状态</span>
+          <span
+            className={
+              locked
+                ? "text-[#A65F48]"
+                : visibleProgressPercent > 0
+                  ? "text-[#41675A]"
+                  : "text-[#9AA19B]"
+            }
+          >
+            {visibleLearningStatus}
+          </span>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+          <div
+            className="h-full rounded-full bg-[#6F8F83] transition-all"
+            style={{ width: `${visibleProgressPercent}%` }}
+          />
+        </div>
+        <p className="mt-3 text-xs leading-5 text-[#7B817C]">
+          {primaryActionDescription}
+        </p>
+      </div>
+
+      {course.isVip && !hasActiveMembership && locked && (
+        <div className="mt-4 grid gap-3">
+          <button
+            onClick={onActivateMembership}
+            disabled={isSyncing}
+            className="rounded-[20px] border border-[#D7C49C] bg-[#F4EBD8] p-4 text-left transition hover:bg-[#EFE1C5] disabled:cursor-wait disabled:opacity-65"
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-[#7A5B31]">
+                开通成长会员
+              </span>
+              <Crown className="h-4 w-4 text-[#8C6E4A]" />
+            </span>
+            <span className="mt-2 block text-xs leading-5 text-[#8A7350]">
+              适合计划连续学习会员课程的用户。
+            </span>
+          </button>
+          {course.price > 0 && (
+            <button
+              onClick={onOpenCourseCheckout}
+              disabled={isSyncing}
+              className="rounded-[20px] border border-[#E4DCCF] bg-white px-4 py-3 text-left text-xs font-semibold text-[#5F6B64] transition hover:border-[#AFC2AB] disabled:cursor-wait disabled:opacity-65"
+            >
+              只购买本课 · {formatCheckoutMoney(course.price)}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="mt-5 space-y-3 text-sm text-[#5F6B64]">
+        <p className="flex items-center gap-2">
+          <ReceiptText className="h-4 w-4 text-[#6F8F83]" />
+          购买确认后写入课程权益
+        </p>
+        <p className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-[#6F8F83]" />
+          学习记录仅自己可见
+        </p>
+        <p className="flex items-center gap-2">
+          <HeartHandshake className="h-4 w-4 text-[#6F8F83]" />
+          可衔接测评与咨询支持
+        </p>
+      </div>
+
+      <button
+        onClick={onPrimaryAction}
+        disabled={isSyncing}
+        className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-65"
+      >
+        <PrimaryActionIcon className="mr-2 h-4 w-4" />
+        {isSyncing ? "同步中" : primaryActionLabel}
+      </button>
+      <button
+        onClick={onConsult}
+        className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-full border border-[#DCD3C4] text-sm font-semibold text-[#41675A] transition hover:bg-[#EEF4EA]"
+      >
+        需要咨询师陪伴
+      </button>
+    </motion.aside>
+  );
+}
+
+function CheckoutDrawer({
+  acceptedTerms,
+  course,
+  isOpen,
+  isSyncing,
+  selectedPaymentChannel,
+  status,
+  summary,
+  onAcceptedTermsChange,
+  onClose,
+  onConfirm,
+  onPaymentChannelChange,
+  onStartLearning,
+  onViewWorkspace,
+}: {
+  acceptedTerms: boolean;
+  course: Course;
+  isOpen: boolean;
+  isSyncing: boolean;
+  selectedPaymentChannel: CourseCheckoutPaymentChannel;
+  status: CheckoutStatus;
+  summary?: CourseCheckoutSummary;
+  onAcceptedTermsChange: (accepted: boolean) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+  onPaymentChannelChange: (channel: CourseCheckoutPaymentChannel) => void;
+  onStartLearning: () => void;
+  onViewWorkspace: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {isOpen && summary && (
+        <motion.div
+          className="fixed inset-0 z-50 flex justify-end bg-[#172620]/52 backdrop-blur-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+        >
+          <motion.aside
+            className="flex h-full w-full max-w-[480px] flex-col overflow-y-auto bg-[#FFFDF8] text-[#243B35] shadow-2xl"
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#E7DED0] bg-[#FFFDF8]/95 px-5 py-4 backdrop-blur">
+              <div>
+                <p className="text-xs font-semibold text-[#6F8F83]">
+                  {status === "success" ? "支付结果" : "确认订单"}
+                </p>
+                <h2 className="mt-1 text-xl font-semibold">
+                  {status === "success" ? "权益已准备好" : "购买确认"}
+                </h2>
+              </div>
+              <button
+                onClick={onClose}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F4EFE6] text-[#6D746F] transition hover:text-[#243B35]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {status === "success" ? (
+              <div className="flex flex-1 flex-col px-5 py-6">
+                <div className="rounded-[28px] bg-[#243B35] p-6 text-white">
+                  <CheckCircle2 className="h-10 w-10 text-[#C8D8C0]" />
+                  <h3 className="mt-5 text-2xl font-semibold">购买已确认</h3>
+                  <p className="mt-3 text-sm leading-7 text-white/68">
+                    {summary.mode === "membership"
+                      ? "会员权益已经写入账户，本课和更多会员课程可以进入学习。"
+                      : "课程权益已经写入账户，可以立即加入学习计划。"}
+                  </p>
+                </div>
+
+                <div className="mt-6 rounded-[24px] border border-[#E4DCCF] bg-[#F9F5EE] p-5">
+                  <p className="text-xs font-semibold text-[#6F8F83]">
+                    权益交付
+                  </p>
+                  <p className="mt-3 text-lg font-semibold">
+                    {summary.productTitle}
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+                    {summary.productSubtitle}
+                  </p>
+                </div>
+
+                <div className="mt-auto grid gap-3 pt-8">
+                  <button
+                    onClick={onStartLearning}
+                    className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
+                  >
+                    开始学习
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={onViewWorkspace}
+                    className="inline-flex h-12 items-center justify-center rounded-full border border-[#D8CEC0] text-sm font-semibold text-[#41675A] transition hover:bg-[#EEF4EA]"
+                  >
+                    查看成长空间
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="px-5 py-6">
+                <div className="flex gap-4 rounded-[24px] bg-[#F4EFE6] p-4">
+                  <img
+                    src={course.coverUrl}
+                    alt=""
+                    className="h-24 w-28 shrink-0 rounded-[18px] object-cover"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[#6F8F83]">
+                      {summary.mode === "membership" ? "会员权益" : "课程商品"}
+                    </p>
+                    <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-snug">
+                      {summary.productTitle}
+                    </h3>
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#6D746F]">
+                      {summary.productSubtitle}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 divide-y divide-[#E7DED0] border-y border-[#E7DED0]">
+                  <CheckoutAmountRow
+                    label="商品金额"
+                    value={formatCheckoutMoney(summary.listPrice)}
+                  />
+                  {summary.originalPrice > summary.listPrice && (
+                    <CheckoutAmountRow
+                      label="原价参考"
+                      value={formatCheckoutMoney(summary.originalPrice)}
+                      muted
+                    />
+                  )}
+                  {summary.discountAmount > 0 && (
+                    <CheckoutAmountRow
+                      label="优惠抵扣"
+                      value={`-${formatCheckoutMoney(summary.discountAmount)}`}
+                      accent
+                    />
+                  )}
+                  <CheckoutAmountRow
+                    label="实付金额"
+                    value={formatCheckoutMoney(summary.payableAmount)}
+                    strong
+                  />
+                </div>
+
+                <div className="mt-6">
+                  <p className="text-sm font-semibold">交付内容</p>
+                  <div className="mt-3 grid gap-2">
+                    {summary.deliveryItems.map(item => (
+                      <CheckoutInfoRow key={item.label} {...item} />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <p className="text-sm font-semibold">支付方式</p>
+                  <div className="mt-3 grid gap-2">
+                    {coursePaymentMethods.map(method => (
+                      <button
+                        key={method.channel}
+                        onClick={() => onPaymentChannelChange(method.channel)}
+                        className={`flex items-center justify-between gap-3 rounded-[18px] border px-4 py-3 text-left transition ${
+                          selectedPaymentChannel === method.channel
+                            ? "border-[#6F8F83] bg-[#EEF4EA]"
+                            : "border-[#E4DCCF] bg-white hover:border-[#AFC2AB]"
+                        }`}
+                      >
+                        <span>
+                          <span className="block text-sm font-semibold">
+                            {method.label}
+                          </span>
+                          <span className="mt-1 block text-xs text-[#7B817C]">
+                            {method.description}
+                          </span>
+                        </span>
+                        <WalletCards className="h-4 w-4 shrink-0 text-[#6F8F83]" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-[20px] bg-[#F9F5EE] p-4">
+                  <p className="text-sm font-semibold">购买须知</p>
+                  <ul className="mt-3 space-y-2 text-xs leading-5 text-[#6D746F]">
+                    {summary.notices.map(item => (
+                      <li key={item}>· {item}</li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    aria-pressed={acceptedTerms}
+                    onClick={() => onAcceptedTermsChange(!acceptedTerms)}
+                    className="mt-4 flex w-full items-start gap-3 rounded-[16px] px-2 py-2 text-left text-xs leading-5 text-[#5F6B64] transition hover:bg-white/72"
+                  >
+                    <span
+                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                        acceptedTerms
+                          ? "border-[#41675A] bg-[#41675A] text-white"
+                          : "border-[#CFC5B8] bg-white"
+                      }`}
+                    >
+                      {acceptedTerms && <CheckCircle2 className="h-3 w-3" />}
+                    </span>
+                    <span>我已确认订单金额、权益交付和开发期支付说明。</span>
+                  </button>
+                </div>
+
+                <button
+                  onClick={onConfirm}
+                  disabled={isSyncing || status === "processing"}
+                  className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-65"
+                >
+                  {status === "processing"
+                    ? "确认中"
+                    : `确认支付 ${formatCheckoutMoney(summary.payableAmount)}`}
+                </button>
+              </div>
+            )}
+          </motion.aside>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function MobilePurchaseBar({
+  course,
+  disabled,
+  label,
+  onClick,
+}: {
+  course: Course;
+  disabled: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#E4DCCF] bg-[#FFFDF8]/96 px-4 py-3 shadow-[0_-10px_30px_rgba(36,59,53,0.12)] backdrop-blur lg:hidden">
+      <div className="mx-auto flex max-w-[480px] items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-[#7B817C]">课程权益</p>
+          <p className="mt-1 truncate text-lg font-semibold text-[#A65F48]">
+            {formatPrice(course)}
+          </p>
+        </div>
+        <button
+          onClick={onClick}
+          disabled={disabled}
+          className="inline-flex h-11 shrink-0 items-center justify-center rounded-full bg-[#243B35] px-5 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-65"
+        >
+          {label}
+        </button>
+      </div>
     </div>
   );
 }
@@ -748,11 +1197,95 @@ function Metric({
   );
 }
 
+function DeliveryFact({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof BookOpen;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="border-l border-[#E4DCCF] pl-4 first:border-l-0 first:pl-0">
+      <Icon className="h-5 w-5 text-[#6F8F83]" />
+      <p className="mt-3 text-sm font-semibold text-[#243B35]">{title}</p>
+      <p className="mt-1 text-xs leading-5 text-[#6D746F]">{description}</p>
+    </div>
+  );
+}
+
 function PathFact({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 py-3">
       <span className="text-xs font-semibold text-[#7B817C]">{label}</span>
       <span className="text-sm font-semibold text-[#243B35]">{value}</span>
+    </div>
+  );
+}
+
+function AssuranceRow({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof ReceiptText;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="grid gap-4 py-5 sm:grid-cols-[44px_1fr]">
+      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#E6EDDF] text-[#41675A]">
+        <Icon className="h-5 w-5" />
+      </span>
+      <div>
+        <h3 className="text-base font-semibold text-[#243B35]">{title}</h3>
+        <p className="mt-2 text-sm leading-6 text-[#6D746F]">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+function CheckoutAmountRow({
+  label,
+  value,
+  accent = false,
+  muted = false,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  muted?: boolean;
+  strong?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <span className="text-sm text-[#6D746F]">{label}</span>
+      <span
+        className={`text-sm ${
+          strong
+            ? "text-xl font-semibold text-[#A65F48]"
+            : accent
+              ? "font-semibold text-[#A65F48]"
+              : muted
+                ? "text-[#9AA19B] line-through"
+                : "font-semibold text-[#243B35]"
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function CheckoutInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-[16px] bg-[#F9F5EE] px-4 py-3">
+      <span className="text-xs font-semibold text-[#7B817C]">{label}</span>
+      <span className="text-right text-xs font-semibold text-[#243B35]">
+        {value}
+      </span>
     </div>
   );
 }
