@@ -126,14 +126,23 @@ export {
   type CourseEngagementState,
 } from "./model/courseEngagement";
 export {
+  COURSE_CHECKOUT_PAYMENT_HOLD_MINUTES,
+  COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
+  COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
   activateCourseMembership,
+  cancelCourseCheckoutOrder,
   createEmptyCourseAccessState,
+  createCourseCheckoutOrder,
+  createCourseCheckoutOrderResult,
   grantPurchasedCourseAccess,
   hasActiveCourseMembership,
   normalizeCourseAccessState,
+  payCourseCheckoutOrder,
   resolveCourseAccess,
   type CourseAccessResult,
   type CourseAccessState,
+  type CourseCheckoutMode as CourseAccessCheckoutMode,
+  type CourseCheckoutOrderResult,
   type CourseMembership,
 } from "./model/courseAccess";
 export { buildCourseDetail, getRelatedCourses } from "./model/courseDetail";

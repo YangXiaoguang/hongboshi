@@ -43,7 +43,11 @@ export const OrderSchema = z.object({
   discountAmount: MoneyAmountSchema.default(0),
   payableAmount: MoneyAmountSchema,
   createdAt: DateTimeLikeSchema,
+  expiresAt: DateTimeLikeSchema.optional(),
+  paymentChannel: PaymentChannelSchema.optional(),
   paidAt: DateTimeLikeSchema.optional(),
+  closedAt: DateTimeLikeSchema.optional(),
+  entitlementDeliveredAt: DateTimeLikeSchema.optional(),
 });
 
 export const PaymentSchema = z.object({

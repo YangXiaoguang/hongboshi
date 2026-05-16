@@ -1,8 +1,13 @@
-import type { Course } from "@shared/domain";
+import {
+  COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
+  COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
+  type Course,
+  type PaymentChannel,
+} from "@shared/domain";
 
 export type CourseCheckoutMode = "course" | "membership";
 
-export type CourseCheckoutPaymentChannel = "wechat_pay" | "alipay" | "manual";
+export type CourseCheckoutPaymentChannel = PaymentChannel;
 
 export interface CourseCheckoutLineItem {
   label: string;
@@ -30,8 +35,10 @@ export interface CoursePaymentMethod {
   description: string;
 }
 
-export const COURSE_MEMBERSHIP_CHECKOUT_PRICE = 399;
-export const COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE = 699;
+export const COURSE_MEMBERSHIP_CHECKOUT_PRICE =
+  COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE;
+export const COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE =
+  COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE;
 
 export const coursePaymentMethods: CoursePaymentMethod[] = [
   {
@@ -87,7 +94,7 @@ export function createCourseCheckoutSummary(
       mode,
       productTitle: "成长会员年卡",
       productSubtitle: `含本课学习权益：${course.title}`,
-      listPrice: COURSE_MEMBERSHIP_CHECKOUT_PRICE,
+      listPrice: COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE,
       originalPrice: COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE,
       discountAmount,
       payableAmount: COURSE_MEMBERSHIP_CHECKOUT_PRICE,

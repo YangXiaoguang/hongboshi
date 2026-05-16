@@ -7,23 +7,38 @@ import { resolveRequestUserId } from "../auth/currentUser";
 import { courses as seedCourses } from "../../../shared/data/mockCourses";
 import {
   ApiResponseSchema,
+  CourseCheckoutCreateRequestSchema,
+  CourseCheckoutOrderResultSchema,
+  CourseCheckoutPayRequestSchema,
   CourseAccessStateSchema,
   CourseSchema,
   LOCAL_COURSE_ACCESS_USER_ID,
   LegacyNumericIdSchema,
   activateCourseMembership,
-  grantPurchasedCourseAccess,
+  cancelCourseCheckoutOrder,
+  createCourseCheckoutOrder,
+  createCourseCheckoutOrderResult,
+  payCourseCheckoutOrder,
   type CourseAccessState,
+  type CourseCheckoutOrderResult,
   type OrderAdminAuditEvent,
   type OrderAdminExceptionFlag,
   type UserAdminMembershipAuditEvent,
 } from "../../../shared/domain";
+import {
+  courseFromCourseProduct,
+  getCourseProductStore,
+  type CourseProductStore,
+} from "../catalog/courseProductStore";
 import {
   createDefaultCourseAccessStore,
   type CourseAccessStore,
 } from "./courseAccessStore";
 
 const CourseAccessResponseSchema = ApiResponseSchema(CourseAccessStateSchema);
+const CourseCheckoutOrderResponseSchema = ApiResponseSchema(
+  CourseCheckoutOrderResultSchema
+);
 const PurchaseCourseRequestSchema = z.object({
   courseId: LegacyNumericIdSchema,
 });
@@ -51,12 +66,20 @@ function statePayload(state: CourseAccessState) {
   });
 }
 
+function checkoutOrderPayload(checkout: CourseCheckoutOrderResult) {
+  return CourseCheckoutOrderResponseSchema.parse({
+    ok: true,
+    data: checkout,
+  });
+}
+
 function errorPayload(
   code:
     | "BAD_REQUEST"
     | "NOT_FOUND"
     | "UNAUTHORIZED"
     | "FORBIDDEN"
+    | "CONFLICT"
     | "INTERNAL_ERROR",
   message: string
 ) {
@@ -71,6 +94,69 @@ function errorPayload(
 
 function findCourse(courseId: number) {
   return validatedCourses().find(course => course.id === courseId);
+}
+
+async function findCheckoutCourse(
+  courseId: number,
+  store: CourseProductStore = getCourseProductStore()
+) {
+  const product = (await store.listProducts()).find(
+    item => item.courseId === courseId
+  );
+  if (!product) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "课程不存在"),
+    } as const;
+  }
+
+  if (product.status !== "published" || product.reviewStatus !== "approved") {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "课程暂未上架，无法购买"),
+    } as const;
+  }
+
+  return {
+    status: 200,
+    course: CourseSchema.parse(courseFromCourseProduct(product)),
+  } as const;
+}
+
+function checkoutActionFailure(err: unknown, fallbackMessage: string) {
+  const message = err instanceof Error ? err.message : fallbackMessage;
+  if (
+    [
+      "COURSE_IS_FREE",
+      "COURSE_NOT_PURCHASABLE",
+      "MEMBERSHIP_NOT_PURCHASABLE",
+      "CHECKOUT_ORDER_NOT_PAYABLE",
+      "SIMULATED_PAYMENT_FAILED",
+      "INVALID_ORDER_CLOSE_TRANSITION",
+    ].includes(message)
+  ) {
+    return {
+      status: 409,
+      body: errorPayload(
+        "CONFLICT",
+        message === "SIMULATED_PAYMENT_FAILED"
+          ? "模拟支付失败，订单仍可继续支付"
+          : "当前订单状态不支持此操作"
+      ),
+    } as const;
+  }
+
+  if (message === "CHECKOUT_ORDER_NOT_FOUND") {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "课程订单不存在"),
+    } as const;
+  }
+
+  return {
+    status: 500,
+    body: errorPayload("INTERNAL_ERROR", fallbackMessage),
+  } as const;
 }
 
 function readRequestBody(req: IncomingMessage): Promise<unknown> {
@@ -178,19 +264,156 @@ export async function purchaseCoursePayload(
     } as const;
   }
 
-  const currentState = await courseAccessStore.load(userId);
-  const nextState = grantPurchasedCourseAccess(
-    currentState,
-    course,
-    undefined,
-    userId
-  );
-  await courseAccessStore.save(userId, nextState);
+  try {
+    const currentState = await courseAccessStore.load(userId);
+    const pendingCheckout = createCourseCheckoutOrder(
+      currentState,
+      course,
+      "course",
+      undefined,
+      userId
+    );
+    const paidCheckout = payCourseCheckoutOrder(
+      pendingCheckout.accessState,
+      pendingCheckout.order.id,
+      "manual"
+    );
+    await courseAccessStore.save(userId, paidCheckout.accessState);
 
-  return {
-    status: 200,
-    body: statePayload(nextState),
-  } as const;
+    return {
+      status: 200,
+      body: statePayload(paidCheckout.accessState),
+    } as const;
+  } catch (err) {
+    return checkoutActionFailure(err, "课程购买失败");
+  }
+}
+
+export async function createCourseCheckoutOrderPayload(
+  body: unknown,
+  userId = LOCAL_COURSE_ACCESS_USER_ID,
+  now = new Date().toISOString(),
+  productStore: CourseProductStore = getCourseProductStore()
+) {
+  const parsed = CourseCheckoutCreateRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程订单创建参数不合法"),
+    } as const;
+  }
+
+  const coursePayload = await findCheckoutCourse(
+    parsed.data.courseId,
+    productStore
+  );
+  if (coursePayload.status !== 200) return coursePayload;
+
+  try {
+    const currentState = await courseAccessStore.load(userId);
+    const checkout = createCourseCheckoutOrder(
+      currentState,
+      coursePayload.course,
+      parsed.data.mode,
+      now,
+      userId
+    );
+    await courseAccessStore.save(userId, checkout.accessState);
+
+    return {
+      status: 200,
+      body: checkoutOrderPayload(checkout),
+    } as const;
+  } catch (err) {
+    return checkoutActionFailure(err, "课程订单创建失败");
+  }
+}
+
+export async function getCourseCheckoutOrderPayload(
+  orderId: string,
+  userId = LOCAL_COURSE_ACCESS_USER_ID
+) {
+  const currentState = await courseAccessStore.load(userId);
+  const order = currentState.orders.find(item => item.id === orderId);
+  if (!order) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "课程订单不存在"),
+    } as const;
+  }
+
+  try {
+    return {
+      status: 200,
+      body: checkoutOrderPayload(
+        createCourseCheckoutOrderResult({
+          state: currentState,
+          order,
+        })
+      ),
+    } as const;
+  } catch (err) {
+    return checkoutActionFailure(err, "课程订单读取失败");
+  }
+}
+
+export async function payCourseCheckoutOrderPayload(
+  orderId: string,
+  body: unknown,
+  userId = LOCAL_COURSE_ACCESS_USER_ID,
+  now = new Date().toISOString()
+) {
+  const parsed = CourseCheckoutPayRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程支付参数不合法"),
+    } as const;
+  }
+
+  if (parsed.data.simulateResult === "failed") {
+    return checkoutActionFailure(
+      new Error("SIMULATED_PAYMENT_FAILED"),
+      "课程支付失败"
+    );
+  }
+
+  try {
+    const currentState = await courseAccessStore.load(userId);
+    const checkout = payCourseCheckoutOrder(
+      currentState,
+      orderId,
+      parsed.data.paymentChannel,
+      now
+    );
+    await courseAccessStore.save(userId, checkout.accessState);
+
+    return {
+      status: 200,
+      body: checkoutOrderPayload(checkout),
+    } as const;
+  } catch (err) {
+    return checkoutActionFailure(err, "课程支付失败");
+  }
+}
+
+export async function cancelCourseCheckoutOrderPayload(
+  orderId: string,
+  userId = LOCAL_COURSE_ACCESS_USER_ID,
+  now = new Date().toISOString()
+) {
+  try {
+    const currentState = await courseAccessStore.load(userId);
+    const checkout = cancelCourseCheckoutOrder(currentState, orderId, now);
+    await courseAccessStore.save(userId, checkout.accessState);
+
+    return {
+      status: 200,
+      body: checkoutOrderPayload(checkout),
+    } as const;
+  } catch (err) {
+    return checkoutActionFailure(err, "课程订单取消失败");
+  }
 }
 
 export async function activateMembershipPayload(
@@ -214,6 +437,75 @@ export function registerCourseAccessApi(app: Express) {
       await getCourseAccessPayload(await resolveRequestUserId(req))
     );
   });
+
+  app.post(
+    "/api/course-access/checkout/orders",
+    async (req: Request, res: Response) => {
+      const auth = await authorizeRequest(req, "course:purchase");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+
+      const payload = await createCourseCheckoutOrderPayload(
+        req.body,
+        auth.session.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.get(
+    "/api/course-access/checkout/orders/:orderId",
+    async (req: Request, res: Response) => {
+      const auth = await authorizeRequest(req, "course:purchase");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+
+      const payload = await getCourseCheckoutOrderPayload(
+        req.params.orderId,
+        auth.session.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.post(
+    "/api/course-access/checkout/orders/:orderId/pay",
+    async (req: Request, res: Response) => {
+      const auth = await authorizeRequest(req, "course:purchase");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+
+      const payload = await payCourseCheckoutOrderPayload(
+        req.params.orderId,
+        req.body,
+        auth.session.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.post(
+    "/api/course-access/checkout/orders/:orderId/cancel",
+    async (req: Request, res: Response) => {
+      const auth = await authorizeRequest(req, "course:purchase");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+
+      const payload = await cancelCourseCheckoutOrderPayload(
+        req.params.orderId,
+        auth.session.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
 
   app.post(
     "/api/course-access/purchases",
@@ -268,6 +560,101 @@ export function handleCourseAccessApiRequest(
         console.error(err instanceof Error ? err.message : "课程权益读取失败");
         sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程权益读取失败"));
       });
+    return true;
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname === "/api/course-access/checkout/orders"
+  ) {
+    void (async () => {
+      const auth = await authorizeRequest(req, "course:purchase");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+
+      const body = await readRequestBody(req);
+      const payload = await createCourseCheckoutOrderPayload(
+        body,
+        auth.session.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "课程订单创建失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程订单创建失败"));
+    });
+    return true;
+  }
+
+  const checkoutOrderMatch = url.pathname.match(
+    /^\/api\/course-access\/checkout\/orders\/([^/]+)$/
+  );
+  if (req.method === "GET" && checkoutOrderMatch?.[1]) {
+    void (async () => {
+      const auth = await authorizeRequest(req, "course:purchase");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+
+      const payload = await getCourseCheckoutOrderPayload(
+        decodeURIComponent(checkoutOrderMatch[1]),
+        auth.session.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "课程订单读取失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程订单读取失败"));
+    });
+    return true;
+  }
+
+  const checkoutPayMatch = url.pathname.match(
+    /^\/api\/course-access\/checkout\/orders\/([^/]+)\/pay$/
+  );
+  if (req.method === "POST" && checkoutPayMatch?.[1]) {
+    void (async () => {
+      const auth = await authorizeRequest(req, "course:purchase");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+
+      const body = await readRequestBody(req);
+      const payload = await payCourseCheckoutOrderPayload(
+        decodeURIComponent(checkoutPayMatch[1]),
+        body,
+        auth.session.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "课程支付失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程支付失败"));
+    });
+    return true;
+  }
+
+  const checkoutCancelMatch = url.pathname.match(
+    /^\/api\/course-access\/checkout\/orders\/([^/]+)\/cancel$/
+  );
+  if (req.method === "POST" && checkoutCancelMatch?.[1]) {
+    void (async () => {
+      const auth = await authorizeRequest(req, "course:purchase");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+
+      const payload = await cancelCourseCheckoutOrderPayload(
+        decodeURIComponent(checkoutCancelMatch[1]),
+        auth.session.user.id
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "课程订单取消失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程订单取消失败"));
+    });
     return true;
   }
 

@@ -4,11 +4,27 @@ import {
   type Course,
   type CourseAccessStatus,
 } from "./course";
-import { DateTimeLikeSchema, LegacyNumericIdSchema } from "./common";
-import { OrderSchema, type Order } from "./order";
+import {
+  DateTimeLikeSchema,
+  LegacyNumericIdSchema,
+  MoneyAmountSchema,
+} from "./common";
+import {
+  OrderSchema,
+  PaymentChannelSchema,
+  closeUnpaidOrder,
+  markOrderPaid,
+  type Order,
+  type PaymentChannel,
+} from "./order";
 
 export const LOCAL_COURSE_ACCESS_USER_ID = "local-user";
 export const COURSE_ACCESS_USER_ID_HEADER = "x-hongboshi-user-id";
+export const COURSE_CHECKOUT_PAYMENT_HOLD_MINUTES = 30;
+export const COURSE_MEMBERSHIP_ORDER_TARGET_ID = "growth_membership_yearly";
+export const COURSE_MEMBERSHIP_ORDER_TITLE = "成长会员年卡";
+export const COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE = 699;
+export const COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE = 399;
 
 const MembershipStatusSchema = z.enum(["none", "active", "expired"]);
 
@@ -25,8 +41,52 @@ export const CourseAccessStateSchema = z.object({
   orders: z.array(OrderSchema).default([]),
 });
 
+export const CourseCheckoutModeSchema = z.enum(["course", "membership"]);
+export const CourseCheckoutEntitlementStatusSchema = z.enum([
+  "pending",
+  "delivered",
+  "not_delivered",
+]);
+export const CourseCheckoutPaymentSchema = z.object({
+  channel: PaymentChannelSchema.optional(),
+  payableAmount: MoneyAmountSchema,
+  expiresAt: DateTimeLikeSchema,
+  holdMinutes: z.number().int().positive(),
+});
+export const CourseCheckoutEntitlementSchema = z.object({
+  status: CourseCheckoutEntitlementStatusSchema,
+  title: z.string().min(1),
+  description: z.string().min(1),
+  deliveredAt: DateTimeLikeSchema.optional(),
+});
+export const CourseCheckoutOrderResultSchema = z.object({
+  order: OrderSchema,
+  mode: CourseCheckoutModeSchema,
+  payment: CourseCheckoutPaymentSchema,
+  entitlement: CourseCheckoutEntitlementSchema,
+  accessState: CourseAccessStateSchema,
+});
+export const CourseCheckoutCreateRequestSchema = z.object({
+  mode: CourseCheckoutModeSchema,
+  courseId: LegacyNumericIdSchema,
+});
+export const CourseCheckoutPayRequestSchema = z.object({
+  paymentChannel: PaymentChannelSchema.default("manual"),
+  simulateResult: z.enum(["success", "failed"]).default("success"),
+});
+
 export type CourseMembership = z.infer<typeof CourseMembershipSchema>;
 export type CourseAccessState = z.infer<typeof CourseAccessStateSchema>;
+export type CourseCheckoutMode = z.infer<typeof CourseCheckoutModeSchema>;
+export type CourseCheckoutOrderResult = z.infer<
+  typeof CourseCheckoutOrderResultSchema
+>;
+export type CourseCheckoutCreateRequest = z.infer<
+  typeof CourseCheckoutCreateRequestSchema
+>;
+export type CourseCheckoutPayRequest = z.infer<
+  typeof CourseCheckoutPayRequestSchema
+>;
 
 export interface CourseAccessResult {
   status: CourseAccessStatus;
@@ -54,6 +114,148 @@ export function normalizeCourseAccessState(state: unknown): CourseAccessState {
     membership: parsed.data.membership,
     orders: parsed.data.orders,
   };
+}
+
+function checkoutDeadlineFrom(
+  createdAt: string,
+  holdMinutes = COURSE_CHECKOUT_PAYMENT_HOLD_MINUTES
+): string {
+  return new Date(
+    Date.parse(createdAt) + holdMinutes * 60 * 1000
+  ).toISOString();
+}
+
+function safeIdPart(value: string | number): string {
+  return String(value)
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .slice(0, 32);
+}
+
+function createCourseCheckoutOrderId({
+  mode,
+  targetId,
+  userId,
+  now,
+}: {
+  mode: CourseCheckoutMode;
+  targetId: string | number;
+  userId: string;
+  now: string;
+}) {
+  return `order_${mode}_${safeIdPart(targetId)}_${safeIdPart(userId)}_${Date.parse(now)}`;
+}
+
+function checkoutModeFromOrder(order: Order): CourseCheckoutMode {
+  const itemType = order.items[0]?.type;
+  if (itemType === "membership") return "membership";
+  if (itemType === "course") return "course";
+  throw new Error("CHECKOUT_ORDER_UNSUPPORTED_ITEM");
+}
+
+function findPendingCheckoutOrder(
+  state: CourseAccessState,
+  mode: CourseCheckoutMode,
+  targetId: string
+): Order | undefined {
+  return state.orders.find(order => {
+    if (order.status !== "pending_payment") return false;
+    const firstItem = order.items[0];
+    if (!firstItem) return false;
+    if (mode === "membership") {
+      return (
+        firstItem.type === "membership" &&
+        firstItem.targetId === COURSE_MEMBERSHIP_ORDER_TARGET_ID
+      );
+    }
+
+    return firstItem.type === "course" && firstItem.targetId === targetId;
+  });
+}
+
+function courseOrderAmount(course: Course) {
+  const discountAmount = Math.min(course.coupon?.amount ?? 0, course.price);
+  return {
+    subtotal: course.price,
+    discountAmount,
+    payableAmount: Math.max(0, course.price - discountAmount),
+  };
+}
+
+function membershipOrderAmount() {
+  return {
+    subtotal: COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
+    discountAmount:
+      COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE -
+      COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
+    payableAmount: COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
+  };
+}
+
+function entitlementForOrder(
+  order: Order
+): CourseCheckoutOrderResult["entitlement"] {
+  const mode = checkoutModeFromOrder(order);
+  const title =
+    mode === "membership"
+      ? COURSE_MEMBERSHIP_ORDER_TITLE
+      : (order.items[0]?.title ?? "课程");
+
+  if (order.status === "paid") {
+    return {
+      status: "delivered",
+      title,
+      description:
+        mode === "membership"
+          ? "会员权益已写入账户，会员课程可在有效期内学习。"
+          : "课程权益已写入账户，可以立即加入学习计划。",
+      deliveredAt: order.entitlementDeliveredAt ?? order.paidAt,
+    };
+  }
+
+  if (order.status === "closed") {
+    return {
+      status: "not_delivered",
+      title,
+      description: "订单已关闭，未发放课程或会员权益。",
+    };
+  }
+
+  return {
+    status: "pending",
+    title,
+    description:
+      mode === "membership"
+        ? "支付成功后会自动开通成长会员。"
+        : "支付成功后会自动解锁本课程。",
+  };
+}
+
+export function createCourseCheckoutOrderResult({
+  state,
+  order,
+  paymentChannel,
+}: {
+  state: CourseAccessState;
+  order: Order;
+  paymentChannel?: PaymentChannel;
+}): CourseCheckoutOrderResult {
+  const normalizedState = normalizeCourseAccessState(state);
+  const normalizedOrder = OrderSchema.parse(order);
+
+  return CourseCheckoutOrderResultSchema.parse({
+    order: normalizedOrder,
+    mode: checkoutModeFromOrder(normalizedOrder),
+    payment: {
+      channel: paymentChannel ?? normalizedOrder.paymentChannel,
+      payableAmount: normalizedOrder.payableAmount,
+      expiresAt:
+        normalizedOrder.expiresAt ??
+        checkoutDeadlineFrom(normalizedOrder.createdAt),
+      holdMinutes: COURSE_CHECKOUT_PAYMENT_HOLD_MINUTES,
+    },
+    entitlement: entitlementForOrder(normalizedOrder),
+    accessState: normalizedState,
+  });
 }
 
 export function hasActiveCourseMembership(
@@ -95,6 +297,158 @@ export function resolveCourseAccess(
     canPurchase: !course.isFree && !owned,
     canActivateMembership: course.isVip && !membershipActive,
   };
+}
+
+export function createCourseCheckoutOrder(
+  state: CourseAccessState,
+  course: Course,
+  mode: CourseCheckoutMode,
+  now = new Date().toISOString(),
+  userId = LOCAL_COURSE_ACCESS_USER_ID
+): CourseCheckoutOrderResult {
+  const normalized = normalizeCourseAccessState(state);
+  const access = resolveCourseAccess(normalized, course, now);
+
+  if (mode === "course") {
+    if (course.isFree) throw new Error("COURSE_IS_FREE");
+    if (!access.canPurchase) throw new Error("COURSE_NOT_PURCHASABLE");
+  }
+
+  if (mode === "membership" && access.canActivateMembership === false) {
+    throw new Error("MEMBERSHIP_NOT_PURCHASABLE");
+  }
+
+  const targetId =
+    mode === "membership"
+      ? COURSE_MEMBERSHIP_ORDER_TARGET_ID
+      : String(course.id);
+  const existingOrder = findPendingCheckoutOrder(normalized, mode, targetId);
+  if (existingOrder) {
+    return createCourseCheckoutOrderResult({
+      state: normalized,
+      order: existingOrder,
+    });
+  }
+
+  const amount =
+    mode === "membership" ? membershipOrderAmount() : courseOrderAmount(course);
+  const order = OrderSchema.parse({
+    id: createCourseCheckoutOrderId({
+      mode,
+      targetId,
+      userId,
+      now,
+    }),
+    userId,
+    status: "pending_payment",
+    items:
+      mode === "membership"
+        ? [
+            {
+              type: "membership",
+              targetId: COURSE_MEMBERSHIP_ORDER_TARGET_ID,
+              title: COURSE_MEMBERSHIP_ORDER_TITLE,
+              unitPrice: COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
+              quantity: 1,
+            },
+          ]
+        : [
+            {
+              type: "course",
+              targetId: String(course.id),
+              title: course.title,
+              unitPrice: course.price,
+              quantity: 1,
+            },
+          ],
+    subtotal: amount.subtotal,
+    discountAmount: amount.discountAmount,
+    payableAmount: amount.payableAmount,
+    createdAt: now,
+    expiresAt: checkoutDeadlineFrom(now),
+  });
+  const accessState = upsertCourseAccessOrder(normalized, order);
+
+  return createCourseCheckoutOrderResult({
+    state: accessState,
+    order,
+  });
+}
+
+function deliverCourseCheckoutEntitlement(
+  state: CourseAccessState,
+  order: Order,
+  now: string
+): CourseAccessState {
+  const mode = checkoutModeFromOrder(order);
+  if (mode === "membership") {
+    return activateCourseMembership(state, now, COURSE_MEMBERSHIP_ORDER_TITLE);
+  }
+
+  const courseId = Number(order.items[0]?.targetId);
+  if (!Number.isInteger(courseId) || courseId <= 0) {
+    throw new Error("CHECKOUT_ORDER_INVALID_COURSE");
+  }
+
+  return normalizeCourseAccessState({
+    ...state,
+    ownedCourseIds: state.ownedCourseIds.includes(courseId)
+      ? state.ownedCourseIds
+      : [...state.ownedCourseIds, courseId],
+  });
+}
+
+export function payCourseCheckoutOrder(
+  state: CourseAccessState,
+  orderId: string,
+  paymentChannel: PaymentChannel = "manual",
+  now = new Date().toISOString()
+): CourseCheckoutOrderResult {
+  const normalized = normalizeCourseAccessState(state);
+  const currentOrder = findCourseAccessOrder(normalized, orderId);
+  if (!currentOrder) throw new Error("CHECKOUT_ORDER_NOT_FOUND");
+  if (!["created", "pending_payment", "paid"].includes(currentOrder.status)) {
+    throw new Error("CHECKOUT_ORDER_NOT_PAYABLE");
+  }
+
+  const paidOrder = OrderSchema.parse({
+    ...markOrderPaid(currentOrder, now),
+    paymentChannel: currentOrder.paymentChannel ?? paymentChannel,
+    entitlementDeliveredAt: currentOrder.entitlementDeliveredAt ?? now,
+  });
+  const stateWithPaidOrder = upsertCourseAccessOrder(normalized, paidOrder);
+  const accessState = deliverCourseCheckoutEntitlement(
+    stateWithPaidOrder,
+    paidOrder,
+    paidOrder.entitlementDeliveredAt ?? now
+  );
+
+  return createCourseCheckoutOrderResult({
+    state: accessState,
+    order: paidOrder,
+    paymentChannel: paidOrder.paymentChannel,
+  });
+}
+
+export function cancelCourseCheckoutOrder(
+  state: CourseAccessState,
+  orderId: string,
+  now = new Date().toISOString()
+): CourseCheckoutOrderResult {
+  const normalized = normalizeCourseAccessState(state);
+  const currentOrder = findCourseAccessOrder(normalized, orderId);
+  if (!currentOrder) throw new Error("CHECKOUT_ORDER_NOT_FOUND");
+
+  const closedOrder = OrderSchema.parse({
+    ...closeUnpaidOrder(currentOrder),
+    closedAt: currentOrder.closedAt ?? now,
+  });
+  const accessState = upsertCourseAccessOrder(normalized, closedOrder);
+
+  return createCourseCheckoutOrderResult({
+    state: accessState,
+    order: closedOrder,
+  });
 }
 
 export function grantPurchasedCourseAccess(

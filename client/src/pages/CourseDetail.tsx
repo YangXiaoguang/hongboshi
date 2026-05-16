@@ -42,11 +42,18 @@ import {
   type Course,
   type CourseAccessStatus,
   type CourseCheckoutMode,
+  type CourseCheckoutOrderResult,
   type CourseCheckoutPaymentChannel,
   type CourseCheckoutSummary,
 } from "@/features/courses";
 
-type CheckoutStatus = "idle" | "processing" | "success";
+type CheckoutStatus =
+  | "idle"
+  | "creating"
+  | "pending_payment"
+  | "processing"
+  | "success"
+  | "failed";
 
 function formatLearners(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
@@ -56,6 +63,19 @@ function formatLearners(n: number): string {
 
 function formatPrice(course: Course): string {
   return course.isFree ? "免费" : formatCheckoutMoney(course.price);
+}
+
+function formatCheckoutDateTime(value?: string): string {
+  if (!value) return "未记录";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "未记录";
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 const accessCopy = {
@@ -76,11 +96,12 @@ export default function CourseDetail() {
   const [, navigate] = useLocation();
   const [, params] = useRoute("/courses/:courseId");
   const {
-    activateMembership,
+    cancelCheckoutOrder,
+    createCheckoutOrder,
     getCourseAccess,
     hasActiveMembership,
     isSyncing,
-    purchaseCourse,
+    payCheckoutOrder,
   } = useCourseAccess();
   const {
     getProgress,
@@ -96,6 +117,10 @@ export default function CourseDetail() {
     useState<CourseCheckoutPaymentChannel>("wechat_pay");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatus>("idle");
+  const [checkoutOrder, setCheckoutOrder] = useState<
+    CourseCheckoutOrderResult | undefined
+  >();
+  const [checkoutError, setCheckoutError] = useState<string | undefined>();
   const courseId = Number(params?.courseId);
   const { course, allCourses, relatedCourses, isLoading } = useCourseDetail(
     Number.isInteger(courseId) ? courseId : undefined
@@ -194,12 +219,16 @@ export default function CourseDetail() {
     setCheckoutStatus("idle");
     setAcceptedTerms(false);
     setSelectedPaymentChannel("wechat_pay");
+    setCheckoutOrder(undefined);
+    setCheckoutError(undefined);
   };
 
   const closeCheckout = () => {
     setCheckoutMode(undefined);
     setCheckoutStatus("idle");
     setAcceptedTerms(false);
+    setCheckoutOrder(undefined);
+    setCheckoutError(undefined);
   };
 
   const handlePrimaryAction = () => {
@@ -222,29 +251,83 @@ export default function CourseDetail() {
       return;
     }
 
-    setCheckoutStatus("processing");
-    const request =
-      checkoutMode === "membership"
-        ? activateMembership()
-        : purchaseCourse(course);
+    setCheckoutError(undefined);
+    void (async () => {
+      let pendingCheckout = checkoutOrder;
+      if (pendingCheckout?.order.status !== "pending_payment") {
+        setCheckoutStatus("creating");
+        const created = await createCheckoutOrder(course, checkoutMode);
+        if (created === "auth_required") {
+          setCheckoutStatus("idle");
+          toast("请先登录", {
+            description: "登录后即可创建订单，并同步学习权益。",
+          });
+          return;
+        }
 
-    void request.then(syncMode => {
-      if (syncMode === "auth_required") {
+        pendingCheckout = created.checkout;
+        setCheckoutOrder(created.checkout);
+        setCheckoutStatus("pending_payment");
+      }
+
+      setCheckoutStatus("processing");
+      const paid = await payCheckoutOrder(
+        pendingCheckout.order.id,
+        selectedPaymentChannel
+      );
+      if (paid === "auth_required") {
         setCheckoutStatus("idle");
         toast("请先登录", {
-          description: "登录后即可完成购买，并同步学习权益。",
+          description: "登录后即可继续支付这笔订单。",
         });
         return;
       }
 
+      setCheckoutOrder(paid.checkout);
       setCheckoutStatus("success");
       toast(checkoutMode === "membership" ? "会员已开通" : "课程已解锁", {
         description:
-          syncMode === "api"
-            ? "权益已同步到账户，可继续进入学习。"
-            : "权益已先保存在本机，网络恢复后可再同步。",
+          paid.syncMode === "api"
+            ? "支付成功，权益已同步到账户。"
+            : "支付结果已先保存在本机，网络恢复后可再同步。",
+      });
+    })().catch(err => {
+      setCheckoutStatus("failed");
+      setCheckoutError(err instanceof Error ? err.message : "支付确认失败");
+      toast("支付未完成", {
+        description: "订单仍保留为待支付，可以稍后继续支付或取消。",
       });
     });
+  };
+
+  const handleCancelCheckoutOrder = () => {
+    if (!checkoutOrder || checkoutOrder.order.status !== "pending_payment") {
+      closeCheckout();
+      return;
+    }
+
+    setCheckoutError(undefined);
+    setCheckoutStatus("processing");
+    void cancelCheckoutOrder(checkoutOrder.order.id)
+      .then(result => {
+        if (result === "auth_required") {
+          setCheckoutStatus("pending_payment");
+          toast("请先登录", {
+            description: "登录后可继续处理这笔待支付订单。",
+          });
+          return;
+        }
+
+        setCheckoutOrder(result.checkout);
+        setCheckoutStatus("failed");
+        toast("订单已取消", {
+          description: "课程权益未发放，你可以重新下单。",
+        });
+      })
+      .catch(err => {
+        setCheckoutStatus("failed");
+        setCheckoutError(err instanceof Error ? err.message : "订单取消失败");
+      });
   };
 
   const handleStartAfterCheckout = () => {
@@ -724,9 +807,12 @@ export default function CourseDetail() {
         selectedPaymentChannel={selectedPaymentChannel}
         status={checkoutStatus}
         summary={checkoutSummary}
+        checkoutOrder={checkoutOrder}
+        checkoutError={checkoutError}
         acceptedTerms={acceptedTerms}
         isSyncing={isSyncing}
         onAcceptedTermsChange={setAcceptedTerms}
+        onCancelOrder={handleCancelCheckoutOrder}
         onClose={closeCheckout}
         onConfirm={handleConfirmCheckout}
         onPaymentChannelChange={setSelectedPaymentChannel}
@@ -918,6 +1004,8 @@ function CommercePanel({
 
 function CheckoutDrawer({
   acceptedTerms,
+  checkoutError,
+  checkoutOrder,
   course,
   isOpen,
   isSyncing,
@@ -925,6 +1013,7 @@ function CheckoutDrawer({
   status,
   summary,
   onAcceptedTermsChange,
+  onCancelOrder,
   onClose,
   onConfirm,
   onPaymentChannelChange,
@@ -932,6 +1021,8 @@ function CheckoutDrawer({
   onViewWorkspace,
 }: {
   acceptedTerms: boolean;
+  checkoutError?: string;
+  checkoutOrder?: CourseCheckoutOrderResult;
   course: Course;
   isOpen: boolean;
   isSyncing: boolean;
@@ -939,12 +1030,36 @@ function CheckoutDrawer({
   status: CheckoutStatus;
   summary?: CourseCheckoutSummary;
   onAcceptedTermsChange: (accepted: boolean) => void;
+  onCancelOrder: () => void;
   onClose: () => void;
   onConfirm: () => void;
   onPaymentChannelChange: (channel: CourseCheckoutPaymentChannel) => void;
   onStartLearning: () => void;
   onViewWorkspace: () => void;
 }) {
+  const busy = status === "creating" || status === "processing";
+  const orderStatusLabel = checkoutOrder
+    ? {
+        created: "已创建",
+        pending_payment: "待支付",
+        paid: "已支付",
+        closed: "已关闭",
+        refunding: "退款中",
+        refunded: "已退款",
+      }[checkoutOrder.order.status]
+    : "待创建";
+  const confirmLabel =
+    status === "creating"
+      ? "创建订单中"
+      : status === "processing"
+        ? "支付确认中"
+        : checkoutOrder?.order.status === "closed"
+          ? "订单已关闭"
+          : checkoutOrder?.order.status === "pending_payment" ||
+              status === "failed"
+            ? `继续支付 ${formatCheckoutMoney(summary?.payableAmount ?? 0)}`
+            : `创建订单并支付 ${formatCheckoutMoney(summary?.payableAmount ?? 0)}`;
+
   return (
     <AnimatePresence>
       {isOpen && summary && (
@@ -966,10 +1081,10 @@ function CheckoutDrawer({
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#E7DED0] bg-[#FFFDF8]/95 px-5 py-4 backdrop-blur">
               <div>
                 <p className="text-xs font-semibold text-[#6F8F83]">
-                  {status === "success" ? "支付结果" : "确认订单"}
+                  {status === "success" ? "支付结果" : "课程订单"}
                 </p>
                 <h2 className="mt-1 text-xl font-semibold">
-                  {status === "success" ? "权益已准备好" : "购买确认"}
+                  {status === "success" ? "权益已准备好" : "订单确认"}
                 </h2>
               </div>
               <button
@@ -990,6 +1105,11 @@ function CheckoutDrawer({
                       ? "会员权益已经写入账户，本课和更多会员课程可以进入学习。"
                       : "课程权益已经写入账户，可以立即加入学习计划。"}
                   </p>
+                  {checkoutOrder && (
+                    <p className="mt-4 rounded-full bg-white/10 px-3 py-2 text-xs font-semibold text-[#DDE8D9]">
+                      订单号 {checkoutOrder.order.id}
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-6 rounded-[24px] border border-[#E4DCCF] bg-[#F9F5EE] p-5">
@@ -1067,6 +1187,45 @@ function CheckoutDrawer({
                   />
                 </div>
 
+                <div className="mt-6 rounded-[20px] border border-[#E4DCCF] bg-white p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-sm font-semibold">订单状态</p>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        checkoutOrder?.order.status === "closed" ||
+                        status === "failed"
+                          ? "bg-[#FFF1EC] text-[#A65F48]"
+                          : checkoutOrder?.order.status === "pending_payment"
+                            ? "bg-[#FFF8DF] text-[#8A641C]"
+                            : "bg-[#E6EDDF] text-[#41675A]"
+                      }`}
+                    >
+                      {orderStatusLabel}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-2 text-xs leading-5 text-[#6D746F]">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>订单号</span>
+                      <span className="max-w-[260px] truncate font-semibold text-[#243B35]">
+                        {checkoutOrder?.order.id ?? "确认后生成"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>支付保留</span>
+                      <span className="font-semibold text-[#243B35]">
+                        {formatCheckoutDateTime(
+                          checkoutOrder?.payment.expiresAt
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                  {checkoutError && (
+                    <p className="mt-4 rounded-[14px] bg-[#FFF1EC] px-3 py-2 text-xs leading-5 text-[#A65F48]">
+                      {checkoutError}
+                    </p>
+                  )}
+                </div>
+
                 <div className="mt-6">
                   <p className="text-sm font-semibold">交付内容</p>
                   <div className="mt-3 grid gap-2">
@@ -1131,13 +1290,24 @@ function CheckoutDrawer({
 
                 <button
                   onClick={onConfirm}
-                  disabled={isSyncing || status === "processing"}
+                  disabled={
+                    isSyncing ||
+                    busy ||
+                    checkoutOrder?.order.status === "closed"
+                  }
                   className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-65"
                 >
-                  {status === "processing"
-                    ? "确认中"
-                    : `确认支付 ${formatCheckoutMoney(summary.payableAmount)}`}
+                  {confirmLabel}
                 </button>
+                {checkoutOrder?.order.status === "pending_payment" && (
+                  <button
+                    onClick={onCancelOrder}
+                    disabled={busy}
+                    className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-full border border-[#D8CEC0] text-sm font-semibold text-[#41675A] transition hover:bg-[#EEF4EA] disabled:cursor-wait disabled:opacity-65"
+                  >
+                    取消订单
+                  </button>
+                )}
               </div>
             )}
           </motion.aside>

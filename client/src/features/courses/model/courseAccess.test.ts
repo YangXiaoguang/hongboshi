@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { Course } from "@shared/domain";
 import {
   activateCourseMembership,
+  cancelCourseCheckoutOrder,
   createEmptyCourseAccessState,
+  createCourseCheckoutOrder,
   grantPurchasedCourseAccess,
   hasActiveCourseMembership,
+  payCourseCheckoutOrder,
   resolveCourseAccess,
 } from "./courseAccess";
 
@@ -25,7 +28,13 @@ const baseCourse: Course = {
 
 describe("course access model", () => {
   it("allows free courses without creating an order", () => {
-    const course = { ...baseCourse, id: 3, price: 0, originalPrice: 0, isFree: true };
+    const course = {
+      ...baseCourse,
+      id: 3,
+      price: 0,
+      originalPrice: 0,
+      isFree: true,
+    };
     const state = createEmptyCourseAccessState();
 
     expect(resolveCourseAccess(state, course).status).toBe("free");
@@ -54,6 +63,77 @@ describe("course access model", () => {
       items: [{ type: "course", targetId: "11" }],
     });
     expect(resolveCourseAccess(state, course).status).toBe("owned");
+  });
+
+  it("creates a pending checkout order without granting access", () => {
+    const checkout = createCourseCheckoutOrder(
+      createEmptyCourseAccessState(),
+      baseCourse,
+      "course",
+      "2026-05-09T10:00:00.000Z",
+      "u_10001"
+    );
+
+    expect(checkout.order).toMatchObject({
+      status: "pending_payment",
+      payableAmount: 399,
+      items: [{ type: "course", targetId: "11" }],
+    });
+    expect(checkout.accessState.ownedCourseIds).toEqual([]);
+    expect(resolveCourseAccess(checkout.accessState, baseCourse).status).toBe(
+      "requires_purchase"
+    );
+  });
+
+  it("delivers course access only after checkout payment succeeds", () => {
+    const pending = createCourseCheckoutOrder(
+      createEmptyCourseAccessState(),
+      baseCourse,
+      "course",
+      "2026-05-09T10:00:00.000Z",
+      "u_10001"
+    );
+    const paid = payCourseCheckoutOrder(
+      pending.accessState,
+      pending.order.id,
+      "wechat_pay",
+      "2026-05-09T10:02:00.000Z"
+    );
+    const duplicate = payCourseCheckoutOrder(
+      paid.accessState,
+      pending.order.id,
+      "wechat_pay",
+      "2026-05-09T10:03:00.000Z"
+    );
+
+    expect(paid.order.status).toBe("paid");
+    expect(paid.order.paymentChannel).toBe("wechat_pay");
+    expect(paid.entitlement.status).toBe("delivered");
+    expect(paid.accessState.ownedCourseIds).toEqual([11]);
+    expect(duplicate.accessState.ownedCourseIds).toEqual([11]);
+    expect(duplicate.order.paidAt).toBe("2026-05-09T10:02:00.000Z");
+  });
+
+  it("closes pending checkout orders without delivering access", () => {
+    const pending = createCourseCheckoutOrder(
+      createEmptyCourseAccessState(),
+      baseCourse,
+      "course",
+      "2026-05-09T10:00:00.000Z",
+      "u_10001"
+    );
+    const closed = cancelCourseCheckoutOrder(
+      pending.accessState,
+      pending.order.id,
+      "2026-05-09T10:05:00.000Z"
+    );
+
+    expect(closed.order.status).toBe("closed");
+    expect(closed.entitlement.status).toBe("not_delivered");
+    expect(closed.accessState.ownedCourseIds).toEqual([]);
+    expect(() =>
+      payCourseCheckoutOrder(closed.accessState, pending.order.id)
+    ).toThrow("CHECKOUT_ORDER_NOT_PAYABLE");
   });
 
   it("unlocks vip courses for active members", () => {
