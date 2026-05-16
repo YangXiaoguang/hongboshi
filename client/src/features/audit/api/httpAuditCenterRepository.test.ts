@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   httpAuditCenterRepository,
   parseAuditCenterArchiveResponse,
+  parseAuditCenterArchiveSearchResponse,
   parseAuditCenterArchiveVerificationResponse,
   parseAuditCenterDetailResponse,
   parseAuditCenterListResponse,
@@ -164,6 +165,64 @@ const verificationPayload = {
   },
 };
 
+const archiveSearchPayload = {
+  ok: true,
+  data: {
+    items: [
+      {
+        id: "catalog:audit_1",
+        sourceEventId: "audit_1",
+        sourceStore: "CourseProductStore",
+        sourceTable: "course_product_audit_events",
+        module: "catalog",
+        action: "status_update",
+        resource: auditEvent.resource,
+        actor: auditEvent.actor,
+        reason: auditEvent.reason,
+        summary: auditEvent.summary,
+        beforeSummary: {
+          status: "draft",
+        },
+        afterSummary: {
+          status: "published",
+        },
+        occurredAt: auditEvent.occurredAt,
+        archivedAt: "2026-05-14T12:00:00.000Z",
+        batchId: "audit_archive_20260514120000",
+        schemaVersion: "audit-center-archive-v1",
+        policyVersion: "audit-center-privacy-v1",
+        privacyLevel: "summary_only",
+      },
+    ],
+    meta: {
+      page: 1,
+      pageSize: 10,
+      total: 1,
+      totalPages: 1,
+    },
+    summary: {
+      totalCount: 1,
+      moduleCounts: [
+        { module: "catalog", count: 1 },
+        { module: "user", count: 0 },
+        { module: "order", count: 0 },
+        { module: "transaction", count: 0 },
+        { module: "counseling", count: 0 },
+        { module: "risk", count: 0 },
+      ],
+    },
+    query: {
+      module: "catalog",
+      batchId: "audit_archive_20260514120000",
+      page: 1,
+      pageSize: 10,
+      sortBy: "archivedAt",
+    },
+    privacyNotice: "归档检索只读取摘要投影。",
+    generatedAt: "2026-05-14T12:01:00.000Z",
+  },
+};
+
 describe("http audit center repository", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -204,6 +263,19 @@ describe("http audit center repository", () => {
       archiveTotalCount: 1,
       totalDifference: 1,
     });
+    expect(parseAuditCenterArchiveSearchResponse(archiveSearchPayload)).toMatchObject(
+      {
+        summary: {
+          totalCount: 1,
+        },
+        items: [
+          {
+            sourceStore: "CourseProductStore",
+            privacyLevel: "summary_only",
+          },
+        ],
+      }
+    );
   });
 
   it("loads audit events with filters", async () => {
@@ -350,6 +422,40 @@ describe("http audit center repository", () => {
         credentials: "same-origin",
       })
     );
+  });
+
+  it("loads archived event previews with long-term search filters", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => archiveSearchPayload,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await httpAuditCenterRepository.loadArchiveEvents({
+      module: "catalog",
+      resourceKeyword: "course_product_1",
+      batchId: "audit_archive_20260514120000",
+      archivedDateFrom: "2026-05-14",
+      sortBy: "archivedAt",
+      page: 2,
+      pageSize: 5,
+    });
+
+    expect(result.items[0]?.sourceStore).toBe("CourseProductStore");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/audit/admin/archive/events?"),
+      expect.objectContaining({
+        credentials: "same-origin",
+      })
+    );
+    const requestedUrl = String(fetchMock.mock.calls[0]?.[0]);
+    expect(requestedUrl).toContain("module=catalog");
+    expect(requestedUrl).toContain("resourceKeyword=course_product_1");
+    expect(requestedUrl).toContain("batchId=audit_archive_20260514120000");
+    expect(requestedUrl).toContain("archivedDateFrom=2026-05-14");
+    expect(requestedUrl).toContain("sortBy=archivedAt");
+    expect(requestedUrl).toContain("page=2");
+    expect(requestedUrl).toContain("pageSize=5");
   });
 
   it("surfaces API error messages", async () => {

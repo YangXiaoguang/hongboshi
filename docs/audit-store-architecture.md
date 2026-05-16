@@ -151,3 +151,15 @@ M9-D 已按“审计归档任务与只读校验试点”落地首版，范围控
 - 新增测试覆盖幂等写入、隐私字段裁剪、批次失败摘要和不影响现有 `/api/audit/admin/events`。
 
 这个切片足够小，可测试、可回滚，也不会把归档表提前变成业务真相源。读取切换、后台可视化入口、定时任务、队列和告警可以放到 M9-E/M10。
+
+## M9-F 只读检索预览
+
+M9-F 已在不切换主审计列表来源的前提下补齐归档表小范围只读试点：
+
+- 新增 `AuditCenterArchiveSearchQuerySchema`、`AuditCenterArchivePreviewItemSchema` 和 `AuditCenterArchiveSearchResultSchema`，统一归档检索预览的筛选、分页、排序和 summary-only 返回结构。
+- 扩展 `AuditArchiveStore` 与 `PostgresAuditArchiveStore` 的只读查询能力，支持模块、动作、操作者、批次 ID、资源关键词、发生日期、归档日期、分页和按发生/归档时间排序。
+- 新增 `GET /api/audit/admin/archive/events`，权限沿用 `audit:archive`；普通 `audit:read` 账号仍只能读取主审计聚合、导出和详情，不能访问归档表预览。
+- `/admin/audit` 管理员归档控制台新增“归档检索预览”，按当前筛选读取归档表前 5 条摘要行，用于验证长期检索口径和隐私裁剪，不提供导出、详情反查、修改或删除动作。
+- 归档检索失败只返回安全错误摘要；主审计列表、CSV 导出、事件详情、手动归档和归档校验仍走各自既有边界，不依赖归档预览。
+
+M9-F 之后仍不建议直接把主审计列表切到归档表。下一步应先设计按时间窗口读取切换、留存告警、归档巡检和迁移回滚方案，并用显式开关保护灰度范围。

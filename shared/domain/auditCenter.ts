@@ -363,6 +363,71 @@ export const AuditCenterArchiveVerificationResultSchema = z.object({
   privacyNotice: z.string().min(1),
 });
 
+export const AuditCenterArchiveSearchSortSchema = z
+  .enum(["occurredAt", "archivedAt"])
+  .default("archivedAt");
+
+export const AuditCenterArchiveSearchQuerySchema = PaginationQuerySchema.extend({
+  module: AuditCenterModuleFilterSchema.default(ALL_AUDIT_CENTER_MODULE),
+  action: z.string().trim().min(1).max(80).optional(),
+  actorId: EntityIdSchema.optional(),
+  resourceKeyword: z.string().trim().min(1).max(120).optional(),
+  batchId: EntityIdSchema.optional(),
+  dateFrom: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  dateTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  archivedDateFrom: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  archivedDateTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  sortBy: AuditCenterArchiveSearchSortSchema,
+  pageSize: z.number().int().min(1).max(100).default(10),
+});
+
+export const AuditCenterArchivePreviewItemSchema = z.object({
+  id: EntityIdSchema,
+  sourceEventId: EntityIdSchema,
+  sourceStore: z.string().min(1).max(120),
+  sourceTable: z.string().min(1).max(120).optional(),
+  module: AuditCenterModuleSchema,
+  action: z.string().min(1).max(80),
+  resource: AuditCenterResourceSchema,
+  actor: AuditCenterActorSchema,
+  reason: z.string().min(1).max(500).optional(),
+  summary: z.string().min(1).max(300),
+  beforeSummary: AuditCenterArchiveSnapshotSummarySchema,
+  afterSummary: AuditCenterArchiveSnapshotSummarySchema,
+  occurredAt: DateTimeLikeSchema,
+  archivedAt: DateTimeLikeSchema,
+  batchId: EntityIdSchema.optional(),
+  schemaVersion: z.literal(AUDIT_CENTER_ARCHIVE_SCHEMA_VERSION),
+  policyVersion: z.literal(AUDIT_CENTER_ARCHIVE_POLICY_VERSION),
+  privacyLevel: AuditCenterArchivePrivacyLevelSchema,
+});
+
+export const AuditCenterArchiveSearchSummarySchema = z.object({
+  totalCount: z.number().int().nonnegative(),
+  moduleCounts: z.array(AuditCenterModuleCountSchema),
+});
+
+export const AuditCenterArchiveSearchResultSchema = z.object({
+  items: z.array(AuditCenterArchivePreviewItemSchema),
+  meta: PageMetaSchema,
+  summary: AuditCenterArchiveSearchSummarySchema,
+  query: AuditCenterArchiveSearchQuerySchema,
+  privacyNotice: z.string().min(1),
+  generatedAt: DateTimeLikeSchema,
+});
+
 export type AuditCenterModule = z.infer<typeof AuditCenterModuleSchema>;
 export type AuditCenterQuery = z.infer<typeof AuditCenterQuerySchema>;
 export type AuditCenterEvent = z.infer<typeof AuditCenterEventSchema>;
@@ -381,6 +446,15 @@ export type AuditCenterArchiveResult = z.infer<
 >;
 export type AuditCenterArchiveVerificationResult = z.infer<
   typeof AuditCenterArchiveVerificationResultSchema
+>;
+export type AuditCenterArchiveSearchQuery = z.infer<
+  typeof AuditCenterArchiveSearchQuerySchema
+>;
+export type AuditCenterArchivePreviewItem = z.infer<
+  typeof AuditCenterArchivePreviewItemSchema
+>;
+export type AuditCenterArchiveSearchResult = z.infer<
+  typeof AuditCenterArchiveSearchResultSchema
 >;
 export type AuditCenterExportQuery = z.infer<
   typeof AuditCenterExportQuerySchema

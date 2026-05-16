@@ -179,10 +179,47 @@ describe("postgres audit archive store", () => {
       "transaction",
       "audit_archive_20260514120000",
       10,
+      0,
     ]);
     expect(db.queries[1]?.values).toEqual([
       "transaction",
       "audit_archive_20260514120000",
+    ]);
+  });
+
+  it("lists archived events with long-term search filters and pagination", async () => {
+    const db = new FakeAuditArchiveExecutor({
+      archiveEvents: [archiveRow],
+    });
+    const store = new PostgresAuditArchiveStore(db);
+
+    await store.listArchivedEvents({
+      module: "transaction",
+      action: "request_refund",
+      actorId: "operator_1",
+      resourceKeyword: "txn_1",
+      occurredFrom: "2026-05-14T00:00:00.000Z",
+      archivedTo: "2026-05-15T23:59:59.999Z",
+      sortBy: "archivedAt",
+      limit: 5,
+      offset: 10,
+    });
+
+    expect(db.queries[0]?.text).toContain("action = $2");
+    expect(db.queries[0]?.text).toContain("actor_id = $3");
+    expect(db.queries[0]?.text).toContain("occurred_at >= $4");
+    expect(db.queries[0]?.text).toContain("archived_at <= $5");
+    expect(db.queries[0]?.text).toContain("summary ILIKE $6");
+    expect(db.queries[0]?.text).toContain("ORDER BY archived_at DESC");
+    expect(db.queries[0]?.values).toEqual([
+      "transaction",
+      "request_refund",
+      "operator_1",
+      "2026-05-14T00:00:00.000Z",
+      "2026-05-15T23:59:59.999Z",
+      "%txn_1%",
+      5,
+      10,
     ]);
   });
 

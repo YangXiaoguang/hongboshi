@@ -5,6 +5,8 @@ import {
   AuditCenterArchiveEventSchema,
   AuditCenterArchiveRequestSchema,
   AuditCenterArchiveResultSchema,
+  AuditCenterArchiveSearchQuerySchema,
+  AuditCenterArchiveSearchResultSchema,
   AuditCenterArchiveVerificationResultSchema,
   AuditCenterDetailResultSchema,
   AuditCenterExportQuerySchema,
@@ -340,5 +342,80 @@ describe("audit center domain contract", () => {
     expect(JSON.stringify(parsed)).not.toContain("咨询说明原文");
     expect(JSON.stringify(parsed)).not.toContain("测评答案原文");
     expect(JSON.stringify(parsed)).not.toContain("风险信号原文");
+  });
+
+  it("validates archive search preview results without switching read source", () => {
+    const query = AuditCenterArchiveSearchQuerySchema.parse({
+      module: "catalog",
+      resourceKeyword: "course_product_1",
+      batchId: "audit_archive_20260514120000",
+      archivedDateFrom: "2026-05-14",
+      sortBy: "archivedAt",
+      page: 2,
+    });
+
+    expect(query).toMatchObject({
+      module: "catalog",
+      resourceKeyword: "course_product_1",
+      batchId: "audit_archive_20260514120000",
+      page: 2,
+      pageSize: 10,
+      sortBy: "archivedAt",
+    });
+
+    const parsed = AuditCenterArchiveSearchResultSchema.parse({
+      items: [
+        {
+          id: event.id,
+          sourceEventId: event.sourceEventId,
+          sourceStore: "CourseProductStore",
+          sourceTable: "course_product_audit_events",
+          module: event.module,
+          action: event.action,
+          resource: event.resource,
+          actor: event.actor,
+          reason: event.reason,
+          summary: event.summary,
+          beforeSummary: {
+            status: "draft",
+          },
+          afterSummary: {
+            status: "published",
+          },
+          occurredAt: event.occurredAt,
+          archivedAt: "2026-05-14T12:00:00.000Z",
+          batchId: "audit_archive_20260514120000",
+          schemaVersion: AUDIT_CENTER_ARCHIVE_SCHEMA_VERSION,
+          policyVersion: AUDIT_CENTER_ARCHIVE_POLICY_VERSION,
+          privacyLevel: "summary_only",
+        },
+      ],
+      meta: {
+        page: 2,
+        pageSize: 10,
+        total: 11,
+        totalPages: 2,
+      },
+      summary: {
+        totalCount: 11,
+        moduleCounts: [
+          {
+            module: "catalog",
+            count: 11,
+          },
+        ],
+      },
+      query,
+      privacyNotice: "归档检索只读取摘要投影，不切换主审计列表来源。",
+      generatedAt: "2026-05-14T12:01:00.000Z",
+    });
+
+    expect(parsed.items[0]).toMatchObject({
+      id: "catalog:audit_1",
+      privacyLevel: "summary_only",
+      sourceStore: "CourseProductStore",
+    });
+    expect(JSON.stringify(parsed)).not.toContain("咨询说明原文");
+    expect(JSON.stringify(parsed)).not.toContain("支付敏感原文");
   });
 });

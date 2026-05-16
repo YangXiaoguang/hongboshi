@@ -149,13 +149,13 @@ flowchart LR
 - 接入 `/api/risk/admin/events`、`/api/risk/admin/sop` 与 `/admin/risk` 风险复核台，运营可查看风险事件队列、隐私最小化详情、服务端 SOP 模板、升级队列和人工处理记录。
 - 风险复核处理记录、SOP 模板和升级队列已具备 PostgreSQL Store，并沉淀审计中心可消费的 actor/resource/action/before/after 投影字段。
 - 接入 `/api/audit/admin/events`、`/api/audit/admin/export`、`/api/audit/admin/events/:eventId` 与 `/admin/audit` 审计中心，只读聚合课程商品、会员、订单、交易、咨询运营和风险复核既有审计事实，并支持 CSV 导出和事件来源详情。
-- 完成统一审计 Store 架构方案、归档事件契约、`audit_center_archived_events` 只追加表草案、Archive Store、手动归档 API、管理员归档控制台和归档只读校验接口，明确先归档回填、不替换业务 Store 真相源。
+- 完成统一审计 Store 架构方案、归档事件契约、`audit_center_archived_events` 只追加表草案、Archive Store、手动归档 API、管理员归档控制台、归档只读校验接口和归档表摘要检索预览，明确先归档回填、不替换业务 Store 真相源。
 - 后续接入重复排班模板、真实支付/退款渠道、结算批次、渠道结算单、风险通知协作、审计归档读取策略和对账异常处理动作。
 
 验收标准：
 
 - 当前阶段：用户可以完成从测评推荐或首页进入咨询预约，咨询师可以进入工作台处理履约状态。
-- 下一阶段：真实支付/退款渠道适配、结算批次、渠道结算单、对账异常处理动作和审计归档读取策略可串联。
+- 下一阶段：真实支付/退款渠道适配、结算批次、渠道结算单、对账异常处理动作、审计归档读取切换策略和留存告警可串联。
 - 用户与咨询师看到一致的预约状态，关键操作进入审计日志。
 
 ### M6: 后台与运营增长

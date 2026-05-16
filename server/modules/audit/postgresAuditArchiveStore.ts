@@ -118,12 +118,46 @@ const archiveReturningSql = `
 `;
 
 function listWhereClause(query: AuditArchiveListQuery | undefined) {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+
+  function addCondition(sql: string, value: unknown) {
+    values.push(value);
+    conditions.push(sql.replace("?", `$${values.length}`));
+  }
+
+  if (query?.module) addCondition("module = ?", query.module);
+  if (query?.action) addCondition("action = ?", query.action);
+  if (query?.actorId) addCondition("actor_id = ?", query.actorId);
+  if (query?.batchId) addCondition("backfill_batch_id = ?", query.batchId);
+  if (query?.occurredFrom) addCondition("occurred_at >= ?", query.occurredFrom);
+  if (query?.occurredTo) addCondition("occurred_at <= ?", query.occurredTo);
+  if (query?.archivedFrom) addCondition("archived_at >= ?", query.archivedFrom);
+  if (query?.archivedTo) addCondition("archived_at <= ?", query.archivedTo);
+  if (query?.resourceKeyword) {
+    const value = `%${query.resourceKeyword}%`;
+    values.push(value);
+    const placeholder = `$${values.length}`;
+    conditions.push(`(
+      id ILIKE ${placeholder}
+      OR source_event_id ILIKE ${placeholder}
+      OR source_store ILIKE ${placeholder}
+      OR COALESCE(source_table, '') ILIKE ${placeholder}
+      OR module ILIKE ${placeholder}
+      OR action ILIKE ${placeholder}
+      OR resource_type ILIKE ${placeholder}
+      OR COALESCE(resource_id, '') ILIKE ${placeholder}
+      OR COALESCE(resource_label, '') ILIKE ${placeholder}
+      OR COALESCE(actor_id, '') ILIKE ${placeholder}
+      OR COALESCE(reason, '') ILIKE ${placeholder}
+      OR summary ILIKE ${placeholder}
+      OR COALESCE(backfill_batch_id, '') ILIKE ${placeholder}
+    )`);
+  }
+
   return {
-    text: `
-      WHERE ($1::text IS NULL OR module = $1)
-        AND ($2::text IS NULL OR backfill_batch_id = $2)
-    `,
-    values: [query?.module ?? null, query?.batchId ?? null] as const,
+    text: conditions.length ? `WHERE ${conditions.join("\n        AND ")}` : "",
+    values,
   };
 }
 
@@ -215,6 +249,7 @@ export class PostgresAuditArchiveStore implements AuditArchiveStore {
   async listArchivedEvents(query?: AuditArchiveListQuery) {
     const where = listWhereClause(query);
     const limit = query?.limit ?? 100;
+    const offset = query?.offset ?? 0;
     const orderColumn =
       query?.sortBy === "archivedAt" ? "archived_at" : "occurred_at";
     const result = await this.db.query<AuditArchiveRow>(
@@ -223,9 +258,10 @@ export class PostgresAuditArchiveStore implements AuditArchiveStore {
         FROM audit_center_archived_events
         ${where.text}
         ORDER BY ${orderColumn} DESC, id DESC
-        LIMIT $3
+        LIMIT $${where.values.length + 1}
+        OFFSET $${where.values.length + 2}
       `,
-      [...where.values, limit]
+      [...where.values, limit, offset]
     );
 
     return result.rows.map(rowToArchiveEvent);

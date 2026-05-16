@@ -3,6 +3,7 @@ import { ALL_AUDIT_CENTER_MODULE, type AuditCenterQuery } from "@shared/domain";
 import {
   auditArchiveFilterSummary,
   buildAuditArchiveRequest,
+  buildAuditArchiveSearchQuery,
   canShowAuditArchivePanel,
 } from "./AuditCenter";
 
@@ -19,6 +20,13 @@ describe("audit center archive console helpers", () => {
     expect(buildAuditArchiveRequest(query)).toEqual({
       module: "catalog",
       resourceKeyword: "course_product_1",
+    });
+    expect(buildAuditArchiveSearchQuery(query)).toEqual({
+      module: "catalog",
+      resourceKeyword: "course_product_1",
+      page: 1,
+      pageSize: 5,
+      sortBy: "archivedAt",
     });
   });
 

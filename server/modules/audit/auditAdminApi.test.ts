@@ -37,6 +37,7 @@ import {
   getAuditCenterEventsPayload,
   getAuditCenterExportPayload,
   getAuditCenterArchivePayload,
+  getAuditCenterArchiveSearchPayload,
   getAuditCenterArchiveVerificationPayload,
 } from "./auditAdminApi";
 import {
@@ -504,6 +505,18 @@ describe("audit admin api payloads", () => {
     ).toBe(200);
   });
 
+  it("requires archive permission for archive search preview", async () => {
+    expect((await getAuditCenterArchiveSearchPayload(null, {}, now)).status).toBe(
+      401
+    );
+    expect(
+      (await getAuditCenterArchiveSearchPayload(operator, {}, now)).status
+    ).toBe(403);
+    expect((await getAuditCenterArchiveSearchPayload(admin, {}, now)).status).toBe(
+      200
+    );
+  });
+
   it("returns archive verification summaries without changing audit reads", async () => {
     await seedAuditFacts();
 
@@ -558,6 +571,77 @@ describe("audit admin api payloads", () => {
     );
     expect(readPayload.body.data.summary.totalCount).toBe(6);
     expect(JSON.stringify(verificationPayload.body.data)).not.toContain(
+      "原始敏感风险信号"
+    );
+  });
+
+  it("searches archived events as a read-only preview without switching audit reads", async () => {
+    await seedAuditFacts();
+
+    await getAuditCenterArchivePayload(
+      admin,
+      {
+        module: "transaction",
+        batchId: "audit_archive_20260514120000",
+      },
+      now
+    );
+
+    const archiveSearchPayload = await getAuditCenterArchiveSearchPayload(
+      admin,
+      {
+        module: "transaction",
+        action: "request_refund",
+        actorId: "operator_1",
+        resourceKeyword: "txn_1",
+        batchId: "audit_archive_20260514120000",
+        archivedDateFrom: "2026-05-14",
+        sortBy: "archivedAt",
+        pageSize: 5,
+      },
+      "2026-05-14T12:06:00.000Z"
+    );
+    const readPayload = await getAuditCenterEventsPayload(operator, {}, now);
+
+    expect(archiveSearchPayload.status).toBe(200);
+    expect(archiveSearchPayload.body.ok).toBe(true);
+    expect(readPayload.body.ok).toBe(true);
+    if (!archiveSearchPayload.body.ok || !readPayload.body.ok) {
+      throw new Error("expected archive search preview");
+    }
+
+    expect(archiveSearchPayload.body.data).toMatchObject({
+      meta: {
+        page: 1,
+        pageSize: 5,
+        total: 1,
+        totalPages: 1,
+      },
+      summary: {
+        totalCount: 1,
+      },
+      query: {
+        module: "transaction",
+        action: "request_refund",
+        actorId: "operator_1",
+        resourceKeyword: "txn_1",
+        batchId: "audit_archive_20260514120000",
+        archivedDateFrom: "2026-05-14",
+        sortBy: "archivedAt",
+      },
+    });
+    expect(archiveSearchPayload.body.data.items[0]).toMatchObject({
+      id: "transaction:transaction_audit_1",
+      sourceEventId: "transaction_audit_1",
+      sourceStore: "TransactionOperationStore",
+      sourceTable: "transaction_admin_audit_events",
+      module: "transaction",
+      action: "request_refund",
+      privacyLevel: "summary_only",
+      batchId: "audit_archive_20260514120000",
+    });
+    expect(readPayload.body.data.summary.totalCount).toBe(6);
+    expect(JSON.stringify(archiveSearchPayload.body.data)).not.toContain(
       "原始敏感风险信号"
     );
   });

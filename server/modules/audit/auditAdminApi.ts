@@ -13,6 +13,8 @@ import {
   AuditCenterArchiveEventSchema,
   AuditCenterArchiveRequestSchema,
   AuditCenterArchiveResultSchema,
+  AuditCenterArchiveSearchQuerySchema,
+  AuditCenterArchiveSearchResultSchema,
   AuditCenterArchiveVerificationResultSchema,
   AuditCenterDetailResultSchema,
   AuditCenterEventSchema,
@@ -26,6 +28,8 @@ import {
   type AuditCenterArchiveEvent,
   type AuditCenterArchiveRequest,
   type AuditCenterArchiveResult,
+  type AuditCenterArchiveSearchQuery,
+  type AuditCenterArchiveSearchResult,
   type AuditCenterArchiveVerificationResult,
   type AuditCenterDetailResult,
   type AuditCenterEvent,
@@ -51,7 +55,10 @@ import {
 } from "../courses/courseAccessApi";
 import { listRiskAdminReviewRecords } from "../risk/riskAdminApi";
 import { getTransactionOperationStore } from "../transactions/transactionOperationStore";
-import { getAuditArchiveStore } from "./auditArchiveStore";
+import {
+  getAuditArchiveStore,
+  type AuditArchiveListQuery,
+} from "./auditArchiveStore";
 
 type AuditCenterActor = Pick<LoginSession["user"], "id" | "roles">;
 type AuditCenterFilterQuery = Pick<
@@ -70,6 +77,9 @@ const AuditCenterArchiveResponseSchema = ApiResponseSchema(
 );
 const AuditCenterArchiveVerificationResponseSchema = ApiResponseSchema(
   AuditCenterArchiveVerificationResultSchema
+);
+const AuditCenterArchiveSearchResponseSchema = ApiResponseSchema(
+  AuditCenterArchiveSearchResultSchema
 );
 
 const privacyNotice =
@@ -396,6 +406,14 @@ function parseDateStart(date: string | undefined) {
 
 function parseDateEnd(date: string | undefined) {
   return date ? Date.parse(`${date}T23:59:59.999Z`) : undefined;
+}
+
+function dateStartIso(date: string | undefined) {
+  return date ? new Date(`${date}T00:00:00.000Z`).toISOString() : undefined;
+}
+
+function dateEndIso(date: string | undefined) {
+  return date ? new Date(`${date}T23:59:59.999Z`).toISOString() : undefined;
 }
 
 function eventMatchesQuery(
@@ -854,6 +872,104 @@ function archivedEventSummary(event: AuditCenterArchiveEvent) {
   };
 }
 
+function archivePreviewItemFromEvent(event: AuditCenterArchiveEvent) {
+  return {
+    id: event.id,
+    sourceEventId: event.source.sourceEventId,
+    sourceStore: event.source.sourceStore,
+    sourceTable: event.source.sourceTable,
+    module: event.module,
+    action: event.action,
+    resource: event.resource,
+    actor: event.actor,
+    reason: event.reason,
+    summary: event.summary,
+    beforeSummary: event.beforeSummary,
+    afterSummary: event.afterSummary,
+    occurredAt: event.occurredAt,
+    archivedAt: event.archivedAt,
+    batchId: event.backfillBatchId,
+    schemaVersion: event.schemaVersion,
+    policyVersion: event.policyVersion,
+    privacyLevel: event.privacyLevel,
+  };
+}
+
+function archiveStoreQueryFromSearch(
+  query: AuditCenterArchiveSearchQuery
+): AuditArchiveListQuery {
+  return {
+    module:
+      query.module === ALL_AUDIT_CENTER_MODULE ? undefined : query.module,
+    action: query.action,
+    actorId: query.actorId,
+    resourceKeyword: query.resourceKeyword,
+    batchId: query.batchId,
+    occurredFrom: dateStartIso(query.dateFrom),
+    occurredTo: dateEndIso(query.dateTo),
+    archivedFrom: dateStartIso(query.archivedDateFrom),
+    archivedTo: dateEndIso(query.archivedDateTo),
+    limit: query.pageSize,
+    offset: (query.page - 1) * query.pageSize,
+    sortBy: query.sortBy,
+  };
+}
+
+async function buildAuditCenterArchiveSearchResult(
+  query: AuditCenterArchiveSearchQuery,
+  now: string
+): Promise<AuditCenterArchiveSearchResult> {
+  const archiveStore = getAuditArchiveStore();
+  const storeQuery = archiveStoreQueryFromSearch(query);
+  const [items, totalCount, moduleCounts] = await Promise.all([
+    archiveStore.listArchivedEvents(storeQuery),
+    archiveStore.countArchivedEvents({
+      ...storeQuery,
+      limit: undefined,
+      offset: undefined,
+    }),
+    Promise.all(
+      AuditCenterModuleSchema.options.map(module => {
+        if (
+          query.module !== ALL_AUDIT_CENTER_MODULE &&
+          query.module !== module
+        ) {
+          return 0;
+        }
+
+        return archiveStore.countArchivedEvents({
+          ...storeQuery,
+          module,
+          limit: undefined,
+          offset: undefined,
+        });
+      })
+    ),
+  ]);
+  const totalPages = Math.ceil(totalCount / query.pageSize);
+
+  return AuditCenterArchiveSearchResultSchema.parse({
+    items: items.map(archivePreviewItemFromEvent),
+    meta: {
+      page: query.page,
+      pageSize: query.pageSize,
+      total: totalCount,
+      totalPages,
+    },
+    summary: {
+      totalCount,
+      moduleCounts: AuditCenterModuleSchema.options.map((module, index) => ({
+        module,
+        count: moduleCounts[index] ?? 0,
+      })),
+    },
+    query,
+    privacyNotice:
+      "归档检索只读取统一归档表中的摘要投影，不切换主审计列表来源，也不返回敏感原文。",
+    generatedAt: now,
+  });
+}
+
 function recentBatchSummaries(events: AuditCenterArchiveEvent[]) {
   const batches = new Map<
     string,
@@ -977,8 +1093,12 @@ function queryFromRecord(record: Record<string, unknown>) {
     action: stringValue(record.action),
     actorId: stringValue(record.actorId),
     resourceKeyword: stringValue(record.resourceKeyword),
+    batchId: stringValue(record.batchId),
     dateFrom: stringValue(record.dateFrom),
     dateTo: stringValue(record.dateTo),
+    archivedDateFrom: stringValue(record.archivedDateFrom),
+    archivedDateTo: stringValue(record.archivedDateTo),
+    sortBy: stringValue(record.sortBy),
     page: numberValue(record.page),
     pageSize: numberValue(record.pageSize),
     format: stringValue(record.format),
@@ -1106,6 +1226,49 @@ export async function getAuditCenterArchiveVerificationPayload(
   }
 }
 
+export async function getAuditCenterArchiveSearchPayload(
+  actor: AuditCenterActor | null | undefined,
+  rawQuery: Record<string, unknown>,
+  now = new Date().toISOString()
+) {
+  const denied = denyUnauthorizedArchiveActor(actor);
+  if (denied) {
+    return {
+      ...denied,
+      body:
+        denied.status === 401
+          ? errorPayload("UNAUTHORIZED", "请先登录后检索审计归档")
+          : errorPayload("FORBIDDEN", "当前账号暂无审计归档检索权限"),
+    } as const;
+  }
+
+  const queryResult = AuditCenterArchiveSearchQuerySchema.safeParse(rawQuery);
+  if (!queryResult.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "审计归档检索参数不合法"),
+    } as const;
+  }
+
+  try {
+    return {
+      status: 200,
+      body: AuditCenterArchiveSearchResponseSchema.parse({
+        ok: true,
+        data: await buildAuditCenterArchiveSearchResult(
+          queryResult.data,
+          now
+        ),
+      }),
+    } as const;
+  } catch {
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "审计归档检索暂时不可用"),
+    } as const;
+  }
+}
+
 export async function getAuditCenterExportPayload(
   actor: AuditCenterActor | null | undefined,
   rawQuery: Record<string, unknown>,
@@ -1181,6 +1344,18 @@ export function registerAuditAdminApi(app: Express) {
   });
 
   app.get(
+    "/api/audit/admin/archive/events",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getAuditCenterArchiveSearchPayload(
+        session?.user,
+        queryFromExpress(req)
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.get(
     "/api/audit/admin/archive/verification",
     async (req: Request, res: Response) => {
       const session = await getLoginSessionFromRequest(req);
@@ -1244,6 +1419,24 @@ export function handleAuditAdminApiRequest(
     })().catch(err => {
       console.error(err instanceof Error ? err.message : "审计事件归档失败");
       sendJson(res, 500, errorPayload("INTERNAL_ERROR", "审计事件归档失败"));
+    });
+    return true;
+  }
+
+  if (
+    req.method === "GET" &&
+    url.pathname === "/api/audit/admin/archive/events"
+  ) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await getAuditCenterArchiveSearchPayload(
+        session?.user,
+        queryFromSearchParams(url.searchParams)
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      console.error(err instanceof Error ? err.message : "审计归档检索失败");
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "审计归档检索失败"));
     });
     return true;
   }

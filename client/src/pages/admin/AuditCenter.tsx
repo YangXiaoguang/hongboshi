@@ -18,8 +18,11 @@ import {
   ALL_AUDIT_CENTER_MODULE,
   AUDIT_CENTER_PERMISSIONS,
   userCan,
+  type AuditCenterArchivePreviewItem,
   type AuditCenterArchiveRequest,
   type AuditCenterArchiveResult,
+  type AuditCenterArchiveSearchQuery,
+  type AuditCenterArchiveSearchResult,
   type AuditCenterArchiveVerificationResult,
   type AuditCenterDetailResult,
   type AuditCenterEvent,
@@ -106,6 +109,17 @@ export function buildAuditArchiveRequest(
       ([, value]) => value !== undefined && value !== null && value !== ""
     )
   ) as Partial<AuditCenterArchiveRequest>;
+}
+
+export function buildAuditArchiveSearchQuery(
+  query: Partial<AuditCenterQuery>
+): Partial<AuditCenterArchiveSearchQuery> {
+  return {
+    ...buildAuditArchiveRequest(query),
+    page: 1,
+    pageSize: 5,
+    sortBy: "archivedAt",
+  };
 }
 
 export function canShowAuditArchivePanel(
@@ -219,6 +233,50 @@ function AuditEventRow({
         </button>
       </td>
     </tr>
+  );
+}
+
+function ArchivePreviewRow({ item }: { item: AuditCenterArchivePreviewItem }) {
+  return (
+    <div className="border border-[#E8DED0] bg-white px-4 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <ModulePill module={item.module} />
+            <span className="rounded-full bg-[#F1E8DC] px-2.5 py-1 text-xs font-semibold text-[#806143]">
+              {actionLabel(item.action)}
+            </span>
+            <span className="rounded-full bg-[#F4F7F3] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
+              {item.privacyLevel}
+            </span>
+          </div>
+          <p className="mt-3 break-all text-sm font-semibold text-[#243B35]">
+            {item.resource.label ?? item.resource.id ?? item.id}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+            源：{item.sourceStore}
+            {item.sourceTable ? ` / ${item.sourceTable}` : ""} · 批次：
+            {item.batchId ?? "无批次"}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-[#66716A]">
+            {item.summary}
+          </p>
+        </div>
+        <div className="shrink-0 text-xs leading-5 text-[#8A8176] sm:text-right">
+          <p>发生：{formatTime(item.occurredAt)}</p>
+          <p>归档：{formatTime(item.archivedAt)}</p>
+          <p>操作者：{item.actor.id ?? "系统"}</p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs leading-5 text-[#66716A] md:grid-cols-2">
+        <p className="break-all rounded-md bg-[#F7F4EF] px-2 py-1">
+          Before：{snapshotText(item.beforeSummary)}
+        </p>
+        <p className="break-all rounded-md bg-[#F4F7F3] px-2 py-1">
+          After：{snapshotText(item.afterSummary)}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -372,6 +430,12 @@ export default function AuditCenter() {
   const [verificationError, setVerificationError] = useState<string | null>(
     null
   );
+  const [archivePreview, setArchivePreview] =
+    useState<AuditCenterArchiveSearchResult | null>(null);
+  const [isArchivePreviewLoading, setIsArchivePreviewLoading] = useState(false);
+  const [archivePreviewError, setArchivePreviewError] = useState<string | null>(
+    null
+  );
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AuditCenterDetailResult | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
@@ -459,6 +523,25 @@ export default function AuditCenter() {
     }
   }
 
+  async function loadArchivePreview(nextQuery = query) {
+    if (!canArchive) return;
+
+    setIsArchivePreviewLoading(true);
+    setArchivePreviewError(null);
+    try {
+      const result = await httpAuditCenterRepository.loadArchiveEvents(
+        buildAuditArchiveSearchQuery(nextQuery)
+      );
+      setArchivePreview(result);
+    } catch (err) {
+      setArchivePreviewError(
+        err instanceof Error ? err.message : "审计归档检索暂时不可用"
+      );
+    } finally {
+      setIsArchivePreviewLoading(false);
+    }
+  }
+
   async function archiveCurrentFilters() {
     if (isArchiving || !canArchive) return;
 
@@ -471,6 +554,7 @@ export default function AuditCenter() {
       );
       setArchiveResult(result);
       await loadArchiveVerification();
+      await loadArchivePreview(query);
     } catch (err) {
       setArchiveError(
         err instanceof Error ? err.message : "审计归档暂时不可用"
@@ -489,12 +573,15 @@ export default function AuditCenter() {
     if (!canArchive) {
       setVerification(null);
       setVerificationError(null);
+      setArchivePreview(null);
+      setArchivePreviewError(null);
       return;
     }
 
     void loadArchiveVerification();
+    void loadArchivePreview(query);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canArchive]);
+  }, [canArchive, query]);
 
   const moduleCounts = useMemo(() => {
     const counts = new Map(
@@ -761,6 +848,66 @@ export default function AuditCenter() {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="mt-5 border-t border-[#E8DED0] pt-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <FileClock className="h-4 w-4 text-[#6F8F83]" />
+                  <h3 className="text-sm font-semibold">归档检索预览</h3>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                  按当前筛选读取归档表前 5 条摘要，验证长期检索口径，不替代上方主审计列表。
+                </p>
+              </div>
+              <button
+                onClick={() => void loadArchivePreview(query)}
+                disabled={isArchivePreviewLoading}
+                className="inline-flex h-9 w-fit items-center gap-2 rounded-lg border border-[#CAD8D2] bg-white px-3 text-xs font-semibold text-[#41675A] transition hover:bg-[#F4F8F5] disabled:cursor-wait disabled:opacity-70"
+              >
+                {isArchivePreviewLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                刷新预览
+              </button>
+            </div>
+
+            {archivePreviewError ? (
+              <div className="mt-4 flex items-center gap-2 rounded-lg border border-[#F0C7B7] bg-[#FFF0EA] px-4 py-3 text-sm text-[#AD503A]">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>{archivePreviewError}</span>
+              </div>
+            ) : isArchivePreviewLoading && !archivePreview ? (
+              <div className="mt-4 text-sm text-[#8A8176]">
+                正在读取归档检索预览
+              </div>
+            ) : archivePreview ? (
+              <div className="mt-4">
+                <div className="flex flex-wrap items-center gap-2 text-xs leading-5 text-[#8A8176]">
+                  <span className="rounded-full bg-[#F4F7F3] px-2.5 py-1 font-semibold text-[#41675A]">
+                    命中 {archivePreview.summary.totalCount} 条
+                  </span>
+                  <span>排序：{archivePreview.query.sortBy}</span>
+                  <span>页大小：{archivePreview.meta.pageSize}</span>
+                  <span>{archivePreview.privacyNotice}</span>
+                </div>
+
+                {archivePreview.items.length ? (
+                  <div className="mt-3 grid gap-3">
+                    {archivePreview.items.map(item => (
+                      <ArchivePreviewRow key={item.id} item={item} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 border border-dashed border-[#D8CEC0] bg-white px-4 py-6 text-sm text-[#8A8176]">
+                    当前筛选下暂无已归档事件。可以先按当前筛选归档，再刷新预览。
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         </section>
       ) : null}

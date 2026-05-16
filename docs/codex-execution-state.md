@@ -4,13 +4,13 @@
 
 ## 当前指针
 
-- 最后更新时间：2026-05-16 Asia/Shanghai
+- 最后更新时间：2026-05-17 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`M9-F 审计归档只读检索预览`
-- 当前状态：`UX-I 课程学习记录服务端同步与阶段证明签发准备` 已完成，登录且已解锁课程的用户可将章节进度、练习记录、课程完成快照和阶段证明预览准备字段同步到服务端，网络失败时保留本地 fallback。
-- 本轮完成后下一步：执行 `M9-F 审计归档只读检索预览`
+- 当前阶段：`M9-G 审计归档读取切换策略与留存告警设计`
+- 当前状态：`M9-F 审计归档只读检索预览` 已完成，管理员可在 `/admin/audit` 按当前筛选查看归档表 summary-only 摘要预览，服务端提供 `GET /api/audit/admin/archive/events`，主审计列表、导出、详情、归档和校验仍不切换到归档表。
+- 本轮完成后下一步：执行 `M9-G 审计归档读取切换策略与留存告警设计`
 
 ## 已完成关键能力
 
@@ -179,6 +179,10 @@
 - `/admin/audit` 已加入管理员可见的归档控制台，可展示当前筛选条件、手动触发归档、展示批次 ID、扫描数、成功数、跳过数、失败数和安全失败摘要。
 - `/admin/audit` 已加入归档只读校验摘要，显示当前聚合数量、归档数量、差异、模块分布差异和最近归档批次；归档表为空或校验失败不影响主审计列表、导出和详情。
 - 前端审计仓储已接入 `archiveEvents` 和 `loadArchiveVerification`，列表、详情和导出 API 保持原有交互不变。
+- 建立归档只读检索预览契约 `AuditCenterArchiveSearchQuerySchema`、`AuditCenterArchivePreviewItemSchema` 和 `AuditCenterArchiveSearchResultSchema`，支持模块、动作、操作者、资源关键词、批次 ID、发生日期、归档日期、分页和发生/归档时间排序。
+- `AuditArchiveStore` 与 `PostgresAuditArchiveStore` 已支持归档表长期检索筛选、分页和计数，仍只返回 summary-only 摘要，不读取 raw payload。
+- 新增 `GET /api/audit/admin/archive/events`，由 `audit:archive` 权限控制；普通 `operator` 仍只能通过 `audit:read` 访问主审计中心，不能访问归档表预览。
+- `/admin/audit` 管理员归档控制台已加入“归档检索预览”，按当前筛选读取归档表前 5 条摘要行；归档预览为空或失败不影响主审计列表、导出、详情、归档和校验。
 
 ## 最近完成阶段
 
@@ -353,35 +357,38 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 后台专项待续：M9-F 审计归档只读检索预览
+### 最近完成阶段：M9-F 审计归档只读检索预览
+
+M9-F 已交付：
+
+- `shared/domain/auditCenter.ts`：新增 `AuditCenterArchiveSearchQuerySchema`、`AuditCenterArchivePreviewItemSchema` 和 `AuditCenterArchiveSearchResultSchema`，归档预览支持模块、动作、操作者、资源关键词、批次 ID、发生日期、归档日期、分页和发生/归档时间排序。
+- `server/modules/audit/auditArchiveStore.ts` 与 `postgresAuditArchiveStore.ts`：归档 Store 只读查询能力扩展到长期检索筛选、分页、计数和按归档时间排序；PostgreSQL 查询仍只返回 summary-only 字段。
+- `server/modules/audit/auditAdminApi.ts`：新增 `GET /api/audit/admin/archive/events`，权限使用 `audit:archive`；普通 `operator` 仍可读取审计中心主列表，但不能访问归档预览。
+- `client/src/features/audit/api/httpAuditCenterRepository.ts`：新增 `loadArchiveEvents` 和归档预览响应解析。
+- `client/src/pages/admin/AuditCenter.tsx`：管理员归档控制台新增“归档检索预览”区域，按当前筛选读取归档表前 5 条摘要行，与主审计列表视觉上区分；预览为空或失败不影响主列表、导出、详情、归档和校验。
+- README、领域契约、数据库说明、后台路线图、产品工程路线图和统一审计 Store 架构文档已同步。
+
+M9-F 验收结果：
+
+- 管理员可通过 `/admin/audit` 查看归档表 summary-only 摘要预览。
+- `operator` 无归档预览权限，`audit:read` 与 `audit:archive` 边界保持分离。
+- 归档预览不提供导出、详情反查、修改或删除动作。
+- 主审计列表、导出、详情、手动归档和归档校验仍走既有边界，不因归档表为空或预览失败而不可用。
+- 定向测试与完整 `pnpm run ci` 均已通过：90 个测试文件 / 430 个测试，生产构建完成。
+
+### 后台专项待续：M9-G 审计归档读取切换策略与留存告警设计
 
 业务目标：
 
-在 M9-E 已完成的归档控制台和校验接口基础上，给管理员提供“归档表只读检索预览”能力，用于确认归档表里的长期留存数据能被安全检索。当前阶段仍不把主审计列表默认切到归档表，不做自动定时任务，也不允许从归档预览修改或删除审计事件。
+在 M9-F 只读检索预览基础上，设计可维护的归档读取策略，明确哪些历史时间窗口未来可以读取归档表、哪些近期或未归档事件仍读取业务 Store 聚合，并补充留存告警、归档巡检和回滚方案。当前阶段优先产出策略与小范围开关设计，不直接把主审计列表切换到归档表。
 
-实施范围：
+建议实施范围：
 
-- 在 `shared/domain/auditCenter.ts` 补充归档只读检索契约，例如 `AuditCenterArchiveQuerySchema` 与 `AuditCenterArchiveListResultSchema`，支持模块、批次 ID、动作、资源关键词、日期范围和分页。
-- 扩展 `AuditArchiveStore` 与 `PostgresAuditArchiveStore` 的只读查询能力，在不暴露 raw payload 的前提下返回 `AuditCenterArchivedEventSummarySchema` 或等价 summary-only 行。
-- 新增 `GET /api/audit/admin/archive/events` 或等价只读接口，权限使用 `audit:archive`；普通 `audit:read` 不能访问归档表预览。
-- 在 `/admin/audit` 的归档控制台中增加“归档预览”区域，支持按批次或模块查看归档摘要行，与主审计列表视觉上明确区分。
-- 前端 repository 增加归档预览 API，保持主列表、导出、详情、归档和校验现有交互不回退。
-- 归档预览只读，不提供导出、详情反查、修改或删除动作；如果归档表为空或查询失败，主审计列表仍可用。
-- 增加测试覆盖权限、查询筛选、分页、隐私边界、前端仓储、页面预览状态和现有审计列表不受影响。
-- 更新 README、`docs/domain-contracts.md`、`docs/database-schema.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和本文件。
-- 运行 `pnpm run ci`。
-- 提交并推送，建议 commit message：`Add audit archive preview`
-
-验收标准：
-
-- 管理员能在审计中心页面查看归档表摘要预览，并按模块、批次、动作、关键词和日期筛选。
-- `operator` 可继续读取审计中心，但看不到归档预览，也无法调用归档预览接口。
-- 归档预览只展示 summary-only 归档摘要，不暴露 raw payload、咨询说明、测评答案、风险信号或支付敏感原文。
-- 主审计列表、导出、详情、归档和校验仍读取或调用各自既有边界，不因归档预览为空或失败而不可用。
-- 归档预览失败时只展示安全错误摘要，不回显原始 payload。
-- 隐私最小化边界不回退，不展示测评答案、咨询说明、风险信号原文和支付敏感原文。
-- 现有后台模块能力不回退。
-- CI 通过。
+- 设计归档读取策略文档：近期聚合窗口、历史归档窗口、缺口校验和 fallback 顺序。
+- 设计留存告警和归档巡检口径：归档差异、模块缺口、最近批次时间、失败数量和隐私口径版本漂移。
+- 为后续读取切换预留服务端 feature flag 或显式查询参数，但默认关闭。
+- 明确回滚方案：关闭归档读取、回到业务 Store 聚合、保留归档表只读校验。
+- 更新 `docs/audit-store-architecture.md`、后台路线图和执行状态。
 
 ## 执行不变量
 
@@ -402,4 +409,4 @@ M9-E 验收结果：
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-E 已完成归档后台入口与只读校验，后台专项当前连续执行指针为 M9-F 归档表只读检索预览；用户端 UX-I 学习记录服务端同步已完成，后续正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项当前连续执行指针为 M9-G 归档读取切换策略与留存告警设计；用户端 UX-I 学习记录服务端同步已完成，后续正式证书签发审核流需另立任务包。

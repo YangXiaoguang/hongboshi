@@ -2,6 +2,8 @@ import {
   ApiResponseSchema,
   AuditCenterArchiveRequestSchema,
   AuditCenterArchiveResultSchema,
+  AuditCenterArchiveSearchQuerySchema,
+  AuditCenterArchiveSearchResultSchema,
   AuditCenterArchiveVerificationResultSchema,
   AuditCenterDetailResultSchema,
   AuditCenterExportQuerySchema,
@@ -9,6 +11,8 @@ import {
   AuditCenterQuerySchema,
   type AuditCenterArchiveRequest,
   type AuditCenterArchiveResult,
+  type AuditCenterArchiveSearchQuery,
+  type AuditCenterArchiveSearchResult,
   type AuditCenterArchiveVerificationResult,
   type AuditCenterDetailResult,
   type AuditCenterListResult,
@@ -26,6 +30,9 @@ const AuditCenterArchiveResponseSchema = ApiResponseSchema(
 );
 const AuditCenterArchiveVerificationResponseSchema = ApiResponseSchema(
   AuditCenterArchiveVerificationResultSchema
+);
+const AuditCenterArchiveSearchResponseSchema = ApiResponseSchema(
+  AuditCenterArchiveSearchResultSchema
 );
 const API_BASE = "/api/audit/admin";
 
@@ -80,6 +87,14 @@ export function parseAuditCenterArchiveVerificationResponse(
   return parsed.data;
 }
 
+export function parseAuditCenterArchiveSearchResponse(
+  payload: unknown
+): AuditCenterArchiveSearchResult {
+  const parsed = AuditCenterArchiveSearchResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   if (typeof payload === "object" && payload !== null) {
     const error = (payload as { error?: { message?: unknown } }).error;
@@ -109,6 +124,19 @@ function queryStringFromAuditCenterExportQuery(
 ) {
   const params = new URLSearchParams();
   const normalized = AuditCenterExportQuerySchema.partial().parse(query);
+  Object.entries(normalized).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    params.set(key, String(value));
+  });
+  const queryString = params.toString();
+  return queryString ? `?${queryString}` : "";
+}
+
+function queryStringFromAuditCenterArchiveSearchQuery(
+  query: Partial<AuditCenterArchiveSearchQuery> = {}
+) {
+  const params = new URLSearchParams();
+  const normalized = AuditCenterArchiveSearchQuerySchema.partial().parse(query);
   Object.entries(normalized).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
     params.set(key, String(value));
@@ -241,5 +269,27 @@ export const httpAuditCenterRepository = {
       throw new Error(extractErrorMessage(payload, "审计归档校验暂时不可用"));
     }
     return parseAuditCenterArchiveVerificationResponse(payload);
+  },
+
+  async loadArchiveEvents(
+    query: Partial<AuditCenterArchiveSearchQuery> = {}
+  ): Promise<AuditCenterArchiveSearchResult> {
+    const response = await fetch(
+      `${API_BASE}/archive/events${queryStringFromAuditCenterArchiveSearchQuery(
+        query
+      )}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "审计归档检索暂时不可用"));
+    }
+    return parseAuditCenterArchiveSearchResponse(payload);
   },
 };
