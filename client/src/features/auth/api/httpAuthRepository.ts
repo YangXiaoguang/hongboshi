@@ -2,9 +2,12 @@ import {
   ApiResponseSchema,
   LoginSessionSchema,
   type LoginSession,
+  type UserProfileUpdateRequest,
 } from "@shared/domain";
 
-const AuthSessionResponseSchema = ApiResponseSchema(LoginSessionSchema.nullable());
+const AuthSessionResponseSchema = ApiResponseSchema(
+  LoginSessionSchema.nullable()
+);
 const API_BASE = "/api/auth";
 
 async function readJson(response: Response): Promise<unknown> {
@@ -15,7 +18,9 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-export function parseAuthSessionResponse(payload: unknown): LoginSession | null {
+export function parseAuthSessionResponse(
+  payload: unknown
+): LoginSession | null {
   const parsed = AuthSessionResponseSchema.parse(payload);
   if (!parsed.ok) throw new Error(parsed.error.message);
   return parsed.data;
@@ -47,7 +52,7 @@ export const httpAuthRepository = {
     return requestSession("/login/phone", {
       method: "POST",
       body: JSON.stringify({ phone, code, acceptedConsent: true }),
-    }).then((session) => {
+    }).then(session => {
       if (!session) throw new Error("登录服务未返回会话");
       return session;
     });
@@ -57,7 +62,17 @@ export const httpAuthRepository = {
     return requestSession("/login/wechat", {
       method: "POST",
       body: JSON.stringify({ acceptedConsent: true }),
-    }).then((session) => {
+    }).then(session => {
+      if (!session) throw new Error("登录服务未返回会话");
+      return session;
+    });
+  },
+
+  updateProfile(request: UserProfileUpdateRequest): Promise<LoginSession> {
+    return requestSession("/profile", {
+      method: "PATCH",
+      body: JSON.stringify(request),
+    }).then(session => {
       if (!session) throw new Error("登录服务未返回会话");
       return session;
     });

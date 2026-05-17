@@ -8,6 +8,7 @@ import {
   PhoneLoginRequestSchema,
   UserConsentSchema,
   WechatLoginRequestSchema,
+  UserProfileUpdateRequestSchema,
   type LoginProvider,
   type LoginSession,
   type UserConsent,
@@ -255,6 +256,45 @@ export async function getSessionPayload(req: Request | IncomingMessage) {
   return sessionPayload(await getLoginSessionFromRequest(req));
 }
 
+export async function updateProfilePayload(
+  token: string | undefined,
+  body: unknown,
+  now = new Date().toISOString()
+) {
+  const session = await getLoginSession(token);
+  if (!session || !token) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后再更新账号资料"),
+    } as const;
+  }
+
+  const parsed = UserProfileUpdateRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "昵称或头像链接不合法"),
+    } as const;
+  }
+
+  const nextSession = LoginSessionSchema.parse({
+    ...session,
+    user: {
+      ...session.user,
+      displayName: parsed.data.displayName,
+      avatarUrl: parsed.data.avatarUrl,
+      updatedAt: now,
+    },
+  });
+
+  await authSessionStore.saveSession(token, nextSession);
+
+  return {
+    status: 200,
+    body: sessionPayload(nextSession),
+  } as const;
+}
+
 function applyAuthCookie(res: Response | ServerResponse, token: string) {
   res.setHeader("Set-Cookie", authCookie(token));
 }
@@ -307,6 +347,14 @@ export function registerAuthApi(app: Express) {
     sendJson(res, payload.status, payload.body);
   });
 
+  app.patch("/api/auth/profile", async (req: Request, res: Response) => {
+    const payload = await updateProfilePayload(
+      readAuthSessionToken(req),
+      req.body
+    );
+    sendJson(res, payload.status, payload.body);
+  });
+
   app.post("/api/auth/logout", async (req: Request, res: Response) => {
     await destroyLoginSession(readAuthSessionToken(req));
     applyClearAuthCookie(res);
@@ -326,6 +374,22 @@ export function handleAuthApiRequest(
       .catch(err => {
         console.error(err instanceof Error ? err.message : "登录会话读取失败");
         sendJson(res, 401, errorPayload("UNAUTHORIZED", "登录会话读取失败"));
+      });
+    return true;
+  }
+
+  if (req.method === "PATCH" && req.url.startsWith("/api/auth/profile")) {
+    void readRequestBody(req)
+      .then(async body => {
+        const payload = await updateProfilePayload(
+          readAuthSessionToken(req),
+          body
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(err => {
+        console.error(err instanceof Error ? err.message : "账号资料更新失败");
+        sendJson(res, 400, errorPayload("BAD_REQUEST", "账号资料更新失败"));
       });
     return true;
   }

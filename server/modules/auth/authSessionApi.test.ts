@@ -8,6 +8,7 @@ import {
   resetAuthSessionStore,
   AUTH_SESSION_COOKIE,
   getUserConsents,
+  updateProfilePayload,
 } from "./authSessionApi";
 
 describe("auth session API payloads", () => {
@@ -63,5 +64,39 @@ describe("auth session API payloads", () => {
     await destroyLoginSession(payload.token);
 
     await expect(getLoginSession(payload.token)).resolves.toBeNull();
+  });
+
+  it("updates the current user's profile in the saved session", async () => {
+    const loginPayload = await loginWithPhonePayload({
+      phone: "13800138000",
+      code: "123456",
+      acceptedConsent: true,
+    });
+    expect("token" in loginPayload).toBe(true);
+    if (!("token" in loginPayload)) return;
+
+    const payload = await updateProfilePayload(
+      loginPayload.token,
+      {
+        displayName: "红博士学员",
+        avatarUrl: "https://example.com/avatar.png",
+      },
+      "2026-05-18T08:00:00.000Z"
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (!payload.body.ok) return;
+    expect(payload.body.data?.user.displayName).toBe("红博士学员");
+    expect(payload.body.data?.user.avatarUrl).toBe(
+      "https://example.com/avatar.png"
+    );
+    expect(payload.body.data?.user.updatedAt).toBe("2026-05-18T08:00:00.000Z");
+    await expect(getLoginSession(loginPayload.token)).resolves.toMatchObject({
+      user: {
+        displayName: "红博士学员",
+        avatarUrl: "https://example.com/avatar.png",
+      },
+    });
   });
 });

@@ -1,6 +1,7 @@
-import { useMemo, useState, type ElementType } from "react";
+import { useEffect, useMemo, useState, type ElementType } from "react";
 import { motion } from "framer-motion";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 import {
   ArrowRight,
   BadgePercent,
@@ -10,8 +11,11 @@ import {
   Clock3,
   Crown,
   Heart,
+  Image as ImageIcon,
+  Loader2,
   LockKeyhole,
   ReceiptText,
+  Save,
   ShieldCheck,
   TicketPercent,
   UserRound,
@@ -212,7 +216,12 @@ function Metric({
 export default function PersonalCenter() {
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState<PersonalTab>(initialTabFromUrl);
-  const { user, isLoggedIn, openLoginModal } = useAuth();
+  const [profileForm, setProfileForm] = useState({
+    displayName: "",
+    avatarUrl: "",
+  });
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const { user, isLoggedIn, openLoginModal, updateProfile } = useAuth();
   const {
     accessState,
     hasActiveMembership,
@@ -267,9 +276,46 @@ export default function PersonalCenter() {
       .filter(Boolean)
       .join("、") ?? "未登录";
 
+  useEffect(() => {
+    setProfileForm({
+      displayName: user?.nickname ?? "",
+      avatarUrl: user?.avatar ?? "",
+    });
+  }, [user?.avatar, user?.id, user?.nickname]);
+
   const changeTab = (tab: PersonalTab) => {
     setActiveTab(tab);
     window.history.replaceState(null, "", `/me?tab=${tab}`);
+  };
+
+  const saveProfile = async () => {
+    if (!isLoggedIn) {
+      openLoginModal();
+      return;
+    }
+
+    const displayName = profileForm.displayName.trim();
+    const avatarUrl = profileForm.avatarUrl.trim();
+
+    if (displayName.length < 2) {
+      toast("昵称至少需要 2 个字");
+      return;
+    }
+
+    setIsSavingProfile(true);
+    try {
+      await updateProfile({
+        displayName,
+        avatarUrl: avatarUrl || undefined,
+      });
+      toast("资料已保存", { description: "账号资料已同步到当前登录会话" });
+    } catch (err) {
+      toast("资料保存失败", {
+        description: err instanceof Error ? err.message : "请稍后再试",
+      });
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   return (
@@ -387,8 +433,16 @@ export default function PersonalCenter() {
                 <section className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 sm:p-6">
                   <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
                     <div className="flex items-start gap-4">
-                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#6F8F83] text-xl font-semibold text-white">
-                        {user?.nickname.trim().charAt(0) ?? "未"}
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#6F8F83] text-xl font-semibold text-white">
+                        {user?.avatar ? (
+                          <img
+                            src={user.avatar}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          (user?.nickname.trim().charAt(0) ?? "未")
+                        )}
                       </span>
                       <div>
                         <h2 className="text-xl font-semibold">
@@ -432,6 +486,70 @@ export default function PersonalCenter() {
                       value={hasActiveMembership ? "有效" : "未开通"}
                       icon={Crown}
                     />
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 sm:p-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="h-4 w-4 text-[#6F8F83]" />
+                      <h3 className="font-semibold">资料设置</h3>
+                    </div>
+                    <span className="w-fit rounded-full bg-[#E6EDDF] px-3 py-1 text-xs font-semibold text-[#41675A]">
+                      服务端同步
+                    </span>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_132px] lg:items-end">
+                    <label className="block min-w-0">
+                      <span className="text-xs font-semibold text-[#6D746F]">
+                        昵称
+                      </span>
+                      <input
+                        value={profileForm.displayName}
+                        disabled={!isLoggedIn || isSavingProfile}
+                        maxLength={24}
+                        onChange={event =>
+                          setProfileForm(current => ({
+                            ...current,
+                            displayName: event.target.value,
+                          }))
+                        }
+                        className="mt-2 h-11 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition placeholder:text-[#A49B90] focus:border-[#6F8F83] disabled:cursor-not-allowed disabled:bg-[#F4EFE6] disabled:text-[#8A8176]"
+                        placeholder="请输入昵称"
+                      />
+                    </label>
+
+                    <label className="block min-w-0">
+                      <span className="text-xs font-semibold text-[#6D746F]">
+                        头像链接
+                      </span>
+                      <input
+                        value={profileForm.avatarUrl}
+                        disabled={!isLoggedIn || isSavingProfile}
+                        onChange={event =>
+                          setProfileForm(current => ({
+                            ...current,
+                            avatarUrl: event.target.value,
+                          }))
+                        }
+                        className="mt-2 h-11 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition placeholder:text-[#A49B90] focus:border-[#6F8F83] disabled:cursor-not-allowed disabled:bg-[#F4EFE6] disabled:text-[#8A8176]"
+                        placeholder="https://..."
+                      />
+                    </label>
+
+                    <button
+                      onClick={saveProfile}
+                      disabled={isSavingProfile}
+                      className="inline-flex h-11 items-center justify-center rounded-full bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isSavingProfile ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      {isLoggedIn ? "保存资料" : "登录后编辑"}
+                    </button>
                   </div>
                 </section>
 

@@ -115,6 +115,17 @@ export const UserProfileSchema = z.object({
   updatedAt: DateTimeLikeSchema,
 });
 
+const OptionalAvatarUrlSchema = z.preprocess(value => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : undefined;
+}, z.string().url().max(500).optional());
+
+export const UserProfileUpdateRequestSchema = z.object({
+  displayName: z.string().trim().min(2).max(24),
+  avatarUrl: OptionalAvatarUrlSchema,
+});
+
 export const UserConsentSchema = z.object({
   userId: EntityIdSchema,
   type: ConsentTypeSchema,
@@ -435,6 +446,9 @@ export type LoginProvider = z.infer<typeof LoginProviderSchema>;
 export type ConsentType = z.infer<typeof ConsentTypeSchema>;
 export type AuthPermission = z.infer<typeof AuthPermissionSchema>;
 export type UserProfile = z.infer<typeof UserProfileSchema>;
+export type UserProfileUpdateRequest = z.infer<
+  typeof UserProfileUpdateRequestSchema
+>;
 export type UserConsent = z.infer<typeof UserConsentSchema>;
 export type LoginSession = z.infer<typeof LoginSessionSchema>;
 export type PhoneLoginRequest = z.infer<typeof PhoneLoginRequestSchema>;

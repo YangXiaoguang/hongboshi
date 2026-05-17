@@ -16,6 +16,7 @@ import {
   CURRENT_USER_CONSENT_VERSION,
   type LoginProvider,
   type LoginSession,
+  type UserProfileUpdateRequest,
   type UserRole,
 } from "@shared/domain";
 import { httpAuthRepository } from "@/features/auth/api/httpAuthRepository";
@@ -40,6 +41,7 @@ interface AuthContextType {
   closeLoginModal: () => void;
   loginWithPhone: (phone: string, code: string) => Promise<void>;
   loginWithWechat: () => Promise<void>;
+  updateProfile: (request: UserProfileUpdateRequest) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -93,7 +95,10 @@ function sessionToUserInfo(session: LoginSession): UserInfo {
   };
 }
 
-function createFallbackSession(provider: LoginProvider, phone?: string): LoginSession {
+function createFallbackSession(
+  provider: LoginProvider,
+  phone?: string
+): LoginSession {
   const now = new Date().toISOString();
   const accessTokenExpiresAt = new Date(
     Date.now() + 7 * 24 * 60 * 60 * 1000
@@ -118,7 +123,7 @@ function createFallbackSession(provider: LoginProvider, phone?: string): LoginSe
       createdAt: now,
       updatedAt: now,
     },
-    consents: (["terms", "privacy"] as const).map((type) => ({
+    consents: (["terms", "privacy"] as const).map(type => ({
       userId:
         provider === "phone"
           ? `u_phone_${phone?.slice(-4) ?? "demo"}`
@@ -151,7 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     httpAuthRepository
       .getSession()
-      .then((session) => {
+      .then(session => {
         if (!mounted) return;
 
         if (session) {
@@ -163,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         clearStoredUser();
       })
-      .catch((err) => {
+      .catch(err => {
         if (!mounted) return;
         setAuthError(err instanceof Error ? err.message : "登录服务暂时不可用");
       })
@@ -207,6 +212,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [commitSession]);
 
+  const updateProfile = useCallback(
+    async (request: UserProfileUpdateRequest) => {
+      setIsAuthSyncing(true);
+      try {
+        const session = await httpAuthRepository.updateProfile(request);
+        commitSession(session);
+        setAuthError(undefined);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "账号资料暂时无法保存";
+        setAuthError(message);
+        throw new Error(message);
+      } finally {
+        setIsAuthSyncing(false);
+      }
+    },
+    [commitSession]
+  );
+
   const logout = useCallback(async () => {
     try {
       await httpAuthRepository.logout();
@@ -231,6 +255,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         closeLoginModal,
         loginWithPhone,
         loginWithWechat,
+        updateProfile,
         logout,
       }}
     >

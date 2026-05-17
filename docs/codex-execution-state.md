@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`UX-J 个人中心与关于我们核心页面`
-- 当前状态：`UX-J 个人中心与关于我们核心页面` 已完成，用户端已新增 `/me` 个人中心和 `/about` 关于我们，个人中心聚合账号、订单、收藏、优惠券和咨询预约入口，关于我们补齐平台信任与服务边界。
-- 本轮完成后下一步：执行 `UX-K 个人中心数据服务端化与资料编辑`
+- 当前阶段：`UX-K 个人中心数据服务端化与资料编辑`
+- 当前状态：`UX-K 个人中心数据服务端化与资料编辑` 已完成，账号资料编辑已从个人中心接入服务端认证 session，支持昵称和头像链接更新、会话持久化和前端用户态刷新。
+- 本轮完成后下一步：执行 `UX-L 收藏与优惠券账户化`
 
 ## 已完成关键能力
 
@@ -43,6 +43,7 @@
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
 - 完成用户端个人中心与关于我们：新增 `/me` 个人中心，集中展示账号、课程订单、咨询预约、收藏课程和服务端营销优惠；新增 `/about` 关于我们，展示平台定位、服务范围、隐私边界和可信承接路径。
+- 完成个人中心资料编辑服务端化：新增 `UserProfileUpdateRequestSchema`、`PATCH /api/auth/profile` 和前端 `updateProfile` 认证上下文，个人中心账号页可编辑昵称与头像链接并同步当前登录会话。
 - 完成课程订单状态与支付结果服务端化：新增课程 checkout 共享契约、订单扩展字段、服务端创建/读取/支付/取消 API 和前端 repository/hook，课程权益只在服务端支付成功后交付，重复支付保持幂等。
 - 课程详情页购买抽屉已接入订单状态，支持待创建、待支付、支付中、支付成功、失败重试和取消待支付订单，并展示订单号、支付保留时间、支付渠道和权益交付摘要。
 - TRX-C 浏览器验证已通过：在 `/courses/16` 完成登录、创建订单、模拟支付成功、权益到账和“开始学习”入口切换；`pnpm run ci` 已通过 87 个测试文件 / 411 个测试和生产构建。
@@ -504,38 +505,36 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：M9-F 审计归档只读检索预览
+### 最近完成阶段：UX-K 个人中心数据服务端化与资料编辑
 
-M9-F 已交付：
+UX-K 已交付：
 
-- `shared/domain/auditCenter.ts`：新增 `AuditCenterArchiveSearchQuerySchema`、`AuditCenterArchivePreviewItemSchema` 和 `AuditCenterArchiveSearchResultSchema`，归档预览支持模块、动作、操作者、资源关键词、批次 ID、发生日期、归档日期、分页和发生/归档时间排序。
-- `server/modules/audit/auditArchiveStore.ts` 与 `postgresAuditArchiveStore.ts`：归档 Store 只读查询能力扩展到长期检索筛选、分页、计数和按归档时间排序；PostgreSQL 查询仍只返回 summary-only 字段。
-- `server/modules/audit/auditAdminApi.ts`：新增 `GET /api/audit/admin/archive/events`，权限使用 `audit:archive`；普通 `operator` 仍可读取审计中心主列表，但不能访问归档预览。
-- `client/src/features/audit/api/httpAuditCenterRepository.ts`：新增 `loadArchiveEvents` 和归档预览响应解析。
-- `client/src/pages/admin/AuditCenter.tsx`：管理员归档控制台新增“归档检索预览”区域，按当前筛选读取归档表前 5 条摘要行，与主审计列表视觉上区分；预览为空或失败不影响主列表、导出、详情、归档和校验。
-- README、领域契约、数据库说明、后台路线图、产品工程路线图和统一审计 Store 架构文档已同步。
+- `shared/domain/user.ts`：新增 `UserProfileUpdateRequestSchema` 和 `UserProfileUpdateRequest`，统一约束昵称和头像链接。
+- `server/modules/auth/authSessionApi.ts`：新增 `PATCH /api/auth/profile`，基于当前登录 cookie 读取 session、更新用户资料、写回 `AuthSessionStore`，PostgreSQL 与内存 Store 通过既有 `saveSession` 路径保持一致。
+- `client/src/features/auth/api/httpAuthRepository.ts` 与 `client/src/contexts/AuthContext.tsx`：新增 `updateProfile`，保存成功后刷新前端用户态和本地登录缓存。
+- `client/src/pages/PersonalCenter.tsx`：账号页新增资料设置区域，支持昵称、头像链接编辑、保存状态和登录引导。
+- `server/modules/auth/authSessionApi.test.ts`：覆盖登录后更新资料并再次读取 session 的闭环。
 
-M9-F 验收结果：
+UX-K 验收结果：
 
-- 管理员可通过 `/admin/audit` 查看归档表 summary-only 摘要预览。
-- `operator` 无归档预览权限，`audit:read` 与 `audit:archive` 边界保持分离。
-- 归档预览不提供导出、详情反查、修改或删除动作。
-- 主审计列表、导出、详情、手动归档和归档校验仍走既有边界，不因归档表为空或预览失败而不可用。
-- 定向测试与完整 `pnpm run ci` 均已通过：90 个测试文件 / 430 个测试，生产构建完成。
+- `pnpm run check` 已通过。
+- 定向 `pnpm test -- server/modules/auth/authSessionApi.test.ts client/src/features/auth/api/httpAuthRepository.test.ts` 已通过，当前共 101 个测试文件 / 466 个测试。
+- 完整 `pnpm run ci` 已通过：类型检查、101 个测试文件 / 466 个测试和生产构建均完成；构建保留既有 Vite 大 chunk 提示。
 
-### 后台专项待续：M9-G 审计归档读取切换策略与留存告警设计
+### 用户端待续：UX-L 收藏与优惠券账户化
 
 业务目标：
 
-在 M9-F 只读检索预览基础上，设计可维护的归档读取策略，明确哪些历史时间窗口未来可以读取归档表、哪些近期或未归档事件仍读取业务 Store 聚合，并补充留存告警、归档巡检和回滚方案。当前阶段优先产出策略与小范围开关设计，不直接把主审计列表切换到归档表。
+把个人中心的“收藏”和“优惠”从当前本地/规则展示升级为账号级数据，让用户登录后在不同设备和入口之间保持一致，也为后续运营后台发券、用户画像和转化召回打基础。
 
 建议实施范围：
 
-- 设计归档读取策略文档：近期聚合窗口、历史归档窗口、缺口校验和 fallback 顺序。
-- 设计留存告警和归档巡检口径：归档差异、模块缺口、最近批次时间、失败数量和隐私口径版本漂移。
-- 为后续读取切换预留服务端 feature flag 或显式查询参数，但默认关闭。
-- 明确回滚方案：关闭归档读取、回到业务 Store 聚合、保留归档表只读校验。
-- 更新 `docs/audit-store-architecture.md`、后台路线图和执行状态。
+- 新增账号偏好共享契约，至少覆盖收藏课程 ID、最近收藏时间、来源页面和更新时间。
+- 新增用户偏好 Store，开发期支持内存/JSON 文件，后续可平滑接入 PostgreSQL。
+- 新增 `/api/user-preferences/me` 读写接口，要求登录后访问；未登录继续使用本地收藏 fallback。
+- 改造 `useCourseEngagement`，登录后优先服务端同步收藏，离线或接口失败时保留本地体验。
+- 优惠券进入账户化设计：先做“可领取/已领取/已使用/已过期”的共享契约和个人中心展示，结算抵扣仍复用现有营销规则。
+- 更新个人中心收藏说明、优惠说明、测试和本执行状态。
 
 ## 执行不变量
 
@@ -556,4 +555,4 @@ M9-F 验收结果：
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项当前连续执行指针为 M9-G 归档读取切换策略与留存告警设计；用户端 UX-I 学习记录服务端同步已完成，后续正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-L 收藏与优惠券账户化，正式证书签发审核流需另立任务包。
