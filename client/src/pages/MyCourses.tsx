@@ -736,6 +736,7 @@ export default function MyCourses() {
     useCourseEngagement({
       userId: user?.id,
       enableRemoteSync: isLoggedIn,
+      favoriteSource: "growth_space",
     });
   const { practiceState, practiceSyncError } = useCoursePractice({
     userId: user?.id,

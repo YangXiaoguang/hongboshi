@@ -39,6 +39,7 @@ import CourseCheckoutDrawer, {
 } from "@/components/CourseCheckoutDrawer";
 import CoursePendingCheckoutBanner from "@/components/CoursePendingCheckoutBanner";
 import NotFound from "@/pages/NotFound";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   buildCourseTrustProfile,
   createCourseConversionCoursePayload,
@@ -101,6 +102,7 @@ const actionIcon = {
 export default function CourseDetail() {
   const [, navigate] = useLocation();
   const [, params] = useRoute("/courses/:courseId");
+  const { user, isLoggedIn } = useAuth();
   const {
     accessState,
     cancelCheckoutOrder,
@@ -116,7 +118,11 @@ export default function CourseDetail() {
     isFavorited,
     startCourse,
     toggleFavorite,
-  } = useCourseEngagement();
+  } = useCourseEngagement({
+    userId: user?.id,
+    enableRemoteSync: isLoggedIn,
+    favoriteSource: "course_detail",
+  });
   const { rules: marketingRules } = useCourseMarketingRules();
   const [checkoutMode, setCheckoutMode] = useState<
     CourseCheckoutMode | undefined

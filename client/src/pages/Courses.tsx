@@ -18,6 +18,7 @@ import CourseDiscoverySection from "@/components/CourseDiscoverySection";
 import CoursePendingCheckoutBanner from "@/components/CoursePendingCheckoutBanner";
 import CoursePathSection from "@/components/CoursePathSection";
 import CourseStarterLanes from "@/components/CourseStarterLanes";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   DEFAULT_COURSE_LEARNING_PATH_ID,
   createCourseConversionCoursePayload,
@@ -46,6 +47,7 @@ const courseHeroImage =
 
 export default function Courses() {
   const [, navigate] = useLocation();
+  const { user, isLoggedIn } = useAuth();
   const [selectedPathId, setSelectedPathId] = useState(
     DEFAULT_COURSE_LEARNING_PATH_ID
   );
@@ -73,7 +75,11 @@ export default function Courses() {
     getProgress,
     startCourse,
     toggleFavorite,
-  } = useCourseEngagement();
+  } = useCourseEngagement({
+    userId: user?.id,
+    enableRemoteSync: isLoggedIn,
+    favoriteSource: "course_list",
+  });
   const {
     accessState,
     cancelCheckoutOrder,

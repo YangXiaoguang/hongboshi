@@ -231,9 +231,15 @@ export default function PersonalCenter() {
     isSyncing: isAccessSyncing,
   } = useCourseAccess();
   const { allCourses } = useCourseCatalog();
-  const { favoriteCourseIds, favoriteCount } = useCourseEngagement({
+  const {
+    favoriteCourseIds,
+    favoriteCount,
+    favoriteSyncError,
+    isFavoriteSyncing,
+  } = useCourseEngagement({
     userId: user?.id,
     enableRemoteSync: Boolean(user),
+    favoriteSource: "personal_center",
   });
   const { rules: marketingRules } = useCourseMarketingRules();
   const { appointments, upcomingCount } = useCounselingAppointments(isLoggedIn);
@@ -725,8 +731,17 @@ export default function PersonalCenter() {
                 <div className="border-b border-[#E8DED0] px-5 py-4">
                   <h2 className="text-xl font-semibold">我的收藏</h2>
                   <p className="mt-1 text-sm text-[#6D746F]">
-                    收藏课程会保留在当前浏览器，并在后续接入账号收藏同步。
+                    {isLoggedIn
+                      ? isFavoriteSyncing
+                        ? "正在同步账号收藏，稍后会和课程列表保持一致。"
+                        : "收藏课程已接入账号同步，可在课程列表、详情页和个人中心保持一致。"
+                      : "登录后收藏会同步到账号，未登录时会先保留在当前浏览器。"}
                   </p>
+                  {favoriteSyncError && (
+                    <p className="mt-2 text-xs font-semibold text-[#A65F48]">
+                      {favoriteSyncError}
+                    </p>
+                  )}
                 </div>
                 {favoriteCourses.length ? (
                   <div className="divide-y divide-[#E8DED0]">

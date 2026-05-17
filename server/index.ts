@@ -22,6 +22,7 @@ import { registerOrderAdminApi } from "./modules/orders/orderAdminApi";
 import { registerRiskAdminApi } from "./modules/risk/riskAdminApi";
 import { registerTransactionAdminApi } from "./modules/transactions/transactionAdminApi";
 import { registerUserAdminApi } from "./modules/users/userAdminApi";
+import { registerUserPreferenceApi } from "./modules/users/userPreferenceApi";
 import { assertPersistenceConfig } from "./db/runtimeConfig";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -50,6 +51,7 @@ async function startServer() {
   registerRiskAdminApi(app);
   registerTransactionAdminApi(app);
   registerUserAdminApi(app);
+  registerUserPreferenceApi(app);
 
   // Serve static files from dist/public in production
   const staticPath =

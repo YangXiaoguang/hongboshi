@@ -16,3 +16,4 @@ export * from "./growthProfile";
 export * from "./order";
 export * from "./risk";
 export * from "./user";
+export * from "./userPreference";

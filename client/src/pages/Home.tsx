@@ -17,6 +17,7 @@ import AppHeader from "@/components/AppHeader";
 import CourseDiscoverySection from "@/components/CourseDiscoverySection";
 import CoursePathSection from "@/components/CoursePathSection";
 import MobileView from "@/components/MobileView";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   DEFAULT_COURSE_LEARNING_PATH_ID,
   getCourseLearningPath,
@@ -58,6 +59,7 @@ const featuredJourney = [
 
 export default function Home() {
   const [, navigate] = useLocation();
+  const { user, isLoggedIn } = useAuth();
   const {
     selectedCategory,
     selectedType,
@@ -78,7 +80,11 @@ export default function Home() {
     setCurrentPage,
   } = useCourseCatalog();
   const { favoriteCourseIds, favoriteCount, toggleFavorite } =
-    useCourseEngagement();
+    useCourseEngagement({
+      userId: user?.id,
+      enableRemoteSync: isLoggedIn,
+      favoriteSource: "home",
+    });
   const { getCourseAccess, hasActiveMembership, ownedCourseCount } =
     useCourseAccess();
   const [viewMode, setViewMode] = useState<"pc" | "mobile">("pc");

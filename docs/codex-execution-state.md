@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`UX-K 个人中心数据服务端化与资料编辑`
-- 当前状态：`UX-K 个人中心数据服务端化与资料编辑` 已完成，账号资料编辑已从个人中心接入服务端认证 session，支持昵称和头像链接更新、会话持久化和前端用户态刷新。
-- 本轮完成后下一步：执行 `UX-L 收藏与优惠券账户化`
+- 当前阶段：`UX-L 收藏账户化`
+- 当前状态：`UX-L 收藏账户化` 已完成，登录用户的收藏课程已接入账号级用户偏好 Store，支持服务端读取/写入、本地 fallback 和登录后初始化同步。
+- 本轮完成后下一步：执行 `UX-M 优惠券账户化与领取状态`
 
 ## 已完成关键能力
 
@@ -44,6 +44,7 @@
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
 - 完成用户端个人中心与关于我们：新增 `/me` 个人中心，集中展示账号、课程订单、咨询预约、收藏课程和服务端营销优惠；新增 `/about` 关于我们，展示平台定位、服务范围、隐私边界和可信承接路径。
 - 完成个人中心资料编辑服务端化：新增 `UserProfileUpdateRequestSchema`、`PATCH /api/auth/profile` 和前端 `updateProfile` 认证上下文，个人中心账号页可编辑昵称与头像链接并同步当前登录会话。
+- 完成账号级收藏同步：新增 `UserPreferenceSchema`、用户偏好 Store、`/api/user-preferences/me` 和收藏课程写接口，`useCourseEngagement` 登录后可读取/写入账号收藏，首页、课程列表、课程详情、成长空间和个人中心复用同一同步链路。
 - 完成课程订单状态与支付结果服务端化：新增课程 checkout 共享契约、订单扩展字段、服务端创建/读取/支付/取消 API 和前端 repository/hook，课程权益只在服务端支付成功后交付，重复支付保持幂等。
 - 课程详情页购买抽屉已接入订单状态，支持待创建、待支付、支付中、支付成功、失败重试和取消待支付订单，并展示订单号、支付保留时间、支付渠道和权益交付摘要。
 - TRX-C 浏览器验证已通过：在 `/courses/16` 完成登录、创建订单、模拟支付成功、权益到账和“开始学习”入口切换；`pnpm run ci` 已通过 87 个测试文件 / 411 个测试和生产构建。
@@ -505,36 +506,38 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：UX-K 个人中心数据服务端化与资料编辑
+### 最近完成阶段：UX-L 收藏账户化
 
-UX-K 已交付：
+UX-L 已交付：
 
-- `shared/domain/user.ts`：新增 `UserProfileUpdateRequestSchema` 和 `UserProfileUpdateRequest`，统一约束昵称和头像链接。
-- `server/modules/auth/authSessionApi.ts`：新增 `PATCH /api/auth/profile`，基于当前登录 cookie 读取 session、更新用户资料、写回 `AuthSessionStore`，PostgreSQL 与内存 Store 通过既有 `saveSession` 路径保持一致。
-- `client/src/features/auth/api/httpAuthRepository.ts` 与 `client/src/contexts/AuthContext.tsx`：新增 `updateProfile`，保存成功后刷新前端用户态和本地登录缓存。
-- `client/src/pages/PersonalCenter.tsx`：账号页新增资料设置区域，支持昵称、头像链接编辑、保存状态和登录引导。
-- `server/modules/auth/authSessionApi.test.ts`：覆盖登录后更新资料并再次读取 session 的闭环。
+- `shared/domain/userPreference.ts`：新增账号偏好契约，收藏课程记录包含课程 ID、来源、首次收藏时间和最近更新时间。
+- `server/modules/users/userPreferenceStore.ts`：新增用户偏好 Store，开发期支持内存和 JSON 文件 `.hongboshi-data/user-preferences.json`。
+- `server/modules/users/userPreferenceApi.ts`：新增 `/api/user-preferences/me` 和 `/api/user-preferences/me/favorites`，登录后按当前 session 用户读取与写入收藏。
+- `client/src/features/courses/api/httpUserPreferenceRepository.ts` 与 `useCourseEngagement`：登录后读取账号收藏；服务端为空时上传本地收藏；后续收藏/取消会写回账号偏好。
+- 首页、课程列表、课程详情、课程学习、成长空间和个人中心已传入收藏来源，个人中心收藏页展示同步状态和错误提示。
+- `docs/domain-contracts.md` 与 `docs/product-engineering-roadmap.md` 已补充用户偏好 Store 和账号收藏同步边界。
 
-UX-K 验收结果：
+UX-L 验收结果：
 
 - `pnpm run check` 已通过。
-- 定向 `pnpm test -- server/modules/auth/authSessionApi.test.ts client/src/features/auth/api/httpAuthRepository.test.ts` 已通过，当前共 101 个测试文件 / 466 个测试。
-- 完整 `pnpm run ci` 已通过：类型检查、101 个测试文件 / 466 个测试和生产构建均完成；构建保留既有 Vite 大 chunk 提示。
+- 定向 `pnpm test -- shared/domain/userPreference.test.ts server/modules/users/userPreferenceApi.test.ts client/src/features/courses/api/httpUserPreferenceRepository.test.ts client/src/features/courses/model/courseEngagement.test.ts` 已通过，当前共 104 个测试文件 / 474 个测试。
+- 浏览器验证已通过：登录后在 `/courses` 收藏课程会写入 `/api/user-preferences/me/favorites`，`/api/user-preferences/me` 可回读账号收藏，`/me?tab=favorites` 展示同一门课程，桌面和移动端无横向溢出。
+- 完整 `pnpm run ci` 已通过：类型检查、104 个测试文件 / 474 个测试和生产构建均完成；构建保留既有 Vite 大 chunk 提示。
 
-### 用户端待续：UX-L 收藏与优惠券账户化
+### 用户端待续：UX-M 优惠券账户化与领取状态
 
 业务目标：
 
-把个人中心的“收藏”和“优惠”从当前本地/规则展示升级为账号级数据，让用户登录后在不同设备和入口之间保持一致，也为后续运营后台发券、用户画像和转化召回打基础。
+在现有营销规则展示基础上，为登录用户建立“优惠券领取状态”。用户可以在个人中心看到可领取、已领取、已使用、已过期的课程优惠，后续结算时从账号券包中选择或自动抵扣，为运营后台发券和转化召回打基础。
 
 建议实施范围：
 
-- 新增账号偏好共享契约，至少覆盖收藏课程 ID、最近收藏时间、来源页面和更新时间。
-- 新增用户偏好 Store，开发期支持内存/JSON 文件，后续可平滑接入 PostgreSQL。
-- 新增 `/api/user-preferences/me` 读写接口，要求登录后访问；未登录继续使用本地收藏 fallback。
-- 改造 `useCourseEngagement`，登录后优先服务端同步收藏，离线或接口失败时保留本地体验。
-- 优惠券进入账户化设计：先做“可领取/已领取/已使用/已过期”的共享契约和个人中心展示，结算抵扣仍复用现有营销规则。
-- 更新个人中心收藏说明、优惠说明、测试和本执行状态。
+- 新增账号优惠券共享契约，覆盖 `claimable / claimed / used / expired` 状态、来源营销规则、适用课程、领取时间、使用订单和过期时间。
+- 扩展用户偏好或新增用户优惠券 Store；若扩展偏好 Store，需要保持收藏与券包字段解耦，便于后续独立落表。
+- 新增优惠券领取/读取 API，要求登录后访问；未登录用户看到可用营销规则但不落账号状态。
+- 改造个人中心优惠页，区分“可领取”和“我的券包”，支持一键领取、去使用和过期/已使用提示。
+- 结算抽屉第一版继续复用现有营销规则自动抵扣；本阶段只把领取状态沉淀到账户，为后续手动选券和运营发券预留接口。
+- 更新测试、领域契约、路线图和本执行状态。
 
 ## 执行不变量
 
@@ -555,4 +558,4 @@ UX-K 验收结果：
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-L 收藏与优惠券账户化，正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-M 优惠券账户化与领取状态，正式证书签发审核流需另立任务包。

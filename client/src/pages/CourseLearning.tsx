@@ -711,6 +711,7 @@ export default function CourseLearning() {
     useCourseEngagement({
       userId: remoteUserId,
       enableRemoteSync: Boolean(remoteUserId),
+      favoriteSource: "course_learning",
     });
   const {
     practiceSyncError,
