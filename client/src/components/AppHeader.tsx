@@ -52,6 +52,7 @@ export default function AppHeader() {
     if (label === "咨询服务") return location.startsWith("/consulting");
     if (label === "心理课程") return location.startsWith("/courses");
     if (label === "成长测评") return location.startsWith("/assessment");
+    if (label === "关于我们") return location.startsWith("/about");
     return false;
   };
 
@@ -60,7 +61,8 @@ export default function AppHeader() {
       item.href === "/" ||
       item.href === "/courses" ||
       item.href === "/assessment" ||
-      item.href === "/consulting"
+      item.href === "/consulting" ||
+      item.href === "/about"
     ) {
       navigate(item.href);
       return;
@@ -81,6 +83,11 @@ export default function AppHeader() {
   const canAccessAdmin = canAccessAdminShell(user);
 
   const userMenuItems = [
+    {
+      icon: User,
+      label: "个人中心",
+      onClick: () => navigate("/me"),
+    },
     {
       icon: BookOpen,
       label: "成长空间",
@@ -107,12 +114,12 @@ export default function AppHeader() {
     {
       icon: Heart,
       label: "我的收藏",
-      onClick: () => navigate("/me/courses"),
+      onClick: () => navigate("/me?tab=favorites"),
     },
     {
       icon: Settings,
       label: "账号设置",
-      onClick: () => toast("账号设置", { description: "功能即将上线" }),
+      onClick: () => navigate("/me?tab=account"),
     },
   ];
 

@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import LoginModal from "./components/LoginModal";
 import Assessment from "./pages/Assessment";
+import About from "./pages/About";
 import AuditCenter from "./pages/admin/AuditCenter";
 import AdminHome from "./pages/admin/AdminHome";
 import AdminLayout from "./pages/admin/AdminLayout";
@@ -23,6 +24,7 @@ import MarketingRules from "./pages/admin/MarketingRules";
 import MyCourses from "./pages/MyCourses";
 import OrderManagement from "./pages/admin/OrderManagement";
 import PaymentReconciliation from "./pages/PaymentReconciliation";
+import PersonalCenter from "./pages/PersonalCenter";
 import RiskReview from "./pages/admin/RiskReview";
 import TransactionManagement from "./pages/admin/TransactionManagement";
 import UserMembers from "./pages/admin/UserMembers";
@@ -35,6 +37,8 @@ function Router() {
       <Route path={"/courses/:courseId/learn"} component={CourseLearning} />
       <Route path={"/courses/:courseId"} component={CourseDetail} />
       <Route path={"/consulting"} component={Consulting} />
+      <Route path={"/about"} component={About} />
+      <Route path={"/me"} component={PersonalCenter} />
       <Route path={"/counselor/workbench"} component={CounselorWorkbench} />
       <Route path={"/admin/counseling"}>
         <AdminLayout>
