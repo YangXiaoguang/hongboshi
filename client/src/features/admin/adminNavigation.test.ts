@@ -36,6 +36,7 @@ describe("admin navigation model", () => {
       "counseling",
       "payments",
       "courses",
+      "marketing",
       "users",
       "orders",
       "transactions",
@@ -47,7 +48,7 @@ describe("admin navigation model", () => {
       getAvailableAdminNavigationItems({ roles: ["catalog_viewer"] }).map(
         item => item.key
       )
-    ).toEqual(["overview", "courses"]);
+    ).toEqual(["overview", "courses", "marketing"]);
     expect(
       getPlannedAdminNavigationItems({ roles: ["admin"] }).map(item => item.key)
     ).toEqual([]);

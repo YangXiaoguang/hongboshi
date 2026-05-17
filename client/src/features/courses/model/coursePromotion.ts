@@ -2,7 +2,9 @@ import {
   COURSE_MEMBERSHIP_ORDER_TITLE,
   calculateCoursePricing,
   calculateMembershipPricing,
+  listActiveCourseMarketingRulesForCourse,
   type Course,
+  type CourseMarketingRule,
 } from "@shared/domain";
 
 export type CoursePromotionLineKind =
@@ -70,6 +72,7 @@ export interface CoursePromotionSummary {
 interface CreateCoursePromotionSummaryOptions {
   pathCourses?: Course[];
   maxBundleCourses?: number;
+  marketingRules?: CourseMarketingRule[];
   now?: string;
 }
 
@@ -115,7 +118,8 @@ function uniqueCourses(courses: Course[]): Course[] {
 
 function createPathBundlePromotion(
   courses: Course[],
-  maxBundleCourses: number
+  maxBundleCourses: number,
+  discountRate: number
 ): CoursePathBundlePromotion | undefined {
   const paidCourses = uniqueCourses(courses)
     .filter(course => !course.isFree && course.price > 0)
@@ -136,7 +140,7 @@ function createPathBundlePromotion(
     0
   );
   const bundleDiscountAmount = Math.min(
-    Math.round(singlePayableAmount * PATH_BUNDLE_PREVIEW_DISCOUNT_RATE),
+    Math.round(singlePayableAmount * discountRate),
     Math.max(0, singlePayableAmount - paidCourses.length)
   );
   const payableAmount = Math.max(0, singlePayableAmount - bundleDiscountAmount);
@@ -156,9 +160,19 @@ function createPathBundlePromotion(
   };
 }
 
-function createCourseOffer(course: Course): CoursePromotionOffer {
-  const pricing = calculateCoursePricing(course);
-
+function createCourseOffer({
+  couponLabel,
+  course,
+  originalAmount,
+  payableAmount,
+  savingsAmount,
+}: {
+  couponLabel?: string;
+  course: Course;
+  originalAmount: number;
+  payableAmount: number;
+  savingsAmount: number;
+}): CoursePromotionOffer {
   if (course.isFree) {
     return {
       kind: "course",
@@ -176,32 +190,40 @@ function createCourseOffer(course: Course): CoursePromotionOffer {
 
   return {
     kind: "course",
-    title: course.coupon ? "本课券后购买" : "单独购买本课",
-    description: course.coupon
-      ? `${course.coupon.label} 下单自动抵扣，支付后解锁本课。`
+    title: couponLabel ? "本课券后购买" : "单独购买本课",
+    description: couponLabel
+      ? `${couponLabel} 下单自动抵扣，支付后解锁本课。`
       : "只购买当前课程，支付后解锁本课学习权益。",
-    badge: course.coupon ? "券后价" : "单课",
+    badge: couponLabel ? "券后价" : "单课",
     ctaLabel: "购买本课",
-    payableAmount: pricing.payableAmount,
-    originalAmount: pricing.originalPrice,
-    savingsAmount: pricing.savingsAmount,
+    payableAmount,
+    originalAmount,
+    savingsAmount,
     isRecommended: false,
     isCheckoutReady: !course.isFree,
   };
 }
 
-function createMembershipOffer(course: Course): CoursePromotionOffer {
-  const pricing = calculateMembershipPricing();
-
+function createMembershipOffer({
+  course,
+  originalAmount,
+  payableAmount,
+  savingsAmount,
+}: {
+  course: Course;
+  originalAmount: number;
+  payableAmount: number;
+  savingsAmount: number;
+}): CoursePromotionOffer {
   return {
     kind: "membership",
     title: COURSE_MEMBERSHIP_ORDER_TITLE,
     description: `开通后可学习本课，并继续覆盖更多会员课程。`,
     badge: "会员方案",
     ctaLabel: "开通会员",
-    payableAmount: pricing.payableAmount,
-    originalAmount: pricing.originalPrice,
-    savingsAmount: pricing.savingsAmount,
+    payableAmount,
+    originalAmount,
+    savingsAmount,
     isRecommended: false,
     isCheckoutReady: course.isVip,
   };
@@ -230,7 +252,65 @@ export function createCoursePromotionSummary(
 ): CoursePromotionSummary {
   const now = options.now ?? new Date().toISOString();
   const pricing = calculateCoursePricing(course);
-  const membershipPricing = calculateMembershipPricing();
+  const activeRules = listActiveCourseMarketingRulesForCourse({
+    course,
+    now,
+    rules: options.marketingRules ?? [],
+  });
+  const courseCouponRule = activeRules.find(
+    rule =>
+      rule.type === "course_coupon" && rule.discount.kind === "fixed_amount"
+  );
+  const courseCouponAmount =
+    courseCouponRule?.discount.kind === "fixed_amount"
+      ? Math.min(courseCouponRule.discount.amount, pricing.listPrice)
+      : pricing.couponAmount;
+  const courseCouponLabel = courseCouponRule?.name ?? course.coupon?.label;
+  const coursePayableAmount = Math.max(
+    0,
+    pricing.listPrice - courseCouponAmount
+  );
+  const courseSavingsAmount = Math.max(
+    0,
+    pricing.originalPrice - coursePayableAmount
+  );
+  const membershipRule = activeRules.find(
+    rule =>
+      rule.type === "membership_discount" &&
+      rule.discount.kind === "fixed_price"
+  );
+  const defaultMembershipPricing = calculateMembershipPricing();
+  const membershipPricing =
+    membershipRule?.discount.kind === "fixed_price"
+      ? {
+          ...defaultMembershipPricing,
+          listPrice: membershipRule.discount.originalAmount,
+          originalPrice: membershipRule.discount.originalAmount,
+          discountAmount: Math.max(
+            0,
+            membershipRule.discount.originalAmount -
+              membershipRule.discount.payableAmount
+          ),
+          payableAmount: membershipRule.discount.payableAmount,
+          savingsAmount: Math.max(
+            0,
+            membershipRule.discount.originalAmount -
+              membershipRule.discount.payableAmount
+          ),
+        }
+      : defaultMembershipPricing;
+  const pathBundleRule = activeRules.find(
+    rule =>
+      rule.type === "path_bundle" && rule.discount.kind === "bundle_percentage"
+  );
+  const pathBundleDiscountRate =
+    pathBundleRule?.discount.kind === "bundle_percentage"
+      ? pathBundleRule.discount.rate
+      : PATH_BUNDLE_PREVIEW_DISCOUNT_RATE;
+  const pathBundleCourseLimit =
+    pathBundleRule?.discount.kind === "bundle_percentage"
+      ? pathBundleRule.discount.maxCourses
+      : (options.maxBundleCourses ?? DEFAULT_PATH_BUNDLE_COURSE_LIMIT);
   const lines: CoursePromotionLine[] = [];
 
   if (pricing.priceMarkdownAmount > 0) {
@@ -246,25 +326,37 @@ export function createCoursePromotionSummary(
     });
   }
 
-  if (pricing.couponAmount > 0 && course.coupon) {
+  if (courseCouponAmount > 0 && courseCouponLabel) {
     lines.push({
       kind: "coupon",
-      label: course.coupon.label,
+      label: courseCouponLabel,
       title: "下单自动抵扣",
       description: "创建订单时自动计入优惠，无需额外领券。",
-      amount: pricing.couponAmount,
-      amountLabel: amountLabel(pricing.couponAmount),
+      amount: courseCouponAmount,
+      amountLabel: amountLabel(courseCouponAmount),
       applied: true,
       tone: "saving",
     });
   }
 
-  if (course.discount && isLimitedDiscountActive(course, now)) {
+  const limitedDiscountRule = activeRules.find(
+    rule => rule.type === "limited_discount"
+  );
+  const limitedDiscountLabel =
+    limitedDiscountRule?.name ?? course.discount?.label;
+  const limitedDiscountEndsAt =
+    limitedDiscountRule?.endsAt ?? course.discount?.endsAt;
+
+  if (
+    limitedDiscountLabel &&
+    limitedDiscountEndsAt &&
+    (limitedDiscountRule || isLimitedDiscountActive(course, now))
+  ) {
     lines.push({
       kind: "limited_discount",
-      label: course.discount.label,
+      label: limitedDiscountLabel,
       title: "限时活动价",
-      description: `活动截止 ${formatDiscountDeadline(course.discount.endsAt)}，当前标价已包含活动优惠。`,
+      description: `活动截止 ${formatDiscountDeadline(limitedDiscountEndsAt)}，当前标价已包含活动优惠。`,
       amountLabel: "已包含",
       applied: true,
       tone: "saving",
@@ -273,7 +365,7 @@ export function createCoursePromotionSummary(
 
   if (course.isVip) {
     const cheaperThanCourse =
-      membershipPricing.payableAmount <= pricing.payableAmount;
+      membershipPricing.payableAmount <= coursePayableAmount;
     lines.push({
       kind: "membership_alternative",
       label: COURSE_MEMBERSHIP_ORDER_TITLE,
@@ -290,7 +382,8 @@ export function createCoursePromotionSummary(
 
   const pathBundle = createPathBundlePromotion(
     [course, ...(options.pathCourses ?? [])],
-    options.maxBundleCourses ?? DEFAULT_PATH_BUNDLE_COURSE_LIMIT
+    options.maxBundleCourses ?? pathBundleCourseLimit,
+    pathBundleDiscountRate
   );
 
   if (pathBundle) {
@@ -308,10 +401,21 @@ export function createCoursePromotionSummary(
     });
   }
 
-  const courseOffer = createCourseOffer(course);
+  const courseOffer = createCourseOffer({
+    course,
+    couponLabel: courseCouponLabel,
+    originalAmount: pricing.originalPrice,
+    payableAmount: coursePayableAmount,
+    savingsAmount: courseSavingsAmount,
+  });
   const offers: CoursePromotionOffer[] = [courseOffer];
   const membershipOffer = course.isVip
-    ? createMembershipOffer(course)
+    ? createMembershipOffer({
+        course,
+        originalAmount: membershipPricing.originalPrice,
+        payableAmount: membershipPricing.payableAmount,
+        savingsAmount: membershipPricing.savingsAmount,
+      })
     : undefined;
   if (membershipOffer) offers.push(membershipOffer);
   if (pathBundle) offers.push(createPathBundleOffer(pathBundle));
@@ -330,11 +434,11 @@ export function createCoursePromotionSummary(
   }));
 
   return {
-    coursePayableAmount: pricing.payableAmount,
+    coursePayableAmount,
     courseListAmount: pricing.listPrice,
     courseOriginalAmount: pricing.originalPrice,
-    courseCouponAmount: pricing.couponAmount,
-    courseSavingsAmount: pricing.savingsAmount,
+    courseCouponAmount,
+    courseSavingsAmount,
     coursePriceMarkdownAmount: pricing.priceMarkdownAmount,
     bestOffer: {
       ...recommendedOffer,

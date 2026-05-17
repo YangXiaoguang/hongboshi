@@ -1,9 +1,9 @@
 import {
   COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
   COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
-  calculateCoursePricing,
   calculateMembershipPricing,
   type Course,
+  type CourseMarketingRule,
   type PaymentChannel,
 } from "@shared/domain";
 import {
@@ -47,6 +47,10 @@ export interface CoursePaymentMethod {
   description: string;
 }
 
+interface CreateCourseCheckoutSummaryOptions {
+  marketingRules?: CourseMarketingRule[];
+}
+
 export const COURSE_MEMBERSHIP_CHECKOUT_PRICE =
   COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE;
 export const COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE =
@@ -75,18 +79,19 @@ export function formatCheckoutMoney(amount: number): string {
 }
 
 function createCoursePromotionItems(
-  course: Course
+  course: Course,
+  options: CreateCourseCheckoutSummaryOptions = {}
 ): CourseCheckoutPromotionItem[] {
-  return createCoursePromotionSummary(course).checkoutPromotionLines.map(
-    line => ({
-      label: line.label,
-      value:
-        line.amountLabel ??
-        (line.amount ? `-${formatCheckoutMoney(line.amount)}` : "已包含"),
-      description: line.title,
-      tone: line.tone,
-    })
-  );
+  return createCoursePromotionSummary(course, {
+    marketingRules: options.marketingRules,
+  }).checkoutPromotionLines.map(line => ({
+    label: line.label,
+    value:
+      line.amountLabel ??
+      (line.amount ? `-${formatCheckoutMoney(line.amount)}` : "已包含"),
+    description: line.title,
+    tone: line.tone,
+  }));
 }
 
 function createMembershipPromotionItems(): CourseCheckoutPromotionItem[] {
@@ -123,7 +128,8 @@ function createProtectionItems(course: Course): CourseCheckoutLineItem[] {
 
 export function createCourseCheckoutSummary(
   course: Course,
-  mode: CourseCheckoutMode
+  mode: CourseCheckoutMode,
+  options: CreateCourseCheckoutSummaryOptions = {}
 ): CourseCheckoutSummary {
   if (mode === "membership") {
     const pricing = calculateMembershipPricing();
@@ -156,19 +162,21 @@ export function createCourseCheckoutSummary(
     };
   }
 
-  const pricing = calculateCoursePricing(course);
+  const promotion = createCoursePromotionSummary(course, {
+    marketingRules: options.marketingRules,
+  });
 
   return {
     mode,
     productTitle: course.title,
     productSubtitle: `${course.teacher} · ${course.category} · ${course.type}`,
-    listPrice: pricing.listPrice,
-    originalPrice: pricing.originalPrice,
-    discountAmount: pricing.discountAmount,
-    payableAmount: pricing.payableAmount,
-    savingsAmount: pricing.savingsAmount,
+    listPrice: promotion.courseListAmount,
+    originalPrice: promotion.courseOriginalAmount,
+    discountAmount: promotion.courseCouponAmount,
+    payableAmount: promotion.coursePayableAmount,
+    savingsAmount: promotion.courseSavingsAmount,
     accessLabel: course.isFree ? "免费课程可直接学习" : "购买后解锁本课",
-    promotionItems: createCoursePromotionItems(course),
+    promotionItems: createCoursePromotionItems(course, options),
     deliveryItems: createCourseDeliveryItems(course),
     protectionItems: createProtectionItems(course),
     notices: [

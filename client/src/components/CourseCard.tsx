@@ -18,6 +18,7 @@ import {
   formatCheckoutMoney,
   type Course,
   type CourseAccessStatus,
+  type CourseMarketingRule,
 } from "@/features/courses";
 
 interface CourseCardProps {
@@ -30,6 +31,7 @@ interface CourseCardProps {
     description: string;
     tone: "buy" | "learn" | "member";
   };
+  marketingRules?: CourseMarketingRule[];
   onToggleFavorite?: (courseId: number) => void;
   onSelect?: (course: Course) => void;
   onPrimaryAction?: (course: Course) => void;
@@ -79,6 +81,7 @@ export default function CourseCard({
   isFavorited = false,
   accessStatus,
   primaryAction,
+  marketingRules,
   onToggleFavorite,
   onSelect,
   onPrimaryAction,
@@ -160,7 +163,9 @@ export default function CourseCard({
   };
 
   const discountActive = course.discount && countdown !== "已结束";
-  const promotionSummary = createCoursePromotionSummary(course);
+  const promotionSummary = createCoursePromotionSummary(course, {
+    marketingRules,
+  });
   const showCouponPayable =
     !course.isFree && promotionSummary.courseCouponAmount > 0;
 

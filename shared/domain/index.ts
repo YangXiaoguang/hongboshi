@@ -7,6 +7,7 @@ export * from "./course";
 export * from "./courseAccess";
 export * from "./courseCatalog";
 export * from "./courseConversion";
+export * from "./courseMarketing";
 export * from "./coursePricing";
 export * from "./courseLearningRecord";
 export * from "./courseProduct";

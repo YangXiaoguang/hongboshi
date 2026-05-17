@@ -13,6 +13,7 @@ import type {
   Course,
   CourseAccessStatus,
   CourseCategoryFilter,
+  CourseMarketingRule,
   CourseSort,
   CourseTypeFilter,
 } from "@/features/courses";
@@ -39,6 +40,7 @@ interface CourseDiscoverySectionProps {
   pageNumbers: CoursePageNumber[];
   paginatedCourses: Course[];
   favoriteCourseIds: Set<number>;
+  marketingRules?: CourseMarketingRule[];
   getCourseAccessStatus: (course: Course) => CourseAccessStatus | undefined;
   getCoursePrimaryAction?: (course: Course) => {
     label: string;
@@ -76,6 +78,7 @@ export default function CourseDiscoverySection({
   pageNumbers,
   paginatedCourses,
   favoriteCourseIds,
+  marketingRules,
   getCourseAccessStatus,
   getCoursePrimaryAction,
   onToggleFavorite,
@@ -148,6 +151,7 @@ export default function CourseDiscoverySection({
                   isFavorited={favoriteCourseIds.has(course.id)}
                   accessStatus={getCourseAccessStatus(course)}
                   primaryAction={getCoursePrimaryAction?.(course)}
+                  marketingRules={marketingRules}
                   onToggleFavorite={onToggleFavorite}
                   onSelect={onCourseSelect}
                   onPrimaryAction={onCoursePrimaryAction}

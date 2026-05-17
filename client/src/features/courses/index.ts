@@ -4,6 +4,7 @@ export {
 } from "./api/mockCourseRepository";
 export { httpCourseAccessRepository } from "./api/httpCourseAccessRepository";
 export { httpCourseLearningRecordRepository } from "./api/httpCourseLearningRecordRepository";
+export { httpCourseMarketingRepository } from "./api/httpCourseMarketingRepository";
 export { httpCourseRepository } from "./api/httpCourseRepository";
 export {
   COURSE_CONVERSION_SESSION_KEY,
@@ -16,6 +17,7 @@ export {
 } from "./api/courseConversionAnalyticsRepository";
 export { useCourseCatalog } from "./hooks/useCourseCatalog";
 export { useCourseDetail } from "./hooks/useCourseDetail";
+export { useCourseMarketingRules } from "./hooks/useCourseMarketingRules";
 export { useCourseAccess } from "./hooks/useCourseAccess";
 export { useCourseEngagement } from "./hooks/useCourseEngagement";
 export { useCoursePractice } from "./hooks/useCoursePractice";
@@ -213,4 +215,7 @@ export type {
   CourseConversionMetadata,
   CourseConversionMetadataValue,
   CourseConversionSource,
+  CourseMarketingRule,
+  CourseMarketingRuleConsole,
+  CourseMarketingRuleSnapshot,
 } from "@shared/domain";

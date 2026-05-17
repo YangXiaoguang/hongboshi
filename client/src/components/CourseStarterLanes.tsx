@@ -3,10 +3,12 @@ import {
   createCoursePromotionSummary,
   formatCheckoutMoney,
   type Course,
+  type CourseMarketingRule,
 } from "@/features/courses";
 
 interface CourseStarterLanesProps {
   courses: Course[];
+  marketingRules?: CourseMarketingRule[];
   onCourseSelect: (course: Course) => void;
   getCourseAction?: (course: Course) => {
     label: string;
@@ -15,10 +17,13 @@ interface CourseStarterLanesProps {
   onCourseAction?: (course: Course) => void;
 }
 
-function formatPrice(course: Course): string {
+function formatPrice(
+  course: Course,
+  marketingRules?: CourseMarketingRule[]
+): string {
   if (course.isFree) return "免费";
 
-  const promotion = createCoursePromotionSummary(course);
+  const promotion = createCoursePromotionSummary(course, { marketingRules });
   const prefix = promotion.courseCouponAmount > 0 ? "券后 " : "";
   return `${prefix}${formatCheckoutMoney(promotion.coursePayableAmount)}`;
 }
@@ -29,6 +34,7 @@ function pickUnique(courses: Course[], predicate: (course: Course) => boolean) {
 
 export default function CourseStarterLanes({
   courses,
+  marketingRules,
   onCourseSelect,
   getCourseAction,
   onCourseAction,
@@ -97,7 +103,7 @@ export default function CourseStarterLanes({
                         onClick={() => onCourseSelect(course)}
                         className="inline-flex items-center text-sm font-semibold text-[#A65F48]"
                       >
-                        {formatPrice(course)}
+                        {formatPrice(course, marketingRules)}
                         <ArrowRight className="ml-1 h-3.5 w-3.5 text-[#8C6E4A]" />
                       </button>
                       {getCourseAction && onCourseAction && (

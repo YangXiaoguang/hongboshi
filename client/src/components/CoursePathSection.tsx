@@ -8,12 +8,15 @@ import {
   Target,
 } from "lucide-react";
 import {
+  createCoursePromotionSummary,
   courseLearningPaths,
+  formatCheckoutMoney,
   getCourseLearningPath,
   getCoursesForLearningPath,
   type Course,
   type CourseLearningPath,
   type CourseLearningPathId,
+  type CourseMarketingRule,
 } from "@/features/courses";
 
 interface CoursePathSectionProps {
@@ -23,6 +26,7 @@ interface CoursePathSectionProps {
   title?: string;
   description?: string;
   courses: Course[];
+  marketingRules?: CourseMarketingRule[];
   selectedPathId: CourseLearningPathId;
   onPathChange: (path: CourseLearningPath) => void;
   onExplorePath: (path: CourseLearningPath) => void;
@@ -35,8 +39,15 @@ interface CoursePathSectionProps {
   onAssessment?: () => void;
 }
 
-function formatPrice(course: Course): string {
-  return course.isFree ? "免费" : `¥${course.price.toFixed(1)}`;
+function formatPrice(
+  course: Course,
+  marketingRules?: CourseMarketingRule[]
+): string {
+  if (course.isFree) return "免费";
+
+  const promotion = createCoursePromotionSummary(course, { marketingRules });
+  const prefix = promotion.courseCouponAmount > 0 ? "券后 " : "";
+  return `${prefix}${formatCheckoutMoney(promotion.coursePayableAmount)}`;
 }
 
 export default function CoursePathSection({
@@ -46,6 +57,7 @@ export default function CoursePathSection({
   title = "先按当前困扰选择一条课程路径",
   description = "路径会同步筛选下方课程列表，也可以直接进入路径里的重点课程。",
   courses,
+  marketingRules,
   selectedPathId,
   onPathChange,
   onExplorePath,
@@ -203,7 +215,7 @@ export default function CoursePathSection({
                         onClick={() => onCourseSelect(course)}
                         className="text-sm font-semibold text-[#A65F48]"
                       >
-                        {formatPrice(course)}
+                        {formatPrice(course, marketingRules)}
                       </button>
                       {getCourseAction && onCourseAction && (
                         <button

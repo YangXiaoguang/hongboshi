@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`CUX-G 营销规则后台化`
-- 当前状态：`CUX-F 转化漏斗埋点` 已完成，课程曝光、详情点击、详情浏览、主动作点击、打开结算、创建订单、支付成功和开始学习已进入统一事件契约，前端支持 localStorage 队列和可选 analytics endpoint。
-- 本轮完成后下一步：执行 `CUX-G 营销规则后台化`
+- 当前阶段：`CUX-G-B 营销规则持久化与审计`
+- 当前状态：`CUX-G-A 营销规则后台只读基线` 已完成，当前课程券、会员活动价和路径组合购预览已进入共享规则契约，服务端可输出公共规则快照和后台规则控制台，前台优惠展示可消费服务端规则。
+- 本轮完成后下一步：执行 `CUX-G-B 营销规则持久化与审计`
 
 ## 已完成关键能力
 
@@ -40,6 +40,7 @@
 - 完成全局待支付订单召回：新增 `coursePendingCheckout` 纯模型和 `CoursePendingCheckoutBanner` 共享组件，课程中心、课程详情和成长空间复用同一套继续支付/取消订单入口。
 - 完成课程优惠与组合购：新增共享 `coursePricing` 和前端 `coursePromotion` 纯模型，课程卡片、快速开始区、详情页和结算抽屉统一展示券后价、本单优惠、会员替代和路径组合预览。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
+- 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成课程订单状态与支付结果服务端化：新增课程 checkout 共享契约、订单扩展字段、服务端创建/读取/支付/取消 API 和前端 repository/hook，课程权益只在服务端支付成功后交付，重复支付保持幂等。
 - 课程详情页购买抽屉已接入订单状态，支持待创建、待支付、支付中、支付成功、失败重试和取消待支付订单，并展示订单号、支付保留时间、支付渠道和权益交付摘要。
 - TRX-C 浏览器验证已通过：在 `/courses/16` 完成登录、创建订单、模拟支付成功、权益到账和“开始学习”入口切换；`pnpm run ci` 已通过 87 个测试文件 / 411 个测试和生产构建。
@@ -192,6 +193,22 @@
 - `/admin/audit` 管理员归档控制台已加入“归档检索预览”，按当前筛选读取归档表前 5 条摘要行；归档预览为空或失败不影响主审计列表、导出、详情、归档和校验。
 
 ## 最近完成阶段
+
+CUX-G-A 营销规则后台只读基线已交付：
+
+- `shared/domain/courseMarketing.ts`：新增课程营销规则共享契约，覆盖课程券、限时活动、会员活动价、路径组合购、规则状态、来源、范围、折扣、优先级和控制台摘要。
+- `server/modules/marketing/courseMarketingRuleStore.ts`：新增课程营销规则派生 Store，从已发布课程商品和系统规则生成当前可用营销规则，保持前台展示与既有订单金额口径一致。
+- `server/modules/marketing/courseMarketingApi.ts`：新增公共 `/api/course-marketing/rules` 和后台 `/api/course-marketing/admin/rules`，后台读取复用 `catalog:read` 权限。
+- `client/src/features/courses/api/httpCourseMarketingRepository.ts` 与 `useCourseMarketingRules`：前端可读取服务端活动规则，失败时回退为空规则，不影响课程购买链路。
+- `client/src/features/courses/model/coursePromotion.ts` 与 `courseCheckout.ts`：优惠展示和结算摘要可消费服务端营销规则，同时保留本地课程券 fallback。
+- `/courses`、`/courses/:courseId`、课程卡片、路径区和快速开始区已接入服务端营销规则，仍保持当前券后价、会员替代和路径组合购体验。
+- 新增 `/admin/marketing` 营销规则只读控制台，运营可查看全部规则、生效状态、来源、作用范围、折扣方式和优先级；规则编辑和审计留到下一步。
+
+CUX-G-A 验收结果：
+
+- API 已验证：`/api/course-marketing/rules` 返回公共活动规则快照，包含会员活动价、路径组合购和课程券规则。
+- API 已验证：未登录访问 `/api/course-marketing/admin/rules` 返回 401，后台规则读取有权限边界。
+- `pnpm test` 已通过：101 个测试文件 / 460 个测试成功，覆盖营销规则契约、派生 Store、API、前端解析、优惠模型和后台导航。
 
 CUX-F 转化漏斗埋点已交付：
 

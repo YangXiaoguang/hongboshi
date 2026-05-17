@@ -30,6 +30,7 @@ import {
   useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
+  useCourseMarketingRules,
   type Course,
   type CourseCheckoutMode,
   type CourseCheckoutOrderResult,
@@ -83,6 +84,7 @@ export default function Courses() {
     ownedCourseCount,
     payCheckoutOrder,
   } = useCourseAccess();
+  const { rules: marketingRules } = useCourseMarketingRules();
   const [checkoutCourse, setCheckoutCourse] = useState<Course | undefined>();
   const [checkoutMode, setCheckoutMode] = useState<
     CourseCheckoutMode | undefined
@@ -99,7 +101,9 @@ export default function Courses() {
   const selectedPath = getCourseLearningPath(selectedPathId);
   const checkoutSummary =
     checkoutCourse && checkoutMode
-      ? createCourseCheckoutSummary(checkoutCourse, checkoutMode)
+      ? createCourseCheckoutSummary(checkoutCourse, checkoutMode, {
+          marketingRules,
+        })
       : undefined;
   const trackedImpressionsRef = useRef(new Set<string>());
 
@@ -118,7 +122,7 @@ export default function Courses() {
   ) => {
     const path = options.path ?? selectedPath;
     const summary = options.mode
-      ? createCourseCheckoutSummary(course, options.mode)
+      ? createCourseCheckoutSummary(course, options.mode, { marketingRules })
       : undefined;
 
     void trackCourseConversionEvent(
@@ -584,6 +588,7 @@ export default function Courses() {
 
         <CoursePathSection
           courses={allCourses}
+          marketingRules={marketingRules}
           selectedPathId={selectedPathId}
           onPathChange={applyCoursePath}
           onExplorePath={handleExploreCoursePath}
@@ -597,6 +602,7 @@ export default function Courses() {
 
         <CourseStarterLanes
           courses={allCourses}
+          marketingRules={marketingRules}
           onCourseSelect={course =>
             handleCourseSelect(course, "course_starter")
           }
@@ -625,6 +631,7 @@ export default function Courses() {
           pageNumbers={pageNumbers}
           paginatedCourses={paginatedCourses}
           favoriteCourseIds={favoriteCourseIds}
+          marketingRules={marketingRules}
           getCourseAccessStatus={course => getCourseAccess(course).status}
           getCoursePrimaryAction={getCoursePrimaryAction}
           onToggleFavorite={toggleFavorite}

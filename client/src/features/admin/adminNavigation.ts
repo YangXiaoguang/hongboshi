@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   BadgeDollarSign,
+  BadgePercent,
   BookOpen,
   ClipboardList,
   CreditCard,
@@ -89,6 +90,17 @@ export const adminNavigationItems: readonly AdminNavigationItem[] = [
     status: "available",
     group: "business",
     milestone: "M2-H",
+  },
+  {
+    key: "marketing",
+    title: "营销规则",
+    description: "课程优惠、会员活动价和路径组合购规则基线。",
+    href: "/admin/marketing",
+    icon: BadgePercent,
+    permission: COURSE_CATALOG_PERMISSIONS.read,
+    status: "available",
+    group: "business",
+    milestone: "CUX-G",
   },
   {
     key: "users",

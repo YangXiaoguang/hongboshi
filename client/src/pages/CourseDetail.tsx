@@ -56,6 +56,7 @@ import {
   useCourseAccess,
   useCourseDetail,
   useCourseEngagement,
+  useCourseMarketingRules,
   type Course,
   type CourseAccessStatus,
   type CourseCheckoutMode,
@@ -116,6 +117,7 @@ export default function CourseDetail() {
     startCourse,
     toggleFavorite,
   } = useCourseEngagement();
+  const { rules: marketingRules } = useCourseMarketingRules();
   const [checkoutMode, setCheckoutMode] = useState<
     CourseCheckoutMode | undefined
   >();
@@ -173,6 +175,7 @@ export default function CourseDetail() {
   const nextPathCourses = getNextCoursesInLearningPath(allCourses, course, 3);
   const promotionSummary = createCoursePromotionSummary(course, {
     pathCourses: nextPathCourses,
+    marketingRules,
   });
   const supplementalCourses = relatedCourses
     .filter(
@@ -196,7 +199,7 @@ export default function CourseDetail() {
         : "学习中"
       : "未开始";
   const checkoutSummary = checkoutMode
-    ? createCourseCheckoutSummary(course, checkoutMode)
+    ? createCourseCheckoutSummary(course, checkoutMode, { marketingRules })
     : undefined;
   const trustProfile = buildCourseTrustProfile(course);
   const trustSummary = createCourseTrustSummary(course);
@@ -236,7 +239,9 @@ export default function CourseDetail() {
     const targetCourse = options.targetCourse ?? course;
     const targetAccess = getCourseAccess(targetCourse);
     const summary = options.mode
-      ? createCourseCheckoutSummary(targetCourse, options.mode)
+      ? createCourseCheckoutSummary(targetCourse, options.mode, {
+          marketingRules,
+        })
       : undefined;
 
     void trackCourseConversionEvent(

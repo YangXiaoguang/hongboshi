@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Course } from "@shared/domain";
+import type { Course, CourseMarketingRule } from "@shared/domain";
 import { createCoursePromotionSummary } from "./coursePromotion";
 
 const baseCourse: Course = {
@@ -114,5 +114,78 @@ describe("course promotion summary", () => {
       isCheckoutReady: false,
       badge: "组合购",
     });
+  });
+
+  it("can consume server marketing rules for coupon and bundle math", () => {
+    const marketingRules: CourseMarketingRule[] = [
+      {
+        id: "server-coupon",
+        version: "course-marketing-v1",
+        type: "course_coupon",
+        status: "active",
+        source: "course_product",
+        name: "服务端新人券",
+        description: "服务端规则自动抵扣。",
+        badgeLabel: "券",
+        priority: 500,
+        stackable: true,
+        scope: {
+          courseIds: [baseCourse.id],
+          categories: [],
+          courseTypes: [],
+          pathIds: [],
+        },
+        discount: {
+          kind: "fixed_amount",
+          amount: 80,
+        },
+        startsAt: "2026-05-01T00:00:00.000Z",
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+      },
+      {
+        id: "server-bundle",
+        version: "course-marketing-v1",
+        type: "path_bundle",
+        status: "active",
+        source: "system",
+        name: "服务端路径组合",
+        description: "服务端路径组合规则。",
+        badgeLabel: "组合",
+        priority: 100,
+        stackable: false,
+        scope: {
+          courseIds: [],
+          categories: [],
+          courseTypes: [],
+          pathIds: [],
+        },
+        discount: {
+          kind: "bundle_percentage",
+          rate: 0.2,
+          minCourses: 2,
+          maxCourses: 3,
+        },
+        startsAt: "2026-05-01T00:00:00.000Z",
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+      },
+    ];
+
+    const summary = createCoursePromotionSummary(baseCourse, {
+      marketingRules,
+      pathCourses: [makeCourse(2, 399), makeCourse(3, 499)],
+      now: "2026-05-17T10:00:00.000Z",
+    });
+
+    expect(summary.courseCouponAmount).toBe(80);
+    expect(summary.coursePayableAmount).toBe(119);
+    expect(summary.checkoutPromotionLines).toContainEqual(
+      expect.objectContaining({
+        kind: "coupon",
+        label: "服务端新人券",
+      })
+    );
+    expect(summary.pathBundle?.bundleDiscountAmount).toBeGreaterThan(100);
   });
 });
