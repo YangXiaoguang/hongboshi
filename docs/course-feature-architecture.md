@@ -58,6 +58,8 @@ client/src/features/courses/
 
 前台购买确认抽屉已抽为 `client/src/components/CourseCheckoutDrawer.tsx`，详情页和 `/courses` 复用同一套订单确认、支付方式、购买须知、支付成功反馈和待支付取消逻辑。`/courses` 可直接打开半屏结算抽屉；详情页仍支持通过 `/courses/:courseId?checkout=course|membership` 自动唤起购买确认抽屉。最终是否能学习仍由课程权益状态机和支付结果决定。
 
+待支付召回由 `client/src/features/courses/model/coursePendingCheckout.ts` 生成统一提示数据，并由 `client/src/components/CoursePendingCheckoutBanner.tsx` 渲染。课程中心、课程详情和成长空间复用同一套提示、继续支付、取消订单入口；后续扩展到消息中心或全局顶部提醒时优先复用该模型和组件。
+
 课程商品信任信息由 `client/src/features/courses/model/courseTrust.ts` 生成，详情页消费统一的评分、阶段完成率、讲师说明、内容审核点、学习反馈、售后/隐私边界和 FAQ。当前数据仍来自课程详情的确定性派生，后续接真实评价、讲师资质库和售后配置时优先替换模型输入或 API adapter，避免把信任文案散落在页面组件里。
 
 以上课程权益读取 API 会先读取登录 session。未登录且未传开发期请求头时默认落到 `local-user`，用于未登录访客和本地开发；写入 API 必须有有效登录 session。

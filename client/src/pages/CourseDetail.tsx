@@ -31,13 +31,16 @@ import { toast } from "sonner";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
 import CourseCheckoutDrawer, {
+  formatCheckoutDateTime,
   type CourseCheckoutStatus,
 } from "@/components/CourseCheckoutDrawer";
+import CoursePendingCheckoutBanner from "@/components/CoursePendingCheckoutBanner";
 import NotFound from "@/pages/NotFound";
 import {
   buildCourseTrustProfile,
   createCourseTrustSummary,
   createCourseCheckoutSummary,
+  createPendingCheckoutPromptForCourse,
   findPendingCourseCheckoutOrder,
   formatCheckoutMoney,
   getCourseAccessDescription,
@@ -52,6 +55,7 @@ import {
   type CourseCheckoutMode,
   type CourseCheckoutOrderResult,
   type CourseCheckoutPaymentChannel,
+  type CoursePendingCheckoutPrompt,
   type CourseTrustProfile,
 } from "@/features/courses";
 
@@ -159,7 +163,6 @@ export default function CourseDetail() {
     )
     .slice(0, 3);
   const primaryAction = getCourseDetailPrimaryActionCopy(access, hasStarted);
-  const PrimaryActionIcon = actionIcon[primaryAction.icon];
   const pathPosition = learningPath.courseIds.indexOf(course.id);
   const pathStepLabel =
     pathPosition >= 0
@@ -179,6 +182,26 @@ export default function CourseDetail() {
     : undefined;
   const trustProfile = buildCourseTrustProfile(course);
   const trustSummary = createCourseTrustSummary(course);
+  const pendingCheckoutMode: CourseCheckoutMode =
+    access.status === "requires_membership" ? "membership" : "course";
+  const pendingCheckoutPrompt = !access.canStart
+    ? createPendingCheckoutPromptForCourse(
+        accessState,
+        course,
+        pendingCheckoutMode
+      )
+    : undefined;
+  const effectivePrimaryActionLabel = pendingCheckoutPrompt
+    ? "继续支付"
+    : primaryAction.label;
+  const effectivePrimaryActionDescription = pendingCheckoutPrompt
+    ? `这笔订单已保留到 ${formatCheckoutDateTime(
+        pendingCheckoutPrompt.checkout.payment.expiresAt
+      )}。`
+    : primaryAction.description;
+  const EffectivePrimaryActionIcon = pendingCheckoutPrompt
+    ? ReceiptText
+    : actionIcon[primaryAction.icon];
 
   const handleStartLearning = () => {
     if (!access.canStart) {
@@ -360,6 +383,33 @@ export default function CourseDetail() {
       });
   };
 
+  const handleCancelPendingCheckout = (prompt: CoursePendingCheckoutPrompt) => {
+    setCheckoutError(undefined);
+    void cancelCheckoutOrder(prompt.checkout.order.id)
+      .then(result => {
+        if (result === "auth_required") {
+          toast("请先登录", {
+            description: "登录后可继续处理这笔待支付订单。",
+          });
+          return;
+        }
+
+        if (checkoutOrder?.order.id === prompt.checkout.order.id) {
+          setCheckoutOrder(result.checkout);
+          setCheckoutStatus("failed");
+        }
+
+        toast("订单已取消", {
+          description: "课程权益未发放，你可以重新下单。",
+        });
+      })
+      .catch(err => {
+        toast("订单取消失败", {
+          description: err instanceof Error ? err.message : "请稍后再试。",
+        });
+      });
+  };
+
   const handleStartAfterCheckout = () => {
     closeCheckout();
     startCourse(course.id);
@@ -465,9 +515,9 @@ export default function CourseDetail() {
               hasActiveMembership={hasActiveMembership}
               isSyncing={isSyncing}
               locked={locked}
-              primaryActionLabel={primaryAction.label}
-              primaryActionDescription={primaryAction.description}
-              PrimaryActionIcon={PrimaryActionIcon}
+              primaryActionLabel={effectivePrimaryActionLabel}
+              primaryActionDescription={effectivePrimaryActionDescription}
+              PrimaryActionIcon={EffectivePrimaryActionIcon}
               trustProfile={trustProfile}
               trustSummary={trustSummary}
               visibleLearningStatus={visibleLearningStatus}
@@ -480,6 +530,16 @@ export default function CourseDetail() {
             />
           </div>
         </section>
+
+        {pendingCheckoutPrompt && (
+          <CoursePendingCheckoutBanner
+            title="这门课有待支付订单"
+            description="订单已保留支付窗口，可以继续支付或取消后重新选择。"
+            prompts={[pendingCheckoutPrompt]}
+            onResume={prompt => openCheckout(prompt.mode)}
+            onCancel={handleCancelPendingCheckout}
+          />
+        )}
 
         <section className="bg-[#FFFDF8] px-5 py-8 sm:px-8 lg:px-12">
           <div className="mx-auto grid max-w-[1200px] gap-4 md:grid-cols-4">
@@ -540,7 +600,9 @@ export default function CourseDetail() {
         <CourseTrustSection
           course={course}
           disabled={isSyncing}
-          primaryActionLabel={isSyncing ? "同步中" : primaryAction.label}
+          primaryActionLabel={
+            isSyncing ? "同步中" : effectivePrimaryActionLabel
+          }
           profile={trustProfile}
           summary={trustSummary}
           onConsult={() => navigate("/consulting")}
@@ -868,7 +930,21 @@ export default function CourseDetail() {
         <MobilePurchaseBar
           course={course}
           disabled={isSyncing}
-          label={isSyncing ? "同步中" : primaryAction.label}
+          label={isSyncing ? "同步中" : effectivePrimaryActionLabel}
+          priceLabel={
+            pendingCheckoutPrompt
+              ? formatCheckoutMoney(
+                  pendingCheckoutPrompt.checkout.payment.payableAmount
+                )
+              : formatPrice(course)
+          }
+          hint={
+            pendingCheckoutPrompt
+              ? `待支付保留至 ${formatCheckoutDateTime(
+                  pendingCheckoutPrompt.checkout.payment.expiresAt
+                )}`
+              : undefined
+          }
           onClick={handlePrimaryAction}
         />
       )}
@@ -1294,12 +1370,16 @@ function CommercePanel({
 function MobilePurchaseBar({
   course,
   disabled,
+  hint,
   label,
+  priceLabel,
   onClick,
 }: {
   course: Course;
   disabled: boolean;
+  hint?: string;
   label: string;
+  priceLabel?: string;
   onClick: () => void;
 }) {
   return (
@@ -1308,8 +1388,11 @@ function MobilePurchaseBar({
         <div className="min-w-0 flex-1">
           <p className="text-xs text-[#7B817C]">课程权益</p>
           <p className="mt-1 truncate text-lg font-semibold text-[#A65F48]">
-            {formatPrice(course)}
+            {priceLabel ?? formatPrice(course)}
           </p>
+          {hint && (
+            <p className="mt-1 truncate text-xs text-[#7B817C]">{hint}</p>
+          )}
         </div>
         <button
           onClick={onClick}

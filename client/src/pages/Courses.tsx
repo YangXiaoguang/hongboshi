@@ -4,9 +4,7 @@ import {
   ArrowRight,
   BookOpenCheck,
   ClipboardList,
-  Clock3,
   HeartHandshake,
-  ReceiptText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -17,13 +15,14 @@ import CourseCheckoutDrawer, {
   type CourseCheckoutStatus,
 } from "@/components/CourseCheckoutDrawer";
 import CourseDiscoverySection from "@/components/CourseDiscoverySection";
+import CoursePendingCheckoutBanner from "@/components/CoursePendingCheckoutBanner";
 import CoursePathSection from "@/components/CoursePathSection";
 import CourseStarterLanes from "@/components/CourseStarterLanes";
 import {
   DEFAULT_COURSE_LEARNING_PATH_ID,
   createCourseCheckoutSummary,
+  createPendingCourseCheckoutPrompts,
   findPendingCourseCheckoutOrder,
-  formatCheckoutMoney,
   getCourseDetailPrimaryActionCopy,
   getCourseLearningPath,
   useCourseAccess,
@@ -34,19 +33,11 @@ import {
   type CourseCheckoutOrderResult,
   type CourseCheckoutPaymentChannel,
   type CourseLearningPath,
+  type CoursePendingCheckoutPrompt,
 } from "@/features/courses";
 
 const courseHeroImage =
   "https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1800&q=86";
-
-interface PendingCheckoutPrompt {
-  id: string;
-  course: Course;
-  mode: CourseCheckoutMode;
-  checkout: CourseCheckoutOrderResult;
-  title: string;
-  subtitle: string;
-}
 
 export default function Courses() {
   const [, navigate] = useLocation();
@@ -159,65 +150,15 @@ export default function Courses() {
     setCheckoutError(undefined);
   };
 
-  const pendingCheckoutPrompts = useMemo<PendingCheckoutPrompt[]>(() => {
-    const membershipAnchorCourse =
-      allCourses.find(
-        course => course.isVip && !getCourseAccess(course).canStart
-      ) ??
-      allCourses.find(course => course.isVip) ??
-      allCourses[0];
-    const prompts: PendingCheckoutPrompt[] = [];
-
-    accessState.orders
-      .filter(order => order.status === "pending_payment")
-      .forEach(order => {
-        const item = order.items[0];
-        if (!item) return;
-
-        if (item.type === "course") {
-          const course = allCourses.find(
-            candidate => String(candidate.id) === item.targetId
-          );
-          if (!course) return;
-          const checkout = findPendingCourseCheckoutOrder(
-            accessState,
-            course,
-            "course"
-          );
-          if (!checkout) return;
-          prompts.push({
-            id: order.id,
-            course,
-            mode: "course",
-            checkout,
-            title: item.title,
-            subtitle: `${course.teacher} · ${course.category}`,
-          });
-          return;
-        }
-
-        if (item.type === "membership" && membershipAnchorCourse) {
-          const checkout = findPendingCourseCheckoutOrder(
-            accessState,
-            membershipAnchorCourse,
-            "membership"
-          );
-          if (!checkout) return;
-          prompts.push({
-            id: order.id,
-            course: membershipAnchorCourse,
-            mode: "membership",
-            checkout,
-            title: item.title,
-            subtitle: "开通后会员课程可直接学习",
-          });
-        }
-
-        return;
-      });
-
-    return prompts.slice(0, 3);
-  }, [accessState, allCourses, getCourseAccess]);
+  const pendingCheckoutPrompts = useMemo(
+    () =>
+      createPendingCourseCheckoutPrompts({
+        accessState,
+        courses: allCourses,
+        resolveAccess: getCourseAccess,
+      }),
+    [accessState, allCourses, getCourseAccess]
+  );
 
   const getCoursePrimaryAction = (course: Course) => {
     const access = getCourseAccess(course);
@@ -363,6 +304,28 @@ export default function Courses() {
       });
   };
 
+  const handleCancelPendingCheckout = (prompt: CoursePendingCheckoutPrompt) => {
+    setCheckoutError(undefined);
+    void cancelCheckoutOrder(prompt.checkout.order.id)
+      .then(result => {
+        if (result === "auth_required") {
+          toast("请先登录", {
+            description: "登录后可继续处理这笔待支付订单。",
+          });
+          return;
+        }
+
+        toast("订单已取消", {
+          description: "课程权益未发放，你可以重新下单。",
+        });
+      })
+      .catch(err => {
+        toast("订单取消失败", {
+          description: err instanceof Error ? err.message : "请稍后再试。",
+        });
+      });
+  };
+
   const handleStartAfterCheckout = () => {
     if (!checkoutCourse) return;
     const targetCourse = checkoutCourse;
@@ -455,11 +418,12 @@ export default function Courses() {
         </section>
 
         {pendingCheckoutPrompts.length > 0 && (
-          <PendingCheckoutStrip
+          <CoursePendingCheckoutBanner
             prompts={pendingCheckoutPrompts}
             onResume={prompt =>
               openCheckout(prompt.course, prompt.mode, prompt.checkout)
             }
+            onCancel={handleCancelPendingCheckout}
           />
         )}
 
@@ -539,65 +503,5 @@ export default function Courses() {
 
       <AppFooter />
     </div>
-  );
-}
-
-function PendingCheckoutStrip({
-  prompts,
-  onResume,
-}: {
-  prompts: PendingCheckoutPrompt[];
-  onResume: (prompt: PendingCheckoutPrompt) => void;
-}) {
-  return (
-    <section className="bg-[#FFFDF8] px-5 py-5 sm:px-8 lg:px-12">
-      <div className="mx-auto grid max-w-[1200px] gap-4 border-y border-[#E4DCCF] py-5 lg:grid-cols-[260px_1fr] lg:items-center">
-        <div>
-          <div className="flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
-            <ReceiptText className="h-4 w-4" />
-            待支付订单
-          </div>
-          <p className="mt-2 text-sm leading-6 text-[#6D746F]">
-            已创建的课程订单会在这里召回，可以继续支付或取消。
-          </p>
-        </div>
-
-        <div className="grid gap-3 lg:grid-cols-3">
-          {prompts.map(prompt => (
-            <button
-              key={prompt.id}
-              onClick={() => onResume(prompt)}
-              className="group min-w-0 rounded-[20px] border border-[#E4DCCF] bg-[#F9F5EE] p-4 text-left transition hover:-translate-y-0.5 hover:border-[#AFC2AB] hover:bg-[#F4EFE6]"
-            >
-              <span className="flex items-center justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="line-clamp-1 block text-sm font-semibold text-[#243B35]">
-                    {prompt.title}
-                  </span>
-                  <span className="mt-1 line-clamp-1 block text-xs text-[#7B817C]">
-                    {prompt.subtitle}
-                  </span>
-                </span>
-                <span className="shrink-0 text-base font-semibold text-[#A65F48]">
-                  {formatCheckoutMoney(prompt.checkout.payment.payableAmount)}
-                </span>
-              </span>
-              <span className="mt-4 flex items-center justify-between gap-3 border-t border-[#E4DCCF] pt-3 text-xs font-semibold text-[#6D746F]">
-                <span className="inline-flex min-w-0 items-center gap-1">
-                  <Clock3 className="h-3.5 w-3.5 shrink-0 text-[#6F8F83]" />
-                  <span className="truncate">
-                    保留至{" "}
-                    {formatCheckoutDateTime(prompt.checkout.payment.expiresAt)}
-                  </span>
-                </span>
-                <span className="shrink-0 text-[#41675A] transition group-hover:text-[#243B35]">
-                  继续支付
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </section>
   );
 }

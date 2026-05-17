@@ -67,6 +67,11 @@ export {
   type CourseTrustProfile,
 } from "./model/courseTrust";
 export {
+  createPendingCheckoutPromptForCourse,
+  createPendingCourseCheckoutPrompts,
+  type CoursePendingCheckoutPrompt,
+} from "./model/coursePendingCheckout";
+export {
   COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE,
   COURSE_MEMBERSHIP_CHECKOUT_PRICE,
   coursePaymentMethods,

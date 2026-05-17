@@ -25,11 +25,18 @@ import {
 } from "lucide-react";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
+import CourseCheckoutDrawer, {
+  type CourseCheckoutStatus,
+} from "@/components/CourseCheckoutDrawer";
+import CoursePendingCheckoutBanner from "@/components/CoursePendingCheckoutBanner";
 import { useAuth } from "@/contexts/AuthContext";
 import type { OrderStatus, UserRole } from "@shared/domain";
 import {
+  createCourseCheckoutSummary,
   createLearningPlanWorkspace,
   createLearningArchiveWorkspace,
+  createPendingCourseCheckoutPrompts,
+  findPendingCourseCheckoutOrder,
   getCourseAccessDescription,
   useCourseAccess,
   useCourseCatalog,
@@ -37,6 +44,10 @@ import {
   useCoursePractice,
   type Course,
   type CourseAccessStatus,
+  type CourseCheckoutMode,
+  type CourseCheckoutOrderResult,
+  type CourseCheckoutPaymentChannel,
+  type CoursePendingCheckoutPrompt,
   type LearningArchiveItem,
   type LearningPlanCourseItem,
 } from "@/features/courses";
@@ -699,12 +710,28 @@ export default function MyCourses() {
   const { allCourses, isLoading: isCatalogLoading } = useCourseCatalog();
   const {
     accessState,
+    cancelCheckoutOrder,
+    createCheckoutOrder,
     hasActiveMembership,
     membership,
     isSyncing: isAccessSyncing,
     accessError,
     getCourseAccess,
+    payCheckoutOrder,
   } = useCourseAccess();
+  const [checkoutCourse, setCheckoutCourse] = useState<Course | undefined>();
+  const [checkoutMode, setCheckoutMode] = useState<
+    CourseCheckoutMode | undefined
+  >();
+  const [selectedPaymentChannel, setSelectedPaymentChannel] =
+    useState<CourseCheckoutPaymentChannel>("wechat_pay");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [checkoutStatus, setCheckoutStatus] =
+    useState<CourseCheckoutStatus>("idle");
+  const [checkoutOrder, setCheckoutOrder] = useState<
+    CourseCheckoutOrderResult | undefined
+  >();
+  const [checkoutError, setCheckoutError] = useState<string | undefined>();
   const { engagementState, engagementSyncError, startCourse } =
     useCourseEngagement({
       userId: user?.id,
@@ -724,6 +751,10 @@ export default function MyCourses() {
   const latestAssessment = growthProfile?.latestAssessment ?? localAssessment;
   const profileSummary = growthProfile?.summary;
   const profileCourseAccess = growthProfile?.courseAccess;
+  const checkoutSummary =
+    checkoutCourse && checkoutMode
+      ? createCourseCheckoutSummary(checkoutCourse, checkoutMode)
+      : undefined;
 
   const learningPlan = useMemo(
     () =>
@@ -746,6 +777,15 @@ export default function MyCourses() {
   const recentOrders = useMemo(() => {
     return (profileCourseAccess?.orders ?? accessState.orders).slice(0, 4);
   }, [accessState.orders, profileCourseAccess]);
+  const pendingCheckoutPrompts = useMemo(
+    () =>
+      createPendingCourseCheckoutPrompts({
+        accessState,
+        courses: allCourses,
+        resolveAccess: getCourseAccess,
+      }),
+    [accessState, allCourses, getCourseAccess]
+  );
   const recentAppointments = useMemo(
     () => (growthProfile?.counseling.appointments ?? []).slice(0, 3),
     [growthProfile]
@@ -765,6 +805,29 @@ export default function MyCourses() {
     isGrowthProfileLoading;
   const focusItem = learningPlan.focusItem;
   const nextCourse = learningPlan.nextCourse;
+
+  const openCheckout = (
+    course: Course,
+    mode: CourseCheckoutMode,
+    pendingCheckout = findPendingCourseCheckoutOrder(accessState, course, mode)
+  ) => {
+    setCheckoutCourse(course);
+    setCheckoutMode(mode);
+    setCheckoutStatus(pendingCheckout ? "pending_payment" : "idle");
+    setAcceptedTerms(false);
+    setSelectedPaymentChannel("wechat_pay");
+    setCheckoutOrder(pendingCheckout);
+    setCheckoutError(undefined);
+  };
+
+  const closeCheckout = () => {
+    setCheckoutCourse(undefined);
+    setCheckoutMode(undefined);
+    setCheckoutStatus("idle");
+    setAcceptedTerms(false);
+    setCheckoutOrder(undefined);
+    setCheckoutError(undefined);
+  };
 
   const handleOpenCourse = (course: Course) => {
     navigate(`/courses/${course.id}`);
@@ -799,6 +862,133 @@ export default function MyCourses() {
       description: `「${course.title}」已放入进行中课程，即将进入学习页。`,
     });
     navigate(`/courses/${course.id}/learn`);
+  };
+
+  const handleResumePendingCheckout = (prompt: CoursePendingCheckoutPrompt) => {
+    openCheckout(prompt.course, prompt.mode, prompt.checkout);
+  };
+
+  const handleConfirmCheckout = () => {
+    if (!checkoutCourse || !checkoutMode) return;
+    if (!acceptedTerms) {
+      toast("请先确认购买须知", {
+        description: "确认订单金额、权益交付和开发期支付说明后再继续。",
+      });
+      return;
+    }
+
+    setCheckoutError(undefined);
+    void (async () => {
+      let pendingCheckout = checkoutOrder;
+      if (pendingCheckout?.order.status !== "pending_payment") {
+        setCheckoutStatus("creating");
+        const created = await createCheckoutOrder(checkoutCourse, checkoutMode);
+        if (created === "auth_required") {
+          setCheckoutStatus("idle");
+          toast("请先登录", {
+            description: "登录后即可创建订单，并同步学习权益。",
+          });
+          return;
+        }
+
+        pendingCheckout = created.checkout;
+        setCheckoutOrder(created.checkout);
+        setCheckoutStatus("pending_payment");
+      }
+
+      setCheckoutStatus("processing");
+      const paid = await payCheckoutOrder(
+        pendingCheckout.order.id,
+        selectedPaymentChannel
+      );
+      if (paid === "auth_required") {
+        setCheckoutStatus("idle");
+        toast("请先登录", {
+          description: "登录后即可继续支付这笔订单。",
+        });
+        return;
+      }
+
+      setCheckoutOrder(paid.checkout);
+      setCheckoutStatus("success");
+      await reloadGrowthProfile();
+      toast(checkoutMode === "membership" ? "会员已开通" : "课程已解锁", {
+        description: "支付成功，权益已同步到账户。",
+      });
+    })().catch(err => {
+      setCheckoutStatus("failed");
+      setCheckoutError(err instanceof Error ? err.message : "支付确认失败");
+      toast("支付未完成", {
+        description: "订单仍保留为待支付，可以稍后继续支付或取消。",
+      });
+    });
+  };
+
+  const handleCancelCheckoutOrder = () => {
+    if (!checkoutOrder || checkoutOrder.order.status !== "pending_payment") {
+      closeCheckout();
+      return;
+    }
+
+    setCheckoutError(undefined);
+    setCheckoutStatus("processing");
+    void cancelCheckoutOrder(checkoutOrder.order.id)
+      .then(async result => {
+        if (result === "auth_required") {
+          setCheckoutStatus("pending_payment");
+          toast("请先登录", {
+            description: "登录后可继续处理这笔待支付订单。",
+          });
+          return;
+        }
+
+        setCheckoutOrder(result.checkout);
+        setCheckoutStatus("failed");
+        await reloadGrowthProfile();
+        toast("订单已取消", {
+          description: "课程权益未发放，你可以重新下单。",
+        });
+      })
+      .catch(err => {
+        setCheckoutStatus("failed");
+        setCheckoutError(err instanceof Error ? err.message : "订单取消失败");
+      });
+  };
+
+  const handleCancelPendingCheckout = (prompt: CoursePendingCheckoutPrompt) => {
+    setCheckoutError(undefined);
+    void cancelCheckoutOrder(prompt.checkout.order.id)
+      .then(async result => {
+        if (result === "auth_required") {
+          toast("请先登录", {
+            description: "登录后可继续处理这笔待支付订单。",
+          });
+          return;
+        }
+
+        if (checkoutOrder?.order.id === prompt.checkout.order.id) {
+          setCheckoutOrder(result.checkout);
+          setCheckoutStatus("failed");
+        }
+
+        await reloadGrowthProfile();
+        toast("订单已取消", {
+          description: "课程权益未发放，你可以重新下单。",
+        });
+      })
+      .catch(err => {
+        toast("订单取消失败", {
+          description: err instanceof Error ? err.message : "请稍后再试。",
+        });
+      });
+  };
+
+  const handleStartAfterCheckout = () => {
+    if (!checkoutCourse) return;
+    const targetCourse = checkoutCourse;
+    closeCheckout();
+    startCourse(targetCourse.id);
+    navigate(`/courses/${targetCourse.id}/learn`);
   };
 
   const handleAppointmentAction = async (
@@ -1105,6 +1295,19 @@ export default function MyCourses() {
             学习记录暂未完成服务端同步：
             {engagementSyncError ?? practiceSyncError}
             。本机记录已保留，稍后可继续同步。
+          </div>
+        )}
+
+        {pendingCheckoutPrompts.length > 0 && (
+          <div className="mt-6">
+            <CoursePendingCheckoutBanner
+              variant="panel"
+              title="待支付课程订单"
+              description="你有课程或会员订单尚未支付，可以在成长空间继续支付或取消。"
+              prompts={pendingCheckoutPrompts}
+              onResume={handleResumePendingCheckout}
+              onCancel={handleCancelPendingCheckout}
+            />
           </div>
         )}
 
@@ -1446,6 +1649,27 @@ export default function MyCourses() {
           </aside>
         </section>
       </main>
+
+      {checkoutCourse && (
+        <CourseCheckoutDrawer
+          acceptedTerms={acceptedTerms}
+          checkoutError={checkoutError}
+          checkoutOrder={checkoutOrder}
+          course={checkoutCourse}
+          isOpen={Boolean(checkoutMode)}
+          isSyncing={isAccessSyncing}
+          selectedPaymentChannel={selectedPaymentChannel}
+          status={checkoutStatus}
+          summary={checkoutSummary}
+          onAcceptedTermsChange={setAcceptedTerms}
+          onCancelOrder={handleCancelCheckoutOrder}
+          onClose={closeCheckout}
+          onConfirm={handleConfirmCheckout}
+          onPaymentChannelChange={setSelectedPaymentChannel}
+          onStartLearning={handleStartAfterCheckout}
+          onViewWorkspace={closeCheckout}
+        />
+      )}
 
       <AppFooter />
     </div>
