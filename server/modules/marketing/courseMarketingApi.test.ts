@@ -7,6 +7,7 @@ import {
 import {
   getCourseMarketingRuleConsolePayload,
   getCourseMarketingRuleSnapshotPayload,
+  updateCourseMarketingRuleStatusPayload,
 } from "./courseMarketingApi";
 import { DerivedCourseMarketingRuleStore } from "./courseMarketingRuleStore";
 
@@ -27,7 +28,7 @@ describe("course marketing api payloads", () => {
 
     expect(payload.status).toBe(200);
     expect(payload.body.ok).toBe(true);
-    if (payload.body.ok) {
+    if (payload.body.ok && "rules" in payload.body.data) {
       expect(payload.body.data.rules.length).toBeGreaterThan(0);
       expect(
         payload.body.data.rules.every(rule => rule.status === "active")
@@ -60,10 +61,72 @@ describe("course marketing api payloads", () => {
     );
     expect(allowed.status).toBe(200);
     expect(allowed.body.ok).toBe(true);
-    if (allowed.body.ok) {
+    if (allowed.body.ok && "summary" in allowed.body.data) {
       expect(allowed.body.data.summary.totalCount).toBe(
         allowed.body.data.rules.length
       );
     }
+  });
+
+  it("updates rule status with catalog price permission and returns audit", async () => {
+    const store = createStore();
+
+    const forbidden = await updateCourseMarketingRuleStatusPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      "system_path_bundle_preview",
+      {
+        status: "paused",
+        reason: "活动节奏调整",
+      },
+      store,
+      "2026-05-17T11:00:00.000Z"
+    );
+    expect(forbidden.status).toBe(403);
+
+    const allowed = await updateCourseMarketingRuleStatusPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      "system_path_bundle_preview",
+      {
+        status: "paused",
+        reason: "活动节奏调整",
+      },
+      store,
+      "2026-05-17T11:00:00.000Z"
+    );
+
+    expect(allowed.status).toBe(200);
+    expect(allowed.body.ok).toBe(true);
+    if (allowed.body.ok && "rule" in allowed.body.data) {
+      expect(allowed.body.data.rule.status).toBe("paused");
+      expect(allowed.body.data.auditEvent).toMatchObject({
+        action: "rule_status_update",
+        actorRoles: ["catalog_operator"],
+      });
+    }
+
+    const snapshot = await getCourseMarketingRuleSnapshotPayload(
+      store,
+      "2026-05-17T11:05:00.000Z"
+    );
+    expect(snapshot.body.ok).toBe(true);
+    if (snapshot.body.ok && "rules" in snapshot.body.data) {
+      expect(
+        snapshot.body.data.rules.some(
+          rule => rule.id === "system_path_bundle_preview"
+        )
+      ).toBe(false);
+    }
+
+    const conflict = await updateCourseMarketingRuleStatusPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      "system_path_bundle_preview",
+      {
+        status: "paused",
+        reason: "重复暂停规则",
+      },
+      store,
+      "2026-05-17T11:10:00.000Z"
+    );
+    expect(conflict.status).toBe(409);
   });
 });

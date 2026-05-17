@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Course } from "./course";
 import {
+  CourseMarketingRuleMutationResultSchema,
   CourseMarketingRuleSchema,
+  CourseMarketingRuleStatusUpdateRequestSchema,
   courseMatchesMarketingRule,
   isCourseMarketingRuleActiveAt,
   listActiveCourseMarketingRulesForCourse,
@@ -117,5 +119,43 @@ describe("course marketing rules", () => {
       membershipDiscountCount: 1,
       pathBundleCount: 1,
     });
+  });
+
+  it("validates status update requests and mutation audit results", () => {
+    expect(
+      CourseMarketingRuleStatusUpdateRequestSchema.parse({
+        status: "paused",
+        reason: "活动节奏调整",
+      })
+    ).toMatchObject({
+      status: "paused",
+    });
+
+    const rule = createRule({
+      status: "paused",
+      updatedAt: "2026-05-17T11:00:00.000Z",
+    });
+    const parsed = CourseMarketingRuleMutationResultSchema.parse({
+      rule,
+      auditEvent: {
+        id: "audit-rule-1",
+        ruleId: rule.id,
+        ruleName: rule.name,
+        actorId: "operator_1",
+        actorRoles: ["catalog_operator"],
+        action: "rule_status_update",
+        reason: "活动节奏调整",
+        before: {
+          status: "active",
+        },
+        after: {
+          status: "paused",
+        },
+        createdAt: "2026-05-17T11:00:00.000Z",
+      },
+      auditEvents: [],
+    });
+
+    expect(parsed.auditEvent.action).toBe("rule_status_update");
   });
 });

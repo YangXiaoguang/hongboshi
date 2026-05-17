@@ -28,6 +28,12 @@ export const CourseMarketingRuleSourceSchema = z.enum([
   "manual",
 ]);
 
+export const COURSE_MARKETING_AUDIT_ACTIONS = ["rule_status_update"] as const;
+
+export const CourseMarketingAuditActionSchema = z.enum(
+  COURSE_MARKETING_AUDIT_ACTIONS
+);
+
 export const CourseMarketingRuleScopeSchema = z
   .object({
     courseIds: z.array(LegacyNumericIdSchema).default([]),
@@ -106,9 +112,34 @@ export const CourseMarketingRuleConsoleSummarySchema = z.object({
   pathBundleCount: z.number().int().nonnegative(),
 });
 
+export const CourseMarketingAuditEventSchema = z.object({
+  id: EntityIdSchema,
+  ruleId: EntityIdSchema,
+  ruleName: z.string().trim().min(2).max(80),
+  actorId: EntityIdSchema,
+  actorRoles: z.array(z.string().min(1)).default([]),
+  action: CourseMarketingAuditActionSchema,
+  reason: z.string().trim().min(4).max(240),
+  before: z.record(z.string(), z.unknown()),
+  after: z.record(z.string(), z.unknown()),
+  createdAt: DateTimeLikeSchema,
+});
+
+export const CourseMarketingRuleStatusUpdateRequestSchema = z.object({
+  status: z.enum(["active", "paused"]),
+  reason: z.string().trim().min(4).max(240),
+});
+
+export const CourseMarketingRuleMutationResultSchema = z.object({
+  rule: CourseMarketingRuleSchema,
+  auditEvent: CourseMarketingAuditEventSchema,
+  auditEvents: z.array(CourseMarketingAuditEventSchema),
+});
+
 export const CourseMarketingRuleConsoleSchema =
   CourseMarketingRuleSnapshotSchema.extend({
     summary: CourseMarketingRuleConsoleSummarySchema,
+    auditEvents: z.array(CourseMarketingAuditEventSchema).default([]),
   });
 
 export type CourseMarketingRuleType = z.infer<
@@ -119,6 +150,9 @@ export type CourseMarketingRuleStatus = z.infer<
 >;
 export type CourseMarketingRuleSource = z.infer<
   typeof CourseMarketingRuleSourceSchema
+>;
+export type CourseMarketingAuditAction = z.infer<
+  typeof CourseMarketingAuditActionSchema
 >;
 export type CourseMarketingRuleScope = z.infer<
   typeof CourseMarketingRuleScopeSchema
@@ -132,6 +166,15 @@ export type CourseMarketingRuleSnapshot = z.infer<
 >;
 export type CourseMarketingRuleConsole = z.infer<
   typeof CourseMarketingRuleConsoleSchema
+>;
+export type CourseMarketingAuditEvent = z.infer<
+  typeof CourseMarketingAuditEventSchema
+>;
+export type CourseMarketingRuleStatusUpdateRequest = z.infer<
+  typeof CourseMarketingRuleStatusUpdateRequestSchema
+>;
+export type CourseMarketingRuleMutationResult = z.infer<
+  typeof CourseMarketingRuleMutationResultSchema
 >;
 
 function timeValue(value: string | undefined): number | undefined {

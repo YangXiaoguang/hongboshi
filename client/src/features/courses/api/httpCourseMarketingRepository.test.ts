@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseCourseMarketingRuleConsoleResponse,
+  parseCourseMarketingRuleMutationResponse,
   parseCourseMarketingRuleSnapshotResponse,
 } from "./httpCourseMarketingRepository";
 
@@ -67,5 +68,39 @@ describe("http course marketing repository parsers", () => {
     });
 
     expect(console.summary.activeCount).toBe(1);
+    expect(console.auditEvents).toEqual([]);
+  });
+
+  it("parses rule mutation responses with audit events", () => {
+    const mutation = parseCourseMarketingRuleMutationResponse({
+      ok: true,
+      data: {
+        rule: {
+          ...rule,
+          status: "paused",
+          updatedAt: "2026-05-17T11:00:00.000Z",
+        },
+        auditEvent: {
+          id: "audit-rule-1",
+          ruleId: rule.id,
+          ruleName: rule.name,
+          actorId: "operator_1",
+          actorRoles: ["catalog_operator"],
+          action: "rule_status_update",
+          reason: "活动节奏调整",
+          before: {
+            status: "active",
+          },
+          after: {
+            status: "paused",
+          },
+          createdAt: "2026-05-17T11:00:00.000Z",
+        },
+        auditEvents: [],
+      },
+    });
+
+    expect(mutation.rule.status).toBe("paused");
+    expect(mutation.auditEvent.actorRoles).toEqual(["catalog_operator"]);
   });
 });

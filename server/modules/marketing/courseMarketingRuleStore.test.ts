@@ -1,6 +1,15 @@
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { describe, expect, it } from "vitest";
 import type { Course } from "../../../shared/domain";
-import { buildCourseMarketingRulesFromCourses } from "./courseMarketingRuleStore";
+import { InMemoryCourseProductStore } from "../catalog/courseProductStore";
+import {
+  buildCourseMarketingRulesFromCourses,
+  InMemoryCourseMarketingRuleStore,
+  JsonFileCourseMarketingRuleStore,
+  updateCourseMarketingRuleStatus,
+} from "./courseMarketingRuleStore";
 
 const course: Course = {
   id: 12,
@@ -59,5 +68,92 @@ describe("course marketing rule store", () => {
     expect(rules.find(rule => rule.type === "limited_discount")).toMatchObject({
       status: "expired",
     });
+  });
+
+  it("applies in-memory status overrides and writes audit events", async () => {
+    const store = new InMemoryCourseMarketingRuleStore(
+      new InMemoryCourseProductStore([])
+    );
+
+    const result = await updateCourseMarketingRuleStatus({
+      ruleId: "system_path_bundle_preview",
+      request: {
+        status: "paused",
+        reason: "节奏调整暂停活动",
+      },
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      store,
+      now: "2026-05-17T11:00:00.000Z",
+    });
+
+    expect(result.rule).toMatchObject({
+      id: "system_path_bundle_preview",
+      status: "paused",
+    });
+    expect(result.auditEvent).toMatchObject({
+      action: "rule_status_update",
+      actorRoles: ["operator"],
+      reason: "节奏调整暂停活动",
+    });
+
+    const rules = await store.listRules("2026-05-17T11:05:00.000Z");
+    expect(
+      rules.find(rule => rule.id === "system_path_bundle_preview")
+    ).toMatchObject({
+      status: "paused",
+      updatedAt: "2026-05-17T11:00:00.000Z",
+    });
+  });
+
+  it("persists status overrides and audit events in the JSON store", async () => {
+    const tempDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "hongboshi-marketing-")
+    );
+    const filePath = path.join(tempDir, "course-marketing-rules.json");
+    const productStore = new InMemoryCourseProductStore([]);
+
+    try {
+      const store = new JsonFileCourseMarketingRuleStore(
+        productStore,
+        filePath
+      );
+      await updateCourseMarketingRuleStatus({
+        ruleId: "system_growth_membership_yearly_discount",
+        request: {
+          status: "paused",
+          reason: "会员活动临时暂停",
+        },
+        actorId: "operator_1",
+        store,
+        now: "2026-05-17T12:00:00.000Z",
+      });
+
+      const reloaded = new JsonFileCourseMarketingRuleStore(
+        productStore,
+        filePath
+      );
+
+      expect(
+        (
+          await reloaded.getRule(
+            "system_growth_membership_yearly_discount",
+            "2026-05-17T12:05:00.000Z"
+          )
+        )?.status
+      ).toBe("paused");
+      expect(
+        (
+          await reloaded.listAuditEvents(
+            "system_growth_membership_yearly_discount"
+          )
+        )[0]
+      ).toMatchObject({
+        action: "rule_status_update",
+        reason: "会员活动临时暂停",
+      });
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

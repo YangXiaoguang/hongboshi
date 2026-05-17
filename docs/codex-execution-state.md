@@ -4,13 +4,13 @@
 
 ## 当前指针
 
-- 最后更新时间：2026-05-17 Asia/Shanghai
+- 最后更新时间：2026-05-18 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`CUX-G-B 营销规则持久化与审计`
-- 当前状态：`CUX-G-A 营销规则后台只读基线` 已完成，当前课程券、会员活动价和路径组合购预览已进入共享规则契约，服务端可输出公共规则快照和后台规则控制台，前台优惠展示可消费服务端规则。
-- 本轮完成后下一步：执行 `CUX-G-B 营销规则持久化与审计`
+- 当前阶段：`CUX-G-C 路径包订单与权益交付`
+- 当前状态：`CUX-G-B 营销规则持久化与审计` 已完成，营销规则已支持暂停/恢复、状态覆盖持久化、操作原因和审计事件，公共规则快照会排除被暂停或已过期规则。
+- 本轮完成后下一步：执行 `CUX-G-C 路径包订单与权益交付`
 
 ## 已完成关键能力
 
@@ -41,6 +41,7 @@
 - 完成课程优惠与组合购：新增共享 `coursePricing` 和前端 `coursePromotion` 纯模型，课程卡片、快速开始区、详情页和结算抽屉统一展示券后价、本单优惠、会员替代和路径组合预览。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
+- 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
 - 完成课程订单状态与支付结果服务端化：新增课程 checkout 共享契约、订单扩展字段、服务端创建/读取/支付/取消 API 和前端 repository/hook，课程权益只在服务端支付成功后交付，重复支付保持幂等。
 - 课程详情页购买抽屉已接入订单状态，支持待创建、待支付、支付中、支付成功、失败重试和取消待支付订单，并展示订单号、支付保留时间、支付渠道和权益交付摘要。
 - TRX-C 浏览器验证已通过：在 `/courses/16` 完成登录、创建订单、模拟支付成功、权益到账和“开始学习”入口切换；`pnpm run ci` 已通过 87 个测试文件 / 411 个测试和生产构建。
@@ -193,6 +194,20 @@
 - `/admin/audit` 管理员归档控制台已加入“归档检索预览”，按当前筛选读取归档表前 5 条摘要行；归档预览为空或失败不影响主审计列表、导出、详情、归档和校验。
 
 ## 最近完成阶段
+
+CUX-G-B 营销规则持久化与审计已交付：
+
+- `shared/domain/courseMarketing.ts`：新增营销规则状态更新请求、审计事件和规则变更返回契约，审计事件保存操作者、角色、原因、前后状态和发生时间。
+- `server/modules/marketing/courseMarketingRuleStore.ts`：将规则 Store 升级为派生规则 + 状态覆盖层 + 审计事件，新增开发期 JSON 文件 `.hongboshi-data/course-marketing-rules.json`，重启后可恢复暂停/恢复状态和审计。
+- `server/modules/marketing/courseMarketingApi.ts`：新增 `PATCH /api/course-marketing/admin/rules/:ruleId/status`，写操作复用 `catalog:price` 权限，并校验非法参数、重复状态、过期规则和不存在规则。
+- `client/src/features/courses/api/httpCourseMarketingRepository.ts` 与 `/admin/marketing`：后台规则控制台支持行级暂停/恢复、填写操作原因、刷新规则和查看最近审计。
+- 公共 `/api/course-marketing/rules` 继续只返回当前生效规则；当运营暂停路径组合或会员活动规则后，课程货架、详情页和结算摘要不会继续展示该活动。
+
+CUX-G-B 验收结果：
+
+- `pnpm run check` 已通过。
+- `pnpm test -- shared/domain/courseMarketing.test.ts server/modules/marketing/courseMarketingRuleStore.test.ts server/modules/marketing/courseMarketingApi.test.ts client/src/features/courses/api/httpCourseMarketingRepository.test.ts` 已通过；Vitest 实际执行全量 101 个测试文件 / 465 个测试成功。
+- `pnpm run ci` 已通过：类型检查、101 个测试文件 / 465 个测试和生产构建均成功；Vite 仍保留既有大 chunk 提醒。
 
 CUX-G-A 营销规则后台只读基线已交付：
 
