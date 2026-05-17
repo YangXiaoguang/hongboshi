@@ -10,6 +10,14 @@ import {
   MoneyAmountSchema,
 } from "./common";
 import {
+  COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
+  COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
+  COURSE_MEMBERSHIP_ORDER_TARGET_ID,
+  COURSE_MEMBERSHIP_ORDER_TITLE,
+  calculateCoursePricing,
+  calculateMembershipPricing,
+} from "./coursePricing";
+import {
   OrderSchema,
   PaymentChannelSchema,
   closeUnpaidOrder,
@@ -21,10 +29,12 @@ import {
 export const LOCAL_COURSE_ACCESS_USER_ID = "local-user";
 export const COURSE_ACCESS_USER_ID_HEADER = "x-hongboshi-user-id";
 export const COURSE_CHECKOUT_PAYMENT_HOLD_MINUTES = 30;
-export const COURSE_MEMBERSHIP_ORDER_TARGET_ID = "growth_membership_yearly";
-export const COURSE_MEMBERSHIP_ORDER_TITLE = "成长会员年卡";
-export const COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE = 699;
-export const COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE = 399;
+export {
+  COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
+  COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
+  COURSE_MEMBERSHIP_ORDER_TARGET_ID,
+  COURSE_MEMBERSHIP_ORDER_TITLE,
+} from "./coursePricing";
 
 const MembershipStatusSchema = z.enum(["none", "active", "expired"]);
 
@@ -191,25 +201,6 @@ export function findPendingCourseCheckoutOrder(
   });
 }
 
-function courseOrderAmount(course: Course) {
-  const discountAmount = Math.min(course.coupon?.amount ?? 0, course.price);
-  return {
-    subtotal: course.price,
-    discountAmount,
-    payableAmount: Math.max(0, course.price - discountAmount),
-  };
-}
-
-function membershipOrderAmount() {
-  return {
-    subtotal: COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
-    discountAmount:
-      COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE -
-      COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
-    payableAmount: COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
-  };
-}
-
 function entitlementForOrder(
   order: Order
 ): CourseCheckoutOrderResult["entitlement"] {
@@ -350,7 +341,9 @@ export function createCourseCheckoutOrder(
   }
 
   const amount =
-    mode === "membership" ? membershipOrderAmount() : courseOrderAmount(course);
+    mode === "membership"
+      ? calculateMembershipPricing()
+      : calculateCoursePricing(course);
   const order = OrderSchema.parse({
     id: createCourseCheckoutOrderId({
       mode,
@@ -380,7 +373,7 @@ export function createCourseCheckoutOrder(
               quantity: 1,
             },
           ],
-    subtotal: amount.subtotal,
+    subtotal: amount.listPrice,
     discountAmount: amount.discountAmount,
     payableAmount: amount.payableAmount,
     createdAt: now,
@@ -480,7 +473,7 @@ export function grantPurchasedCourseAccess(
     return normalizeCourseAccessState(state);
   }
 
-  const discountAmount = Math.min(course.coupon?.amount ?? 0, course.price);
+  const amount = calculateCoursePricing(course);
   const order: Order = {
     id: `order_course_${course.id}_${Date.parse(now)}`,
     userId,
@@ -495,8 +488,8 @@ export function grantPurchasedCourseAccess(
       },
     ],
     subtotal: course.price,
-    discountAmount,
-    payableAmount: Math.max(0, course.price - discountAmount),
+    discountAmount: amount.discountAmount,
+    payableAmount: amount.payableAmount,
     createdAt: now,
     paidAt: now,
   };

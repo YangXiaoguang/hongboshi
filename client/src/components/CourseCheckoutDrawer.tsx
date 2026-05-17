@@ -1,10 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  ArrowRight,
-  CheckCircle2,
-  WalletCards,
-  X,
-} from "lucide-react";
+import { ArrowRight, CheckCircle2, WalletCards, X } from "lucide-react";
 import {
   coursePaymentMethods,
   formatCheckoutMoney,
@@ -222,6 +217,27 @@ export default function CourseCheckoutDrawer({
                   />
                 </div>
 
+                {summary.promotionItems.length > 0 && (
+                  <div className="mt-4 rounded-[20px] border border-[#E9D5BF] bg-[#FFF7EC] p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="text-sm font-semibold text-[#243B35]">
+                        本单优惠
+                      </p>
+                      <span className="text-xs font-semibold text-[#A65F48]">
+                        已为你自动计算
+                      </span>
+                    </div>
+                    <div className="mt-3 divide-y divide-[#EBDCC9]">
+                      {summary.promotionItems.map(item => (
+                        <CheckoutPromotionRow
+                          key={`${item.label}-${item.value}`}
+                          {...item}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-6 rounded-[20px] border border-[#E4DCCF] bg-white p-4">
                   <div className="flex items-center justify-between gap-4">
                     <p className="text-sm font-semibold">订单状态</p>
@@ -390,6 +406,41 @@ function CheckoutInfoRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between gap-4 rounded-[16px] bg-[#F9F5EE] px-4 py-3">
       <span className="text-xs font-semibold text-[#7B817C]">{label}</span>
       <span className="text-right text-xs font-semibold text-[#243B35]">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function CheckoutPromotionRow({
+  description,
+  label,
+  tone,
+  value,
+}: {
+  description: string;
+  label: string;
+  tone: CourseCheckoutSummary["promotionItems"][number]["tone"];
+  value: string;
+}) {
+  const valueClass =
+    tone === "member"
+      ? "text-[#8C6E4A]"
+      : tone === "bundle"
+        ? "text-[#41675A]"
+        : "text-[#A65F48]";
+
+  return (
+    <div className="flex items-start justify-between gap-4 py-3">
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold text-[#243B35]">
+          {label}
+        </span>
+        <span className="mt-1 block text-xs leading-5 text-[#7B817C]">
+          {description}
+        </span>
+      </span>
+      <span className={`shrink-0 text-xs font-semibold ${valueClass}`}>
         {value}
       </span>
     </div>

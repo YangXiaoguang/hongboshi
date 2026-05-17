@@ -13,7 +13,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import type { Course, CourseAccessStatus } from "@/features/courses";
+import {
+  createCoursePromotionSummary,
+  formatCheckoutMoney,
+  type Course,
+  type CourseAccessStatus,
+} from "@/features/courses";
 
 interface CourseCardProps {
   course: Course;
@@ -44,7 +49,10 @@ const actionToneMap = {
   buy: "bg-[#243B35] text-white hover:bg-[#315047]",
   learn: "bg-[#E6EDDF] text-[#41675A] hover:bg-[#DDE8D9]",
   member: "bg-[#F4EBD8] text-[#7A5B31] hover:bg-[#EFE1C5]",
-} satisfies Record<NonNullable<CourseCardProps["primaryAction"]>["tone"], string>;
+} satisfies Record<
+  NonNullable<CourseCardProps["primaryAction"]>["tone"],
+  string
+>;
 
 function formatLearners(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + "万";
@@ -145,6 +153,9 @@ export default function CourseCard({
   };
 
   const discountActive = course.discount && countdown !== "已结束";
+  const promotionSummary = createCoursePromotionSummary(course);
+  const showCouponPayable =
+    !course.isFree && promotionSummary.courseCouponAmount > 0;
 
   return (
     <div
@@ -240,7 +251,9 @@ export default function CourseCard({
 
         <div className="mt-3 flex items-center justify-between gap-3 text-sm text-[#7B817C]">
           <span className="truncate">{course.teacher}</span>
-          {isFavorited && <Heart className="h-4 w-4 shrink-0 fill-current text-[#B86F56]" />}
+          {isFavorited && (
+            <Heart className="h-4 w-4 shrink-0 fill-current text-[#B86F56]" />
+          )}
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -262,20 +275,30 @@ export default function CourseCard({
 
         <div className="mt-4 flex items-end justify-between gap-3 border-t border-[#EFE6DA] pt-4">
           <div>
-            <p className="text-[11px] text-[#9AA19B]">适合自学与陪伴练习</p>
+            <p className="text-[11px] text-[#9AA19B]">
+              {showCouponPayable
+                ? "券后价，下单自动抵扣"
+                : "适合自学与陪伴练习"}
+            </p>
             <div className="mt-1 flex items-baseline gap-2">
               {course.isFree ? (
-                <span className="text-lg font-semibold text-[#41675A]">免费</span>
+                <span className="text-lg font-semibold text-[#41675A]">
+                  免费
+                </span>
               ) : (
                 <>
                   <span className="text-lg font-semibold text-[#A65F48]">
-                    ¥{course.price.toFixed(1)}
+                    {formatCheckoutMoney(promotionSummary.coursePayableAmount)}
                   </span>
-                  {course.originalPrice > course.price && (
-                    <span className="text-xs text-[#B6B4AD] line-through">
-                      ¥{course.originalPrice.toFixed(1)}
+                  {showCouponPayable ? (
+                    <span className="text-xs text-[#B6B4AD]">
+                      标价 {formatCheckoutMoney(course.price)}
                     </span>
-                  )}
+                  ) : course.originalPrice > course.price ? (
+                    <span className="text-xs text-[#B6B4AD] line-through">
+                      {formatCheckoutMoney(course.originalPrice)}
+                    </span>
+                  ) : null}
                 </>
               )}
             </div>
@@ -300,19 +323,19 @@ export default function CourseCard({
       {showSharePopup && (
         <div
           className="absolute inset-0 z-50 flex items-center justify-center bg-[#1E332D]/62 p-4 backdrop-blur-sm"
-          onClick={(e) => {
+          onClick={e => {
             e.stopPropagation();
             setShowSharePopup(false);
           }}
         >
           <div
             className="share-popup-enter w-full max-w-[292px] rounded-3xl bg-[#FFFDF8] p-4 shadow-2xl shadow-black/20"
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-[#243B35]">分享课程</h4>
               <button
-                onClick={(e) => {
+                onClick={e => {
                   e.stopPropagation();
                   setShowSharePopup(false);
                 }}
@@ -332,7 +355,9 @@ export default function CourseCard({
                 <p className="line-clamp-1 text-xs font-semibold text-[#243B35]">
                   {course.title}
                 </p>
-                <p className="mt-1 text-[11px] text-[#8A918B]">{course.teacher}</p>
+                <p className="mt-1 text-[11px] text-[#8A918B]">
+                  {course.teacher}
+                </p>
               </div>
             </div>
 

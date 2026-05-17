@@ -1,9 +1,15 @@
 import {
   COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
   COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
+  calculateCoursePricing,
+  calculateMembershipPricing,
   type Course,
   type PaymentChannel,
 } from "@shared/domain";
+import {
+  createCoursePromotionSummary,
+  type CoursePromotionTone,
+} from "./coursePromotion";
 
 export type CourseCheckoutMode = "course" | "membership";
 
@@ -12,6 +18,11 @@ export type CourseCheckoutPaymentChannel = PaymentChannel;
 export interface CourseCheckoutLineItem {
   label: string;
   value: string;
+}
+
+export interface CourseCheckoutPromotionItem extends CourseCheckoutLineItem {
+  description: string;
+  tone: CoursePromotionTone;
 }
 
 export interface CourseCheckoutSummary {
@@ -24,6 +35,7 @@ export interface CourseCheckoutSummary {
   payableAmount: number;
   savingsAmount: number;
   accessLabel: string;
+  promotionItems: CourseCheckoutPromotionItem[];
   deliveryItems: CourseCheckoutLineItem[];
   protectionItems: CourseCheckoutLineItem[];
   notices: string[];
@@ -62,6 +74,34 @@ export function formatCheckoutMoney(amount: number): string {
   return `¥${amount.toFixed(amount % 1 === 0 ? 0 : 1)}`;
 }
 
+function createCoursePromotionItems(
+  course: Course
+): CourseCheckoutPromotionItem[] {
+  return createCoursePromotionSummary(course).checkoutPromotionLines.map(
+    line => ({
+      label: line.label,
+      value:
+        line.amountLabel ??
+        (line.amount ? `-${formatCheckoutMoney(line.amount)}` : "已包含"),
+      description: line.title,
+      tone: line.tone,
+    })
+  );
+}
+
+function createMembershipPromotionItems(): CourseCheckoutPromotionItem[] {
+  const pricing = calculateMembershipPricing();
+
+  return [
+    {
+      label: "会员年卡优惠",
+      value: `-${formatCheckoutMoney(pricing.discountAmount)}`,
+      description: "成长会员当前活动价，支付后写入会员权益。",
+      tone: "member",
+    },
+  ];
+}
+
 function createCourseDeliveryItems(course: Course): CourseCheckoutLineItem[] {
   return [
     { label: "课程内容", value: `${course.type}课程` },
@@ -86,20 +126,19 @@ export function createCourseCheckoutSummary(
   mode: CourseCheckoutMode
 ): CourseCheckoutSummary {
   if (mode === "membership") {
-    const discountAmount =
-      COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE -
-      COURSE_MEMBERSHIP_CHECKOUT_PRICE;
+    const pricing = calculateMembershipPricing();
 
     return {
       mode,
       productTitle: "成长会员年卡",
       productSubtitle: `含本课学习权益：${course.title}`,
-      listPrice: COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE,
-      originalPrice: COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE,
-      discountAmount,
-      payableAmount: COURSE_MEMBERSHIP_CHECKOUT_PRICE,
-      savingsAmount: discountAmount,
+      listPrice: pricing.listPrice,
+      originalPrice: pricing.originalPrice,
+      discountAmount: pricing.discountAmount,
+      payableAmount: pricing.payableAmount,
+      savingsAmount: pricing.savingsAmount,
       accessLabel: "开通后会员课可直接学习",
+      promotionItems: createMembershipPromotionItems(),
       deliveryItems: [
         { label: "会员课程", value: "会员内容有效期内可学" },
         { label: "学习档案", value: "统一沉淀课程记录" },
@@ -117,21 +156,19 @@ export function createCourseCheckoutSummary(
     };
   }
 
-  const couponAmount = Math.min(course.coupon?.amount ?? 0, course.price);
-  const payableAmount = Math.max(0, course.price - couponAmount);
-  const originalPrice = Math.max(course.originalPrice, course.price);
-  const savingsAmount = Math.max(0, originalPrice - payableAmount);
+  const pricing = calculateCoursePricing(course);
 
   return {
     mode,
     productTitle: course.title,
     productSubtitle: `${course.teacher} · ${course.category} · ${course.type}`,
-    listPrice: course.price,
-    originalPrice,
-    discountAmount: couponAmount,
-    payableAmount,
-    savingsAmount,
+    listPrice: pricing.listPrice,
+    originalPrice: pricing.originalPrice,
+    discountAmount: pricing.discountAmount,
+    payableAmount: pricing.payableAmount,
+    savingsAmount: pricing.savingsAmount,
     accessLabel: course.isFree ? "免费课程可直接学习" : "购买后解锁本课",
+    promotionItems: createCoursePromotionItems(course),
     deliveryItems: createCourseDeliveryItems(course),
     protectionItems: createProtectionItems(course),
     notices: [

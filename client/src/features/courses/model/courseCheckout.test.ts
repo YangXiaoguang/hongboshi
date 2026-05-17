@@ -41,6 +41,9 @@ describe("course checkout summary", () => {
     });
     expect(summary.deliveryItems.map(item => item.label)).toContain("学习记录");
     expect(summary.protectionItems.map(item => item.label)).toContain("隐私");
+    expect(summary.promotionItems.map(item => item.label)).toEqual(
+      expect.arrayContaining(["课程直降", "新人券"])
+    );
   });
 
   it("keeps coupon discount from making payable amount negative", () => {
@@ -68,6 +71,9 @@ describe("course checkout summary", () => {
     expect(summary.productTitle).toBe("成长会员年卡");
     expect(summary.productSubtitle).toContain(course.title);
     expect(summary.payableAmount).toBe(COURSE_MEMBERSHIP_CHECKOUT_PRICE);
+    expect(summary.promotionItems.map(item => item.label)).toContain(
+      "会员年卡优惠"
+    );
     expect(summary.deliveryItems.map(item => item.label)).toContain("会员课程");
   });
 

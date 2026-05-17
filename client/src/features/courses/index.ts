@@ -72,6 +72,13 @@ export {
   type CoursePendingCheckoutPrompt,
 } from "./model/coursePendingCheckout";
 export {
+  createCoursePromotionSummary,
+  type CoursePathBundlePromotion,
+  type CoursePromotionLine,
+  type CoursePromotionOffer,
+  type CoursePromotionSummary,
+} from "./model/coursePromotion";
+export {
   COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE,
   COURSE_MEMBERSHIP_CHECKOUT_PRICE,
   coursePaymentMethods,
@@ -79,6 +86,7 @@ export {
   formatCheckoutMoney,
   type CourseCheckoutMode,
   type CourseCheckoutPaymentChannel,
+  type CourseCheckoutPromotionItem,
   type CourseCheckoutSummary,
   type CoursePaymentMethod,
 } from "./model/courseCheckout";

@@ -20,6 +20,8 @@ client/src/features/courses/
   model/
     courseAccess.ts          # 免费、已购、会员、待购买等访问控制纯逻辑
     courseAccess.test.ts     # 权益判断与模拟订单单测
+    courseCheckout.ts        # 单课/会员结算摘要、交付内容和购买须知
+    coursePromotion.ts       # 券后价、直降、会员替代和路径组合预览纯模型
     courseCatalog.ts         # 筛选、搜索、排序、分页、推荐纯逻辑
     courseCatalog.test.ts    # 领域逻辑单测
     courseDetail.ts          # 课程详情、章节、适合人群与相关课程构造
@@ -62,6 +64,8 @@ client/src/features/courses/
 
 课程商品信任信息由 `client/src/features/courses/model/courseTrust.ts` 生成，详情页消费统一的评分、阶段完成率、讲师说明、内容审核点、学习反馈、售后/隐私边界和 FAQ。当前数据仍来自课程详情的确定性派生，后续接真实评价、讲师资质库和售后配置时优先替换模型输入或 API adapter，避免把信任文案散落在页面组件里。
 
+课程价格口径由 `shared/domain/coursePricing.ts` 统一计算，课程订单创建、会员订单创建和前端结算摘要共享标价、优惠券、直降、实付和节省金额。前端优惠展示由 `client/src/features/courses/model/coursePromotion.ts` 生成，页面和组件只消费课程直降、优惠券、限时折扣、会员替代和路径组合预览结果；路径组合当前是价格预览，不改变真实订单金额，后续可升级为服务端营销规则与路径包订单。
+
 以上课程权益读取 API 会先读取登录 session。未登录且未传开发期请求头时默认落到 `local-user`，用于未登录访客和本地开发；写入 API 必须有有效登录 session。
 
 ## 后续落点
@@ -70,6 +74,7 @@ client/src/features/courses/
 2. 将 `CourseAccessStore` 从 JSON 文件替换为真实订单、会员和支付回调。
 3. 扩展 loading、empty、error 和权限状态到订单、会员、学习记录。
 4. 将课程信任模型接入真实评价、讲师资质、售后政策和运营配置。
-5. 把移动预览里的课程卡片继续拆成可复用组件。
-6. 将素材占位升级为真实资料管理，补齐资料下载、学习记录和课程内容完成度统计。
-7. 将课程路径从前端配置升级为后台运营配置，并接入测评推荐规则。
+5. 将优惠与组合购模型升级为服务端营销规则、后台可配置优惠券、课程包和路径包订单。
+6. 把移动预览里的课程卡片继续拆成可复用组件。
+7. 将素材占位升级为真实资料管理，补齐资料下载、学习记录和课程内容完成度统计。
+8. 将课程路径从前端配置升级为后台运营配置，并接入测评推荐规则。

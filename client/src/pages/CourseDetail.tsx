@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  BadgePercent,
   BookOpen,
   CalendarCheck,
   CheckCircle2,
@@ -16,6 +17,7 @@ import {
   HeartHandshake,
   Lock,
   MessageCircle,
+  PackageCheck,
   PlayCircle,
   ReceiptText,
   Route,
@@ -23,6 +25,7 @@ import {
   ShoppingBag,
   Sparkles,
   Star,
+  Ticket,
   Users,
   UserCheck,
   type LucideIcon,
@@ -40,6 +43,7 @@ import {
   buildCourseTrustProfile,
   createCourseTrustSummary,
   createCourseCheckoutSummary,
+  createCoursePromotionSummary,
   createPendingCheckoutPromptForCourse,
   findPendingCourseCheckoutOrder,
   formatCheckoutMoney,
@@ -56,6 +60,8 @@ import {
   type CourseCheckoutOrderResult,
   type CourseCheckoutPaymentChannel,
   type CoursePendingCheckoutPrompt,
+  type CoursePromotionOffer,
+  type CoursePromotionSummary,
   type CourseTrustProfile,
 } from "@/features/courses";
 
@@ -66,7 +72,11 @@ function formatLearners(n: number): string {
 }
 
 function formatPrice(course: Course): string {
-  return course.isFree ? "免费" : formatCheckoutMoney(course.price);
+  if (course.isFree) return "免费";
+
+  const promotion = createCoursePromotionSummary(course);
+  const prefix = promotion.courseCouponAmount > 0 ? "券后 " : "";
+  return `${prefix}${formatCheckoutMoney(promotion.coursePayableAmount)}`;
 }
 
 const accessCopy = {
@@ -156,6 +166,9 @@ export default function CourseDetail() {
   const access = getCourseAccess(course);
   const learningPath = getLearningPathForCourse(course);
   const nextPathCourses = getNextCoursesInLearningPath(allCourses, course, 3);
+  const promotionSummary = createCoursePromotionSummary(course, {
+    pathCourses: nextPathCourses,
+  });
   const supplementalCourses = relatedCourses
     .filter(
       relatedCourse =>
@@ -293,6 +306,32 @@ export default function CourseDetail() {
     openCheckout(
       access.status === "requires_membership" ? "membership" : "course"
     );
+  };
+
+  const handlePromotionOfferAction = (offer: CoursePromotionOffer) => {
+    if (offer.kind === "path_bundle") {
+      document
+        .getElementById("learning-path")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (access.canStart) {
+      handleStartLearning();
+      return;
+    }
+
+    if (offer.kind === "membership" && access.canActivateMembership) {
+      openCheckout("membership");
+      return;
+    }
+
+    if (access.canPurchase) {
+      openCheckout("course");
+      return;
+    }
+
+    handlePrimaryAction();
   };
 
   const handleConfirmCheckout = () => {
@@ -520,6 +559,7 @@ export default function CourseDetail() {
               PrimaryActionIcon={EffectivePrimaryActionIcon}
               trustProfile={trustProfile}
               trustSummary={trustSummary}
+              promotionSummary={promotionSummary}
               visibleLearningStatus={visibleLearningStatus}
               visibleProgressPercent={visibleProgressPercent}
               onActivateMembership={() => openCheckout("membership")}
@@ -565,6 +605,13 @@ export default function CourseDetail() {
             />
           </div>
         </section>
+
+        <CoursePromotionSection
+          disabled={isSyncing}
+          locked={locked}
+          promotion={promotionSummary}
+          onOfferAction={handlePromotionOfferAction}
+        />
 
         <section className="px-5 py-16 sm:px-8 lg:px-12">
           <div className="mx-auto grid max-w-[1200px] gap-12 lg:grid-cols-[0.82fr_1.18fr]">
@@ -936,17 +983,217 @@ export default function CourseDetail() {
               ? formatCheckoutMoney(
                   pendingCheckoutPrompt.checkout.payment.payableAmount
                 )
-              : formatPrice(course)
+              : course.isFree
+                ? "免费"
+                : formatCheckoutMoney(promotionSummary.coursePayableAmount)
           }
           hint={
             pendingCheckoutPrompt
               ? `待支付保留至 ${formatCheckoutDateTime(
                   pendingCheckoutPrompt.checkout.payment.expiresAt
                 )}`
-              : undefined
+              : promotionSummary.courseCouponAmount > 0 && course.coupon
+                ? `${course.coupon.label} 已自动计入券后价`
+                : undefined
           }
           onClick={handlePrimaryAction}
         />
+      )}
+    </div>
+  );
+}
+
+function CoursePromotionSection({
+  disabled,
+  locked,
+  promotion,
+  onOfferAction,
+}: {
+  disabled: boolean;
+  locked: boolean;
+  promotion: CoursePromotionSummary;
+  onOfferAction: (offer: CoursePromotionOffer) => void;
+}) {
+  const appliedLines = promotion.checkoutPromotionLines;
+
+  return (
+    <section className="bg-[#FFF8EE] px-5 py-14 sm:px-8 lg:px-12">
+      <div className="mx-auto grid max-w-[1200px] gap-10 lg:grid-cols-[0.78fr_1.22fr] lg:items-start">
+        <div>
+          <p className="inline-flex items-center text-sm font-semibold text-[#A65F48]">
+            <BadgePercent className="mr-2 h-4 w-4" />
+            优惠与组合购
+          </p>
+          <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35]">
+            先看券后价，再决定单课、会员或连续学习
+          </h2>
+          <p className="mt-4 text-sm leading-7 text-[#6D746F]">
+            下单前把当前可用优惠、会员替代方案和路径组合价格放在一起比较，减少来回跳转和重复计算。
+          </p>
+
+          {appliedLines.length > 0 && (
+            <div className="mt-7 border-l border-[#D8C1A7] pl-5">
+              <p className="text-sm font-semibold text-[#243B35]">
+                已应用到本课
+              </p>
+              <div className="mt-3 grid gap-3">
+                {appliedLines.map(line => (
+                  <CoursePromotionLineItem key={line.kind} line={line} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="divide-y divide-[#E4D4C1] border-y border-[#E4D4C1]">
+            {promotion.offers.map(offer => (
+              <CoursePromotionOfferRow
+                key={offer.kind}
+                disabled={disabled}
+                locked={locked}
+                offer={offer}
+                onSelect={() => onOfferAction(offer)}
+              />
+            ))}
+          </div>
+
+          {promotion.pathBundle && (
+            <div className="mt-6 rounded-[24px] bg-[#FFFDF8] p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-[#6F8F83]">
+                    路径组合内容
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+                    {promotion.pathBundle.description}
+                  </p>
+                </div>
+                <PackageCheck className="h-5 w-5 shrink-0 text-[#8C6E4A]" />
+              </div>
+              <div className="mt-4 grid gap-2">
+                {promotion.pathBundle.courseTitles.map((title, index) => (
+                  <div
+                    key={`${title}-${index}`}
+                    className="flex items-center justify-between gap-3 text-xs"
+                  >
+                    <span className="min-w-0 truncate text-[#243B35]">
+                      {index + 1}. {title}
+                    </span>
+                    {index === 0 && (
+                      <span className="shrink-0 rounded-full bg-[#E6EDDF] px-2 py-1 font-semibold text-[#41675A]">
+                        当前课
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="mt-4 text-xs leading-5 text-[#8A8176]">
+                组合购当前为价格预览，不改变真实订单金额；后续接入营销规则后可升级为路径包订单。
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CoursePromotionOfferRow({
+  disabled,
+  locked,
+  offer,
+  onSelect,
+}: {
+  disabled: boolean;
+  locked: boolean;
+  offer: CoursePromotionOffer;
+  onSelect: () => void;
+}) {
+  const Icon =
+    offer.kind === "membership"
+      ? Crown
+      : offer.kind === "path_bundle"
+        ? PackageCheck
+        : ShoppingBag;
+  const canSelect =
+    locked &&
+    !disabled &&
+    (offer.isCheckoutReady || offer.kind === "path_bundle");
+
+  return (
+    <div className="grid gap-4 py-5 sm:grid-cols-[44px_1fr_auto] sm:items-center">
+      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F1E8DA] text-[#8C6E4A]">
+        <Icon className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-lg font-semibold text-[#243B35]">
+            {offer.title}
+          </h3>
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+              offer.isRecommended
+                ? "bg-[#243B35] text-white"
+                : "bg-[#E6EDDF] text-[#41675A]"
+            }`}
+          >
+            {offer.isRecommended ? "推荐" : offer.badge}
+          </span>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+          {offer.description}
+        </p>
+      </div>
+      <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
+        <div className="text-right">
+          <p className="text-xl font-semibold text-[#A65F48]">
+            {formatCheckoutMoney(offer.payableAmount)}
+          </p>
+          {offer.savingsAmount > 0 && (
+            <p className="mt-1 text-xs text-[#8A8176]">
+              已省 {formatCheckoutMoney(offer.savingsAmount)}
+            </p>
+          )}
+        </div>
+        {locked ? (
+          <button
+            onClick={onSelect}
+            disabled={!canSelect}
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-[#243B35] px-4 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-55"
+          >
+            {offer.ctaLabel}
+          </button>
+        ) : (
+          <span className="rounded-full bg-[#E6EDDF] px-3 py-1.5 text-xs font-semibold text-[#41675A]">
+            已可学习
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CoursePromotionLineItem({
+  line,
+}: {
+  line: CoursePromotionSummary["lines"][number];
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <span className="min-w-0">
+        <span className="inline-flex items-center text-xs font-semibold text-[#243B35]">
+          <Ticket className="mr-1.5 h-3.5 w-3.5 text-[#A65F48]" />
+          {line.label}
+        </span>
+        <span className="mt-1 block text-xs leading-5 text-[#7B817C]">
+          {line.description}
+        </span>
+      </span>
+      {line.amountLabel && (
+        <span className="shrink-0 text-xs font-semibold text-[#A65F48]">
+          {line.amountLabel}
+        </span>
       )}
     </div>
   );
@@ -1190,6 +1437,7 @@ function CommercePanel({
   PrimaryActionIcon,
   trustProfile,
   trustSummary,
+  promotionSummary,
   visibleLearningStatus,
   visibleProgressPercent,
   onActivateMembership,
@@ -1209,6 +1457,7 @@ function CommercePanel({
   PrimaryActionIcon: typeof PlayCircle;
   trustProfile: CourseTrustProfile;
   trustSummary: string;
+  promotionSummary: CoursePromotionSummary;
   visibleLearningStatus: string;
   visibleProgressPercent: number;
   onActivateMembership: () => void;
@@ -1217,6 +1466,15 @@ function CommercePanel({
   onPrimaryAction: () => void;
   onToggleFavorite: () => void;
 }) {
+  const showCouponPayable =
+    !course.isFree && promotionSummary.courseCouponAmount > 0;
+  const membershipOffer = promotionSummary.offers.find(
+    offer => offer.kind === "membership"
+  );
+  const courseOffer = promotionSummary.offers.find(
+    offer => offer.kind === "course"
+  );
+
   return (
     <motion.aside
       initial={{ opacity: 0, x: 18 }}
@@ -1241,24 +1499,71 @@ function CommercePanel({
 
       <div className="mt-3 flex items-end justify-between gap-4">
         <div>
-          <p className="text-3xl font-semibold text-[#A65F48]">
-            {formatPrice(course)}
+          <p className="text-xs font-semibold text-[#A65F48]">
+            {showCouponPayable ? "券后价" : "课程价"}
           </p>
-          {!course.isFree && course.originalPrice > course.price && (
-            <p className="mt-1 text-xs text-[#9AA19B] line-through">
-              {formatCheckoutMoney(course.originalPrice)}
+          <p className="mt-1 text-3xl font-semibold text-[#A65F48]">
+            {course.isFree
+              ? "免费"
+              : formatCheckoutMoney(promotionSummary.coursePayableAmount)}
+          </p>
+          {!course.isFree && showCouponPayable && (
+            <p className="mt-1 text-xs text-[#9AA19B]">
+              标价 {formatCheckoutMoney(promotionSummary.courseListAmount)}
             </p>
           )}
+          {!course.isFree &&
+            !showCouponPayable &&
+            promotionSummary.courseOriginalAmount >
+              promotionSummary.courseListAmount && (
+              <p className="mt-1 text-xs text-[#9AA19B] line-through">
+                {formatCheckoutMoney(promotionSummary.courseOriginalAmount)}
+              </p>
+            )}
         </div>
         <span className="rounded-full bg-[#E6EDDF] px-3 py-1 text-xs font-semibold text-[#41675A]">
           {accessLabel}
         </span>
       </div>
 
-      {course.coupon && (
-        <div className="mt-4 rounded-[18px] bg-[#FFF5EF] px-4 py-3 text-xs leading-5 text-[#A65F48]">
-          {course.coupon.label} · 下单可抵扣{" "}
-          {formatCheckoutMoney(course.coupon.amount)}
+      <div className="mt-4 rounded-[18px] border border-[#E9D5BF] bg-[#FFF7EC] px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-[#A65F48]">
+            {locked ? promotionSummary.bestOffer.title : "当前权益已可学习"}
+          </p>
+          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-[#A65F48]">
+            {locked ? "最优方案" : "已解锁"}
+          </span>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-[#7B817C]">
+          {locked
+            ? promotionSummary.bestOffer.description
+            : "无需再次下单，可以直接进入课程学习并继续沉淀进度。"}
+        </p>
+      </div>
+
+      {promotionSummary.lines.length > 0 && (
+        <div className="mt-3 divide-y divide-[#EBDCC9] rounded-[18px] bg-[#FFFDF8] px-4">
+          {promotionSummary.lines.slice(0, 3).map(line => (
+            <div
+              key={`${line.kind}-${line.label}`}
+              className="flex items-start justify-between gap-3 py-3"
+            >
+              <span className="min-w-0">
+                <span className="block text-xs font-semibold text-[#243B35]">
+                  {line.label}
+                </span>
+                <span className="mt-1 block text-xs leading-5 text-[#7B817C]">
+                  {line.title}
+                </span>
+              </span>
+              {line.amountLabel && (
+                <span className="shrink-0 text-xs font-semibold text-[#A65F48]">
+                  {line.amountLabel}
+                </span>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -1319,7 +1624,11 @@ function CommercePanel({
               <Crown className="h-4 w-4 text-[#8C6E4A]" />
             </span>
             <span className="mt-2 block text-xs leading-5 text-[#8A7350]">
-              适合计划连续学习会员课程的用户。
+              {membershipOffer
+                ? `${formatCheckoutMoney(
+                    membershipOffer.payableAmount
+                  )} / 年，适合计划连续学习会员课程的用户。`
+                : "适合计划连续学习会员课程的用户。"}
             </span>
           </button>
           {course.price > 0 && (
@@ -1328,7 +1637,11 @@ function CommercePanel({
               disabled={isSyncing}
               className="rounded-[20px] border border-[#E4DCCF] bg-white px-4 py-3 text-left text-xs font-semibold text-[#5F6B64] transition hover:border-[#AFC2AB] disabled:cursor-wait disabled:opacity-65"
             >
-              只购买本课 · {formatCheckoutMoney(course.price)}
+              只购买本课 ·{" "}
+              {formatCheckoutMoney(
+                courseOffer?.payableAmount ??
+                  promotionSummary.coursePayableAmount
+              )}
             </button>
           )}
         </div>

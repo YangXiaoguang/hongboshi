@@ -1,5 +1,9 @@
 import { ArrowRight, Flame, Gift, Sparkles } from "lucide-react";
-import type { Course } from "@/features/courses";
+import {
+  createCoursePromotionSummary,
+  formatCheckoutMoney,
+  type Course,
+} from "@/features/courses";
 
 interface CourseStarterLanesProps {
   courses: Course[];
@@ -12,7 +16,11 @@ interface CourseStarterLanesProps {
 }
 
 function formatPrice(course: Course): string {
-  return course.isFree ? "免费" : `¥${course.price.toFixed(1)}`;
+  if (course.isFree) return "免费";
+
+  const promotion = createCoursePromotionSummary(course);
+  const prefix = promotion.courseCouponAmount > 0 ? "券后 " : "";
+  return `${prefix}${formatCheckoutMoney(promotion.coursePayableAmount)}`;
 }
 
 function pickUnique(courses: Course[], predicate: (course: Course) => boolean) {
