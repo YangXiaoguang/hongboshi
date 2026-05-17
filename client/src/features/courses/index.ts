@@ -57,6 +57,16 @@ export {
   type CourseDetailPrimaryActionCopy,
 } from "./model/courseDetailConversion";
 export {
+  buildCourseTrustProfile,
+  createCourseTrustSummary,
+  type CourseTrustFaq,
+  type CourseTrustFeedback,
+  type CourseTrustHighlight,
+  type CourseTrustMetric,
+  type CourseTrustPolicy,
+  type CourseTrustProfile,
+} from "./model/courseTrust";
+export {
   COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE,
   COURSE_MEMBERSHIP_CHECKOUT_PRICE,
   coursePaymentMethods,

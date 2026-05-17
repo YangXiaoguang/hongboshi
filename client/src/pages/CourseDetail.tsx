@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { useLocation, useRoute } from "wouter";
 import {
@@ -8,19 +8,24 @@ import {
   BookOpen,
   CalendarCheck,
   CheckCircle2,
+  CircleHelp,
   Clock3,
   Crown,
   FileText,
   Heart,
   HeartHandshake,
   Lock,
+  MessageCircle,
   PlayCircle,
   ReceiptText,
   Route,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
+  Star,
   Users,
+  UserCheck,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import AppFooter from "@/components/AppFooter";
@@ -30,6 +35,8 @@ import CourseCheckoutDrawer, {
 } from "@/components/CourseCheckoutDrawer";
 import NotFound from "@/pages/NotFound";
 import {
+  buildCourseTrustProfile,
+  createCourseTrustSummary,
   createCourseCheckoutSummary,
   findPendingCourseCheckoutOrder,
   formatCheckoutMoney,
@@ -45,6 +52,7 @@ import {
   type CourseCheckoutMode,
   type CourseCheckoutOrderResult,
   type CourseCheckoutPaymentChannel,
+  type CourseTrustProfile,
 } from "@/features/courses";
 
 function formatLearners(n: number): string {
@@ -169,6 +177,8 @@ export default function CourseDetail() {
   const checkoutSummary = checkoutMode
     ? createCourseCheckoutSummary(course, checkoutMode)
     : undefined;
+  const trustProfile = buildCourseTrustProfile(course);
+  const trustSummary = createCourseTrustSummary(course);
 
   const handleStartLearning = () => {
     if (!access.canStart) {
@@ -214,9 +224,7 @@ export default function CourseDetail() {
   useEffect(() => {
     if (checkoutIntentHandled) return;
 
-    const rawMode = new URLSearchParams(window.location.search).get(
-      "checkout"
-    );
+    const rawMode = new URLSearchParams(window.location.search).get("checkout");
     if (rawMode !== "course" && rawMode !== "membership") return;
 
     setCheckoutIntentHandled(true);
@@ -460,6 +468,8 @@ export default function CourseDetail() {
               primaryActionLabel={primaryAction.label}
               primaryActionDescription={primaryAction.description}
               PrimaryActionIcon={PrimaryActionIcon}
+              trustProfile={trustProfile}
+              trustSummary={trustSummary}
               visibleLearningStatus={visibleLearningStatus}
               visibleProgressPercent={visibleProgressPercent}
               onActivateMembership={() => openCheckout("membership")}
@@ -526,6 +536,16 @@ export default function CourseDetail() {
             </div>
           </div>
         </section>
+
+        <CourseTrustSection
+          course={course}
+          disabled={isSyncing}
+          primaryActionLabel={isSyncing ? "同步中" : primaryAction.label}
+          profile={trustProfile}
+          summary={trustSummary}
+          onConsult={() => navigate("/consulting")}
+          onPrimaryAction={handlePrimaryAction}
+        />
 
         <section
           id="learning-path"
@@ -856,6 +876,232 @@ export default function CourseDetail() {
   );
 }
 
+function CourseTrustSection({
+  course,
+  disabled,
+  primaryActionLabel,
+  profile,
+  summary,
+  onConsult,
+  onPrimaryAction,
+}: {
+  course: Course;
+  disabled: boolean;
+  primaryActionLabel: string;
+  profile: CourseTrustProfile;
+  summary: string;
+  onConsult: () => void;
+  onPrimaryAction: () => void;
+}) {
+  return (
+    <section className="bg-[#F7F1E8] px-5 py-16 sm:px-8 lg:px-12">
+      <div className="mx-auto max-w-[1200px]">
+        <div className="grid gap-12 lg:grid-cols-[0.86fr_1.14fr] lg:items-start">
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.3 }}
+            transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+            className="lg:sticky lg:top-24"
+          >
+            <p className="text-sm font-semibold text-[#6F8F83]">购买信任</p>
+            <h2 className="mt-3 max-w-[520px] text-3xl font-semibold leading-tight text-[#243B35]">
+              下单前，把老师、反馈和售后边界看清楚
+            </h2>
+            <p className="mt-4 max-w-[520px] text-sm leading-7 text-[#6D746F]">
+              心理课程的信任不是只看价格，而是看讲师是否清楚、内容边界是否透明、购买后是否能被持续承接。
+            </p>
+
+            <div className="mt-8 grid grid-cols-3 divide-x divide-[#D8CEC0] border-y border-[#D8CEC0]">
+              {profile.metrics.map(metric => (
+                <TrustMetric key={metric.label} metric={metric} />
+              ))}
+            </div>
+            <p className="mt-4 text-xs leading-5 text-[#7B817C]">{summary}</p>
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <button
+                onClick={onPrimaryAction}
+                disabled={disabled}
+                className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] px-6 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-65"
+              >
+                {primaryActionLabel}
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </button>
+              <button
+                onClick={onConsult}
+                className="inline-flex h-12 items-center justify-center rounded-full border border-[#D8CEC0] px-6 text-sm font-semibold text-[#41675A] transition hover:bg-[#EEF4EA]"
+              >
+                咨询师陪伴
+              </button>
+            </div>
+          </motion.div>
+
+          <div className="divide-y divide-[#D8CEC0] border-y border-[#D8CEC0]">
+            <TrustProofRow
+              icon={UserCheck}
+              title="讲师与内容审核"
+              eyebrow={profile.instructor.title}
+              description={profile.instructor.description}
+            >
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                {profile.instructor.highlights.map(item => (
+                  <div
+                    key={item.title}
+                    className="border-l border-[#C9D8C2] pl-4"
+                  >
+                    <p className="text-sm font-semibold text-[#243B35]">
+                      {item.title}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-[#6D746F]">
+                      {item.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </TrustProofRow>
+
+            <TrustProofRow
+              icon={MessageCircle}
+              title="学习反馈"
+              eyebrow={`${course.category} · ${course.type}`}
+              description="评价信息优先展示学习后的变化和可验证结果，而不是只堆叠情绪化好评。"
+            >
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                {profile.feedback.map(item => (
+                  <figure
+                    key={item.quote}
+                    className="rounded-[22px] bg-[#FFFDF8] p-5"
+                  >
+                    <p className="text-xs font-semibold text-[#6F8F83]">
+                      {item.profile}
+                    </p>
+                    <blockquote className="mt-3 text-sm leading-7 text-[#243B35]">
+                      {item.quote}
+                    </blockquote>
+                    <figcaption className="mt-4 border-t border-[#E4DCCF] pt-3 text-xs font-semibold text-[#7B817C]">
+                      结果：{item.result}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+            </TrustProofRow>
+
+            <TrustProofRow
+              icon={ShieldCheck}
+              title="售后与隐私边界"
+              eyebrow="交易保障"
+              description="把用户最关心的权益、待支付、退款和隐私边界前置到购买前。"
+            >
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {profile.policies.map(item => (
+                  <div
+                    key={item.title}
+                    className="flex gap-3 rounded-[18px] bg-[#FFFDF8] px-4 py-4"
+                  >
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#6F8F83]" />
+                    <div>
+                      <p className="text-sm font-semibold text-[#243B35]">
+                        {item.title}
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-[#6D746F]">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </TrustProofRow>
+          </div>
+        </div>
+
+        <div className="mt-12 grid gap-8 border-t border-[#D8CEC0] pt-10 lg:grid-cols-[0.76fr_1.24fr]">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#6F8F83]">
+              <CircleHelp className="h-4 w-4" />
+              购买前常见问题
+            </div>
+            <p className="mt-3 text-sm leading-7 text-[#6D746F]">
+              先回答适用边界、权益交付、阶段证明和售后处理，减少用户在支付前的犹豫。
+            </p>
+          </div>
+
+          <div className="divide-y divide-[#D8CEC0] border-y border-[#D8CEC0]">
+            {profile.faqs.map(item => (
+              <details key={item.question} className="group py-5">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-5 text-base font-semibold text-[#243B35]">
+                  {item.question}
+                  <ArrowRight className="h-4 w-4 shrink-0 text-[#6F8F83] transition group-open:rotate-90" />
+                </summary>
+                <p className="mt-3 max-w-[760px] text-sm leading-7 text-[#6D746F]">
+                  {item.answer}
+                </p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TrustMetric({
+  metric,
+}: {
+  metric: CourseTrustProfile["metrics"][number];
+}) {
+  return (
+    <div className="px-3 py-5 first:pl-0 last:pr-0">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-[#7B817C]">
+        <Star className="h-3.5 w-3.5 fill-[#C4A46A] text-[#C4A46A]" />
+        {metric.label}
+      </div>
+      <p className="mt-3 text-2xl font-semibold text-[#243B35]">
+        {metric.value}
+      </p>
+      <p className="mt-2 text-xs leading-5 text-[#6D746F]">
+        {metric.description}
+      </p>
+    </div>
+  );
+}
+
+function TrustProofRow({
+  children,
+  description,
+  eyebrow,
+  icon: Icon,
+  title,
+}: {
+  children: ReactNode;
+  description: string;
+  eyebrow: string;
+  icon: LucideIcon;
+  title: string;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.25 }}
+      transition={{ duration: 0.36, ease: [0.16, 1, 0.3, 1] }}
+      className="grid gap-5 py-7 md:grid-cols-[56px_1fr]"
+    >
+      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#E6EDDF] text-[#41675A]">
+        <Icon className="h-5 w-5" />
+      </span>
+      <div>
+        <p className="text-xs font-semibold text-[#6F8F83]">{eyebrow}</p>
+        <h3 className="mt-2 text-2xl font-semibold leading-tight text-[#243B35]">
+          {title}
+        </h3>
+        <p className="mt-3 text-sm leading-7 text-[#6D746F]">{description}</p>
+        {children}
+      </div>
+    </motion.div>
+  );
+}
+
 function CommercePanel({
   accessLabel,
   course,
@@ -866,6 +1112,8 @@ function CommercePanel({
   primaryActionLabel,
   primaryActionDescription,
   PrimaryActionIcon,
+  trustProfile,
+  trustSummary,
   visibleLearningStatus,
   visibleProgressPercent,
   onActivateMembership,
@@ -883,6 +1131,8 @@ function CommercePanel({
   primaryActionLabel: string;
   primaryActionDescription: string;
   PrimaryActionIcon: typeof PlayCircle;
+  trustProfile: CourseTrustProfile;
+  trustSummary: string;
   visibleLearningStatus: string;
   visibleProgressPercent: number;
   onActivateMembership: () => void;
@@ -935,6 +1185,23 @@ function CommercePanel({
           {formatCheckoutMoney(course.coupon.amount)}
         </div>
       )}
+
+      <div className="mt-4 divide-y divide-[#E4DCCF] rounded-[20px] border border-[#E4DCCF] bg-white">
+        {trustProfile.metrics.slice(0, 2).map(metric => (
+          <div
+            key={metric.label}
+            className="flex items-center justify-between gap-4 px-4 py-3"
+          >
+            <span className="text-xs font-semibold text-[#7B817C]">
+              {metric.label}
+            </span>
+            <span className="text-sm font-semibold text-[#243B35]">
+              {metric.value}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-xs leading-5 text-[#7B817C]">{trustSummary}</p>
 
       <div className="mt-5 rounded-[20px] bg-[#F4EFE6] p-4">
         <div className="flex items-center justify-between text-xs font-semibold">

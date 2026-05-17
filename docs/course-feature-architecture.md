@@ -58,6 +58,8 @@ client/src/features/courses/
 
 前台购买确认抽屉已抽为 `client/src/components/CourseCheckoutDrawer.tsx`，详情页和 `/courses` 复用同一套订单确认、支付方式、购买须知、支付成功反馈和待支付取消逻辑。`/courses` 可直接打开半屏结算抽屉；详情页仍支持通过 `/courses/:courseId?checkout=course|membership` 自动唤起购买确认抽屉。最终是否能学习仍由课程权益状态机和支付结果决定。
 
+课程商品信任信息由 `client/src/features/courses/model/courseTrust.ts` 生成，详情页消费统一的评分、阶段完成率、讲师说明、内容审核点、学习反馈、售后/隐私边界和 FAQ。当前数据仍来自课程详情的确定性派生，后续接真实评价、讲师资质库和售后配置时优先替换模型输入或 API adapter，避免把信任文案散落在页面组件里。
+
 以上课程权益读取 API 会先读取登录 session。未登录且未传开发期请求头时默认落到 `local-user`，用于未登录访客和本地开发；写入 API 必须有有效登录 session。
 
 ## 后续落点
@@ -65,7 +67,7 @@ client/src/features/courses/
 1. 将 `/api/courses` 从 seed 数据替换为数据库查询，并把当前 shared 查询模型映射到数据库索引。
 2. 将 `CourseAccessStore` 从 JSON 文件替换为真实订单、会员和支付回调。
 3. 扩展 loading、empty、error 和权限状态到订单、会员、学习记录。
-4. 补齐课程评价、老师资质、FAQ、售后和隐私说明等商品信任模块。
+4. 将课程信任模型接入真实评价、讲师资质、售后政策和运营配置。
 5. 把移动预览里的课程卡片继续拆成可复用组件。
 6. 将素材占位升级为真实资料管理，补齐资料下载、学习记录和课程内容完成度统计。
 7. 将课程路径从前端配置升级为后台运营配置，并接入测评推荐规则。
