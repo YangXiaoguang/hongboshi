@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { useLocation, useRoute } from "wouter";
 import {
@@ -41,6 +41,7 @@ import CoursePendingCheckoutBanner from "@/components/CoursePendingCheckoutBanne
 import NotFound from "@/pages/NotFound";
 import {
   buildCourseTrustProfile,
+  createCourseConversionCoursePayload,
   createCourseTrustSummary,
   createCourseCheckoutSummary,
   createCoursePromotionSummary,
@@ -51,6 +52,7 @@ import {
   getCourseDetailPrimaryActionCopy,
   getLearningPathForCourse,
   getNextCoursesInLearningPath,
+  trackCourseConversionEvent,
   useCourseAccess,
   useCourseDetail,
   useCourseEngagement,
@@ -59,6 +61,8 @@ import {
   type CourseCheckoutMode,
   type CourseCheckoutOrderResult,
   type CourseCheckoutPaymentChannel,
+  type CourseConversionEventName,
+  type CourseConversionSource,
   type CoursePendingCheckoutPrompt,
   type CoursePromotionOffer,
   type CoursePromotionSummary,
@@ -129,6 +133,7 @@ export default function CourseDetail() {
   const { course, allCourses, relatedCourses, isLoading } = useCourseDetail(
     Number.isInteger(courseId) ? courseId : undefined
   );
+  const trackedDetailViewsRef = useRef(new Set<number>());
 
   if (!course && isLoading) {
     return (
@@ -216,7 +221,62 @@ export default function CourseDetail() {
     ? ReceiptText
     : actionIcon[primaryAction.icon];
 
-  const handleStartLearning = () => {
+  const trackDetailConversion = (
+    name: CourseConversionEventName,
+    source: CourseConversionSource,
+    options: {
+      targetCourse?: Course;
+      mode?: CourseCheckoutMode;
+      order?: CourseCheckoutOrderResult;
+      paymentChannel?: CourseCheckoutPaymentChannel;
+      position?: number;
+      metadata?: Record<string, string | number | boolean | null>;
+    } = {}
+  ) => {
+    const targetCourse = options.targetCourse ?? course;
+    const targetAccess = getCourseAccess(targetCourse);
+    const summary = options.mode
+      ? createCourseCheckoutSummary(targetCourse, options.mode)
+      : undefined;
+
+    void trackCourseConversionEvent(
+      createCourseConversionCoursePayload({
+        name,
+        source,
+        course: targetCourse,
+        accessStatus: targetAccess.status,
+        checkoutMode: options.mode,
+        orderId: options.order?.order.id,
+        paymentChannel: options.paymentChannel,
+        position: options.position,
+        pathId: learningPath.id,
+        pathLabel: learningPath.label,
+        listPrice: summary?.listPrice,
+        originalPrice: summary?.originalPrice,
+        discountAmount: summary?.discountAmount,
+        payableAmount: summary?.payableAmount,
+        metadata: {
+          fromCourseId: targetCourse.id === course.id ? null : course.id,
+          ...options.metadata,
+        },
+      })
+    );
+  };
+
+  useEffect(() => {
+    if (trackedDetailViewsRef.current.has(course.id)) return;
+    trackedDetailViewsRef.current.add(course.id);
+    trackDetailConversion("course_detail_view", "course_detail", {
+      metadata: {
+        hasStarted,
+        locked,
+      },
+    });
+  }, [course.id]);
+
+  const handleStartLearning = (
+    source: CourseConversionSource = "course_detail_panel"
+  ) => {
     if (!access.canStart) {
       toast("请先解锁课程", {
         description: getCourseAccessDescription(access.status),
@@ -224,6 +284,7 @@ export default function CourseDetail() {
       return;
     }
 
+    trackDetailConversion("course_learning_started", source);
     startCourse(course.id);
     toast(hasStarted ? "继续学习" : "已加入学习计划", {
       description: hasStarted
@@ -242,7 +303,10 @@ export default function CourseDetail() {
     });
   };
 
-  const openCheckout = (mode: CourseCheckoutMode) => {
+  const openCheckout = (
+    mode: CourseCheckoutMode,
+    source: CourseConversionSource = "course_detail_panel"
+  ) => {
     const pendingCheckout = findPendingCourseCheckoutOrder(
       accessState,
       course,
@@ -255,6 +319,13 @@ export default function CourseDetail() {
     setSelectedPaymentChannel("wechat_pay");
     setCheckoutOrder(pendingCheckout);
     setCheckoutError(undefined);
+    trackDetailConversion("course_checkout_opened", source, {
+      mode,
+      order: pendingCheckout,
+      metadata: {
+        hasPendingCheckout: Boolean(pendingCheckout),
+      },
+    });
   };
 
   useEffect(() => {
@@ -274,12 +345,12 @@ export default function CourseDetail() {
         : "course";
 
     if (requestedMode === "membership" && access.canActivateMembership) {
-      openCheckout("membership");
+      openCheckout("membership", "url_checkout_intent");
       return;
     }
 
     if (requestedMode === "course" && access.canPurchase) {
-      openCheckout("course");
+      openCheckout("course", "url_checkout_intent");
     }
   }, [
     access.canActivateMembership,
@@ -297,18 +368,50 @@ export default function CourseDetail() {
     setCheckoutError(undefined);
   };
 
-  const handlePrimaryAction = () => {
+  const handlePrimaryAction = (
+    source: CourseConversionSource = "course_detail_panel"
+  ) => {
+    const targetMode: CourseCheckoutMode | undefined = access.canStart
+      ? undefined
+      : access.status === "requires_membership"
+        ? "membership"
+        : "course";
+
+    trackDetailConversion("course_primary_action_click", source, {
+      mode: targetMode,
+      metadata: {
+        canStart: access.canStart,
+      },
+    });
+
     if (access.canStart) {
-      handleStartLearning();
+      handleStartLearning(source);
       return;
     }
 
-    openCheckout(
-      access.status === "requires_membership" ? "membership" : "course"
-    );
+    if (!targetMode) return;
+    openCheckout(targetMode, source);
   };
 
   const handlePromotionOfferAction = (offer: CoursePromotionOffer) => {
+    trackDetailConversion(
+      "course_primary_action_click",
+      "course_detail_promotion",
+      {
+        mode:
+          offer.kind === "membership"
+            ? "membership"
+            : offer.kind === "course"
+              ? "course"
+              : undefined,
+        metadata: {
+          offerKind: offer.kind,
+          offerPayableAmount: offer.payableAmount,
+          offerRecommended: offer.isRecommended,
+        },
+      }
+    );
+
     if (offer.kind === "path_bundle") {
       document
         .getElementById("learning-path")
@@ -317,21 +420,21 @@ export default function CourseDetail() {
     }
 
     if (access.canStart) {
-      handleStartLearning();
+      handleStartLearning("course_detail_promotion");
       return;
     }
 
     if (offer.kind === "membership" && access.canActivateMembership) {
-      openCheckout("membership");
+      openCheckout("membership", "course_detail_promotion");
       return;
     }
 
     if (access.canPurchase) {
-      openCheckout("course");
+      openCheckout("course", "course_detail_promotion");
       return;
     }
 
-    handlePrimaryAction();
+    handlePrimaryAction("course_detail_promotion");
   };
 
   const handleConfirmCheckout = () => {
@@ -360,6 +463,10 @@ export default function CourseDetail() {
         pendingCheckout = created.checkout;
         setCheckoutOrder(created.checkout);
         setCheckoutStatus("pending_payment");
+        trackDetailConversion("course_checkout_created", "checkout_drawer", {
+          mode: checkoutMode,
+          order: created.checkout,
+        });
       }
 
       setCheckoutStatus("processing");
@@ -377,6 +484,11 @@ export default function CourseDetail() {
 
       setCheckoutOrder(paid.checkout);
       setCheckoutStatus("success");
+      trackDetailConversion("course_payment_success", "checkout_drawer", {
+        mode: checkoutMode,
+        order: paid.checkout,
+        paymentChannel: selectedPaymentChannel,
+      });
       toast(checkoutMode === "membership" ? "会员已开通" : "课程已解锁", {
         description:
           paid.syncMode === "api"
@@ -450,9 +562,28 @@ export default function CourseDetail() {
   };
 
   const handleStartAfterCheckout = () => {
+    trackDetailConversion("course_learning_started", "checkout_drawer", {
+      mode: checkoutMode,
+      order: checkoutOrder,
+    });
     closeCheckout();
     startCourse(course.id);
     navigate(`/courses/${course.id}/learn`);
+  };
+
+  const handleRelatedCourseSelect = (
+    targetCourse: Course,
+    metadata: Record<string, string | number | boolean | null> = {}
+  ) => {
+    trackDetailConversion(
+      "course_detail_click",
+      "course_detail_recommendation",
+      {
+        targetCourse,
+        metadata,
+      }
+    );
+    navigate(`/courses/${targetCourse.id}`);
   };
 
   return (
@@ -562,9 +693,13 @@ export default function CourseDetail() {
               promotionSummary={promotionSummary}
               visibleLearningStatus={visibleLearningStatus}
               visibleProgressPercent={visibleProgressPercent}
-              onActivateMembership={() => openCheckout("membership")}
-              onOpenCourseCheckout={() => openCheckout("course")}
-              onPrimaryAction={handlePrimaryAction}
+              onActivateMembership={() =>
+                openCheckout("membership", "course_detail_panel")
+              }
+              onOpenCourseCheckout={() =>
+                openCheckout("course", "course_detail_panel")
+              }
+              onPrimaryAction={() => handlePrimaryAction("course_detail_panel")}
               onToggleFavorite={handleToggleFavorite}
               onConsult={() => navigate("/consulting")}
             />
@@ -576,7 +711,7 @@ export default function CourseDetail() {
             title="这门课有待支付订单"
             description="订单已保留支付窗口，可以继续支付或取消后重新选择。"
             prompts={[pendingCheckoutPrompt]}
-            onResume={prompt => openCheckout(prompt.mode)}
+            onResume={prompt => openCheckout(prompt.mode, "pending_checkout")}
             onCancel={handleCancelPendingCheckout}
           />
         )}
@@ -653,7 +788,7 @@ export default function CourseDetail() {
           profile={trustProfile}
           summary={trustSummary}
           onConsult={() => navigate("/consulting")}
-          onPrimaryAction={handlePrimaryAction}
+          onPrimaryAction={() => handlePrimaryAction("course_detail_trust")}
         />
 
         <section
@@ -725,7 +860,10 @@ export default function CourseDetail() {
                   </p>
                   <button
                     onClick={() =>
-                      navigate(`/courses/${nextPathCourses[0].id}`)
+                      handleRelatedCourseSelect(nextPathCourses[0], {
+                        recommendationKind: "next_path",
+                        position: 0,
+                      })
                     }
                     className="group mt-4 flex w-full items-center gap-4 text-left"
                   >
@@ -765,7 +903,7 @@ export default function CourseDetail() {
                 </div>
                 {access.canStart && (
                   <button
-                    onClick={handleStartLearning}
+                    onClick={() => handleStartLearning("course_detail_catalog")}
                     className="inline-flex h-10 items-center justify-center rounded-full bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
                   >
                     进入学习页
@@ -910,12 +1048,17 @@ export default function CourseDetail() {
                       </div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
-                      {nextPathCourses.map(item => (
+                      {nextPathCourses.map((item, index) => (
                         <CompactCourseCard
                           key={item.id}
                           course={item}
                           eyebrow={`${learningPath.label}路径`}
-                          onClick={() => navigate(`/courses/${item.id}`)}
+                          onClick={() =>
+                            handleRelatedCourseSelect(item, {
+                              recommendationKind: "next_path",
+                              position: index,
+                            })
+                          }
                         />
                       ))}
                     </div>
@@ -933,12 +1076,17 @@ export default function CourseDetail() {
                       </p>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
-                      {supplementalCourses.map(item => (
+                      {supplementalCourses.map((item, index) => (
                         <CompactCourseCard
                           key={item.id}
                           course={item}
                           eyebrow={item.category}
-                          onClick={() => navigate(`/courses/${item.id}`)}
+                          onClick={() =>
+                            handleRelatedCourseSelect(item, {
+                              recommendationKind: "supplemental",
+                              position: index,
+                            })
+                          }
                         />
                       ))}
                     </div>
@@ -996,7 +1144,7 @@ export default function CourseDetail() {
                 ? `${course.coupon.label} 已自动计入券后价`
                 : undefined
           }
-          onClick={handlePrimaryAction}
+          onClick={() => handlePrimaryAction("mobile_purchase_bar")}
         />
       )}
     </div>

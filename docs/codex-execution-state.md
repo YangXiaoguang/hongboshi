@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`CUX-F 转化漏斗埋点`
-- 当前状态：`CUX-E 优惠与组合购` 已完成，课程价格计算已进入共享领域模型，用户端课程卡片、快速开始区、详情页交易面板、优惠与组合购比较区和结算抽屉均可展示券后价、自动优惠、会员替代方案和路径组合预览。
-- 本轮完成后下一步：执行 `CUX-F 转化漏斗埋点`
+- 当前阶段：`CUX-G 营销规则后台化`
+- 当前状态：`CUX-F 转化漏斗埋点` 已完成，课程曝光、详情点击、详情浏览、主动作点击、打开结算、创建订单、支付成功和开始学习已进入统一事件契约，前端支持 localStorage 队列和可选 analytics endpoint。
+- 本轮完成后下一步：执行 `CUX-G 营销规则后台化`
 
 ## 已完成关键能力
 
@@ -39,6 +39,7 @@
 - 完成课程详情商品信任模块：新增 `courseTrust` 纯模型和购买信任区，详情页前置讲师可信度、学习反馈、内容边界、售后/隐私口径和 FAQ，交易面板展示评分、阶段完成率和信任摘要。
 - 完成全局待支付订单召回：新增 `coursePendingCheckout` 纯模型和 `CoursePendingCheckoutBanner` 共享组件，课程中心、课程详情和成长空间复用同一套继续支付/取消订单入口。
 - 完成课程优惠与组合购：新增共享 `coursePricing` 和前端 `coursePromotion` 纯模型，课程卡片、快速开始区、详情页和结算抽屉统一展示券后价、本单优惠、会员替代和路径组合预览。
+- 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成课程订单状态与支付结果服务端化：新增课程 checkout 共享契约、订单扩展字段、服务端创建/读取/支付/取消 API 和前端 repository/hook，课程权益只在服务端支付成功后交付，重复支付保持幂等。
 - 课程详情页购买抽屉已接入订单状态，支持待创建、待支付、支付中、支付成功、失败重试和取消待支付订单，并展示订单号、支付保留时间、支付渠道和权益交付摘要。
 - TRX-C 浏览器验证已通过：在 `/courses/16` 完成登录、创建订单、模拟支付成功、权益到账和“开始学习”入口切换；`pnpm run ci` 已通过 87 个测试文件 / 411 个测试和生产构建。
@@ -191,6 +192,22 @@
 - `/admin/audit` 管理员归档控制台已加入“归档检索预览”，按当前筛选读取归档表前 5 条摘要行；归档预览为空或失败不影响主审计列表、导出、详情、归档和校验。
 
 ## 最近完成阶段
+
+CUX-F 转化漏斗埋点已交付：
+
+- `shared/domain/courseConversion.ts`：新增课程转化事件共享契约，统一事件名、来源、课程上下文、路径上下文、权益状态、结算模式、订单号、支付渠道、金额和扩展 metadata。
+- `client/src/features/courses/model/courseConversion.ts`：新增课程事件 payload 纯模型，自动带入课程价格、课程属性、路径、权益状态和页面上下文。
+- `client/src/features/courses/api/courseConversionAnalyticsRepository.ts`：新增前端埋点仓库，支持 localStorage 队列、会话 ID、可选 `VITE_ANALYTICS_ENDPOINT` / `VITE_ANALYTICS_WEBSITE_ID` 上报和失败保留。
+- `client/src/pages/Courses.tsx`：课程中心已记录课程列表曝光、从货架进入详情、点击主动作、打开结算、创建订单、支付成功和支付后开始学习。
+- `client/src/pages/CourseDetail.tsx`：课程详情已记录详情浏览、推荐课程点击、交易面板/优惠区/信任区/移动购买条主动作、打开结算、创建订单、支付成功和开始学习。
+- `client/src/components/CourseCard.tsx` 与 `CourseDiscoverySection.tsx`：课程卡片支持外部接管详情点击，以便保留来源与位置。
+
+CUX-F 验收结果：
+
+- 浏览器已验证：桌面 `/courses` 首屏写入 12 条 `course_impression`，点击课程写入 `course_detail_click`，详情页写入 `course_detail_view`。
+- 浏览器已验证：桌面 `/courses/2` 点击购买入口写入 `course_primary_action_click` 和 `course_checkout_opened`，页面无横向溢出。
+- 浏览器已验证：移动端 `/courses/2` 底部购买条写入 `mobile_purchase_bar` 来源的主动作点击与结算打开事件，页面无横向溢出。
+- `pnpm run ci` 已通过：类型检查、97 个测试文件 / 450 个测试和生产构建均成功；Vite 仍保留主包体积大于 500 kB 的既有提醒。
 
 CUX-E 优惠与组合购已交付：
 

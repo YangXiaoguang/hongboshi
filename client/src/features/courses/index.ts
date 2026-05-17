@@ -5,6 +5,15 @@ export {
 export { httpCourseAccessRepository } from "./api/httpCourseAccessRepository";
 export { httpCourseLearningRecordRepository } from "./api/httpCourseLearningRecordRepository";
 export { httpCourseRepository } from "./api/httpCourseRepository";
+export {
+  COURSE_CONVERSION_SESSION_KEY,
+  COURSE_CONVERSION_STORAGE_KEY,
+  createCourseConversionAnalyticsRepository,
+  trackCourseConversionEvent,
+  type CourseConversionAnalyticsRepository,
+  type CourseConversionStoredEvent,
+  type CourseConversionStoredEventStatus,
+} from "./api/courseConversionAnalyticsRepository";
 export { useCourseCatalog } from "./hooks/useCourseCatalog";
 export { useCourseDetail } from "./hooks/useCourseDetail";
 export { useCourseAccess } from "./hooks/useCourseAccess";
@@ -78,6 +87,13 @@ export {
   type CoursePromotionOffer,
   type CoursePromotionSummary,
 } from "./model/coursePromotion";
+export {
+  createCourseConversionCoursePayload,
+  createCourseConversionEvent,
+  type CourseConversionCoursePayloadInput,
+  type CourseConversionEventContext,
+  type CourseConversionEventDraft,
+} from "./model/courseConversion";
 export {
   COURSE_MEMBERSHIP_CHECKOUT_ORIGINAL_PRICE,
   COURSE_MEMBERSHIP_CHECKOUT_PRICE,
@@ -191,4 +207,10 @@ export type {
   CourseLearningRecordResult,
   CourseLearningRecordSource,
   CourseLearningSyncStatus,
+  CourseConversionEvent,
+  CourseConversionEventBatch,
+  CourseConversionEventName,
+  CourseConversionMetadata,
+  CourseConversionMetadataValue,
+  CourseConversionSource,
 } from "@shared/domain";

@@ -31,6 +31,7 @@ interface CourseCardProps {
     tone: "buy" | "learn" | "member";
   };
   onToggleFavorite?: (courseId: number) => void;
+  onSelect?: (course: Course) => void;
   onPrimaryAction?: (course: Course) => void;
 }
 
@@ -79,6 +80,7 @@ export default function CourseCard({
   accessStatus,
   primaryAction,
   onToggleFavorite,
+  onSelect,
   onPrimaryAction,
 }: CourseCardProps) {
   const [, navigate] = useLocation();
@@ -97,6 +99,11 @@ export default function CourseCard({
   }, [course.discount?.endsAt]);
 
   const handleClick = () => {
+    if (onSelect) {
+      onSelect(course);
+      return;
+    }
+
     navigate(`/courses/${course.id}`);
   };
 

@@ -46,6 +46,7 @@ interface CourseDiscoverySectionProps {
     tone: "buy" | "learn" | "member";
   };
   onToggleFavorite: (courseId: number) => void;
+  onCourseSelect?: (course: Course) => void;
   onCoursePrimaryAction?: (course: Course) => void;
   onCategoryChange: (category: CourseCategoryFilter) => void;
   onTypeChange: (type: CourseTypeFilter) => void;
@@ -78,6 +79,7 @@ export default function CourseDiscoverySection({
   getCourseAccessStatus,
   getCoursePrimaryAction,
   onToggleFavorite,
+  onCourseSelect,
   onCoursePrimaryAction,
   onCategoryChange,
   onTypeChange,
@@ -147,6 +149,7 @@ export default function CourseDiscoverySection({
                   accessStatus={getCourseAccessStatus(course)}
                   primaryAction={getCoursePrimaryAction?.(course)}
                   onToggleFavorite={onToggleFavorite}
+                  onSelect={onCourseSelect}
                   onPrimaryAction={onCoursePrimaryAction}
                 />
               ))}

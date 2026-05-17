@@ -6,6 +6,7 @@ export * from "./counseling";
 export * from "./course";
 export * from "./courseAccess";
 export * from "./courseCatalog";
+export * from "./courseConversion";
 export * from "./coursePricing";
 export * from "./courseLearningRecord";
 export * from "./courseProduct";

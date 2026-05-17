@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -20,11 +20,13 @@ import CoursePathSection from "@/components/CoursePathSection";
 import CourseStarterLanes from "@/components/CourseStarterLanes";
 import {
   DEFAULT_COURSE_LEARNING_PATH_ID,
+  createCourseConversionCoursePayload,
   createCourseCheckoutSummary,
   createPendingCourseCheckoutPrompts,
   findPendingCourseCheckoutOrder,
   getCourseDetailPrimaryActionCopy,
   getCourseLearningPath,
+  trackCourseConversionEvent,
   useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
@@ -32,6 +34,8 @@ import {
   type CourseCheckoutMode,
   type CourseCheckoutOrderResult,
   type CourseCheckoutPaymentChannel,
+  type CourseConversionEventName,
+  type CourseConversionSource,
   type CourseLearningPath,
   type CoursePendingCheckoutPrompt,
 } from "@/features/courses";
@@ -97,6 +101,81 @@ export default function Courses() {
     checkoutCourse && checkoutMode
       ? createCourseCheckoutSummary(checkoutCourse, checkoutMode)
       : undefined;
+  const trackedImpressionsRef = useRef(new Set<string>());
+
+  const trackCourseConversion = (
+    name: CourseConversionEventName,
+    course: Course,
+    source: CourseConversionSource,
+    options: {
+      mode?: CourseCheckoutMode;
+      order?: CourseCheckoutOrderResult;
+      paymentChannel?: CourseCheckoutPaymentChannel;
+      position?: number;
+      path?: CourseLearningPath;
+      metadata?: Record<string, string | number | boolean | null>;
+    } = {}
+  ) => {
+    const path = options.path ?? selectedPath;
+    const summary = options.mode
+      ? createCourseCheckoutSummary(course, options.mode)
+      : undefined;
+
+    void trackCourseConversionEvent(
+      createCourseConversionCoursePayload({
+        name,
+        course,
+        source,
+        accessStatus: getCourseAccess(course).status,
+        checkoutMode: options.mode,
+        orderId: options.order?.order.id,
+        paymentChannel: options.paymentChannel,
+        position: options.position,
+        pathId: path.id,
+        pathLabel: path.label,
+        listPrice: summary?.listPrice,
+        originalPrice: summary?.originalPrice,
+        discountAmount: summary?.discountAmount,
+        payableAmount: summary?.payableAmount,
+        metadata: options.metadata,
+      })
+    );
+  };
+
+  useEffect(() => {
+    paginatedCourses.forEach((course, index) => {
+      const key = [
+        selectedPath.id,
+        selectedCategory,
+        selectedType,
+        activeSort,
+        vipOnly ? "vip" : "all",
+        currentPage,
+        course.id,
+      ].join(":");
+
+      if (trackedImpressionsRef.current.has(key)) return;
+      trackedImpressionsRef.current.add(key);
+      trackCourseConversion("course_impression", course, "courses_discovery", {
+        position: index,
+        metadata: {
+          selectedCategory,
+          selectedType,
+          activeSort,
+          vipOnly,
+          currentPage,
+        },
+      });
+    });
+  }, [
+    activeSort,
+    currentPage,
+    paginatedCourses,
+    selectedCategory,
+    selectedPath.id,
+    selectedType,
+    vipOnly,
+  ]);
 
   const applyCoursePath = (path: CourseLearningPath) => {
     setSelectedPathId(path.id);
@@ -130,8 +209,15 @@ export default function Courses() {
   const openCheckout = (
     course: Course,
     mode: CourseCheckoutMode,
-    pendingCheckout = findPendingCourseCheckoutOrder(accessState, course, mode)
+    options: {
+      pendingCheckout?: CourseCheckoutOrderResult;
+      source?: CourseConversionSource;
+    } = {}
   ) => {
+    const pendingCheckout =
+      options.pendingCheckout ??
+      findPendingCourseCheckoutOrder(accessState, course, mode);
+
     setCheckoutCourse(course);
     setCheckoutMode(mode);
     setCheckoutStatus(pendingCheckout ? "pending_payment" : "idle");
@@ -139,6 +225,18 @@ export default function Courses() {
     setSelectedPaymentChannel("wechat_pay");
     setCheckoutOrder(pendingCheckout);
     setCheckoutError(undefined);
+    trackCourseConversion(
+      "course_checkout_opened",
+      course,
+      options.source ?? "unknown",
+      {
+        mode,
+        order: pendingCheckout,
+        metadata: {
+          hasPendingCheckout: Boolean(pendingCheckout),
+        },
+      }
+    );
   };
 
   const closeCheckout = () => {
@@ -199,10 +297,37 @@ export default function Courses() {
     };
   };
 
-  const handleCoursePrimaryAction = (course: Course) => {
+  const handleCourseSelect = (
+    course: Course,
+    source: CourseConversionSource,
+    position?: number
+  ) => {
+    trackCourseConversion("course_detail_click", course, source, {
+      position,
+    });
+    navigate(`/courses/${course.id}`);
+  };
+
+  const handleCoursePrimaryAction = (
+    course: Course,
+    source: CourseConversionSource = "courses_discovery"
+  ) => {
     const access = getCourseAccess(course);
+    const targetCheckoutMode: CourseCheckoutMode | undefined = access.canStart
+      ? undefined
+      : access.status === "requires_membership"
+        ? "membership"
+        : "course";
+
+    trackCourseConversion("course_primary_action_click", course, source, {
+      mode: targetCheckoutMode,
+      metadata: {
+        canStart: access.canStart,
+      },
+    });
 
     if (access.canStart) {
+      trackCourseConversion("course_learning_started", course, source);
       startCourse(course.id);
       toast("已放入学习计划", {
         description: `即将进入「${course.title}」学习页。`,
@@ -211,9 +336,8 @@ export default function Courses() {
       return;
     }
 
-    const checkoutMode =
-      access.status === "requires_membership" ? "membership" : "course";
-    openCheckout(course, checkoutMode);
+    if (!targetCheckoutMode) return;
+    openCheckout(course, targetCheckoutMode, { source });
   };
 
   const handleConfirmCheckout = () => {
@@ -242,6 +366,15 @@ export default function Courses() {
         pendingCheckout = created.checkout;
         setCheckoutOrder(created.checkout);
         setCheckoutStatus("pending_payment");
+        trackCourseConversion(
+          "course_checkout_created",
+          checkoutCourse,
+          "checkout_drawer",
+          {
+            mode: checkoutMode,
+            order: created.checkout,
+          }
+        );
       }
 
       setCheckoutStatus("processing");
@@ -259,6 +392,16 @@ export default function Courses() {
 
       setCheckoutOrder(paid.checkout);
       setCheckoutStatus("success");
+      trackCourseConversion(
+        "course_payment_success",
+        checkoutCourse,
+        "checkout_drawer",
+        {
+          mode: checkoutMode,
+          order: paid.checkout,
+          paymentChannel: selectedPaymentChannel,
+        }
+      );
       toast(checkoutMode === "membership" ? "会员已开通" : "课程已解锁", {
         description:
           paid.syncMode === "api"
@@ -329,6 +472,15 @@ export default function Courses() {
   const handleStartAfterCheckout = () => {
     if (!checkoutCourse) return;
     const targetCourse = checkoutCourse;
+    trackCourseConversion(
+      "course_learning_started",
+      targetCourse,
+      "checkout_drawer",
+      {
+        mode: checkoutMode,
+        order: checkoutOrder,
+      }
+    );
     closeCheckout();
     startCourse(targetCourse.id);
     navigate(`/courses/${targetCourse.id}/learn`);
@@ -421,7 +573,10 @@ export default function Courses() {
           <CoursePendingCheckoutBanner
             prompts={pendingCheckoutPrompts}
             onResume={prompt =>
-              openCheckout(prompt.course, prompt.mode, prompt.checkout)
+              openCheckout(prompt.course, prompt.mode, {
+                pendingCheckout: prompt.checkout,
+                source: "pending_checkout",
+              })
             }
             onCancel={handleCancelPendingCheckout}
           />
@@ -432,17 +587,23 @@ export default function Courses() {
           selectedPathId={selectedPathId}
           onPathChange={applyCoursePath}
           onExplorePath={handleExploreCoursePath}
-          onCourseSelect={course => navigate(`/courses/${course.id}`)}
+          onCourseSelect={course => handleCourseSelect(course, "course_path")}
           getCourseAction={getCoursePrimaryAction}
-          onCourseAction={handleCoursePrimaryAction}
+          onCourseAction={course =>
+            handleCoursePrimaryAction(course, "course_path")
+          }
           onAssessment={() => navigate("/assessment")}
         />
 
         <CourseStarterLanes
           courses={allCourses}
-          onCourseSelect={course => navigate(`/courses/${course.id}`)}
+          onCourseSelect={course =>
+            handleCourseSelect(course, "course_starter")
+          }
           getCourseAction={getCoursePrimaryAction}
-          onCourseAction={handleCoursePrimaryAction}
+          onCourseAction={course =>
+            handleCoursePrimaryAction(course, "course_starter")
+          }
         />
 
         <CourseDiscoverySection
@@ -467,7 +628,12 @@ export default function Courses() {
           getCourseAccessStatus={course => getCourseAccess(course).status}
           getCoursePrimaryAction={getCoursePrimaryAction}
           onToggleFavorite={toggleFavorite}
-          onCoursePrimaryAction={handleCoursePrimaryAction}
+          onCourseSelect={(course: Course) =>
+            handleCourseSelect(course, "courses_discovery")
+          }
+          onCoursePrimaryAction={course =>
+            handleCoursePrimaryAction(course, "courses_discovery")
+          }
           onCategoryChange={setCategory}
           onTypeChange={setType}
           onSortChange={setSort}
