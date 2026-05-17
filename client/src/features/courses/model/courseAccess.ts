@@ -13,6 +13,7 @@ export {
   createEmptyCourseAccessState,
   createCourseCheckoutOrder,
   createCourseCheckoutOrderResult,
+  findPendingCourseCheckoutOrder,
   grantPurchasedCourseAccess,
   hasActiveCourseMembership,
   normalizeCourseAccessState,

@@ -136,7 +136,7 @@ pnpm db:migrate
 
 ## 当前业务状态
 
-- 课程 seed 来自 `shared/data/mockCourses.ts`，当前用于课程商品 Store 初始化和测试 fallback；前台课程列表/详情通过课程商品 Store 读取已审核通过且已上架商品，课程路径、快速开始区和课程列表卡片已支持立即购买/开通会员/开始学习的主动作，购买意图会带入详情页并自动唤起结算抽屉
+- 课程 seed 来自 `shared/data/mockCourses.ts`，当前用于课程商品 Store 初始化和测试 fallback；前台课程列表/详情通过课程商品 Store 读取已审核通过且已上架商品，课程路径、快速开始区和课程列表卡片已支持立即购买/开通会员/开始学习/继续支付的主动作，`/courses` 可直接打开半屏结算抽屉，待支付课程订单会在课程中心召回
 - 共享业务类型位于 `shared/domain`
 - PC 端主页面位于 `client/src/pages/Home.tsx`
 - 个人成长空间位于 `client/src/pages/MyCourses.tsx`，通过 `/me/courses` 展示课程权益、学习进度、练习沉淀、阶段证明预览、测评报告、咨询预约、会员和订单；登录用户的章节进度和练习记录会优先同步到服务端，网络失败时保留本机记录

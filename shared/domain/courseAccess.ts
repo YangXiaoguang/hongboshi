@@ -172,6 +172,25 @@ function findPendingCheckoutOrder(
   });
 }
 
+export function findPendingCourseCheckoutOrder(
+  state: CourseAccessState,
+  course: Course,
+  mode: CourseCheckoutMode
+): CourseCheckoutOrderResult | undefined {
+  const normalized = normalizeCourseAccessState(state);
+  const targetId =
+    mode === "membership"
+      ? COURSE_MEMBERSHIP_ORDER_TARGET_ID
+      : String(course.id);
+  const pendingOrder = findPendingCheckoutOrder(normalized, mode, targetId);
+  if (!pendingOrder) return undefined;
+
+  return createCourseCheckoutOrderResult({
+    state: normalized,
+    order: pendingOrder,
+  });
+}
+
 function courseOrderAmount(course: Course) {
   const discountAmount = Math.min(course.coupon?.amount ?? 0, course.price);
   return {

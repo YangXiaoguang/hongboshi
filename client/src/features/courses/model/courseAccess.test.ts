@@ -5,6 +5,7 @@ import {
   cancelCourseCheckoutOrder,
   createEmptyCourseAccessState,
   createCourseCheckoutOrder,
+  findPendingCourseCheckoutOrder,
   grantPurchasedCourseAccess,
   hasActiveCourseMembership,
   payCourseCheckoutOrder,
@@ -83,6 +84,26 @@ describe("course access model", () => {
     expect(resolveCourseAccess(checkout.accessState, baseCourse).status).toBe(
       "requires_purchase"
     );
+  });
+
+  it("finds reusable pending checkout orders for purchase recall", () => {
+    const checkout = createCourseCheckoutOrder(
+      createEmptyCourseAccessState(),
+      baseCourse,
+      "course",
+      "2026-05-09T10:00:00.000Z",
+      "u_10001"
+    );
+
+    const pending = findPendingCourseCheckoutOrder(
+      checkout.accessState,
+      baseCourse,
+      "course"
+    );
+
+    expect(pending?.order.id).toBe(checkout.order.id);
+    expect(pending?.order.status).toBe("pending_payment");
+    expect(pending?.payment.payableAmount).toBe(399);
   });
 
   it("delivers course access only after checkout payment succeeds", () => {
