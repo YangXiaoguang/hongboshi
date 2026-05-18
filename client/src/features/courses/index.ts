@@ -117,6 +117,13 @@ export {
   type CourseCheckoutCouponOptionStatus,
 } from "./model/courseCouponBag";
 export {
+  createPersonalOrderAmountRows,
+  createPersonalOrderServiceNotes,
+  createPersonalOrderTimeline,
+  type PersonalOrderAmountRow,
+  type PersonalOrderTimelineItem,
+} from "./model/personalOrderDetail";
+export {
   createLearningPlanWorkspace,
   type LearningPlanBucket,
   type LearningPlanCourseItem,

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ElementType } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import {
@@ -9,17 +9,22 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock3,
+  CreditCard,
   Crown,
+  FileText,
   Heart,
   Image as ImageIcon,
+  LifeBuoy,
   Loader2,
   LockKeyhole,
+  PackageCheck,
   ReceiptText,
   Save,
   ShieldCheck,
   TicketPercent,
   UserRound,
   WalletCards,
+  X,
 } from "lucide-react";
 import type {
   CourseMarketingRule,
@@ -39,6 +44,9 @@ import {
   useCourseCatalog,
   useCourseEngagement,
   useCourseMarketingRules,
+  createPersonalOrderAmountRows,
+  createPersonalOrderServiceNotes,
+  createPersonalOrderTimeline,
   type Course,
 } from "@/features/courses";
 import { useCounselingAppointments } from "@/features/counseling";
@@ -114,6 +122,10 @@ function formatMoney(amount: number) {
   return `¥${amount.toFixed(amount % 1 === 0 ? 0 : 1)}`;
 }
 
+function formatSignedMoney(amount: number) {
+  return amount < 0 ? `-${formatMoney(Math.abs(amount))}` : formatMoney(amount);
+}
+
 function formatDate(value?: string) {
   if (!value) return "未记录";
   const date = new Date(value);
@@ -172,6 +184,18 @@ function orderActivityTime(order: Order) {
     order.closedAt ??
     order.expiresAt ??
     order.createdAt
+  );
+}
+
+function couponNameForOrder(
+  order: Order,
+  marketingRules: CourseMarketingRule[]
+) {
+  const marketingRuleId = order.couponApplication?.marketingRuleId;
+  if (!marketingRuleId) return undefined;
+  return (
+    marketingRules.find(rule => rule.id === marketingRuleId)?.name ??
+    marketingRuleId
   );
 }
 
@@ -252,6 +276,9 @@ export default function PersonalCenter() {
   const [focusedOrderId, setFocusedOrderId] = useState<string | undefined>(
     initialOrderIdFromUrl
   );
+  const [selectedOrderId, setSelectedOrderId] = useState<string | undefined>(
+    initialOrderIdFromUrl
+  );
   const [profileForm, setProfileForm] = useState({
     displayName: "",
     avatarUrl: "",
@@ -261,9 +288,13 @@ export default function PersonalCenter() {
   const [isPreferenceLoading, setIsPreferenceLoading] = useState(false);
   const [preferenceError, setPreferenceError] = useState<string | undefined>();
   const [claimingRuleId, setClaimingRuleId] = useState<string | undefined>();
+  const [orderActionPendingId, setOrderActionPendingId] = useState<
+    string | undefined
+  >();
   const { user, isLoggedIn, openLoginModal, updateProfile } = useAuth();
   const {
     accessState,
+    cancelCheckoutOrder,
     hasActiveMembership,
     membership,
     ownedCourseCount,
@@ -316,6 +347,22 @@ export default function PersonalCenter() {
     order => order.status === "paid"
   ).length;
 
+  const selectedOrder = useMemo(
+    () =>
+      selectedOrderId
+        ? recentOrders.find(order => order.id === selectedOrderId)
+        : undefined,
+    [recentOrders, selectedOrderId]
+  );
+
+  const selectedOrderCourse = selectedOrder
+    ? courseForOrder(selectedOrder, allCourses)
+    : undefined;
+
+  const selectedOrderCouponName = selectedOrder
+    ? couponNameForOrder(selectedOrder, marketingRules)
+    : undefined;
+
   const activeRoleLabels =
     user?.roles
       .map(role => roleCopy[role])
@@ -350,11 +397,19 @@ export default function PersonalCenter() {
   const focusOrder = (orderId: string) => {
     setActiveTab("orders");
     setFocusedOrderId(orderId);
+    setSelectedOrderId(orderId);
     window.history.replaceState(
       null,
       "",
       `/me?tab=orders&orderId=${encodeURIComponent(orderId)}`
     );
+  };
+
+  const closeOrderDetail = () => {
+    setSelectedOrderId(undefined);
+    if (activeTab === "orders") {
+      window.history.replaceState(null, "", "/me?tab=orders");
+    }
   };
 
   useEffect(() => {
@@ -398,8 +453,49 @@ export default function PersonalCenter() {
 
   const changeTab = (tab: PersonalTab) => {
     setActiveTab(tab);
-    if (tab !== "orders") setFocusedOrderId(undefined);
+    if (tab !== "orders") {
+      setFocusedOrderId(undefined);
+      setSelectedOrderId(undefined);
+    }
     window.history.replaceState(null, "", `/me?tab=${tab}`);
+  };
+
+  const navigateToOrderCourse = (order: Order, checkout = false) => {
+    const course = courseForOrder(order, allCourses);
+    closeOrderDetail();
+    if (course) {
+      navigate(`/courses/${course.id}${checkout ? "?checkout=course" : ""}`);
+      return;
+    }
+
+    navigate("/courses");
+  };
+
+  const handleCancelOrderFromDetail = async (order: Order) => {
+    if (order.status !== "pending_payment") return;
+
+    setOrderActionPendingId(order.id);
+    try {
+      const result = await cancelCheckoutOrder(order.id);
+      if (result === "auth_required") {
+        toast("请先登录", {
+          description: "登录后可继续处理这笔待支付订单。",
+        });
+        return;
+      }
+
+      setSelectedOrderId(result.checkout.order.id);
+      setFocusedOrderId(result.checkout.order.id);
+      toast("订单已取消", {
+        description: "课程权益未发放，你可以重新下单。",
+      });
+    } catch (err) {
+      toast("订单取消失败", {
+        description: err instanceof Error ? err.message : "请稍后再试。",
+      });
+    } finally {
+      setOrderActionPendingId(undefined);
+    }
   };
 
   const saveProfile = async () => {
@@ -791,7 +887,13 @@ export default function PersonalCenter() {
                               {formatMoney(order.payableAmount)}
                             </p>
                           </div>
-                          <div className="flex items-start md:justify-end">
+                          <div className="flex flex-wrap items-start gap-2 md:flex-col md:items-end">
+                            <button
+                              onClick={() => focusOrder(order.id)}
+                              className="inline-flex h-9 items-center justify-center rounded-full bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047]"
+                            >
+                              订单详情
+                            </button>
                             <button
                               onClick={() => {
                                 if (course) {
@@ -1085,7 +1187,283 @@ export default function PersonalCenter() {
         </section>
       </main>
 
+      <PersonalOrderDetailDrawer
+        couponName={selectedOrderCouponName}
+        course={selectedOrderCourse}
+        isActionPending={orderActionPendingId === selectedOrder?.id}
+        isOpen={Boolean(selectedOrder)}
+        order={selectedOrder}
+        onCancelOrder={handleCancelOrderFromDetail}
+        onClose={closeOrderDetail}
+        onContinuePayment={order => navigateToOrderCourse(order, true)}
+        onViewCourse={order => navigateToOrderCourse(order)}
+        onViewWorkspace={() => {
+          closeOrderDetail();
+          navigate("/me/courses");
+        }}
+      />
+
       <AppFooter />
     </div>
+  );
+}
+
+function PersonalOrderDetailDrawer({
+  couponName,
+  course,
+  isActionPending,
+  isOpen,
+  order,
+  onCancelOrder,
+  onClose,
+  onContinuePayment,
+  onViewCourse,
+  onViewWorkspace,
+}: {
+  couponName?: string;
+  course?: Course;
+  isActionPending: boolean;
+  isOpen: boolean;
+  order?: Order;
+  onCancelOrder: (order: Order) => void;
+  onClose: () => void;
+  onContinuePayment: (order: Order) => void;
+  onViewCourse: (order: Order) => void;
+  onViewWorkspace: () => void;
+}) {
+  const amountRows = order ? createPersonalOrderAmountRows(order) : [];
+  const timeline = order ? createPersonalOrderTimeline(order) : [];
+  const serviceNotes = order ? createPersonalOrderServiceNotes(order) : [];
+  const firstItem = order?.items[0];
+  const canPay = order?.status === "pending_payment";
+  const canViewCourse =
+    order?.status === "paid" ||
+    order?.status === "refunding" ||
+    order?.status === "refunded";
+
+  return (
+    <AnimatePresence>
+      {isOpen && order && (
+        <motion.div
+          className="fixed inset-0 z-50 flex justify-end bg-[#172620]/52 backdrop-blur-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+        >
+          <motion.aside
+            className="flex h-full w-full max-w-[520px] flex-col overflow-y-auto bg-[#FFFDF8] text-[#243B35] shadow-2xl"
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#E7DED0] bg-[#FFFDF8]/95 px-5 py-4 backdrop-blur">
+              <div>
+                <p className="text-xs font-semibold text-[#6F8F83]">
+                  订单详情
+                </p>
+                <h2 className="mt-1 text-xl font-semibold">
+                  {orderStatusCopy[order.status]}
+                </h2>
+              </div>
+              <button
+                onClick={onClose}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F4EFE6] text-[#6D746F] transition hover:text-[#243B35]"
+                aria-label="关闭订单详情"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-5 py-6">
+              <div className="rounded-[24px] bg-[#243B35] p-5 text-white">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[#DDE8D9]">
+                      {firstItem?.type === "membership"
+                        ? "会员订单"
+                        : "课程订单"}
+                    </p>
+                    <h3 className="mt-3 line-clamp-2 text-xl font-semibold">
+                      {firstItem?.title ?? "订单商品"}
+                    </h3>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-[#DDE8D9]">
+                    {orderStatusCopy[order.status]}
+                  </span>
+                </div>
+                <p className="mt-4 break-all rounded-[16px] bg-white/10 px-3 py-2 text-xs font-semibold text-[#DDE8D9]">
+                  订单号 {order.id}
+                </p>
+              </div>
+
+              <section className="mt-5 rounded-[20px] border border-[#E4DCCF] bg-white p-5">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-[#6F8F83]" />
+                  <h3 className="font-semibold">金额明细</h3>
+                </div>
+                <div className="mt-4 divide-y divide-[#E8DED0]">
+                  {amountRows.map(row => (
+                    <div
+                      key={row.label}
+                      className="flex items-center justify-between gap-4 py-3 text-sm"
+                    >
+                      <span className="text-[#6D746F]">{row.label}</span>
+                      <span
+                        className={`font-semibold ${
+                          row.tone === "discount"
+                            ? "text-[#A65F48]"
+                            : row.tone === "payable"
+                              ? "text-[#243B35]"
+                              : "text-[#5F6B64]"
+                        }`}
+                      >
+                        {formatSignedMoney(row.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 grid gap-3 text-xs text-[#6D746F] sm:grid-cols-2">
+                  <p className="rounded-[16px] bg-[#F9F5EE] px-3 py-2">
+                    支付方式：
+                    <span className="font-semibold text-[#243B35]">
+                      {order.paymentChannel
+                        ? paymentChannelCopy[order.paymentChannel]
+                        : "待确认"}
+                    </span>
+                  </p>
+                  <p className="rounded-[16px] bg-[#F9F5EE] px-3 py-2">
+                    优惠券：
+                    <span className="font-semibold text-[#243B35]">
+                      {couponName ?? "未使用账号券"}
+                    </span>
+                  </p>
+                </div>
+              </section>
+
+              <section className="mt-5 rounded-[20px] border border-[#E4DCCF] bg-white p-5">
+                <div className="flex items-center gap-2">
+                  <PackageCheck className="h-4 w-4 text-[#6F8F83]" />
+                  <h3 className="font-semibold">权益交付</h3>
+                </div>
+                <div className="mt-4 grid gap-3 text-sm text-[#5F6B64]">
+                  <p>
+                    商品类型：
+                    <span className="font-semibold text-[#243B35]">
+                      {firstItem?.type === "membership"
+                        ? "成长会员"
+                        : "课程商品"}
+                    </span>
+                  </p>
+                  <p>
+                    商品数量：
+                    <span className="font-semibold text-[#243B35]">
+                      {firstItem?.quantity ?? 1}
+                    </span>
+                  </p>
+                  <p>
+                    交付状态：
+                    <span className="font-semibold text-[#243B35]">
+                      {order.entitlementDeliveredAt
+                        ? `已交付 · ${formatDate(order.entitlementDeliveredAt)}`
+                        : order.status === "pending_payment"
+                          ? "待支付后交付"
+                          : "未交付"}
+                    </span>
+                  </p>
+                </div>
+              </section>
+
+              <section className="mt-5 rounded-[20px] border border-[#E4DCCF] bg-white p-5">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-[#6F8F83]" />
+                  <h3 className="font-semibold">订单时间线</h3>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {timeline.map(item => (
+                    <div
+                      key={item.key}
+                      className="flex items-start justify-between gap-4 rounded-[16px] bg-[#F9F5EE] px-3 py-3 text-sm"
+                    >
+                      <span
+                        className={`font-semibold ${
+                          item.tone === "success"
+                            ? "text-[#41675A]"
+                            : item.tone === "warning"
+                              ? "text-[#8A641C]"
+                              : item.tone === "muted"
+                                ? "text-[#7B817C]"
+                                : "text-[#243B35]"
+                        }`}
+                      >
+                        {item.label}
+                      </span>
+                      <span className="shrink-0 text-xs text-[#6D746F]">
+                        {formatDate(item.at)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="mt-5 rounded-[20px] border border-[#E4DCCF] bg-[#FFF7EC] p-5">
+                <div className="flex items-center gap-2">
+                  <LifeBuoy className="h-4 w-4 text-[#A65F48]" />
+                  <h3 className="font-semibold">售后服务</h3>
+                </div>
+                <ul className="mt-4 space-y-2 text-sm leading-6 text-[#6D746F]">
+                  {serviceNotes.map(note => (
+                    <li key={note}>· {note}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <div className="mt-6 grid gap-3">
+                {canPay && (
+                  <button
+                    onClick={() => onContinuePayment(order)}
+                    className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
+                  >
+                    继续支付
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </button>
+                )}
+                {canPay && (
+                  <button
+                    onClick={() => onCancelOrder(order)}
+                    disabled={isActionPending}
+                    className="inline-flex h-12 items-center justify-center rounded-full border border-[#D8CDBC] text-sm font-semibold text-[#A65F48] transition hover:bg-[#FFF1EC] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isActionPending && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    取消订单
+                  </button>
+                )}
+                {canViewCourse && course && (
+                  <button
+                    onClick={() => onViewCourse(order)}
+                    className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
+                  >
+                    查看课程
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </button>
+                )}
+                {order.status === "paid" && (
+                  <button
+                    onClick={onViewWorkspace}
+                    className="inline-flex h-12 items-center justify-center rounded-full border border-[#D8CDBC] text-sm font-semibold text-[#41675A] transition hover:bg-[#EEF4EA]"
+                  >
+                    查看成长空间
+                  </button>
+                )}
+              </div>
+            </div>
+          </motion.aside>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
