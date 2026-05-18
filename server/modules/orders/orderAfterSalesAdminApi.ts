@@ -10,6 +10,8 @@ import {
   OrderAfterSalesAuditEventSchema,
   OrderAfterSalesRequestSchema,
   TRANSACTION_ADMIN_PERMISSIONS,
+  createAfterSalesProgressNotification,
+  createAfterSalesRefundRejectedNotification,
   userCan,
   type LoginSession,
   type OrderAfterSalesAdminActionRequest,
@@ -19,6 +21,7 @@ import {
   type OrderAfterSalesRequest,
 } from "../../../shared/domain";
 import { authorizeRequest } from "../auth/authorization";
+import { loadCourseAccessState } from "../courses/courseAccessApi";
 import {
   getPaymentWebhookEventStore,
   type PaymentWebhookEventStore,
@@ -32,6 +35,10 @@ import {
   type TransactionRefundProvider,
 } from "../transactions/transactionRefundProvider";
 import { updateAdminTransactionActionPayload } from "../transactions/transactionAdminApi";
+import {
+  getUserNotificationStore,
+  type UserNotificationStore,
+} from "../users/userNotificationStore";
 import { summarizeOrderAfterSalesRequest } from "./orderAfterSalesApi";
 import {
   getOrderAfterSalesStore,
@@ -175,6 +182,12 @@ function statusAfterAction(action: OrderAfterSalesAdminActionRequest) {
   return "linked_to_refund";
 }
 
+async function orderTitleForRequest(request: OrderAfterSalesRequest) {
+  const state = await loadCourseAccessState(request.userId);
+  const order = state.orders.find(item => item.id === request.orderId);
+  return order?.items[0]?.title;
+}
+
 async function mutationResult(
   request: OrderAfterSalesRequest,
   auditEvent: OrderAfterSalesAuditEvent,
@@ -216,7 +229,8 @@ export async function updateOrderAfterSalesAdminActionPayload(
   paymentStore: PaymentWebhookEventStore = getPaymentWebhookEventStore(),
   transactionOperationStore: TransactionOperationStore =
     getTransactionOperationStore(),
-  refundProvider: TransactionRefundProvider = getTransactionRefundProvider()
+  refundProvider: TransactionRefundProvider = getTransactionRefundProvider(),
+  notificationStore: UserNotificationStore = getUserNotificationStore()
 ) {
   const denied = denyUnauthorizedActor(actor);
   if (denied) return denied;
@@ -246,6 +260,7 @@ export async function updateOrderAfterSalesAdminActionPayload(
   }
 
   let linkedRefundRequestId = current.linkedRefundRequestId;
+  const orderTitle = await orderTitleForRequest(current);
   if (parsed.data.action === "link_refund") {
     if (!userCan(actor as OrderAfterSalesAdminActor, TRANSACTION_ADMIN_PERMISSIONS.operate)) {
       return {
@@ -269,6 +284,28 @@ export async function updateOrderAfterSalesAdminActionPayload(
     );
 
     if (!refundPayload.body.ok) {
+      const refundAuditEvent = (
+        await transactionOperationStore.listAuditEvents(parsed.data.transactionId)
+      ).find(
+        event =>
+          event.action === "request_refund" &&
+          event.createdAt === now &&
+          event.refundProviderResult
+      );
+      if (refundAuditEvent?.refundProviderResult) {
+        await notificationStore.append(
+          createAfterSalesRefundRejectedNotification({
+            userId: current.userId,
+            orderId: current.orderId,
+            requestId: current.id,
+            orderTitle,
+            transactionId: parsed.data.transactionId,
+            operatorNote: parsed.data.reason,
+            rejectionMessage: refundAuditEvent.refundProviderResult.message,
+            now,
+          })
+        );
+      }
       return refundPayload;
     }
 
@@ -297,6 +334,19 @@ export async function updateOrderAfterSalesAdminActionPayload(
       after: auditSnapshot(next),
       request: next,
       action: parsed.data,
+      now,
+    })
+  );
+  await notificationStore.append(
+    createAfterSalesProgressNotification({
+      userId: next.userId,
+      orderId: next.orderId,
+      requestId: next.id,
+      orderTitle,
+      action: parsed.data.action,
+      operatorNote: parsed.data.reason,
+      linkedTransactionId: next.linkedTransactionId,
+      linkedRefundRequestId: next.linkedRefundRequestId,
       now,
     })
   );

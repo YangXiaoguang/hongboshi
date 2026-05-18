@@ -13,6 +13,7 @@
 | `courseAccess.ts`         | 课程购买权益、会员权益、访问判断                                 |
 | `courseLearningRecord.ts` | 课程学习进度、练习记录、完成快照和阶段证明预览准备               |
 | `user.ts`                 | 用户资料、角色、权限、登录来源、协议同意、登录请求和用户后台聚合 |
+| `userNotification.ts`     | 用户站内消息、售后进度通知、读取状态和隐私最小化摘要             |
 | `userPreference.ts`       | 用户偏好、账号收藏课程、账号券包、收藏/领取/使用来源和更新时间   |
 | `assessment.ts`           | 测评题目、答案、报告、推荐、风险等级                             |
 | `assessmentEngine.ts`     | 测评维度评分、风险分级、推荐路径生成                             |
@@ -48,6 +49,8 @@
 `CourseLearningRecordSchema` 是用户端课程学习记录同步契约，按 `userId + courseId` 保存章节进度、练习记录、课程完成快照和阶段证明预览。`CourseLearningProgressSyncRequestSchema`、`CourseLearningPracticeSyncRequestSchema` 与 `CourseLearningCompletionSubmitRequestSchema` 分别描述章节完成同步、章节练习保存和课程完成反馈提交；服务端必须校验登录态、课程已发布已审核、课程权益可学习、章节 ID 属于当前课程，才能写入记录。阶段证明当前只允许 `preview`/`pending_review`/`issued` 的准备字段，第一版只生成预览，不签发正式证书编号。
 
 `CourseCheckoutCreateRequestSchema` 是课程结算创建请求契约，除课程 ID 和结算模式外，可携带账号券包的 `couponClaimId`。服务端会读取 `UserPreferenceSchema` 校验该券已领取、未使用、未过期，并确认对应营销规则仍是当前课程可用的 `course_coupon`；金额仍由服务端课程定价与营销规则统一计算，前端不得自行改写应付金额。`OrderCouponApplicationSchema` 记录订单关联的券包 claim ID、marketing rule ID、预留/已使用状态、关联时间和使用时间；支付成功后课程 checkout service 会把订单券应用推进为 `used`，并同步把账号券包记录写入使用订单和使用时间。用户端结算抽屉可以展示未领取但适用的课程券并调用 `UserPreferenceCouponClaimRequestSchema` 完成领取；领取只更新账号券包和使用意图，订单金额与核销仍以服务端 checkout 为准。个人中心订单深链以 `orderId` 查询参数打开同一订单详情抽屉，详情只读取 `Order`、`couponApplication`、课程权益与营销规则名称来展示商品、金额、支付、用券、权益交付、时间线和售后说明。`OrderAfterSalesCreateRequestSchema`、`OrderAfterSalesRequestSchema`、`OrderAfterSalesSummarySchema`、`OrderAfterSalesListResultSchema` 与 `OrderAfterSalesMutationResultSchema` 是用户端售后申请契约，只允许登录用户对本人已支付或退款中订单提交售后诉求，记录申请类型、说明、联系方式、状态和创建时间；申请写入独立售后 Store 并追加保存，用户端提交不会直接推进 `refunding` 或 `refunded`。后台处理后，个人中心只展示售后状态、运营备注摘要和退款受理单号提示，退款完成仍以后续支付回调为准。
+
+`UserNotificationSchema`、`UserNotificationListResultSchema` 与 `UserNotificationMutationResultSchema` 是用户端站内消息契约，首版只承载售后进度通知，不接真实短信、微信或邮件。通知资源固定为 `order_after_sales`，只保存订单 ID、课程名摘要、售后工单 ID、可选交易流水和退款受理单号；内容展示处理中、已解决、已关闭、退款已受理和退款暂未受理，不包含支付 raw payload、咨询说明、测评答案或风险信号原文。`UserNotificationMarkReadRequestSchema` 只改变当前登录用户自己的读取状态，不影响售后工单、订单、退款或后台审计事实。
 
 `UserPreferenceSchema` 是用户端账号偏好契约，当前保存账号级收藏课程列表和账号券包。`UserFavoriteCourseSchema` 记录课程 ID、收藏来源、首次收藏时间和最近更新时间；`UserPreferenceFavoriteUpdateRequestSchema` 接受当前账号完整收藏课程 ID 列表，服务端去重、保留已有首次收藏时间，并按登录会话写入独立用户偏好 Store。`UserCouponClaimSchema` 记录领取到账号的营销规则 ID、领取状态、领取时间、过期时间、使用订单和最近更新时间；`UserPreferenceCouponClaimRequestSchema` 只接受营销规则 ID，服务端会校验规则存在、类型为课程券且当前有效后再写入券包；`UserPreferenceCouponUseRequestSchema` 描述券包核销所需的 claim ID 和订单 ID，当前由课程支付成功链路内部调用，不作为用户端随意核销入口。未登录用户仍使用本地收藏 fallback，并只能查看可用营销规则，登录后才会沉淀收藏、券包领取和使用状态。
 

@@ -21,6 +21,11 @@ import {
 } from "../transactions/transactionOperationStore";
 import type { TransactionRefundProvider } from "../transactions/transactionRefundProvider";
 import { getAdminTransactionDetailPayload } from "../transactions/transactionAdminApi";
+import {
+  InMemoryUserNotificationStore,
+  setUserNotificationStore,
+  type UserNotificationStore,
+} from "../users/userNotificationStore";
 import { createOrderAfterSalesRequestPayload } from "./orderAfterSalesApi";
 import {
   InMemoryOrderAfterSalesStore,
@@ -58,17 +63,20 @@ let courseAccessStore: CourseAccessStore;
 let afterSalesStore: OrderAfterSalesStore;
 let paymentStore: PaymentWebhookEventStore;
 let transactionOperationStore: TransactionOperationStore;
+let notificationStore: UserNotificationStore;
 
 beforeEach(async () => {
   courseAccessStore = new InMemoryCourseAccessStore();
   afterSalesStore = new InMemoryOrderAfterSalesStore();
   paymentStore = new InMemoryPaymentWebhookEventStore();
   transactionOperationStore = new InMemoryTransactionOperationStore();
+  notificationStore = new InMemoryUserNotificationStore();
 
   setCourseAccessStore(courseAccessStore);
   setOrderAfterSalesStore(afterSalesStore);
   setPaymentWebhookEventStore(paymentStore);
   setTransactionOperationStore(transactionOperationStore);
+  setUserNotificationStore(notificationStore);
 
   await courseAccessStore.save(
     userId,
@@ -181,6 +189,20 @@ describe("order after-sales admin api payloads", () => {
         "start_review",
       ]);
     }
+
+    const notifications = await notificationStore.listByUserId(userId);
+    expect(notifications.map(notification => notification.type)).toEqual([
+      "after_sales_resolved",
+      "after_sales_reviewing",
+    ]);
+    expect(notifications[0]).toMatchObject({
+      title: "售后申请已解决",
+      resource: {
+        orderId: paidOrder.id,
+        orderTitle: "情绪急救手册",
+        requestId: request.id,
+      },
+    });
   });
 
   it("links after-sales requests to refund acceptance without direct refund completion", async () => {
@@ -222,7 +244,8 @@ describe("order after-sales admin api payloads", () => {
       afterSalesStore,
       paymentStore,
       transactionOperationStore,
-      provider
+      provider,
+      notificationStore
     );
 
     expect(linked.status).toBe(200);
@@ -270,6 +293,16 @@ describe("order after-sales admin api payloads", () => {
         status: "linked_to_refund",
       });
     }
+
+    const notifications = await notificationStore.listByUserId(userId);
+    expect(notifications[0]).toMatchObject({
+      type: "refund_request_accepted",
+      title: "退款申请已受理",
+      resource: {
+        orderId: paidOrder.id,
+        refundRequestId: `manual_refund_${paidOrder.id}`,
+      },
+    });
   });
 
   it("keeps after-sales requests open when refund acceptance fails", async () => {
@@ -310,7 +343,8 @@ describe("order after-sales admin api payloads", () => {
       afterSalesStore,
       paymentStore,
       transactionOperationStore,
-      rejectingProvider
+      rejectingProvider,
+      notificationStore
     );
 
     expect(failed.status).toBe(409);
@@ -320,5 +354,16 @@ describe("order after-sales admin api payloads", () => {
 
     const state = await courseAccessStore.load(userId);
     expect(state.orders[0]?.status).toBe("paid");
+
+    const notifications = await notificationStore.listByUserId(userId);
+    expect(notifications[0]).toMatchObject({
+      type: "refund_request_rejected",
+      title: "退款申请暂未受理",
+      resource: {
+        orderId: paidOrder.id,
+        transactionId: paymentEvent.id,
+      },
+    });
+    expect(notifications[0]?.content).toContain("需要财务复核");
   });
 });

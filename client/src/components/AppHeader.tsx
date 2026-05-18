@@ -173,12 +173,14 @@ export default function AppHeader() {
                 openLoginModal();
                 return;
               }
-              toast("消息中心", { description: "暂无新消息" });
+              navigate("/me?tab=messages");
             }}
             aria-label="消息中心"
           >
             <Bell className="h-5 w-5" />
-            <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-[#B86F56]" />
+            {isLoggedIn && (
+              <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-[#B86F56]" />
+            )}
           </button>
 
           {isLoggedIn && user ? (

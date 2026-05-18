@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import {
   ArrowRight,
   BadgePercent,
+  Bell,
+  BellRing,
   CalendarClock,
   CheckCircle2,
   ChevronRight,
@@ -35,6 +37,8 @@ import type {
   OrderAfterSalesRequestStatus,
   PaymentChannel,
   OrderStatus,
+  UserNotification,
+  UserNotificationType,
   UserCouponDisplayStatus,
   UserPreference,
   UserRole,
@@ -43,6 +47,7 @@ import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpUserPreferenceRepository } from "@/features/courses/api/httpUserPreferenceRepository";
+import { httpUserNotificationRepository } from "@/features/users/api/httpUserNotificationRepository";
 import {
   useCourseAccess,
   useCourseCatalog,
@@ -55,11 +60,12 @@ import {
 } from "@/features/courses";
 import { useCounselingAppointments } from "@/features/counseling";
 
-type PersonalTab = "account" | "orders" | "favorites" | "coupons";
+type PersonalTab = "account" | "orders" | "messages" | "favorites" | "coupons";
 
 const tabs = [
   { key: "account", label: "账号", icon: UserRound },
   { key: "orders", label: "订单", icon: ReceiptText },
+  { key: "messages", label: "消息", icon: Bell },
   { key: "favorites", label: "收藏", icon: Heart },
   { key: "coupons", label: "优惠", icon: TicketPercent },
 ] satisfies { key: PersonalTab; label: string; icon: ElementType }[];
@@ -128,6 +134,22 @@ const afterSalesStatusCopy = {
   resolved: "已解决",
   closed: "已关闭",
 } satisfies Record<OrderAfterSalesRequestStatus, string>;
+
+const notificationTypeCopy = {
+  after_sales_reviewing: "售后处理中",
+  after_sales_resolved: "售后已解决",
+  after_sales_closed: "售后已关闭",
+  refund_request_accepted: "退款已受理",
+  refund_request_rejected: "退款暂未受理",
+} satisfies Record<UserNotificationType, string>;
+
+const notificationTone = {
+  after_sales_reviewing: "bg-[#E6EDDF] text-[#41675A]",
+  after_sales_resolved: "bg-[#E6EDDF] text-[#41675A]",
+  after_sales_closed: "bg-[#EFEAE1] text-[#7B817C]",
+  refund_request_accepted: "bg-[#FFF1D8] text-[#8A641C]",
+  refund_request_rejected: "bg-[#F4E5DE] text-[#A65F48]",
+} satisfies Record<UserNotificationType, string>;
 
 const appointmentStatusCopy = {
   pending_payment: "待支付",
@@ -319,6 +341,15 @@ export default function PersonalCenter() {
   >();
   const [afterSalesSubmittingOrderId, setAfterSalesSubmittingOrderId] =
     useState<string | undefined>();
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [notificationPrivacyNotice, setNotificationPrivacyNotice] =
+    useState<string>();
+  const [isNotificationLoading, setIsNotificationLoading] = useState(false);
+  const [notificationError, setNotificationError] = useState<
+    string | undefined
+  >();
+  const [isMarkingNotificationsRead, setIsMarkingNotificationsRead] =
+    useState(false);
   const { user, isLoggedIn, openLoginModal, updateProfile } = useAuth();
   const {
     accessState,
@@ -396,6 +427,14 @@ export default function PersonalCenter() {
   const selectedOrderAfterSales = selectedOrder
     ? orderAfterSalesByOrderId[selectedOrder.id]
     : undefined;
+  const selectedOrderNotifications = selectedOrder
+    ? notifications.filter(
+        notification => notification.resource.orderId === selectedOrder.id
+      )
+    : [];
+  const unreadNotificationCount = notifications.filter(
+    notification => notification.status === "unread"
+  ).length;
 
   const activeRoleLabels =
     user?.roles
@@ -486,6 +525,40 @@ export default function PersonalCenter() {
   }, [isLoggedIn, user?.id]);
 
   useEffect(() => {
+    if (!isLoggedIn) {
+      setNotifications([]);
+      setNotificationPrivacyNotice(undefined);
+      setNotificationError(undefined);
+      setIsNotificationLoading(false);
+      return;
+    }
+
+    let mounted = true;
+    setIsNotificationLoading(true);
+    httpUserNotificationRepository
+      .getMyNotifications()
+      .then(result => {
+        if (!mounted) return;
+        setNotifications(result.notifications);
+        setNotificationPrivacyNotice(result.privacyNotice);
+        setNotificationError(undefined);
+      })
+      .catch(err => {
+        if (!mounted) return;
+        setNotificationError(
+          err instanceof Error ? err.message : "站内消息暂时不可用"
+        );
+      })
+      .finally(() => {
+        if (mounted) setIsNotificationLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [isLoggedIn, user?.id]);
+
+  useEffect(() => {
     if (!selectedOrder || !isLoggedIn) return;
     if (!["paid", "refunding", "refunded"].includes(selectedOrder.status)) {
       return;
@@ -523,6 +596,29 @@ export default function PersonalCenter() {
       setSelectedOrderId(undefined);
     }
     window.history.replaceState(null, "", `/me?tab=${tab}`);
+  };
+
+  const openNotificationOrder = (notification: UserNotification) => {
+    focusOrder(notification.resource.orderId);
+  };
+
+  const markAllNotificationsRead = async () => {
+    if (!isLoggedIn || unreadNotificationCount === 0) return;
+
+    setIsMarkingNotificationsRead(true);
+    try {
+      const nextNotifications = await httpUserNotificationRepository.markRead();
+      setNotifications(nextNotifications);
+      toast("消息已标记为已读", {
+        description: "售后进度仍会保留在消息中心和订单详情中。",
+      });
+    } catch (err) {
+      toast("消息状态更新失败", {
+        description: err instanceof Error ? err.message : "请稍后再试。",
+      });
+    } finally {
+      setIsMarkingNotificationsRead(false);
+    }
   };
 
   const navigateToOrderCourse = (order: Order, checkout = false) => {
@@ -714,9 +810,9 @@ export default function PersonalCenter() {
                 <p className="mt-2 text-2xl font-semibold">{favoriteCount}</p>
               </div>
               <div>
-                <p className="text-xs text-white/52">可用优惠</p>
+                <p className="text-xs text-white/52">未读消息</p>
                 <p className="mt-2 text-2xl font-semibold">
-                  {courseCoupons.length}
+                  {unreadNotificationCount}
                 </p>
               </div>
             </div>
@@ -742,6 +838,11 @@ export default function PersonalCenter() {
                     <span className="flex items-center gap-3">
                       <Icon className="h-4 w-4" />
                       {tab.label}
+                      {tab.key === "messages" && unreadNotificationCount > 0 ? (
+                        <span className="rounded-full bg-[#B86F56] px-2 py-0.5 text-[11px] font-semibold text-white">
+                          {unreadNotificationCount}
+                        </span>
+                      ) : null}
                     </span>
                     <ChevronRight
                       className={`h-4 w-4 transition ${active ? "translate-x-0.5" : ""}`}
@@ -1062,6 +1163,110 @@ export default function PersonalCenter() {
               </section>
             )}
 
+            {activeTab === "messages" && (
+              <section className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8]">
+                <div className="flex flex-col gap-3 border-b border-[#E8DED0] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold">消息中心</h2>
+                    <p className="mt-1 text-sm text-[#6D746F]">
+                      售后处理、退款受理和后续待办会优先在这里同步。
+                    </p>
+                    {notificationPrivacyNotice && (
+                      <p className="mt-2 text-xs leading-5 text-[#8A8176]">
+                        {notificationPrivacyNotice}
+                      </p>
+                    )}
+                    {notificationError && (
+                      <p className="mt-2 text-xs font-semibold text-[#A65F48]">
+                        {notificationError}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={markAllNotificationsRead}
+                    disabled={
+                      unreadNotificationCount === 0 ||
+                      isMarkingNotificationsRead
+                    }
+                    className="inline-flex h-10 items-center justify-center rounded-full border border-[#D8CDBC] px-4 text-sm font-semibold text-[#41675A] transition hover:bg-[#F2F7EE] disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    {isMarkingNotificationsRead ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <BellRing className="mr-2 h-4 w-4" />
+                    )}
+                    全部标记已读
+                  </button>
+                </div>
+
+                {isNotificationLoading ? (
+                  <div className="flex items-center gap-2 px-5 py-8 text-sm text-[#6D746F]">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    正在同步站内消息
+                  </div>
+                ) : notifications.length ? (
+                  <div className="divide-y divide-[#E8DED0]">
+                    {notifications.map(notification => (
+                      <button
+                        key={notification.id}
+                        onClick={() => openNotificationOrder(notification)}
+                        className={`grid w-full gap-4 px-5 py-5 text-left transition hover:bg-[#F8F3EA] md:grid-cols-[minmax(0,1fr)_132px] ${
+                          notification.status === "unread"
+                            ? "bg-[#FFF9F0]"
+                            : ""
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                notificationTone[notification.type]
+                              }`}
+                            >
+                              {notificationTypeCopy[notification.type]}
+                            </span>
+                            {notification.status === "unread" && (
+                              <span className="rounded-full bg-[#B86F56] px-2 py-1 text-[11px] font-semibold text-white">
+                                未读
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="mt-3 font-semibold text-[#243B35]">
+                            {notification.title}
+                          </h3>
+                          <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#6D746F]">
+                            {notification.content}
+                          </p>
+                          <p className="mt-3 truncate text-xs text-[#8A8176]">
+                            {notification.resource.orderTitle ??
+                              notification.resource.orderId}
+                            {" · "}
+                            {formatDate(notification.createdAt)}
+                          </p>
+                        </div>
+                        <div className="flex items-start md:justify-end">
+                          <span className="inline-flex h-9 items-center justify-center rounded-full border border-[#D8CDBC] px-3 text-xs font-semibold text-[#41675A]">
+                            查看订单
+                            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-5">
+                    <EmptyState
+                      icon={Bell}
+                      title="暂时没有站内消息"
+                      description="售后处理和退款受理有新进度时，会在这里留下可追踪记录。"
+                      actionLabel="查看订单"
+                      onAction={() => changeTab("orders")}
+                    />
+                  </div>
+                )}
+              </section>
+            )}
+
             {activeTab === "favorites" && (
               <section className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8]">
                 <div className="border-b border-[#E8DED0] px-5 py-4">
@@ -1294,6 +1499,7 @@ export default function PersonalCenter() {
           afterSalesSubmittingOrderId === selectedOrder?.id
         }
         isOpen={Boolean(selectedOrder)}
+        notifications={selectedOrderNotifications}
         order={selectedOrder}
         onCancelOrder={handleCancelOrderFromDetail}
         onClose={closeOrderDetail}
@@ -1319,6 +1525,7 @@ function PersonalOrderDetailDrawer({
   isAfterSalesLoading,
   isAfterSalesSubmitting,
   isOpen,
+  notifications,
   order,
   onCancelOrder,
   onClose,
@@ -1334,6 +1541,7 @@ function PersonalOrderDetailDrawer({
   isAfterSalesLoading: boolean;
   isAfterSalesSubmitting: boolean;
   isOpen: boolean;
+  notifications: UserNotification[];
   order?: Order;
   onCancelOrder: (order: Order) => void;
   onClose: () => void;
@@ -1589,6 +1797,34 @@ function PersonalOrderDetailDrawer({
                         ) : null}
                       </div>
                     ))}
+                  </div>
+                )}
+                {notifications.length > 0 && (
+                  <div className="mt-4 rounded-[16px] border border-[#E6D6C8] bg-white/80 px-3 py-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                      <BellRing className="h-4 w-4 text-[#6F8F83]" />
+                      售后进度
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {notifications.slice(0, 4).map(notification => (
+                        <div
+                          key={notification.id}
+                          className="rounded-[12px] bg-[#F8F3EA] px-3 py-2 text-xs leading-5"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-semibold text-[#243B35]">
+                              {notificationTypeCopy[notification.type]}
+                            </span>
+                            <span className="text-[#8A8176]">
+                              {formatDate(notification.createdAt)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[#6D746F]">
+                            {notification.content}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {canSubmitAfterSales && !activeAfterSales && (

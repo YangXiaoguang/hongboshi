@@ -24,6 +24,7 @@ import { registerOrderAdminApi } from "./modules/orders/orderAdminApi";
 import { registerRiskAdminApi } from "./modules/risk/riskAdminApi";
 import { registerTransactionAdminApi } from "./modules/transactions/transactionAdminApi";
 import { registerUserAdminApi } from "./modules/users/userAdminApi";
+import { registerUserNotificationApi } from "./modules/users/userNotificationApi";
 import { registerUserPreferenceApi } from "./modules/users/userPreferenceApi";
 import { assertPersistenceConfig } from "./db/runtimeConfig";
 
@@ -55,6 +56,7 @@ async function startServer() {
   registerRiskAdminApi(app);
   registerTransactionAdminApi(app);
   registerUserAdminApi(app);
+  registerUserNotificationApi(app);
   registerUserPreferenceApi(app);
 
   // Serve static files from dist/public in production
