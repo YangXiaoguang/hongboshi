@@ -86,6 +86,36 @@ describe("course access model", () => {
     );
   });
 
+  it("records coupon application on course checkout orders", () => {
+    const checkout = createCourseCheckoutOrder(
+      createEmptyCourseAccessState(),
+      baseCourse,
+      "course",
+      "2026-05-09T10:00:00.000Z",
+      "u_10001",
+      {
+        couponClaimId: "coupon_u_10001_course_11_coupon_20",
+        couponMarketingRuleId: "course_11_coupon_20",
+      }
+    );
+    const paid = payCourseCheckoutOrder(
+      checkout.accessState,
+      checkout.order.id,
+      "wechat_pay",
+      "2026-05-09T10:02:00.000Z"
+    );
+
+    expect(checkout.order.couponApplication).toMatchObject({
+      claimId: "coupon_u_10001_course_11_coupon_20",
+      marketingRuleId: "course_11_coupon_20",
+      status: "reserved",
+    });
+    expect(paid.order.couponApplication).toMatchObject({
+      status: "used",
+      usedAt: "2026-05-09T10:02:00.000Z",
+    });
+  });
+
   it("finds reusable pending checkout orders for purchase recall", () => {
     const checkout = createCourseCheckoutOrder(
       createEmptyCourseAccessState(),

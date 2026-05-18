@@ -16,13 +16,19 @@ import {
   LegacyNumericIdSchema,
   activateCourseMembership,
   cancelCourseCheckoutOrder,
+  courseMatchesMarketingRule,
   createCourseCheckoutOrder,
   createCourseCheckoutOrderResult,
+  isCourseMarketingRuleActiveAt,
   payCourseCheckoutOrder,
+  useUserCouponClaim,
+  type Course,
   type CourseAccessState,
+  type CourseCheckoutCouponApplicationInput,
   type CourseCheckoutOrderResult,
   type OrderAdminAuditEvent,
   type OrderAdminExceptionFlag,
+  type UserPreference,
   type UserAdminMembershipAuditEvent,
 } from "../../../shared/domain";
 import {
@@ -30,6 +36,14 @@ import {
   getCourseProductStore,
   type CourseProductStore,
 } from "../catalog/courseProductStore";
+import {
+  getCourseMarketingRuleStore,
+  type CourseMarketingRuleStore,
+} from "../marketing/courseMarketingRuleStore";
+import {
+  loadUserPreferenceForUser,
+  saveUserPreferenceForUser,
+} from "../users/userPreferenceApi";
 import {
   createDefaultCourseAccessStore,
   type CourseAccessStore,
@@ -123,8 +137,58 @@ async function findCheckoutCourse(
   } as const;
 }
 
+async function resolveCourseCheckoutCouponApplication({
+  couponClaimId,
+  course,
+  marketingRuleStore,
+  now,
+  userId,
+}: {
+  couponClaimId?: string;
+  course: Course;
+  marketingRuleStore: Pick<CourseMarketingRuleStore, "getRule">;
+  now: string;
+  userId: string;
+}): Promise<{
+  application?: CourseCheckoutCouponApplicationInput;
+  preference?: UserPreference;
+}> {
+  if (!couponClaimId) return {};
+
+  const preference = await loadUserPreferenceForUser(userId, now);
+  const claim = preference.couponClaims.find(item => item.id === couponClaimId);
+  if (!claim) throw new Error("USER_COUPON_CLAIM_NOT_FOUND");
+  if (claim.status !== "claimed") throw new Error("USER_COUPON_NOT_CLAIMED");
+  if (claim.expiresAt && Date.parse(claim.expiresAt) <= Date.parse(now)) {
+    throw new Error("USER_COUPON_EXPIRED");
+  }
+
+  const rule = await marketingRuleStore.getRule(claim.marketingRuleId, now);
+  if (!rule || rule.type !== "course_coupon") {
+    throw new Error("COURSE_COUPON_RULE_NOT_FOUND");
+  }
+
+  if (
+    !isCourseMarketingRuleActiveAt(rule, now) ||
+    !courseMatchesMarketingRule(course, rule)
+  ) {
+    throw new Error("COURSE_COUPON_NOT_APPLICABLE");
+  }
+
+  return {
+    application: {
+      couponClaimId: claim.id,
+      couponMarketingRuleId: rule.id,
+    },
+    preference,
+  };
+}
+
 function checkoutActionFailure(err: unknown, fallbackMessage: string) {
   const message = err instanceof Error ? err.message : fallbackMessage;
+  const isCouponConflict =
+    message.startsWith("USER_COUPON") ||
+    message === "COURSE_COUPON_NOT_APPLICABLE";
   if (
     [
       "COURSE_IS_FREE",
@@ -133,6 +197,10 @@ function checkoutActionFailure(err: unknown, fallbackMessage: string) {
       "CHECKOUT_ORDER_NOT_PAYABLE",
       "SIMULATED_PAYMENT_FAILED",
       "INVALID_ORDER_CLOSE_TRANSITION",
+      "USER_COUPON_NOT_CLAIMED",
+      "USER_COUPON_ALREADY_USED",
+      "USER_COUPON_EXPIRED",
+      "COURSE_COUPON_NOT_APPLICABLE",
     ].includes(message)
   ) {
     return {
@@ -141,15 +209,26 @@ function checkoutActionFailure(err: unknown, fallbackMessage: string) {
         "CONFLICT",
         message === "SIMULATED_PAYMENT_FAILED"
           ? "模拟支付失败，订单仍可继续支付"
-          : "当前订单状态不支持此操作"
+          : isCouponConflict
+            ? "当前优惠券状态不支持这笔订单"
+            : "当前订单状态不支持此操作"
       ),
     } as const;
   }
 
-  if (message === "CHECKOUT_ORDER_NOT_FOUND") {
+  if (
+    message === "CHECKOUT_ORDER_NOT_FOUND" ||
+    message === "USER_COUPON_CLAIM_NOT_FOUND" ||
+    message === "COURSE_COUPON_RULE_NOT_FOUND"
+  ) {
     return {
       status: 404,
-      body: errorPayload("NOT_FOUND", "课程订单不存在"),
+      body: errorPayload(
+        "NOT_FOUND",
+        message === "CHECKOUT_ORDER_NOT_FOUND"
+          ? "课程订单不存在"
+          : "优惠券不存在或未领取"
+      ),
     } as const;
   }
 
@@ -293,7 +372,11 @@ export async function createCourseCheckoutOrderPayload(
   body: unknown,
   userId = LOCAL_COURSE_ACCESS_USER_ID,
   now = new Date().toISOString(),
-  productStore: CourseProductStore = getCourseProductStore()
+  productStore: CourseProductStore = getCourseProductStore(),
+  marketingRuleStore: Pick<
+    CourseMarketingRuleStore,
+    "getRule"
+  > = getCourseMarketingRuleStore()
 ) {
   const parsed = CourseCheckoutCreateRequestSchema.safeParse(body);
   if (!parsed.success) {
@@ -310,13 +393,22 @@ export async function createCourseCheckoutOrderPayload(
   if (coursePayload.status !== 200) return coursePayload;
 
   try {
+    const { application } = await resolveCourseCheckoutCouponApplication({
+      couponClaimId:
+        parsed.data.mode === "course" ? parsed.data.couponClaimId : undefined,
+      course: coursePayload.course,
+      marketingRuleStore,
+      now,
+      userId,
+    });
     const currentState = await courseAccessStore.load(userId);
     const checkout = createCourseCheckoutOrder(
       currentState,
       coursePayload.course,
       parsed.data.mode,
       now,
-      userId
+      userId,
+      application
     );
     await courseAccessStore.save(userId, checkout.accessState);
 
@@ -386,7 +478,18 @@ export async function payCourseCheckoutOrderPayload(
       parsed.data.paymentChannel,
       now
     );
+    const couponApplication = checkout.order.couponApplication;
+    const nextPreference =
+      couponApplication?.claimId && checkout.order.status === "paid"
+        ? useUserCouponClaim({
+            preference: await loadUserPreferenceForUser(userId, now),
+            couponClaimId: couponApplication.claimId,
+            orderId: checkout.order.id,
+            now,
+          })
+        : undefined;
     await courseAccessStore.save(userId, checkout.accessState);
+    if (nextPreference) await saveUserPreferenceForUser(nextPreference);
 
     return {
       status: 200,

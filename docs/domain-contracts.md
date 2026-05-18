@@ -13,7 +13,7 @@
 | `courseAccess.ts`         | 课程购买权益、会员权益、访问判断                                 |
 | `courseLearningRecord.ts` | 课程学习进度、练习记录、完成快照和阶段证明预览准备               |
 | `user.ts`                 | 用户资料、角色、权限、登录来源、协议同意、登录请求和用户后台聚合 |
-| `userPreference.ts`       | 用户偏好、账号收藏课程、账号券包、收藏/领取来源和更新时间        |
+| `userPreference.ts`       | 用户偏好、账号收藏课程、账号券包、收藏/领取/使用来源和更新时间   |
 | `assessment.ts`           | 测评题目、答案、报告、推荐、风险等级                             |
 | `assessmentEngine.ts`     | 测评维度评分、风险分级、推荐路径生成                             |
 | `counseling.ts`           | 咨询师、擅长方向、时段、预约状态、预约请求与结果                 |
@@ -47,7 +47,9 @@
 
 `CourseLearningRecordSchema` 是用户端课程学习记录同步契约，按 `userId + courseId` 保存章节进度、练习记录、课程完成快照和阶段证明预览。`CourseLearningProgressSyncRequestSchema`、`CourseLearningPracticeSyncRequestSchema` 与 `CourseLearningCompletionSubmitRequestSchema` 分别描述章节完成同步、章节练习保存和课程完成反馈提交；服务端必须校验登录态、课程已发布已审核、课程权益可学习、章节 ID 属于当前课程，才能写入记录。阶段证明当前只允许 `preview`/`pending_review`/`issued` 的准备字段，第一版只生成预览，不签发正式证书编号。
 
-`UserPreferenceSchema` 是用户端账号偏好契约，当前保存账号级收藏课程列表和账号券包。`UserFavoriteCourseSchema` 记录课程 ID、收藏来源、首次收藏时间和最近更新时间；`UserPreferenceFavoriteUpdateRequestSchema` 接受当前账号完整收藏课程 ID 列表，服务端去重、保留已有首次收藏时间，并按登录会话写入独立用户偏好 Store。`UserCouponClaimSchema` 记录领取到账号的营销规则 ID、领取状态、领取时间、过期时间、使用订单和最近更新时间；`UserPreferenceCouponClaimRequestSchema` 只接受营销规则 ID，服务端会校验规则存在、类型为课程券且当前有效后再写入券包。未登录用户仍使用本地收藏 fallback，并只能查看可用营销规则，登录后才会沉淀收藏和券包状态。
+`CourseCheckoutCreateRequestSchema` 是课程结算创建请求契约，除课程 ID 和结算模式外，可携带账号券包的 `couponClaimId`。服务端会读取 `UserPreferenceSchema` 校验该券已领取、未使用、未过期，并确认对应营销规则仍是当前课程可用的 `course_coupon`；金额仍由服务端课程定价与营销规则统一计算，前端不得自行改写应付金额。`OrderCouponApplicationSchema` 记录订单关联的券包 claim ID、marketing rule ID、预留/已使用状态、关联时间和使用时间；支付成功后课程 checkout service 会把订单券应用推进为 `used`，并同步把账号券包记录写入使用订单和使用时间。
+
+`UserPreferenceSchema` 是用户端账号偏好契约，当前保存账号级收藏课程列表和账号券包。`UserFavoriteCourseSchema` 记录课程 ID、收藏来源、首次收藏时间和最近更新时间；`UserPreferenceFavoriteUpdateRequestSchema` 接受当前账号完整收藏课程 ID 列表，服务端去重、保留已有首次收藏时间，并按登录会话写入独立用户偏好 Store。`UserCouponClaimSchema` 记录领取到账号的营销规则 ID、领取状态、领取时间、过期时间、使用订单和最近更新时间；`UserPreferenceCouponClaimRequestSchema` 只接受营销规则 ID，服务端会校验规则存在、类型为课程券且当前有效后再写入券包；`UserPreferenceCouponUseRequestSchema` 描述券包核销所需的 claim ID 和订单 ID，当前由课程支付成功链路内部调用，不作为用户端随意核销入口。未登录用户仍使用本地收藏 fallback，并只能查看可用营销规则，登录后才会沉淀收藏、券包领取和使用状态。
 
 `CounselingServiceRecordConsoleSchema` 是咨询服务记录与履约异常后台的聚合契约，包含咨询师筛选项、筛选条件、服务记录行、异常摘要和服务端时间。服务记录行只输出履约运营所需字段：预约 ID、用户 ID、咨询师、时段、预约状态、订单状态、支付锁定截止时间、风险等级摘要、最近审计动作和异常标签；不会输出咨询说明、测评答案或风险信号原文。当前异常类型覆盖待支付锁定临近/过期/关闭、临近开始仍未确认、已取消待退款、退款中和未到访。
 
@@ -94,7 +96,7 @@ server/
 
 - 课程权益：`server/modules/courses/courseAccessStore.ts` 已支持 JSON 文件和内存实现，并保存会员后台操作审计事件。
 - 课程学习记录：`server/modules/courses/courseLearningRecordStore.ts` 负责登录用户的章节进度、练习记录、课程完成快照和阶段证明预览准备；当前支持内存/JSON 文件 `.hongboshi-data/course-learning-records.json`，API 写入前会读取课程权益 Store 校验用户已解锁课程。后续接 PostgreSQL 时应新增独立 Store，而不是把学习进度混入课程权益订单事实。
-- 用户偏好：`server/modules/users/userPreferenceStore.ts` 负责登录用户的账号级偏好，当前支持内存/JSON 文件 `.hongboshi-data/user-preferences.json`，保存收藏课程 ID、收藏来源、券包领取状态和时间戳。偏好不进入课程学习记录或订单事实，后续接 PostgreSQL 时应独立落表，供收藏同步、优惠券领取状态和运营召回使用；券包第一版只沉淀领取状态，结算抵扣仍复用服务端营销规则口径。
+- 用户偏好：`server/modules/users/userPreferenceStore.ts` 负责登录用户的账号级偏好，当前支持内存/JSON 文件 `.hongboshi-data/user-preferences.json`，保存收藏课程 ID、收藏来源、券包领取/使用状态、关联订单和时间戳。偏好不进入课程学习记录；课程订单只保存 `couponApplication` 作为交易关联快照，金额口径仍复用服务端营销规则。后续接 PostgreSQL 时应独立落表，供收藏同步、优惠券领取状态、核销追踪和运营召回使用。
 - 用户会员后台：`server/modules/users/userAdminApi.ts` 负责用户会员聚合与会员权益后台动作，读取 auth 用户目录、课程权益、咨询预约和风险事件 Store，只输出脱敏手机号和摘要字段；会员操作由服务端计算状态、校验原因并写入审计。
 - 订单后台：`server/modules/orders/orderAdminApi.ts` 负责课程、会员和咨询订单聚合，读取课程权益订单、咨询预约记录、支付回调收据和 auth 用户目录，只输出履约与对账所需摘要；订单写动作只接受受控意图，关闭待支付订单复用订单状态机，异常标记写入异常摘要与审计事件。
 - 交易后台：`server/modules/transactions/transactionAdminApi.ts` 负责支付/退款流水聚合与受控交易动作，读取支付回调收据、课程权益订单、咨询预约快照、订单异常标记、交易异常工单和 auth 用户目录，只输出对账、履约排障和客服核查所需摘要；写动作通过 `server/modules/transactions/transactionOperationStore.ts` 保存交易异常工单和操作审计，通过 `server/modules/transactions/transactionRefundProvider.ts` 调用人工/模拟退款受理接口。退款申请只在渠道受理成功后把合规订单推进到 `refunding`，不直接完成退款或伪造渠道成功；渠道失败会写入受理摘要审计。

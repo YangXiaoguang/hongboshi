@@ -34,6 +34,19 @@ export const OrderItemSchema = z.object({
   quantity: z.number().int().positive(),
 });
 
+export const OrderCouponApplicationStatusSchema = z.enum([
+  "reserved",
+  "used",
+]);
+
+export const OrderCouponApplicationSchema = z.object({
+  claimId: EntityIdSchema,
+  marketingRuleId: EntityIdSchema,
+  status: OrderCouponApplicationStatusSchema.default("reserved"),
+  appliedAt: DateTimeLikeSchema,
+  usedAt: DateTimeLikeSchema.optional(),
+});
+
 export const OrderSchema = z.object({
   id: EntityIdSchema,
   userId: EntityIdSchema,
@@ -42,6 +55,7 @@ export const OrderSchema = z.object({
   subtotal: MoneyAmountSchema,
   discountAmount: MoneyAmountSchema.default(0),
   payableAmount: MoneyAmountSchema,
+  couponApplication: OrderCouponApplicationSchema.optional(),
   createdAt: DateTimeLikeSchema,
   expiresAt: DateTimeLikeSchema.optional(),
   paymentChannel: PaymentChannelSchema.optional(),
@@ -880,6 +894,12 @@ export type PurchasableType = z.infer<typeof PurchasableTypeSchema>;
 export type OrderStatus = z.infer<typeof OrderStatusSchema>;
 export type PaymentChannel = z.infer<typeof PaymentChannelSchema>;
 export type OrderItem = z.infer<typeof OrderItemSchema>;
+export type OrderCouponApplicationStatus = z.infer<
+  typeof OrderCouponApplicationStatusSchema
+>;
+export type OrderCouponApplication = z.infer<
+  typeof OrderCouponApplicationSchema
+>;
 export type Order = z.infer<typeof OrderSchema>;
 export type Payment = z.infer<typeof PaymentSchema>;
 export type Refund = z.infer<typeof RefundSchema>;

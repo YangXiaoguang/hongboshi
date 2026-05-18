@@ -67,6 +67,11 @@ export const UserPreferenceCouponClaimRequestSchema = z.object({
   marketingRuleId: EntityIdSchema,
 });
 
+export const UserPreferenceCouponUseRequestSchema = z.object({
+  couponClaimId: EntityIdSchema,
+  orderId: EntityIdSchema,
+});
+
 export type UserFavoriteCourseSource = z.infer<
   typeof UserFavoriteCourseSourceSchema
 >;
@@ -83,6 +88,9 @@ export type UserPreferenceFavoriteUpdateRequest = z.infer<
 >;
 export type UserPreferenceCouponClaimRequest = z.infer<
   typeof UserPreferenceCouponClaimRequestSchema
+>;
+export type UserPreferenceCouponUseRequest = z.infer<
+  typeof UserPreferenceCouponUseRequestSchema
 >;
 
 export function createEmptyUserPreference({
@@ -199,6 +207,52 @@ export function claimUserCoupon({
       }),
       ...preference.couponClaims,
     ],
+    updatedAt: now,
+  });
+}
+
+export function useUserCouponClaim({
+  preference,
+  couponClaimId,
+  orderId,
+  now = new Date().toISOString(),
+}: {
+  preference: UserPreference;
+  couponClaimId: string;
+  orderId: string;
+  now?: string;
+}): UserPreference {
+  const existing = preference.couponClaims.find(
+    claim => claim.id === couponClaimId
+  );
+  if (!existing) throw new Error("USER_COUPON_CLAIM_NOT_FOUND");
+
+  if (existing.status === "used") {
+    if (existing.usedOrderId === orderId) {
+      return UserPreferenceSchema.parse(preference);
+    }
+    throw new Error("USER_COUPON_ALREADY_USED");
+  }
+
+  if (existing.status === "expired") throw new Error("USER_COUPON_EXPIRED");
+
+  if (existing.expiresAt && Date.parse(existing.expiresAt) <= Date.parse(now)) {
+    throw new Error("USER_COUPON_EXPIRED");
+  }
+
+  return UserPreferenceSchema.parse({
+    ...preference,
+    couponClaims: preference.couponClaims.map(claim =>
+      claim.id === couponClaimId
+        ? UserCouponClaimSchema.parse({
+            ...claim,
+            status: "used",
+            usedAt: now,
+            usedOrderId: orderId,
+            updatedAt: now,
+          })
+        : claim
+    ),
     updatedAt: now,
   });
 }

@@ -148,13 +148,14 @@ export const httpCourseAccessRepository = {
   createCheckoutOrder(
     courseId: number,
     mode: CourseCheckoutMode,
-    userId = LOCAL_COURSE_ACCESS_USER_ID
+    userId = LOCAL_COURSE_ACCESS_USER_ID,
+    couponClaimId?: string
   ): Promise<CourseCheckoutOrderResult> {
     return requestCheckoutOrder(
       "/checkout/orders",
       {
         method: "POST",
-        body: JSON.stringify({ courseId, mode }),
+        body: JSON.stringify({ courseId, mode, couponClaimId }),
       },
       userId
     );

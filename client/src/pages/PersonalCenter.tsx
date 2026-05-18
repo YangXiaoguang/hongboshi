@@ -24,6 +24,7 @@ import {
 import type {
   CourseMarketingRule,
   Order,
+  PaymentChannel,
   OrderStatus,
   UserCouponDisplayStatus,
   UserPreference,
@@ -84,6 +85,12 @@ const orderStatusTone = {
   refunding: "bg-[#F4E5DE] text-[#A65F48]",
   refunded: "bg-[#F4E5DE] text-[#A65F48]",
 } satisfies Record<OrderStatus, string>;
+
+const paymentChannelCopy = {
+  wechat_pay: "微信支付",
+  alipay: "支付宝",
+  manual: "人工确认",
+} satisfies Record<PaymentChannel, string>;
 
 const appointmentStatusCopy = {
   pending_payment: "待支付",
@@ -910,6 +917,9 @@ export default function PersonalCenter() {
                       const status = (claim?.status ??
                         "claimable") as UserCouponDisplayStatus;
                       const isClaiming = claimingRuleId === rule.id;
+                      const usedOrder = claim?.usedOrderId
+                        ? recentOrders.find(order => order.id === claim.usedOrderId)
+                        : undefined;
                       return (
                         <div
                           key={rule.id}
@@ -940,6 +950,17 @@ export default function PersonalCenter() {
                             <p className="mt-3 text-xs text-[#8A8176]">
                               适用：{courseTitle}
                             </p>
+                            {status === "used" && claim?.usedOrderId && (
+                              <p className="mt-2 line-clamp-1 text-xs font-semibold text-[#6D746F]">
+                                已用于订单 {claim.usedOrderId}
+                                {claim.usedAt
+                                  ? ` · ${formatDate(claim.usedAt)}`
+                                  : ""}
+                                {usedOrder?.paymentChannel
+                                  ? ` · ${paymentChannelCopy[usedOrder.paymentChannel]}`
+                                  : ""}
+                              </p>
+                            )}
                             <div className="mt-4 flex flex-wrap gap-2">
                               {status === "claimable" ? (
                                 <button
@@ -952,6 +973,14 @@ export default function PersonalCenter() {
                                   )}
                                   {isLoggedIn ? "领取" : "登录领取"}
                                 </button>
+                              ) : status === "used" ? (
+                                <span className="inline-flex h-9 items-center justify-center rounded-full bg-[#EFEAE1] px-3 text-xs font-semibold text-[#7B817C]">
+                                  已用于订单
+                                </span>
+                              ) : status === "expired" ? (
+                                <span className="inline-flex h-9 items-center justify-center rounded-full bg-[#F4E5DE] px-3 text-xs font-semibold text-[#A65F48]">
+                                  已失效
+                                </span>
                               ) : (
                                 <span className="inline-flex h-9 items-center justify-center rounded-full bg-[#E6EDDF] px-3 text-xs font-semibold text-[#41675A]">
                                   已入账号券包
@@ -959,13 +988,15 @@ export default function PersonalCenter() {
                               )}
                               <button
                                 onClick={() =>
-                                  courseId
-                                    ? navigate(`/courses/${courseId}`)
-                                    : navigate("/courses")
+                                  status === "used"
+                                    ? navigate("/me?tab=orders")
+                                    : courseId
+                                      ? navigate(`/courses/${courseId}`)
+                                      : navigate("/courses")
                                 }
                                 className="inline-flex h-9 items-center justify-center rounded-full border border-[#D8CDBC] px-3 text-xs font-semibold text-[#41675A] transition hover:bg-[#F2F7EE]"
                               >
-                                去使用
+                                {status === "used" ? "查看订单" : "去使用"}
                                 <ArrowRight className="ml-1.5 h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
                               </button>
                             </div>
@@ -991,7 +1022,7 @@ export default function PersonalCenter() {
                     <div className="flex items-start gap-3">
                       <WalletCards className="mt-0.5 h-4 w-4 text-[#6F8F83]" />
                       <p className="text-sm leading-6 text-[#6D746F]">
-                        领取后会沉淀到账号券包，结算抽屉当前仍按服务端规则自动抵扣。
+                        领取后会沉淀到账号券包，结算抽屉会优先展示已领取可用券，支付成功后记录使用订单。
                       </p>
                     </div>
                     <div className="flex items-start gap-3">

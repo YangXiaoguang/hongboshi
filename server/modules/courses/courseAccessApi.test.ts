@@ -12,10 +12,40 @@ import {
   InMemoryCourseProductStore,
   seedProducts,
 } from "../catalog/courseProductStore";
+import { CourseMarketingRuleSchema } from "../../../shared/domain";
+import {
+  claimUserCouponPayload,
+  getUserPreferencePayload,
+  resetUserPreferenceStore,
+} from "../users/userPreferenceApi";
+
+const activeCourseCouponRule = CourseMarketingRuleSchema.parse({
+  id: "course_16_coupon_20",
+  type: "course_coupon",
+  status: "active",
+  source: "course_product",
+  name: "新人专享减20",
+  description: "购买课程时抵扣 20 元。",
+  badgeLabel: "券",
+  priority: 300,
+  stackable: true,
+  scope: { courseIds: [16] },
+  discount: { kind: "fixed_amount", amount: 20 },
+  startsAt: "2026-01-01T00:00:00.000Z",
+  endsAt: "2026-06-01T00:00:00.000Z",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-05-18T08:00:00.000Z",
+});
+
+const fakeMarketingRuleStore = {
+  getRule: async (ruleId: string) =>
+    ruleId === activeCourseCouponRule.id ? activeCourseCouponRule : undefined,
+};
 
 describe("course access API payloads", () => {
   beforeEach(async () => {
     await resetCourseAccessStore();
+    await resetUserPreferenceStore();
   });
 
   it("returns the current empty access state", async () => {
@@ -89,6 +119,57 @@ describe("course access API payloads", () => {
     expect(paid.body.data.accessState.ownedCourseIds).toEqual([16]);
     expect(duplicate.body.data.accessState.ownedCourseIds).toEqual([16]);
     expect(duplicate.body.data.order.paidAt).toBe("2026-05-09T10:02:00.000Z");
+  });
+
+  it("records claimed coupon on checkout and marks it used after payment", async () => {
+    const productStore = new InMemoryCourseProductStore(seedProducts());
+    const claimed = await claimUserCouponPayload(
+      "u_10001",
+      { marketingRuleId: activeCourseCouponRule.id },
+      "2026-05-09T09:58:00.000Z",
+      fakeMarketingRuleStore
+    );
+    if (!claimed.body.ok) throw new Error("expected claimed coupon");
+    const couponClaimId = claimed.body.data.preference.couponClaims[0].id;
+
+    const created = await createCourseCheckoutOrderPayload(
+      { mode: "course", courseId: 16, couponClaimId },
+      "u_10001",
+      "2026-05-09T10:00:00.000Z",
+      productStore,
+      fakeMarketingRuleStore
+    );
+    if (!created.body.ok) throw new Error("expected created checkout");
+    const paid = await payCourseCheckoutOrderPayload(
+      created.body.data.order.id,
+      { paymentChannel: "alipay" },
+      "u_10001",
+      "2026-05-09T10:02:00.000Z"
+    );
+    const preference = await getUserPreferencePayload(
+      "u_10001",
+      "2026-05-09T10:03:00.000Z"
+    );
+
+    expect(created.body.data.order.couponApplication).toMatchObject({
+      claimId: couponClaimId,
+      marketingRuleId: activeCourseCouponRule.id,
+      status: "reserved",
+    });
+    expect(paid.status).toBe(200);
+    expect(paid.body.ok).toBe(true);
+    if (!paid.body.ok || !preference.body.ok) return;
+    expect(paid.body.data.order.couponApplication).toMatchObject({
+      claimId: couponClaimId,
+      status: "used",
+      usedAt: "2026-05-09T10:02:00.000Z",
+    });
+    expect(preference.body.data.preference.couponClaims[0]).toMatchObject({
+      id: couponClaimId,
+      status: "used",
+      usedOrderId: created.body.data.order.id,
+      usedAt: "2026-05-09T10:02:00.000Z",
+    });
   });
 
   it("cancels pending checkout orders without delivering access", async () => {

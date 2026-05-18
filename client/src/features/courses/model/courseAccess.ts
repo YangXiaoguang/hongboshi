@@ -22,6 +22,7 @@ export {
   resolveCourseAccess,
   type CourseAccessResult,
   type CourseAccessState,
+  type CourseCheckoutCouponApplicationInput,
   type CourseCheckoutCreateRequest,
   type CourseCheckoutMode,
   type CourseCheckoutOrderResult,

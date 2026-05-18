@@ -1,9 +1,16 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, CheckCircle2, WalletCards, X } from "lucide-react";
+import {
+  ArrowRight,
+  BadgePercent,
+  CheckCircle2,
+  WalletCards,
+  X,
+} from "lucide-react";
 import {
   coursePaymentMethods,
   formatCheckoutMoney,
   type Course,
+  type CourseCheckoutCouponOption,
   type CourseCheckoutOrderResult,
   type CourseCheckoutPaymentChannel,
   type CourseCheckoutSummary,
@@ -32,11 +39,16 @@ export function formatCheckoutDateTime(value?: string): string {
 
 interface CourseCheckoutDrawerProps {
   acceptedTerms: boolean;
+  claimableCouponCount?: number;
   checkoutError?: string;
   checkoutOrder?: CourseCheckoutOrderResult;
   course: Course;
+  couponOptions?: CourseCheckoutCouponOption[];
   isOpen: boolean;
+  isPreferenceLoading?: boolean;
   isSyncing: boolean;
+  preferenceError?: string;
+  selectedCouponClaimId?: string;
   selectedPaymentChannel: CourseCheckoutPaymentChannel;
   status: CourseCheckoutStatus;
   summary?: CourseCheckoutSummary;
@@ -44,6 +56,7 @@ interface CourseCheckoutDrawerProps {
   onCancelOrder: () => void;
   onClose: () => void;
   onConfirm: () => void;
+  onCouponClaimChange?: (claimId?: string) => void;
   onPaymentChannelChange: (channel: CourseCheckoutPaymentChannel) => void;
   onStartLearning: () => void;
   onViewWorkspace: () => void;
@@ -51,11 +64,16 @@ interface CourseCheckoutDrawerProps {
 
 export default function CourseCheckoutDrawer({
   acceptedTerms,
+  claimableCouponCount = 0,
   checkoutError,
   checkoutOrder,
   course,
+  couponOptions = [],
   isOpen,
+  isPreferenceLoading = false,
   isSyncing,
+  preferenceError,
+  selectedCouponClaimId,
   selectedPaymentChannel,
   status,
   summary,
@@ -63,6 +81,7 @@ export default function CourseCheckoutDrawer({
   onCancelOrder,
   onClose,
   onConfirm,
+  onCouponClaimChange,
   onPaymentChannelChange,
   onStartLearning,
   onViewWorkspace,
@@ -89,6 +108,14 @@ export default function CourseCheckoutDrawer({
               status === "failed"
             ? `继续支付 ${formatCheckoutMoney(summary?.payableAmount ?? 0)}`
             : `创建订单并支付 ${formatCheckoutMoney(summary?.payableAmount ?? 0)}`;
+  const selectedCoupon = couponOptions.find(
+    option => option.claimId === selectedCouponClaimId
+  );
+  const showCouponBag =
+    summary?.mode === "course" &&
+    (couponOptions.length > 0 ||
+      claimableCouponCount > 0 ||
+      Boolean(checkoutOrder?.order.couponApplication));
 
   return (
     <AnimatePresence>
@@ -235,6 +262,83 @@ export default function CourseCheckoutDrawer({
                         />
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {showCouponBag && (
+                  <div className="mt-4 rounded-[20px] border border-[#E4DCCF] bg-white p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-[#243B35]">
+                          账号券包
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-[#7B817C]">
+                          {selectedCoupon
+                            ? `已关联 ${selectedCoupon.label}，支付成功后标记为已使用。`
+                            : "可用已领券会关联到本单，价格仍由营销规则统一计算。"}
+                        </p>
+                      </div>
+                      <BadgePercent className="h-5 w-5 shrink-0 text-[#B08A3C]" />
+                    </div>
+
+                    {preferenceError && (
+                      <p className="mt-3 rounded-[14px] bg-[#FFF1EC] px-3 py-2 text-xs leading-5 text-[#A65F48]">
+                        {preferenceError}
+                      </p>
+                    )}
+
+                    {couponOptions.length > 0 && (
+                      <div className="mt-4 grid gap-2">
+                        {couponOptions.map(option => (
+                          <CheckoutCouponOptionButton
+                            key={option.claimId}
+                            option={option}
+                            selected={
+                              selectedCouponClaimId === option.claimId
+                            }
+                            onClick={() =>
+                              onCouponClaimChange?.(
+                                selectedCouponClaimId === option.claimId
+                                  ? undefined
+                                  : option.claimId
+                              )
+                            }
+                          />
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => onCouponClaimChange?.(undefined)}
+                          className={`rounded-[16px] border px-4 py-3 text-left text-xs font-semibold transition ${
+                            !selectedCouponClaimId
+                              ? "border-[#6F8F83] bg-[#EEF4EA] text-[#41675A]"
+                              : "border-[#E8DED0] text-[#7B817C] hover:border-[#AFC2AB]"
+                          }`}
+                        >
+                          暂不使用账号券
+                        </button>
+                      </div>
+                    )}
+
+                    {couponOptions.length === 0 && (
+                      <p className="mt-4 rounded-[16px] bg-[#F9F5EE] px-4 py-3 text-xs leading-5 text-[#6D746F]">
+                        {isPreferenceLoading
+                          ? "正在同步账号券包。"
+                          : "当前账号还没有适用于本课的已领券。"}
+                      </p>
+                    )}
+
+                    {claimableCouponCount > 0 && (
+                      <p className="mt-3 text-xs leading-5 text-[#8A8176]">
+                        还有 {claimableCouponCount} 张适用课程券可领取，领取后可在结算时沉淀使用记录。
+                      </p>
+                    )}
+
+                    {checkoutOrder?.order.couponApplication?.status ===
+                      "used" && (
+                      <p className="mt-3 text-xs font-semibold text-[#41675A]">
+                        已随本订单完成核销
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -444,5 +548,57 @@ function CheckoutPromotionRow({
         {value}
       </span>
     </div>
+  );
+}
+
+const couponStatusCopy = {
+  available: "可用",
+  used: "已使用",
+  expired: "已过期",
+} satisfies Record<CourseCheckoutCouponOption["status"], string>;
+
+function CheckoutCouponOptionButton({
+  option,
+  selected,
+  onClick,
+}: {
+  option: CourseCheckoutCouponOption;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const disabled = option.status !== "available";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-[16px] border px-4 py-3 text-left transition disabled:cursor-not-allowed ${
+        selected
+          ? "border-[#6F8F83] bg-[#EEF4EA]"
+          : disabled
+            ? "border-[#E8DED0] bg-[#F9F5EE] opacity-72"
+            : "border-[#E8DED0] bg-white hover:border-[#AFC2AB]"
+      }`}
+    >
+      <span className="flex items-start justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-[#243B35]">
+            {option.label}
+          </span>
+          <span className="mt-1 line-clamp-2 block text-xs leading-5 text-[#7B817C]">
+            {option.description}
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="block text-sm font-semibold text-[#A65F48]">
+            {option.value}
+          </span>
+          <span className="mt-1 block text-xs font-semibold text-[#6F8F83]">
+            {couponStatusCopy[option.status]}
+          </span>
+        </span>
+      </span>
+    </button>
   );
 }

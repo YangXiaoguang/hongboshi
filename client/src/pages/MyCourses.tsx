@@ -1,4 +1,10 @@
-import { useMemo, useState, type ElementType, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ElementType,
+  type ReactNode,
+} from "react";
 import { motion } from "framer-motion";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -32,16 +38,21 @@ import CoursePendingCheckoutBanner from "@/components/CoursePendingCheckoutBanne
 import { useAuth } from "@/contexts/AuthContext";
 import type { OrderStatus, UserRole } from "@shared/domain";
 import {
+  countClaimableCourseCoupons,
+  createCourseCheckoutCouponOptions,
   createCourseCheckoutSummary,
   createLearningPlanWorkspace,
   createLearningArchiveWorkspace,
   createPendingCourseCheckoutPrompts,
   findPendingCourseCheckoutOrder,
   getCourseAccessDescription,
+  resolveDefaultCheckoutCouponClaimId,
   useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
+  useCourseMarketingRules,
   useCoursePractice,
+  useUserPreference,
   type Course,
   type CourseAccessStatus,
   type CourseCheckoutMode,
@@ -719,6 +730,13 @@ export default function MyCourses() {
     getCourseAccess,
     payCheckoutOrder,
   } = useCourseAccess();
+  const { rules: marketingRules } = useCourseMarketingRules();
+  const {
+    couponClaims,
+    isPreferenceLoading,
+    preferenceError,
+    reloadPreference,
+  } = useUserPreference();
   const [checkoutCourse, setCheckoutCourse] = useState<Course | undefined>();
   const [checkoutMode, setCheckoutMode] = useState<
     CourseCheckoutMode | undefined
@@ -732,6 +750,10 @@ export default function MyCourses() {
     CourseCheckoutOrderResult | undefined
   >();
   const [checkoutError, setCheckoutError] = useState<string | undefined>();
+  const [selectedCouponClaimId, setSelectedCouponClaimId] = useState<
+    string | undefined
+  >();
+  const [isCouponSelectionManual, setIsCouponSelectionManual] = useState(false);
   const { engagementState, engagementSyncError, startCourse } =
     useCourseEngagement({
       userId: user?.id,
@@ -754,8 +776,32 @@ export default function MyCourses() {
   const profileCourseAccess = growthProfile?.courseAccess;
   const checkoutSummary =
     checkoutCourse && checkoutMode
-      ? createCourseCheckoutSummary(checkoutCourse, checkoutMode)
+      ? createCourseCheckoutSummary(checkoutCourse, checkoutMode, {
+          marketingRules,
+        })
       : undefined;
+  const checkoutCouponOptions = useMemo(
+    () =>
+      checkoutCourse && checkoutMode === "course"
+        ? createCourseCheckoutCouponOptions({
+            course: checkoutCourse,
+            marketingRules,
+            couponClaims,
+          })
+        : [],
+    [checkoutCourse, checkoutMode, couponClaims, marketingRules]
+  );
+  const checkoutClaimableCouponCount = useMemo(
+    () =>
+      checkoutCourse && checkoutMode === "course"
+        ? countClaimableCourseCoupons({
+            course: checkoutCourse,
+            marketingRules,
+            couponClaims,
+          })
+        : 0,
+    [checkoutCourse, checkoutMode, couponClaims, marketingRules]
+  );
 
   const learningPlan = useMemo(
     () =>
@@ -819,6 +865,7 @@ export default function MyCourses() {
     setSelectedPaymentChannel("wechat_pay");
     setCheckoutOrder(pendingCheckout);
     setCheckoutError(undefined);
+    setIsCouponSelectionManual(false);
   };
 
   const closeCheckout = () => {
@@ -828,7 +875,34 @@ export default function MyCourses() {
     setAcceptedTerms(false);
     setCheckoutOrder(undefined);
     setCheckoutError(undefined);
+    setSelectedCouponClaimId(undefined);
+    setIsCouponSelectionManual(false);
   };
+
+  useEffect(() => {
+    if (!checkoutCourse || checkoutMode !== "course") {
+      setSelectedCouponClaimId(undefined);
+      return;
+    }
+
+    const nextCouponClaimId = isCouponSelectionManual
+      ? selectedCouponClaimId
+      : resolveDefaultCheckoutCouponClaimId({
+          options: checkoutCouponOptions,
+          order: checkoutOrder?.order,
+          selectedCouponClaimId,
+        });
+    if (nextCouponClaimId !== selectedCouponClaimId) {
+      setSelectedCouponClaimId(nextCouponClaimId);
+    }
+  }, [
+    checkoutCourse,
+    checkoutCouponOptions,
+    checkoutMode,
+    checkoutOrder?.order,
+    isCouponSelectionManual,
+    selectedCouponClaimId,
+  ]);
 
   const handleOpenCourse = (course: Course) => {
     navigate(`/courses/${course.id}`);
@@ -881,9 +955,20 @@ export default function MyCourses() {
     setCheckoutError(undefined);
     void (async () => {
       let pendingCheckout = checkoutOrder;
-      if (pendingCheckout?.order.status !== "pending_payment") {
+      const checkoutCouponClaimId =
+        checkoutMode === "course" ? selectedCouponClaimId : undefined;
+      const pendingCouponClaimId =
+        pendingCheckout?.order.couponApplication?.claimId;
+      if (
+        pendingCheckout?.order.status !== "pending_payment" ||
+        pendingCouponClaimId !== checkoutCouponClaimId
+      ) {
         setCheckoutStatus("creating");
-        const created = await createCheckoutOrder(checkoutCourse, checkoutMode);
+        const created = await createCheckoutOrder(
+          checkoutCourse,
+          checkoutMode,
+          checkoutCouponClaimId
+        );
         if (created === "auth_required") {
           setCheckoutStatus("idle");
           toast("请先登录", {
@@ -913,6 +998,7 @@ export default function MyCourses() {
       setCheckoutOrder(paid.checkout);
       setCheckoutStatus("success");
       await reloadGrowthProfile();
+      void reloadPreference();
       toast(checkoutMode === "membership" ? "会员已开通" : "课程已解锁", {
         description: "支付成功，权益已同步到账户。",
       });
@@ -1660,12 +1746,21 @@ export default function MyCourses() {
           isOpen={Boolean(checkoutMode)}
           isSyncing={isAccessSyncing}
           selectedPaymentChannel={selectedPaymentChannel}
+          selectedCouponClaimId={selectedCouponClaimId}
           status={checkoutStatus}
           summary={checkoutSummary}
+          claimableCouponCount={checkoutClaimableCouponCount}
+          couponOptions={checkoutCouponOptions}
+          isPreferenceLoading={isPreferenceLoading}
+          preferenceError={preferenceError}
           onAcceptedTermsChange={setAcceptedTerms}
           onCancelOrder={handleCancelCheckoutOrder}
           onClose={closeCheckout}
           onConfirm={handleConfirmCheckout}
+          onCouponClaimChange={claimId => {
+            setIsCouponSelectionManual(true);
+            setSelectedCouponClaimId(claimId);
+          }}
           onPaymentChannelChange={setSelectedPaymentChannel}
           onStartLearning={handleStartAfterCheckout}
           onViewWorkspace={closeCheckout}

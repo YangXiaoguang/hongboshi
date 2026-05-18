@@ -21,6 +21,7 @@ export { useCourseMarketingRules } from "./hooks/useCourseMarketingRules";
 export { useCourseAccess } from "./hooks/useCourseAccess";
 export { useCourseEngagement } from "./hooks/useCourseEngagement";
 export { useCoursePractice } from "./hooks/useCoursePractice";
+export { useUserPreference } from "./hooks/useUserPreference";
 export {
   localCourseAccessRepository,
   type CourseAccessRepository,
@@ -108,6 +109,13 @@ export {
   type CourseCheckoutSummary,
   type CoursePaymentMethod,
 } from "./model/courseCheckout";
+export {
+  countClaimableCourseCoupons,
+  createCourseCheckoutCouponOptions,
+  resolveDefaultCheckoutCouponClaimId,
+  type CourseCheckoutCouponOption,
+  type CourseCheckoutCouponOptionStatus,
+} from "./model/courseCouponBag";
 export {
   createLearningPlanWorkspace,
   type LearningPlanBucket,

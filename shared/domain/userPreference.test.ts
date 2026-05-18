@@ -4,6 +4,7 @@ import {
   createEmptyUserPreference,
   normalizeUserPreference,
   updateUserFavoriteCourses,
+  useUserCouponClaim,
 } from "./userPreference";
 
 describe("user preference domain", () => {
@@ -96,5 +97,38 @@ describe("user preference domain", () => {
       claimedAt: "2026-05-18T09:00:00.000Z",
       expiresAt: "2026-06-01T00:00:00.000Z",
     });
+  });
+
+  it("marks claimed coupons as used by order idempotently", () => {
+    const preference = claimUserCoupon({
+      preference: createEmptyUserPreference({
+        userId: "u_phone_8000",
+        now: "2026-05-18T08:00:00.000Z",
+      }),
+      marketingRuleId: "course_1_coupon_20",
+      now: "2026-05-18T09:00:00.000Z",
+    });
+
+    const used = useUserCouponClaim({
+      preference,
+      couponClaimId: preference.couponClaims[0].id,
+      orderId: "order_course_1_u_phone_8000",
+      now: "2026-05-18T09:05:00.000Z",
+    });
+    const duplicate = useUserCouponClaim({
+      preference: used,
+      couponClaimId: preference.couponClaims[0].id,
+      orderId: "order_course_1_u_phone_8000",
+      now: "2026-05-18T09:06:00.000Z",
+    });
+
+    expect(used.couponClaims[0]).toMatchObject({
+      status: "used",
+      usedAt: "2026-05-18T09:05:00.000Z",
+      usedOrderId: "order_course_1_u_phone_8000",
+    });
+    expect(duplicate.couponClaims[0].usedAt).toBe(
+      "2026-05-18T09:05:00.000Z"
+    );
   });
 });

@@ -5,6 +5,7 @@ import {
   getUserPreferencePayload,
   resetUserPreferenceStore,
   updateUserFavoriteCoursesPayload,
+  useUserCouponForOrderPayload,
 } from "./userPreferenceApi";
 
 const activeCouponRule = CourseMarketingRuleSchema.parse({
@@ -110,6 +111,34 @@ describe("user preference API payloads", () => {
         expiresAt: "2026-06-01T00:00:00.000Z",
       }),
     ]);
+  });
+
+  it("marks a claimed coupon used for an order", async () => {
+    const claimed = await claimUserCouponPayload(
+      "u_phone_8000",
+      { marketingRuleId: activeCouponRule.id },
+      "2026-05-18T09:00:00.000Z",
+      fakeMarketingRuleStore
+    );
+    if (!claimed.body.ok) throw new Error("expected coupon claim");
+
+    const payload = await useUserCouponForOrderPayload(
+      "u_phone_8000",
+      {
+        couponClaimId: claimed.body.data.preference.couponClaims[0].id,
+        orderId: "order_course_1_u_phone_8000",
+      },
+      "2026-05-18T09:05:00.000Z"
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (!payload.body.ok) return;
+    expect(payload.body.data.preference.couponClaims[0]).toMatchObject({
+      status: "used",
+      usedOrderId: "order_course_1_u_phone_8000",
+      usedAt: "2026-05-18T09:05:00.000Z",
+    });
   });
 
   it("rejects missing coupon rules", async () => {

@@ -6,6 +6,7 @@ import {
 } from "./course";
 import {
   DateTimeLikeSchema,
+  EntityIdSchema,
   LegacyNumericIdSchema,
   MoneyAmountSchema,
 } from "./common";
@@ -79,6 +80,7 @@ export const CourseCheckoutOrderResultSchema = z.object({
 export const CourseCheckoutCreateRequestSchema = z.object({
   mode: CourseCheckoutModeSchema,
   courseId: LegacyNumericIdSchema,
+  couponClaimId: EntityIdSchema.optional(),
 });
 export const CourseCheckoutPayRequestSchema = z.object({
   paymentChannel: PaymentChannelSchema.default("manual"),
@@ -103,6 +105,11 @@ export interface CourseAccessResult {
   canStart: boolean;
   canPurchase: boolean;
   canActivateMembership: boolean;
+}
+
+export interface CourseCheckoutCouponApplicationInput {
+  couponClaimId?: string;
+  couponMarketingRuleId?: string;
 }
 
 export function createEmptyCourseAccessState(): CourseAccessState {
@@ -314,7 +321,8 @@ export function createCourseCheckoutOrder(
   course: Course,
   mode: CourseCheckoutMode,
   now = new Date().toISOString(),
-  userId = LOCAL_COURSE_ACCESS_USER_ID
+  userId = LOCAL_COURSE_ACCESS_USER_ID,
+  couponApplication?: CourseCheckoutCouponApplicationInput
 ): CourseCheckoutOrderResult {
   const normalized = normalizeCourseAccessState(state);
   const access = resolveCourseAccess(normalized, course, now);
@@ -333,17 +341,42 @@ export function createCourseCheckoutOrder(
       ? COURSE_MEMBERSHIP_ORDER_TARGET_ID
       : String(course.id);
   const existingOrder = findPendingCheckoutOrder(normalized, mode, targetId);
-  if (existingOrder) {
-    return createCourseCheckoutOrderResult({
-      state: normalized,
-      order: existingOrder,
-    });
-  }
 
   const amount =
     mode === "membership"
       ? calculateMembershipPricing()
       : calculateCoursePricing(course);
+  const orderCouponApplication =
+    mode === "course" &&
+    couponApplication?.couponClaimId &&
+    couponApplication.couponMarketingRuleId
+      ? {
+          claimId: couponApplication.couponClaimId,
+          marketingRuleId: couponApplication.couponMarketingRuleId,
+          status: "reserved" as const,
+          appliedAt: now,
+        }
+      : undefined;
+
+  if (existingOrder) {
+    const updatedOrder = OrderSchema.parse({
+      ...existingOrder,
+      couponApplication: orderCouponApplication,
+    });
+    const accessState =
+      updatedOrder.couponApplication?.claimId ===
+        existingOrder.couponApplication?.claimId &&
+      updatedOrder.couponApplication?.marketingRuleId ===
+        existingOrder.couponApplication?.marketingRuleId
+        ? normalized
+        : upsertCourseAccessOrder(normalized, updatedOrder);
+
+    return createCourseCheckoutOrderResult({
+      state: accessState,
+      order: updatedOrder,
+    });
+  }
+
   const order = OrderSchema.parse({
     id: createCourseCheckoutOrderId({
       mode,
@@ -376,6 +409,7 @@ export function createCourseCheckoutOrder(
     subtotal: amount.listPrice,
     discountAmount: amount.discountAmount,
     payableAmount: amount.payableAmount,
+    couponApplication: orderCouponApplication,
     createdAt: now,
     expiresAt: checkoutDeadlineFrom(now),
   });
@@ -427,6 +461,13 @@ export function payCourseCheckoutOrder(
     ...markOrderPaid(currentOrder, now),
     paymentChannel: currentOrder.paymentChannel ?? paymentChannel,
     entitlementDeliveredAt: currentOrder.entitlementDeliveredAt ?? now,
+    couponApplication: currentOrder.couponApplication
+      ? {
+          ...currentOrder.couponApplication,
+          status: "used",
+          usedAt: currentOrder.couponApplication.usedAt ?? now,
+        }
+      : undefined,
   });
   const stateWithPaidOrder = upsertCourseAccessOrder(normalized, paidOrder);
   const accessState = deliverCourseCheckoutEntitlement(

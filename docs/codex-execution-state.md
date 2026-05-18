@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`UX-M 优惠券账户化与领取状态`
-- 当前状态：`UX-M 优惠券账户化与领取状态` 已完成，登录用户可在个人中心领取课程券，券包领取状态已进入用户偏好 Store，服务端会校验营销规则有效性。
-- 本轮完成后下一步：执行 `UX-N 结算券包抵扣与使用态沉淀`
+- 当前阶段：`UX-N 结算券包抵扣与使用态沉淀`
+- 当前状态：`UX-N 结算券包抵扣与使用态沉淀` 已完成，结算抽屉可展示账号已领取可用券，课程订单记录券包 claim ID / marketing rule ID，支付成功后券包进入已使用状态并关联订单。
+- 本轮完成后下一步：执行 `UX-O 结算内领券与订单详情深链`
 
 ## 已完成关键能力
 
@@ -46,6 +46,7 @@
 - 完成个人中心资料编辑服务端化：新增 `UserProfileUpdateRequestSchema`、`PATCH /api/auth/profile` 和前端 `updateProfile` 认证上下文，个人中心账号页可编辑昵称与头像链接并同步当前登录会话。
 - 完成账号级收藏同步：新增 `UserPreferenceSchema`、用户偏好 Store、`/api/user-preferences/me` 和收藏课程写接口，`useCourseEngagement` 登录后可读取/写入账号收藏，首页、课程列表、课程详情、成长空间和个人中心复用同一同步链路。
 - 完成账号券包领取状态：`UserPreferenceSchema` 已扩展 `couponClaims`，新增课程券领取 API，个人中心优惠页可领取课程券并展示可领取/已领取状态；结算抵扣仍沿用服务端营销规则自动计算。
+- 完成结算券包抵扣与使用态沉淀：课程 checkout 请求支持携带 `couponClaimId`，订单保存 `couponApplication`，服务端校验已领券与营销规则适用范围，支付成功后订单券应用与用户券包同步进入 `used` 并记录订单 ID/使用时间；课程中心、课程详情和成长空间结算抽屉均展示账号券包并传递使用意图，个人中心优惠页展示已使用券和关联订单入口。
 - 完成课程订单状态与支付结果服务端化：新增课程 checkout 共享契约、订单扩展字段、服务端创建/读取/支付/取消 API 和前端 repository/hook，课程权益只在服务端支付成功后交付，重复支付保持幂等。
 - 课程详情页购买抽屉已接入订单状态，支持待创建、待支付、支付中、支付成功、失败重试和取消待支付订单，并展示订单号、支付保留时间、支付渠道和权益交付摘要。
 - TRX-C 浏览器验证已通过：在 `/courses/16` 完成登录、创建订单、模拟支付成功、权益到账和“开始学习”入口切换；`pnpm run ci` 已通过 87 个测试文件 / 411 个测试和生产构建。
@@ -507,36 +508,41 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：UX-M 优惠券账户化与领取状态
+### 最近完成阶段：UX-N 结算券包抵扣与使用态沉淀
 
-UX-M 已交付：
+UX-N 已交付：
 
-- `shared/domain/userPreference.ts`：扩展账号偏好契约，新增 `UserCouponClaimSchema`、`UserCouponDisplayStatusSchema` 和 `UserPreferenceCouponClaimRequestSchema`，覆盖领取、使用、过期状态字段。
-- `server/modules/users/userPreferenceApi.ts`：新增 `/api/user-preferences/me/coupons/claim`，登录后领取课程券，服务端校验营销规则存在、类型为 `course_coupon` 且当前有效。
-- `client/src/features/courses/api/httpUserPreferenceRepository.ts`：新增 `claimCoupon`，与既有账号偏好读取复用同一响应契约。
-- `client/src/pages/PersonalCenter.tsx`：优惠页展示账号券包同步状态、可领取/已领取标签、一键领取、去使用入口和未登录引导。
-- `docs/domain-contracts.md` 与 `docs/product-engineering-roadmap.md` 已补充账号券包与领取状态边界。
+- `shared/domain/order.ts`：新增 `OrderCouponApplicationSchema`，订单可记录券包 claim ID、marketing rule ID、预留/已使用状态、关联时间和使用时间。
+- `shared/domain/courseAccess.ts`：课程 checkout 创建请求支持 `couponClaimId`，`createCourseCheckoutOrder` 可写入订单券应用，支付成功后订单券应用推进为 `used`。
+- `shared/domain/userPreference.ts`：新增 `UserPreferenceCouponUseRequestSchema` 与 `useUserCouponClaim`，账号券包可从 `claimed` 幂等推进到 `used`，记录订单 ID 和使用时间。
+- `server/modules/courses/courseAccessApi.ts`：创建订单时校验券已领取、未过期、未使用且适用于当前课程；支付成功后同步保存课程权益订单和用户券包使用态。
+- `client/src/features/courses/model/courseCouponBag.ts` 与 `useUserPreference`：抽出前端账号券包筛选模型和偏好读取 hook，课程中心、课程详情和成长空间复用同一套选券逻辑。
+- `client/src/components/CourseCheckoutDrawer.tsx`：结算抽屉新增“账号券包”区域，展示已领取可用券、可领取数量、暂不使用、使用后核销提示和同步错误提示。
+- `client/src/pages/Courses.tsx`、`CourseDetail.tsx`、`MyCourses.tsx`：创建课程订单时传递用户选择的 coupon claim，切换券选择会重新创建待支付订单以保持订单券应用一致。
+- `client/src/pages/PersonalCenter.tsx`：优惠页展示已使用券的关联订单、使用时间、支付渠道和“查看订单”入口。
+- `docs/domain-contracts.md` 与 `docs/product-engineering-roadmap.md` 已同步券包领取/使用状态、订单券应用和金额口径边界。
 
-UX-M 验收结果：
+UX-N 验收结果：
 
 - `pnpm run check` 已通过。
-- 定向 `pnpm test -- shared/domain/userPreference.test.ts server/modules/users/userPreferenceApi.test.ts client/src/features/courses/api/httpUserPreferenceRepository.test.ts client/src/features/courses/model/courseEngagement.test.ts` 已通过，当前共 104 个测试文件 / 477 个测试。
-- 浏览器验证已通过：登录后在 `/me?tab=coupons` 可领取课程券，`/api/user-preferences/me/coupons/claim` 返回 200，`/api/user-preferences/me` 可回读 `claimed` 券包记录，优惠页展示已领取状态，桌面和移动端无横向溢出。
-- 完整 `pnpm run ci` 已通过：类型检查、104 个测试文件 / 477 个测试和生产构建均完成；构建保留既有 Vite 大 chunk 提示。
+- `pnpm test` 已通过：105 个测试文件 / 484 个测试。
+- 浏览器验证已通过：登录并领取课程 16 优惠券后打开 `/courses/16?checkout=course`，结算抽屉展示“账号券包”、券名称、“支付成功后标记为已使用”和支付按钮，无横向溢出。
+- 浏览器验证已通过：通过 API 创建并支付携带 coupon claim 的课程订单后打开 `/me?tab=coupons`，优惠页展示“已使用”“已用于订单”“查看订单”和订单号，无横向溢出。
+- 完整 `pnpm run ci` 已通过：类型检查、105 个测试文件 / 484 个测试和生产构建均完成；构建保留既有 Vite 大 chunk 提示。
 
-### 用户端待续：UX-N 结算券包抵扣与使用态沉淀
+### 用户端待续：UX-O 结算内领券与订单详情深链
 
 业务目标：
 
-把已领取的账号券包与课程结算抽屉打通：用户下单时优先看到已领取可用券，支付成功后沉淀使用态和关联订单。当前营销规则仍是金额计算来源，账号券包成为用户体验和后续运营发券/核销的状态来源。
+把“看到优惠”和“完成下单”之间的剩余摩擦继续压低：用户在结算抽屉内看到未领取但可用的课程券时，可以就地领取并自动选中；个人中心订单、优惠券和结算成功态之间建立更直接的订单详情深链，减少来回跳转和信息断层。
 
 建议实施范围：
 
-- 扩展课程 checkout 请求或订单扩展字段，记录使用的账号券 claim ID / marketing rule ID。
-- 结算抽屉读取账号券包，对当前课程筛选可用已领取券，展示“已领取可用 / 还未领取但可用”的差异。
-- 支付成功后将已使用券写入 `used` 状态，记录订单 ID、使用时间和更新时间。
-- 未领取但可用的营销规则仍可自动抵扣或引导先领取，保持订单金额口径由服务端统一计算。
-- 更新个人中心优惠页，展示已使用券和关联订单入口。
+- 结算抽屉展示“未领取但可用”的具体券卡，而不是只显示数量。
+- 在结算抽屉内支持一键领取课程券，领取成功后刷新账号券包并默认选中该券。
+- 建立用户端订单详情或订单锚点深链，让个人中心优惠页“查看订单”能定位到关联订单。
+- 结算成功态补充本次使用的券名称、抵扣说明和订单入口。
+- 保持金额计算仍由服务端营销规则统一决定；前端领券只改变使用意图和用户状态，不自行计算应付金额。
 - 更新测试、领域契约、路线图和本执行状态。
 
 ## 执行不变量
@@ -558,4 +564,4 @@ UX-M 验收结果：
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-N 结算券包抵扣与使用态沉淀，正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-O 结算内领券与订单详情深链，正式证书签发审核流需另立任务包。

@@ -104,7 +104,8 @@ export function useCourseAccess() {
   const createCheckoutOrder = useCallback(
     async (
       course: Course,
-      mode: CourseCheckoutMode
+      mode: CourseCheckoutMode,
+      couponClaimId?: string
     ): Promise<CourseCheckoutActionResult | "auth_required"> => {
       if (!user) return requireLoggedInAccess();
 
@@ -113,7 +114,8 @@ export function useCourseAccess() {
         const checkout = await httpCourseAccessRepository.createCheckoutOrder(
           course.id,
           mode,
-          accessUserId
+          accessUserId,
+          couponClaimId
         );
         setState(persist(checkout.accessState));
         setAccessError(undefined);

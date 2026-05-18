@@ -5,11 +5,13 @@ import {
   ApiResponseSchema,
   UserPreferenceFavoriteUpdateRequestSchema,
   UserPreferenceCouponClaimRequestSchema,
+  UserPreferenceCouponUseRequestSchema,
   UserPreferenceResultSchema,
   createEmptyUserPreference,
   claimUserCoupon,
   isCourseMarketingRuleActiveAt,
   updateUserFavoriteCourses,
+  useUserCouponClaim,
   type UserPreference,
 } from "../../../shared/domain";
 import { authorizeRequest } from "../auth/authorization";
@@ -100,14 +102,26 @@ export async function getUserPreferencePayload(
   userId: string,
   now = new Date().toISOString()
 ) {
-  const preference =
-    (await userPreferenceStore.getByUserId(userId)) ??
-    createEmptyUserPreference({ userId, now });
+  const preference = await loadUserPreferenceForUser(userId, now);
 
   return {
     status: 200,
     body: preferencePayload(preference, now),
   } as const;
+}
+
+export async function loadUserPreferenceForUser(
+  userId: string,
+  now = new Date().toISOString()
+) {
+  return (
+    (await userPreferenceStore.getByUserId(userId)) ??
+    createEmptyUserPreference({ userId, now })
+  );
+}
+
+export async function saveUserPreferenceForUser(preference: UserPreference) {
+  return userPreferenceStore.save(preference);
 }
 
 export async function updateUserFavoriteCoursesPayload(
@@ -123,9 +137,7 @@ export async function updateUserFavoriteCoursesPayload(
     } as const;
   }
 
-  const current =
-    (await userPreferenceStore.getByUserId(userId)) ??
-    createEmptyUserPreference({ userId, now });
+  const current = await loadUserPreferenceForUser(userId, now);
   const preference = updateUserFavoriteCourses({
     preference: current,
     favoriteCourseIds: parsed.data.favoriteCourseIds,
@@ -175,9 +187,7 @@ export async function claimUserCouponPayload(
     } as const;
   }
 
-  const current =
-    (await userPreferenceStore.getByUserId(userId)) ??
-    createEmptyUserPreference({ userId, now });
+  const current = await loadUserPreferenceForUser(userId, now);
   const preference = claimUserCoupon({
     preference: current,
     marketingRuleId: rule.id,
@@ -190,6 +200,62 @@ export async function claimUserCouponPayload(
     status: 200,
     body: preferencePayload(saved, now),
   } as const;
+}
+
+export async function useUserCouponForOrderPayload(
+  userId: string,
+  body: unknown,
+  now = new Date().toISOString()
+) {
+  const parsed = UserPreferenceCouponUseRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "优惠券使用参数不合法"),
+    } as const;
+  }
+
+  try {
+    const current = await loadUserPreferenceForUser(userId, now);
+    const preference = useUserCouponClaim({
+      preference: current,
+      couponClaimId: parsed.data.couponClaimId,
+      orderId: parsed.data.orderId,
+      now,
+    });
+    const saved = await saveUserPreferenceForUser(preference);
+
+    return {
+      status: 200,
+      body: preferencePayload(saved, now),
+    } as const;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (message === "USER_COUPON_CLAIM_NOT_FOUND") {
+      return {
+        status: 404,
+        body: errorPayload("NOT_FOUND", "优惠券不存在或未领取"),
+      } as const;
+    }
+
+    if (
+      [
+        "USER_COUPON_ALREADY_USED",
+        "USER_COUPON_EXPIRED",
+        "USER_COUPON_NOT_CLAIMED",
+      ].includes(message)
+    ) {
+      return {
+        status: 409,
+        body: errorPayload("CONFLICT", "当前优惠券状态不支持使用"),
+      } as const;
+    }
+
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "优惠券使用状态更新失败"),
+    } as const;
+  }
 }
 
 export function registerUserPreferenceApi(app: Express) {
