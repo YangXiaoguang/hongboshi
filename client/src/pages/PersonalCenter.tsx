@@ -141,6 +141,7 @@ const notificationTypeCopy = {
   after_sales_closed: "售后已关闭",
   refund_request_accepted: "退款已受理",
   refund_request_rejected: "退款暂未受理",
+  refund_completed: "退款已完成",
 } satisfies Record<UserNotificationType, string>;
 
 const notificationTone = {
@@ -149,6 +150,7 @@ const notificationTone = {
   after_sales_closed: "bg-[#EFEAE1] text-[#7B817C]",
   refund_request_accepted: "bg-[#FFF1D8] text-[#8A641C]",
   refund_request_rejected: "bg-[#F4E5DE] text-[#A65F48]",
+  refund_completed: "bg-[#E6EDDF] text-[#41675A]",
 } satisfies Record<UserNotificationType, string>;
 
 const appointmentStatusCopy = {

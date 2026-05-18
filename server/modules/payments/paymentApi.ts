@@ -8,6 +8,8 @@ import { URL } from "url";
 import { z } from "zod";
 import {
   ApiResponseSchema,
+  PaymentWebhookProcessingResultSchema,
+  RefundWebhookProcessingResultSchema,
   PaymentReconciliationConsoleSchema,
   PaymentWebhookReceiptSnapshotSchema,
   PaymentWebhookEventSchema,
@@ -26,7 +28,12 @@ import {
   processCounselingPaymentWebhookEvent,
   processCounselingRefundWebhookEvent,
 } from "../counseling/counselingApi";
+import {
+  getCourseAccessPaymentOrderSnapshot,
+  processCourseAccessRefundWebhookEvent,
+} from "../courses/courseAccessApi";
 import { getLoginSessionFromRequest } from "../auth/authSessionApi";
+import { completeRefundedOrderAfterSales } from "../orders/orderAfterSalesRefundCompletion";
 import {
   getPaymentWebhookEventStore,
   type PaymentWebhookEventStore,
@@ -42,6 +49,8 @@ const PaymentWebhookResponseSchema = ApiResponseSchema(
   z.union([
     CounselingPaymentWebhookResultSchema,
     CounselingRefundWebhookResultSchema,
+    PaymentWebhookProcessingResultSchema,
+    RefundWebhookProcessingResultSchema,
   ])
 );
 const PaymentReconciliationConsoleResponseSchema = ApiResponseSchema(
@@ -164,7 +173,33 @@ async function routePaymentWebhookEvent(
     event.type === "refund.succeeded" &&
     event.orderId.startsWith("order_counseling_")
   ) {
-    return processCounselingRefundWebhookEvent(event);
+    const payload = await processCounselingRefundWebhookEvent(event);
+    const order = payload.body.ok ? payload.body.data.order : undefined;
+    if (order) {
+      await completeRefundedOrderAfterSales({
+        orderId: order.id,
+        userId: order.userId,
+        orderTitle: order.items[0]?.title,
+        transactionId: event.transactionId,
+        now: event.occurredAt,
+      });
+    }
+    return payload;
+  }
+
+  if (event.type === "refund.succeeded") {
+    const payload = await processCourseAccessRefundWebhookEvent(event);
+    if (payload.body.ok) {
+      const { order } = payload.body.data;
+      await completeRefundedOrderAfterSales({
+        orderId: order.id,
+        userId: order.userId,
+        orderTitle: order.items[0]?.title,
+        transactionId: event.transactionId,
+        now: event.occurredAt,
+      });
+    }
+    return payload;
   }
 
   return {
@@ -302,7 +337,7 @@ async function businessSnapshotForReceipt(receipt: PaymentWebhookReceipt) {
     return getCounselingPaymentOrderSnapshot(receipt.orderId);
   }
 
-  return undefined;
+  return getCourseAccessPaymentOrderSnapshot(receipt.orderId);
 }
 
 async function reconciliationEntryFromReceipt(

@@ -250,7 +250,10 @@ export const PaymentWebhookReceiptStatusSchema = z.enum([
   "failed",
 ]);
 
-export const PaymentBusinessDomainSchema = z.enum(["counseling"]);
+export const PaymentBusinessDomainSchema = z.enum([
+  "counseling",
+  "course_access",
+]);
 
 export const PaymentReconciliationSeveritySchema = z.enum([
   "ok",

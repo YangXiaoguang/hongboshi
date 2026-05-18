@@ -8,6 +8,7 @@ export const UserNotificationTypeSchema = z.enum([
   "after_sales_closed",
   "refund_request_accepted",
   "refund_request_rejected",
+  "refund_completed",
 ]);
 
 export const UserNotificationStatusSchema = z.enum(["unread", "read"]);
@@ -243,6 +244,48 @@ export function createAfterSalesRefundRejectedNotification({
       requestId,
       orderTitle,
       transactionId,
+    },
+    createdAt: now,
+  });
+}
+
+export function createAfterSalesRefundCompletedNotification({
+  userId,
+  orderId,
+  requestId,
+  orderTitle,
+  transactionId,
+  refundRequestId,
+  now = new Date().toISOString(),
+}: {
+  userId: string;
+  orderId: string;
+  requestId: string;
+  orderTitle?: string;
+  transactionId?: string;
+  refundRequestId?: string;
+  now?: string;
+}): UserNotification {
+  const type: UserNotificationType = "refund_completed";
+  const label = orderLabel(orderTitle, orderId);
+
+  return UserNotificationSchema.parse({
+    id: notificationId({ userId, requestId, type, now }),
+    userId,
+    type,
+    status: "unread",
+    priority: "important",
+    title: "退款已完成",
+    content: clampContent(
+      `${label} 的退款已由支付回调确认完成，售后工单已自动收尾。款项到账时间以原支付渠道为准。`
+    ),
+    resource: {
+      kind: "order_after_sales",
+      orderId,
+      requestId,
+      orderTitle,
+      transactionId,
+      refundRequestId,
     },
     createdAt: now,
   });

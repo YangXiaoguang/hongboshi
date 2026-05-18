@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   UserNotificationListResultSchema,
+  createAfterSalesRefundCompletedNotification,
   createAfterSalesProgressNotification,
   createAfterSalesRefundRejectedNotification,
 } from "./userNotification";
@@ -59,6 +60,32 @@ describe("userNotification domain", () => {
       },
     });
     expect(notification.content).toContain("需要财务复核");
+  });
+
+  it("creates refund completed notifications from payment callbacks", () => {
+    const notification = createAfterSalesRefundCompletedNotification({
+      userId: "u_phone_9019",
+      orderId: "order_1",
+      requestId: "after_sales_1",
+      orderTitle: "情绪急救手册",
+      transactionId: "refund_tx_1",
+      refundRequestId: "manual_refund_1",
+      now: "2026-05-18T12:04:00.000Z",
+    });
+
+    expect(notification).toMatchObject({
+      type: "refund_completed",
+      title: "退款已完成",
+      priority: "important",
+      resource: {
+        orderId: "order_1",
+        requestId: "after_sales_1",
+        transactionId: "refund_tx_1",
+        refundRequestId: "manual_refund_1",
+      },
+    });
+    expect(notification.content).toContain("支付回调确认完成");
+    expect(notification.content).not.toContain("payload");
   });
 
   it("validates list result summaries", () => {

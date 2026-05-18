@@ -14,13 +14,19 @@ import {
   CourseSchema,
   LOCAL_COURSE_ACCESS_USER_ID,
   LegacyNumericIdSchema,
+  PaymentBusinessOrderSnapshotSchema,
+  RefundSucceededWebhookEventSchema,
+  RefundWebhookProcessingResultSchema,
   activateCourseMembership,
+  applyRefundSucceededWebhookToOrder,
   cancelCourseCheckoutOrder,
   courseMatchesMarketingRule,
   createCourseCheckoutOrder,
   createCourseCheckoutOrderResult,
+  findCourseAccessOrder,
   isCourseMarketingRuleActiveAt,
   payCourseCheckoutOrder,
+  upsertCourseAccessOrder,
   useUserCouponClaim,
   type Course,
   type CourseAccessState,
@@ -28,6 +34,8 @@ import {
   type CourseCheckoutOrderResult,
   type OrderAdminAuditEvent,
   type OrderAdminExceptionFlag,
+  type PaymentBusinessOrderSnapshot,
+  type RefundSucceededWebhookEvent,
   type UserPreference,
   type UserAdminMembershipAuditEvent,
 } from "../../../shared/domain";
@@ -52,6 +60,9 @@ import {
 const CourseAccessResponseSchema = ApiResponseSchema(CourseAccessStateSchema);
 const CourseCheckoutOrderResponseSchema = ApiResponseSchema(
   CourseCheckoutOrderResultSchema
+);
+const CourseRefundWebhookResponseSchema = ApiResponseSchema(
+  RefundWebhookProcessingResultSchema
 );
 const PurchaseCourseRequestSchema = z.object({
   courseId: LegacyNumericIdSchema,
@@ -103,7 +114,7 @@ function errorPayload(
       code,
       message,
     },
-  };
+  } as const;
 }
 
 function findCourse(courseId: number) {
@@ -295,6 +306,89 @@ export function saveCourseAccessState(
   state: CourseAccessState
 ) {
   return Promise.resolve(courseAccessStore.save(userId, state));
+}
+
+export async function findCourseAccessOrderSource(orderId: string) {
+  const userStates = await listCourseAccessUserStates();
+  for (const item of userStates) {
+    const order = findCourseAccessOrder(item.state, orderId);
+    if (order) {
+      return {
+        userId: item.userId,
+        state: item.state,
+        order,
+      };
+    }
+  }
+
+  return undefined;
+}
+
+export async function getCourseAccessPaymentOrderSnapshot(
+  orderId: string
+): Promise<PaymentBusinessOrderSnapshot | undefined> {
+  const source = await findCourseAccessOrderSource(orderId);
+  if (!source) return undefined;
+
+  return PaymentBusinessOrderSnapshotSchema.parse({
+    domain: "course_access",
+    orderId,
+    userId: source.userId,
+    orderStatus: source.order.status,
+    payableAmount: source.order.payableAmount,
+    paidAt: source.order.paidAt,
+  });
+}
+
+export async function processCourseAccessRefundWebhookEvent(
+  event: RefundSucceededWebhookEvent
+) {
+  const refundEvent = RefundSucceededWebhookEventSchema.parse(event);
+  const source = await findCourseAccessOrderSource(refundEvent.orderId);
+  if (!source) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "退款回调关联的课程订单不存在"),
+    } as const;
+  }
+
+  let webhookResult: ReturnType<typeof applyRefundSucceededWebhookToOrder>;
+  try {
+    webhookResult = applyRefundSucceededWebhookToOrder(
+      source.order,
+      refundEvent
+    );
+  } catch (err) {
+    const message =
+      err instanceof Error && err.message === "REFUND_WEBHOOK_AMOUNT_MISMATCH"
+        ? "退款回调金额与课程订单金额不一致"
+        : "课程订单当前状态不支持退款成功回调";
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", message),
+    } as const;
+  }
+
+  try {
+    await saveCourseAccessState(
+      source.userId,
+      upsertCourseAccessOrder(source.state, webhookResult.order)
+    );
+
+    return {
+      status: 200,
+      body: CourseRefundWebhookResponseSchema.parse({
+        ok: true,
+        data: webhookResult,
+      }),
+    } as const;
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : "课程退款回调处理失败");
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "课程退款回调处理失败，请稍后重试"),
+    } as const;
+  }
 }
 
 export function listMembershipAuditEvents(userId: string) {

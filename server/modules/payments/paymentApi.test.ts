@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  CourseAccessStateSchema,
+  OrderAfterSalesRequestSchema,
   createSimulatedPaymentSucceededEvent,
   createSimulatedRefundSucceededEvent,
+  type Order,
 } from "../../../shared/domain";
 import {
   createCounselingAppointmentPayload,
@@ -12,7 +15,19 @@ import {
 import {
   getCourseAccessPayload,
   resetCourseAccessStore,
+  setCourseAccessStore,
 } from "../courses/courseAccessApi";
+import { InMemoryCourseAccessStore } from "../courses/courseAccessStore";
+import {
+  InMemoryOrderAfterSalesStore,
+  setOrderAfterSalesStore,
+  type OrderAfterSalesStore,
+} from "../orders/orderAfterSalesStore";
+import {
+  InMemoryUserNotificationStore,
+  setUserNotificationStore,
+  type UserNotificationStore,
+} from "../users/userNotificationStore";
 import {
   getPaymentReconciliationConsolePayload,
   processPaymentWebhookPayload,
@@ -25,6 +40,31 @@ import {
 } from "./paymentWebhookSecurity";
 
 const fixedNow = new Date("2026-05-10T00:00:00.000Z");
+const courseRefundUserId = "u_course_refund_1";
+const courseRefundingOrder: Order = {
+  id: "order_course_refund_webhook_1",
+  userId: courseRefundUserId,
+  status: "refunding",
+  items: [
+    {
+      type: "course",
+      targetId: "16",
+      title: "情绪急救手册",
+      unitPrice: 149,
+      quantity: 1,
+    },
+  ],
+  subtotal: 149,
+  discountAmount: 20,
+  payableAmount: 129,
+  createdAt: "2026-05-10T00:00:00.000Z",
+  paidAt: "2026-05-10T00:02:00.000Z",
+  entitlementDeliveredAt: "2026-05-10T00:02:00.000Z",
+  paymentChannel: "wechat_pay",
+};
+
+let afterSalesStore: OrderAfterSalesStore;
+let notificationStore: UserNotificationStore;
 
 async function createPendingCounselingOrder(userId = "user_1") {
   const availability = await getCounselingAvailabilityPayload(
@@ -51,6 +91,11 @@ async function createPendingCounselingOrder(userId = "user_1") {
 
 describe("payment webhook api payloads", () => {
   beforeEach(async () => {
+    setCourseAccessStore(new InMemoryCourseAccessStore());
+    afterSalesStore = new InMemoryOrderAfterSalesStore();
+    notificationStore = new InMemoryUserNotificationStore();
+    setOrderAfterSalesStore(afterSalesStore);
+    setUserNotificationStore(notificationStore);
     await resetCourseAccessStore();
     await resetCounselingAppointmentStore(fixedNow);
     await resetPaymentWebhookEventStore();
@@ -209,6 +254,112 @@ describe("payment webhook api payloads", () => {
     expect(access.ok).toBe(true);
     if (access.ok) {
       expect(access.data.orders[0]?.status).toBe("refunded");
+    }
+  });
+
+  it("routes course refund success into order refund and after-sales completion", async () => {
+    await resetCourseAccessStore(
+      CourseAccessStateSchema.parse({
+        ownedCourseIds: [16],
+        membership: { status: "none" },
+        orders: [courseRefundingOrder],
+      }),
+      courseRefundUserId
+    );
+    await afterSalesStore.append(
+      OrderAfterSalesRequestSchema.parse({
+        id: "after_sales_refund_completion_1",
+        orderId: courseRefundingOrder.id,
+        userId: courseRefundUserId,
+        requestType: "refund_consultation",
+        status: "linked_to_refund",
+        description: "用户已申请退款，等待支付渠道回调确认完成。",
+        contact: "13800139019",
+        linkedTransactionId: "evt_payment_course_refundable_1",
+        linkedRefundRequestId: "manual_refund_course_1",
+        operatorNote: "退款已受理，等待支付渠道完成",
+        createdAt: "2026-05-10T00:05:00.000Z",
+        updatedAt: "2026-05-10T00:06:00.000Z",
+      })
+    );
+
+    const refundEvent = createSimulatedRefundSucceededEvent({
+      order: courseRefundingOrder,
+      channel: "wechat_pay",
+      transactionId: "refund_tx_course_1",
+      now: "2026-05-10T00:25:00.000Z",
+    });
+    const refundPayload = await processPaymentWebhookPayload(refundEvent);
+
+    expect(refundPayload.status).toBe(200);
+    expect(refundPayload.body.ok).toBe(true);
+    if (refundPayload.body.ok) {
+      expect(refundPayload.body.data).toMatchObject({
+        refund: {
+          orderId: courseRefundingOrder.id,
+          transactionId: "refund_tx_course_1",
+        },
+        order: {
+          status: "refunded",
+        },
+      });
+    }
+
+    const access = await getCourseAccessPayload(courseRefundUserId);
+    expect(access.ok).toBe(true);
+    if (access.ok) {
+      expect(access.data.orders[0]).toMatchObject({
+        id: courseRefundingOrder.id,
+        status: "refunded",
+      });
+    }
+
+    const completedRequest = await afterSalesStore.getById(
+      "after_sales_refund_completion_1"
+    );
+    expect(completedRequest).toMatchObject({
+      status: "resolved",
+      operatorNote: "退款已完成，售后工单已自动收尾",
+    });
+
+    const auditEvents = await afterSalesStore.listAuditEventsByRequestId(
+      "after_sales_refund_completion_1"
+    );
+    expect(auditEvents[0]).toMatchObject({
+      actorId: "system_payment_webhook",
+      actorRoles: ["system"],
+      action: "resolve",
+      before: { status: "linked_to_refund" },
+      after: { status: "resolved" },
+    });
+
+    const notifications = await notificationStore.listByUserId(
+      courseRefundUserId
+    );
+    expect(notifications[0]).toMatchObject({
+      type: "refund_completed",
+      title: "退款已完成",
+      resource: {
+        orderId: courseRefundingOrder.id,
+        requestId: "after_sales_refund_completion_1",
+        transactionId: "refund_tx_course_1",
+        refundRequestId: "manual_refund_course_1",
+      },
+    });
+
+    const consolePayload = await getPaymentReconciliationConsolePayload(
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T00:26:00.000Z"
+    );
+    expect(consolePayload.status).toBe(200);
+    if (consolePayload.body.ok) {
+      expect(consolePayload.body.data.entries[0]).toMatchObject({
+        severity: "ok",
+        business: {
+          domain: "course_access",
+          orderStatus: "refunded",
+        },
+      });
     }
   });
 
