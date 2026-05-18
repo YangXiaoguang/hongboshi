@@ -4,6 +4,7 @@ import {
   parseAdminOrderDetailResponse,
   parseAdminOrderListResponse,
   parseAdminOrderMutationResponse,
+  parseOrderAfterSalesAdminMutationResponse,
 } from "./httpAdminOrderRepository";
 
 const listItem = {
@@ -130,6 +131,45 @@ const mutationData = {
   serverTime: "2026-05-12T10:00:00+08:00",
 };
 
+const afterSalesMutationData = {
+  summary: {
+    id: "order_after_sales_1",
+    orderId: "order_1",
+    userId: "u_member_1",
+    requestType: "refund_consultation",
+    status: "linked_to_refund",
+    descriptionPreview: "用户希望转入退款处理。",
+    contactMasked: "138****2049",
+    linkedTransactionId: "evt_payment_1",
+    linkedRefundRequestId: "manual_refund_1",
+    operatorNote: "已核实课程权益可回收并转入退款受理",
+    createdAt: "2026-05-12T10:00:00+08:00",
+    updatedAt: "2026-05-12T10:10:00+08:00",
+  },
+  auditEvent: {
+    id: "order_after_sales_audit_1",
+    requestId: "order_after_sales_1",
+    orderId: "order_1",
+    userId: "u_member_1",
+    actorId: "operator_1",
+    actorRoles: ["operator"],
+    action: "link_refund",
+    reason: "已核实课程权益可回收并转入退款受理",
+    before: {
+      status: "reviewing",
+    },
+    after: {
+      status: "linked_to_refund",
+      linkedTransactionId: "evt_payment_1",
+      linkedRefundRequestId: "manual_refund_1",
+      operatorNote: "已核实课程权益可回收并转入退款受理",
+    },
+    createdAt: "2026-05-12T10:10:00+08:00",
+  },
+  auditEvents: [],
+  serverTime: "2026-05-12T10:10:00+08:00",
+};
+
 describe("http admin order repository", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -174,6 +214,16 @@ describe("http admin order repository", () => {
 
     expect(parsed.auditEvent.action).toBe("mark_exception");
     expect(parsed.detail.order.exception?.status).toBe("open");
+  });
+
+  it("parses after-sales admin mutation responses", () => {
+    const parsed = parseOrderAfterSalesAdminMutationResponse({
+      ok: true,
+      data: afterSalesMutationData,
+    });
+
+    expect(parsed.summary.status).toBe("linked_to_refund");
+    expect(parsed.auditEvent.action).toBe("link_refund");
   });
 
   it("loads orders from the admin endpoint with filters", async () => {
@@ -250,6 +300,40 @@ describe("http admin order repository", () => {
           action: "mark_exception",
           severity: "warning",
           reason: "支付回调失败需人工核查",
+        }),
+      })
+    );
+  });
+
+  it("updates after-sales requests through the admin endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: afterSalesMutationData,
+        })
+      )
+    );
+
+    const result = await httpAdminOrderRepository.updateAfterSalesRequest(
+      "order_after_sales_1",
+      {
+        action: "link_refund",
+        transactionId: "evt_payment_1",
+        reason: "已核实课程权益可回收并转入退款受理",
+      }
+    );
+
+    expect(result.summary.linkedTransactionId).toBe("evt_payment_1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/orders/admin/after-sales/order_after_sales_1/actions",
+      expect.objectContaining({
+        method: "PATCH",
+        credentials: "same-origin",
+        body: JSON.stringify({
+          action: "link_refund",
+          transactionId: "evt_payment_1",
+          reason: "已核实课程权益可回收并转入退款受理",
         }),
       })
     );

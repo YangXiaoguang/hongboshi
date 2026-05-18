@@ -136,6 +136,7 @@ export function summarizeOrderAfterSalesRequest(
     contactMasked: maskContact(request.contact),
     linkedTransactionId: request.linkedTransactionId,
     linkedRefundRequestId: request.linkedRefundRequestId,
+    operatorNote: request.operatorNote,
     createdAt: request.createdAt,
     updatedAt: request.updatedAt,
   });

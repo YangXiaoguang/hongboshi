@@ -30,6 +30,7 @@ import {
   ALL_TRANSACTION_ADMIN_ITEM_TYPE,
   ALL_TRANSACTION_ADMIN_STATUS,
   ALL_TRANSACTION_ADMIN_TYPE,
+  ORDER_ADMIN_PERMISSIONS,
   PaymentChannelSchema,
   PaymentWebhookReceiptStatusSchema,
   PurchasableTypeSchema,
@@ -37,8 +38,11 @@ import {
   TRANSACTION_ADMIN_PERMISSIONS,
   userCan,
   type OrderStatus,
+  type OrderAfterSalesAdminAction,
+  type OrderAfterSalesAdminActionRequest,
   type OrderAfterSalesRequestStatus,
   type OrderAfterSalesRequestType,
+  type OrderAfterSalesSummary,
   type PaymentChannel,
   type PaymentWebhookReceiptStatus,
   type PurchasableType,
@@ -55,6 +59,7 @@ import {
   type TransactionRefundProviderStatus,
 } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
+import { httpAdminOrderRepository } from "@/features/orders";
 import { httpTransactionAdminRepository } from "@/features/transactions";
 
 const flowTypeCopy = {
@@ -138,6 +143,13 @@ const afterSalesStatusCopy = {
   resolved: "已解决",
   closed: "已关闭",
 } satisfies Record<OrderAfterSalesRequestStatus, string>;
+
+const afterSalesActionCopy = {
+  start_review: "标记处理中",
+  resolve: "标记解决",
+  close: "关闭工单",
+  link_refund: "转退款受理",
+} satisfies Record<OrderAfterSalesAdminAction, string>;
 
 const sortOptions: {
   value: TransactionAdminListQuery["sort"];
@@ -411,6 +423,149 @@ function availableTransactionActions(detail: TransactionAdminDetail) {
   return actions;
 }
 
+function canLinkAfterSalesRefund(detail: TransactionAdminDetail) {
+  const transaction = detail.transaction;
+  return (
+    transaction.type === "payment" &&
+    transaction.status === "processed" &&
+    detail.relatedOrder?.status === "paid" &&
+    !activeWorkOrder(transaction) &&
+    transaction.issues.every(issue => issue.code === "after_sales_open")
+  );
+}
+
+function availableAfterSalesActions(
+  request: OrderAfterSalesSummary,
+  canLinkRefund: boolean
+): OrderAfterSalesAdminAction[] {
+  const actions: OrderAfterSalesAdminAction[] = [];
+  if (request.status === "submitted") {
+    actions.push("start_review");
+  }
+  if (["submitted", "reviewing"].includes(request.status) && canLinkRefund) {
+    actions.push("link_refund");
+  }
+  if (["submitted", "reviewing", "linked_to_refund"].includes(request.status)) {
+    actions.push("resolve");
+  }
+  if (["submitted", "reviewing"].includes(request.status)) {
+    actions.push("close");
+  }
+  return actions;
+}
+
+function TransactionAfterSalesActionForm({
+  request,
+  transactionId,
+  canHandleAfterSales,
+  canLinkRefund,
+  submitting,
+  error,
+  onSubmit,
+}: {
+  request: OrderAfterSalesSummary;
+  transactionId: string;
+  canHandleAfterSales: boolean;
+  canLinkRefund: boolean;
+  submitting: boolean;
+  error?: string;
+  onSubmit: (
+    requestId: string,
+    request: OrderAfterSalesAdminActionRequest
+  ) => Promise<boolean>;
+}) {
+  const actions = useMemo(
+    () => availableAfterSalesActions(request, canLinkRefund),
+    [canLinkRefund, request]
+  );
+  const [action, setAction] = useState<OrderAfterSalesAdminAction>(
+    actions[0] ?? "start_review"
+  );
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    if (!actions.includes(action)) {
+      setAction(actions[0] ?? "start_review");
+    }
+  }, [action, actions]);
+
+  const disabled =
+    !canHandleAfterSales ||
+    submitting ||
+    !actions.length ||
+    reason.trim().length < 4;
+
+  async function submitAfterSalesAction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (disabled) return;
+
+    const payload: OrderAfterSalesAdminActionRequest =
+      action === "link_refund"
+        ? {
+            action,
+            transactionId,
+            reason: reason.trim(),
+          }
+        : {
+            action,
+            reason: reason.trim(),
+          };
+
+    const ok = await onSubmit(request.id, payload);
+    if (ok) setReason("");
+  }
+
+  if (!canHandleAfterSales || !actions.length) return null;
+
+  return (
+    <form
+      onSubmit={submitAfterSalesAction}
+      className="mt-3 grid gap-2 border-t border-[#F0E1D1] pt-3"
+    >
+      <select
+        value={action}
+        onChange={event =>
+          setAction(event.target.value as OrderAfterSalesAdminAction)
+        }
+        disabled={submitting}
+        className="h-9 rounded-lg border border-[#DCCDBB] bg-white px-3 text-xs font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15 disabled:cursor-wait disabled:opacity-60"
+      >
+        {actions.map(item => (
+          <option key={item} value={item}>
+            {afterSalesActionCopy[item]}
+          </option>
+        ))}
+      </select>
+      <textarea
+        value={reason}
+        onChange={event => setReason(event.target.value)}
+        rows={2}
+        disabled={submitting}
+        placeholder="处理备注，至少 4 个字"
+        className="resize-none rounded-lg border border-[#DCCDBB] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition placeholder:text-[#A99B8C] focus:border-[#6F8F83] focus:ring-2 focus:ring-[#6F8F83]/15 disabled:cursor-wait disabled:opacity-60"
+      />
+      {error ? (
+        <p className="rounded-lg bg-[#FFF0EA] px-3 py-2 text-xs font-semibold text-[#AD503A]">
+          {error}
+        </p>
+      ) : null}
+      <button
+        disabled={disabled}
+        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-55"
+      >
+        {submitting ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : action === "link_refund" ? (
+          <Send className="h-3.5 w-3.5" />
+        ) : (
+          <CheckCircle2 className="h-3.5 w-3.5" />
+        )}
+        {afterSalesActionCopy[action]}
+      </button>
+    </form>
+  );
+}
+
 function TransactionActionPanel({
   detail,
   canOperate,
@@ -651,17 +806,30 @@ function TransactionDetailPanel({
   loading,
   error,
   canOperate,
+  canHandleAfterSales,
   actionSubmitting,
   actionError,
+  afterSalesSubmittingId,
+  afterSalesActionErrorRequestId,
+  afterSalesActionError,
   onSubmitAction,
+  onSubmitAfterSalesAction,
 }: {
   detail?: TransactionAdminDetail;
   loading: boolean;
   error?: string;
   canOperate: boolean;
+  canHandleAfterSales: boolean;
   actionSubmitting: boolean;
   actionError?: string;
+  afterSalesSubmittingId?: string;
+  afterSalesActionErrorRequestId?: string;
+  afterSalesActionError?: string;
   onSubmitAction: (request: TransactionAdminActionRequest) => Promise<boolean>;
+  onSubmitAfterSalesAction: (
+    requestId: string,
+    request: OrderAfterSalesAdminActionRequest
+  ) => Promise<boolean>;
 }) {
   if (loading) {
     return (
@@ -693,6 +861,7 @@ function TransactionDetailPanel({
   }
 
   const transaction = detail.transaction;
+  const canLinkRefund = canOperate && canLinkAfterSalesRefund(detail);
 
   return (
     <div>
@@ -838,6 +1007,33 @@ function TransactionDetailPanel({
                   {request.contactMasked} · {formatDate(request.createdAt)} ·{" "}
                   {request.id}
                 </p>
+                {request.linkedTransactionId ? (
+                  <p className="mt-2 break-all rounded-lg bg-white px-2 py-1.5 text-xs text-[#6F7771]">
+                    已关联交易 {request.linkedTransactionId}
+                    {request.linkedRefundRequestId
+                      ? ` · 退款受理 ${request.linkedRefundRequestId}`
+                      : ""}
+                  </p>
+                ) : null}
+                {request.operatorNote ? (
+                  <p className="mt-2 rounded-lg bg-white px-2 py-1.5 text-xs leading-5 text-[#6F7771]">
+                    处理备注：{request.operatorNote}
+                  </p>
+                ) : null}
+                <TransactionAfterSalesActionForm
+                  request={request}
+                  transactionId={transaction.id}
+                  canHandleAfterSales={canHandleAfterSales}
+                  canLinkRefund={canLinkRefund}
+                  submitting={afterSalesSubmittingId === request.id}
+                  error={
+                    afterSalesActionError &&
+                    afterSalesActionErrorRequestId === request.id
+                      ? afterSalesActionError
+                      : undefined
+                  }
+                  onSubmit={onSubmitAfterSalesAction}
+                />
               </div>
             ))}
           </div>
@@ -924,6 +1120,9 @@ export default function TransactionManagement() {
   const canOperate = Boolean(
     user && userCan(user, TRANSACTION_ADMIN_PERMISSIONS.operate)
   );
+  const canHandleAfterSales = Boolean(
+    user && userCan(user, ORDER_ADMIN_PERMISSIONS.operate)
+  );
   const [query, setQuery] = useState<TransactionAdminListQuery>({
     keyword: "",
     type: ALL_TRANSACTION_ADMIN_TYPE,
@@ -944,6 +1143,11 @@ export default function TransactionManagement() {
   const [detailError, setDetailError] = useState<string>();
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string>();
+  const [afterSalesSubmittingId, setAfterSalesSubmittingId] =
+    useState<string>();
+  const [afterSalesActionErrorRequestId, setAfterSalesActionErrorRequestId] =
+    useState<string>();
+  const [afterSalesActionError, setAfterSalesActionError] = useState<string>();
 
   const loadTransactions = useCallback(async () => {
     if (!canRead) return undefined;
@@ -975,6 +1179,9 @@ export default function TransactionManagement() {
   }, [loadTransactions]);
 
   useEffect(() => {
+    setActionError(undefined);
+    setAfterSalesActionError(undefined);
+    setAfterSalesActionErrorRequestId(undefined);
     if (!canRead || !selectedTransactionId) {
       setDetail(undefined);
       return;
@@ -1041,6 +1248,41 @@ export default function TransactionManagement() {
         return false;
       } finally {
         setActionSubmitting(false);
+      }
+    },
+    [loadTransactions, selectedTransactionId]
+  );
+
+  const submitAfterSalesAction = useCallback(
+    async (
+      requestId: string,
+      request: OrderAfterSalesAdminActionRequest
+    ) => {
+      if (!selectedTransactionId) return false;
+
+      setAfterSalesSubmittingId(requestId);
+      setAfterSalesActionError(undefined);
+      setAfterSalesActionErrorRequestId(undefined);
+      try {
+        await httpAdminOrderRepository.updateAfterSalesRequest(
+          requestId,
+          request
+        );
+        const nextDetail =
+          await httpTransactionAdminRepository.loadTransactionDetail(
+            selectedTransactionId
+          );
+        setDetail(nextDetail);
+        await loadTransactions();
+        return true;
+      } catch (err) {
+        setAfterSalesActionErrorRequestId(requestId);
+        setAfterSalesActionError(
+          err instanceof Error ? err.message : "售后处理暂时不可用"
+        );
+        return false;
+      } finally {
+        setAfterSalesSubmittingId(undefined);
       }
     },
     [loadTransactions, selectedTransactionId]
@@ -1344,9 +1586,14 @@ export default function TransactionManagement() {
             loading={detailLoading}
             error={detailError}
             canOperate={canOperate}
+            canHandleAfterSales={canHandleAfterSales}
             actionSubmitting={actionSubmitting}
             actionError={actionError}
+            afterSalesSubmittingId={afterSalesSubmittingId}
+            afterSalesActionErrorRequestId={afterSalesActionErrorRequestId}
+            afterSalesActionError={afterSalesActionError}
             onSubmitAction={submitTransactionAction}
+            onSubmitAfterSalesAction={submitAfterSalesAction}
           />
         </aside>
       </section>

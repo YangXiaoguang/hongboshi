@@ -1,10 +1,14 @@
 import {
   ApiResponseSchema,
+  OrderAfterSalesAdminActionRequestSchema,
+  OrderAfterSalesAdminMutationResultSchema,
   OrderAdminActionRequestSchema,
   OrderAdminDetailSchema,
   OrderAdminListQuerySchema,
   OrderAdminListResultSchema,
   OrderAdminMutationResultSchema,
+  type OrderAfterSalesAdminActionRequest,
+  type OrderAfterSalesAdminMutationResult,
   type OrderAdminActionRequest,
   type OrderAdminDetail,
   type OrderAdminListQuery,
@@ -20,6 +24,9 @@ const OrderAdminDetailResponseSchema = ApiResponseSchema(
 );
 const OrderAdminMutationResponseSchema = ApiResponseSchema(
   OrderAdminMutationResultSchema
+);
+const OrderAfterSalesAdminMutationResponseSchema = ApiResponseSchema(
+  OrderAfterSalesAdminMutationResultSchema
 );
 const API_BASE = "/api/orders/admin";
 
@@ -55,6 +62,14 @@ export function parseAdminOrderMutationResponse(
   return parsed.data;
 }
 
+export function parseOrderAfterSalesAdminMutationResponse(
+  payload: unknown
+): OrderAfterSalesAdminMutationResult {
+  const parsed = OrderAfterSalesAdminMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = OrderAdminListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -69,6 +84,12 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   const mutationParsed = OrderAdminMutationResponseSchema.safeParse(payload);
   if (mutationParsed.success && !mutationParsed.data.ok) {
     return mutationParsed.data.error.message;
+  }
+
+  const afterSalesMutationParsed =
+    OrderAfterSalesAdminMutationResponseSchema.safeParse(payload);
+  if (afterSalesMutationParsed.success && !afterSalesMutationParsed.data.ok) {
+    return afterSalesMutationParsed.data.error.message;
   }
 
   return fallback;
@@ -147,5 +168,30 @@ export const httpAdminOrderRepository = {
       throw new Error(extractErrorMessage(payload, "订单操作暂时不可用"));
     }
     return parseAdminOrderMutationResponse(payload);
+  },
+
+  async updateAfterSalesRequest(
+    requestId: string,
+    request: OrderAfterSalesAdminActionRequest
+  ): Promise<OrderAfterSalesAdminMutationResult> {
+    const normalized = OrderAfterSalesAdminActionRequestSchema.parse(request);
+    const response = await fetch(
+      `${API_BASE}/after-sales/${encodeURIComponent(requestId)}/actions`,
+      {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify(normalized),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "售后处理暂时不可用"));
+    }
+    return parseOrderAfterSalesAdminMutationResponse(payload);
   },
 };

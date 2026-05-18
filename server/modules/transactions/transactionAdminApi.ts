@@ -1144,7 +1144,8 @@ function buildTransactionAuditEvent({
 
 function refundRequestConflict(
   item: TransactionAdminListItem,
-  source: Awaited<ReturnType<typeof findOrderSource>> | undefined
+  source: Awaited<ReturnType<typeof findOrderSource>> | undefined,
+  request: TransactionAdminActionRequest
 ) {
   if (item.type !== "payment") {
     return "退款申请必须从支付流水发起。";
@@ -1158,7 +1159,26 @@ function refundRequestConflict(
     return "未匹配业务订单，不能发起退款申请，请先标记异常工单。";
   }
 
-  if (item.issues.length > 0) {
+  const linkedAfterSalesRequestId =
+    request.action === "request_refund"
+      ? request.afterSalesRequestId
+      : undefined;
+  if (linkedAfterSalesRequestId) {
+    const afterSalesRequest = item.afterSalesRequests.find(
+      current => current.id === linkedAfterSalesRequestId
+    );
+    if (!afterSalesRequest) {
+      return "未找到与该流水关联的售后申请。";
+    }
+    if (!["submitted", "reviewing"].includes(afterSalesRequest.status)) {
+      return "只有待处理或处理中的售后申请可以联动退款。";
+    }
+  }
+
+  const blockingIssues = linkedAfterSalesRequestId
+    ? item.issues.filter(issueItem => issueItem.code !== "after_sales_open")
+    : item.issues;
+  if (blockingIssues.length > 0) {
     return "存在未处理的交易异常，需完成核查后再发起退款。";
   }
 
@@ -1212,7 +1232,7 @@ async function applyAdminTransactionAction({
   let refundProviderResult: TransactionRefundProviderResult | undefined;
 
   if (request.action === "request_refund") {
-    const conflict = refundRequestConflict(item, source);
+    const conflict = refundRequestConflict(item, source, request);
     if (conflict || !source) {
       return {
         status: 409,

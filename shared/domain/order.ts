@@ -94,6 +94,42 @@ export const OrderAfterSalesCreateRequestSchema = z.object({
   contact: OrderAfterSalesContactSchema,
 });
 
+export const OrderAfterSalesAdminActionReasonSchema = z
+  .string()
+  .trim()
+  .min(4)
+  .max(240);
+
+export const OrderAfterSalesAdminActionSchema = z.enum([
+  "start_review",
+  "resolve",
+  "close",
+  "link_refund",
+]);
+
+export const OrderAfterSalesAdminActionRequestSchema = z.discriminatedUnion(
+  "action",
+  [
+    z.object({
+      action: z.literal("start_review"),
+      reason: OrderAfterSalesAdminActionReasonSchema,
+    }),
+    z.object({
+      action: z.literal("resolve"),
+      reason: OrderAfterSalesAdminActionReasonSchema,
+    }),
+    z.object({
+      action: z.literal("close"),
+      reason: OrderAfterSalesAdminActionReasonSchema,
+    }),
+    z.object({
+      action: z.literal("link_refund"),
+      transactionId: EntityIdSchema,
+      reason: OrderAfterSalesAdminActionReasonSchema,
+    }),
+  ]
+);
+
 export const OrderAfterSalesRequestSchema = z.object({
   id: EntityIdSchema,
   orderId: EntityIdSchema,
@@ -119,8 +155,30 @@ export const OrderAfterSalesSummarySchema = z.object({
   contactMasked: z.string().trim().min(1).max(80),
   linkedTransactionId: EntityIdSchema.optional(),
   linkedRefundRequestId: EntityIdSchema.optional(),
+  operatorNote: z.string().trim().min(1).max(240).optional(),
   createdAt: DateTimeLikeSchema,
   updatedAt: DateTimeLikeSchema,
+});
+
+export const OrderAfterSalesAuditSnapshotSchema = z.object({
+  status: OrderAfterSalesRequestStatusSchema,
+  linkedTransactionId: EntityIdSchema.optional(),
+  linkedRefundRequestId: EntityIdSchema.optional(),
+  operatorNote: z.string().trim().min(1).max(240).optional(),
+});
+
+export const OrderAfterSalesAuditEventSchema = z.object({
+  id: EntityIdSchema,
+  requestId: EntityIdSchema,
+  orderId: EntityIdSchema,
+  userId: EntityIdSchema,
+  actorId: EntityIdSchema,
+  actorRoles: z.array(z.string().min(1)).min(1),
+  action: OrderAfterSalesAdminActionSchema,
+  reason: OrderAfterSalesAdminActionReasonSchema,
+  before: OrderAfterSalesAuditSnapshotSchema,
+  after: OrderAfterSalesAuditSnapshotSchema,
+  createdAt: DateTimeLikeSchema,
 });
 
 export const OrderAfterSalesListResultSchema = z.object({
@@ -135,6 +193,13 @@ export const OrderAfterSalesMutationResultSchema =
   OrderAfterSalesListResultSchema.extend({
     request: OrderAfterSalesRequestSchema,
   });
+
+export const OrderAfterSalesAdminMutationResultSchema = z.object({
+  summary: OrderAfterSalesSummarySchema,
+  auditEvent: OrderAfterSalesAuditEventSchema,
+  auditEvents: z.array(OrderAfterSalesAuditEventSchema),
+  serverTime: DateTimeLikeSchema,
+});
 
 export const PaymentSchema = z.object({
   id: EntityIdSchema,
@@ -483,6 +548,7 @@ export const TransactionAdminActionRequestSchema = z.discriminatedUnion(
     z.object({
       action: z.literal("request_refund"),
       reason: TransactionAdminActionReasonSchema,
+      afterSalesRequestId: EntityIdSchema.optional(),
     }),
     z.object({
       action: z.literal("mark_exception"),
@@ -988,17 +1054,35 @@ export type OrderAfterSalesRequestStatus = z.infer<
 export type OrderAfterSalesCreateRequest = z.infer<
   typeof OrderAfterSalesCreateRequestSchema
 >;
+export type OrderAfterSalesAdminActionReason = z.infer<
+  typeof OrderAfterSalesAdminActionReasonSchema
+>;
+export type OrderAfterSalesAdminAction = z.infer<
+  typeof OrderAfterSalesAdminActionSchema
+>;
+export type OrderAfterSalesAdminActionRequest = z.infer<
+  typeof OrderAfterSalesAdminActionRequestSchema
+>;
 export type OrderAfterSalesRequest = z.infer<
   typeof OrderAfterSalesRequestSchema
 >;
 export type OrderAfterSalesSummary = z.infer<
   typeof OrderAfterSalesSummarySchema
 >;
+export type OrderAfterSalesAuditSnapshot = z.infer<
+  typeof OrderAfterSalesAuditSnapshotSchema
+>;
+export type OrderAfterSalesAuditEvent = z.infer<
+  typeof OrderAfterSalesAuditEventSchema
+>;
 export type OrderAfterSalesListResult = z.infer<
   typeof OrderAfterSalesListResultSchema
 >;
 export type OrderAfterSalesMutationResult = z.infer<
   typeof OrderAfterSalesMutationResultSchema
+>;
+export type OrderAfterSalesAdminMutationResult = z.infer<
+  typeof OrderAfterSalesAdminMutationResultSchema
 >;
 export type Payment = z.infer<typeof PaymentSchema>;
 export type Refund = z.infer<typeof RefundSchema>;

@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_ORDER_ADMIN_ITEM_TYPE,
   ALL_ORDER_ADMIN_STATUS,
+  OrderAfterSalesAdminActionRequestSchema,
+  OrderAfterSalesAdminMutationResultSchema,
+  OrderAfterSalesAuditEventSchema,
   OrderAfterSalesCreateRequestSchema,
   OrderAfterSalesMutationResultSchema,
   OrderAdminActionRequestSchema,
@@ -197,6 +200,63 @@ describe("order admin domain contract", () => {
     });
 
     expect(parsed.activeRequest?.status).toBe("submitted");
+  });
+
+  it("validates order after-sales admin actions and audit", () => {
+    expect(
+      OrderAfterSalesAdminActionRequestSchema.parse({
+        action: "link_refund",
+        transactionId: "evt_payment_1",
+        reason: "已核实权益并转入退款受理",
+      })
+    ).toMatchObject({
+      action: "link_refund",
+      transactionId: "evt_payment_1",
+    });
+
+    const auditEvent = OrderAfterSalesAuditEventSchema.parse({
+      id: "order_after_sales_audit_1",
+      requestId: "after_sales_1",
+      orderId: "order_1",
+      userId: "u_member_1",
+      actorId: "operator_1",
+      actorRoles: ["operator"],
+      action: "link_refund",
+      reason: "已核实权益并转入退款受理",
+      before: {
+        status: "reviewing",
+      },
+      after: {
+        status: "linked_to_refund",
+        linkedTransactionId: "evt_payment_1",
+        linkedRefundRequestId: "manual_refund_1",
+        operatorNote: "已核实权益并转入退款受理",
+      },
+      createdAt: "2026-05-12T10:10:00+08:00",
+    });
+
+    const parsed = OrderAfterSalesAdminMutationResultSchema.parse({
+      summary: {
+        id: "after_sales_1",
+        orderId: "order_1",
+        userId: "u_member_1",
+        requestType: "refund_consultation",
+        status: "linked_to_refund",
+        descriptionPreview: "想了解退款流程。",
+        contactMasked: "138****9019",
+        linkedTransactionId: "evt_payment_1",
+        linkedRefundRequestId: "manual_refund_1",
+        operatorNote: "已核实权益并转入退款受理",
+        createdAt: "2026-05-12T10:00:00+08:00",
+        updatedAt: "2026-05-12T10:10:00+08:00",
+      },
+      auditEvent,
+      auditEvents: [auditEvent],
+      serverTime: "2026-05-12T10:10:00+08:00",
+    });
+
+    expect(parsed.summary.status).toBe("linked_to_refund");
+    expect(parsed.auditEvents[0]?.action).toBe("link_refund");
   });
 
   it("validates order admin action and audit contracts", () => {

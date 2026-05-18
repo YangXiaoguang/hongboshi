@@ -1576,6 +1576,17 @@ function PersonalOrderDetailDrawer({
                         <p className="mt-2 break-all text-xs text-[#8B8175]">
                           工单号 {request.id} · {formatDate(request.createdAt)}
                         </p>
+                        {request.operatorNote ? (
+                          <p className="mt-2 rounded-[12px] bg-[#F8F3EA] px-3 py-2 text-xs leading-5 text-[#6D746F]">
+                            处理备注：{request.operatorNote}
+                          </p>
+                        ) : null}
+                        {request.linkedRefundRequestId ? (
+                          <p className="mt-2 rounded-[12px] bg-[#EAF2EC] px-3 py-2 text-xs leading-5 text-[#41675A]">
+                            退款申请已受理，受理单号{" "}
+                            {request.linkedRefundRequestId}
+                          </p>
+                        ) : null}
                       </div>
                     ))}
                   </div>
