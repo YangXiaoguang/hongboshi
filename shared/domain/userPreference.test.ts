@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  claimUserCoupon,
   createEmptyUserPreference,
   normalizeUserPreference,
   updateUserFavoriteCourses,
@@ -68,5 +69,32 @@ describe("user preference domain", () => {
     expect(normalizeUserPreference({ userId: "", favoriteCourses: [] })).toBe(
       undefined
     );
+  });
+
+  it("claims coupon rules idempotently", () => {
+    const preference = createEmptyUserPreference({
+      userId: "u_phone_8000",
+      now: "2026-05-18T08:00:00.000Z",
+    });
+
+    const claimed = claimUserCoupon({
+      preference,
+      marketingRuleId: "course_1_coupon_立减20",
+      expiresAt: "2026-06-01T00:00:00.000Z",
+      now: "2026-05-18T09:00:00.000Z",
+    });
+    const claimedAgain = claimUserCoupon({
+      preference: claimed,
+      marketingRuleId: "course_1_coupon_立减20",
+      now: "2026-05-18T10:00:00.000Z",
+    });
+
+    expect(claimedAgain.couponClaims).toHaveLength(1);
+    expect(claimedAgain.couponClaims[0]).toMatchObject({
+      marketingRuleId: "course_1_coupon_立减20",
+      status: "claimed",
+      claimedAt: "2026-05-18T09:00:00.000Z",
+      expiresAt: "2026-06-01T00:00:00.000Z",
+    });
   });
 });

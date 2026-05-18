@@ -98,4 +98,12 @@ export const httpUserPreferenceRepository = {
     });
     return result.preference;
   },
+
+  async claimCoupon(marketingRuleId: string): Promise<UserPreference> {
+    const result = await requestPreference("/me/coupons/claim", {
+      method: "POST",
+      body: JSON.stringify({ marketingRuleId }),
+    });
+    return result.preference;
+  },
 };

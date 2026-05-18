@@ -4,12 +4,19 @@ import { URL } from "url";
 import {
   ApiResponseSchema,
   UserPreferenceFavoriteUpdateRequestSchema,
+  UserPreferenceCouponClaimRequestSchema,
   UserPreferenceResultSchema,
   createEmptyUserPreference,
+  claimUserCoupon,
+  isCourseMarketingRuleActiveAt,
   updateUserFavoriteCourses,
   type UserPreference,
 } from "../../../shared/domain";
 import { authorizeRequest } from "../auth/authorization";
+import {
+  getCourseMarketingRuleStore,
+  type CourseMarketingRuleStore,
+} from "../marketing/courseMarketingRuleStore";
 import {
   createDefaultUserPreferenceStore,
   type UserPreferenceStore,
@@ -32,7 +39,13 @@ function sendJson(
 }
 
 function errorPayload(
-  code: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "INTERNAL_ERROR",
+  code:
+    | "BAD_REQUEST"
+    | "UNAUTHORIZED"
+    | "FORBIDDEN"
+    | "NOT_FOUND"
+    | "CONFLICT"
+    | "INTERNAL_ERROR",
   message: string
 ) {
   return {
@@ -127,6 +140,58 @@ export async function updateUserFavoriteCoursesPayload(
   } as const;
 }
 
+export async function claimUserCouponPayload(
+  userId: string,
+  body: unknown,
+  now = new Date().toISOString(),
+  marketingRuleStore: Pick<
+    CourseMarketingRuleStore,
+    "getRule"
+  > = getCourseMarketingRuleStore()
+) {
+  const parsed = UserPreferenceCouponClaimRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "优惠券领取参数不合法"),
+    } as const;
+  }
+
+  const rule = await marketingRuleStore.getRule(
+    parsed.data.marketingRuleId,
+    now
+  );
+  if (!rule || rule.type !== "course_coupon") {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "优惠券不存在或暂不可领取"),
+    } as const;
+  }
+
+  if (!isCourseMarketingRuleActiveAt(rule, now)) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "优惠券已暂停或过期"),
+    } as const;
+  }
+
+  const current =
+    (await userPreferenceStore.getByUserId(userId)) ??
+    createEmptyUserPreference({ userId, now });
+  const preference = claimUserCoupon({
+    preference: current,
+    marketingRuleId: rule.id,
+    expiresAt: rule.endsAt,
+    now,
+  });
+  const saved = await userPreferenceStore.save(preference);
+
+  return {
+    status: 200,
+    body: preferencePayload(saved, now),
+  } as const;
+}
+
 export function registerUserPreferenceApi(app: Express) {
   app.get("/api/user-preferences/me", async (req: Request, res: Response) => {
     const auth = await authorizeRequest(req, "course_access:read");
@@ -149,6 +214,23 @@ export function registerUserPreferenceApi(app: Express) {
       }
 
       const payload = await updateUserFavoriteCoursesPayload(
+        auth.session.user.id,
+        req.body
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.post(
+    "/api/user-preferences/me/coupons/claim",
+    async (req: Request, res: Response) => {
+      const auth = await authorizeRequest(req, "course_access:read");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+
+      const payload = await claimUserCouponPayload(
         auth.session.user.id,
         req.body
       );
@@ -199,6 +281,26 @@ export function handleUserPreferenceApiRequest(
       sendJson(res, payload.status, payload.body);
     })().catch(() =>
       sendJson(res, 500, errorPayload("INTERNAL_ERROR", "收藏课程同步失败"))
+    );
+    return true;
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname === "/api/user-preferences/me/coupons/claim"
+  ) {
+    void (async () => {
+      const auth = await authorizeRequest(req, "course_access:read");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+
+      const body = await readRequestBody(req);
+      const payload = await claimUserCouponPayload(auth.session.user.id, body);
+      sendJson(res, payload.status, payload.body);
+    })().catch(() =>
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "优惠券领取失败"))
     );
     return true;
   }

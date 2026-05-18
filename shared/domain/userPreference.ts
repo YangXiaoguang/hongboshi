@@ -22,9 +22,34 @@ export const UserFavoriteCourseSchema = z.object({
   updatedAt: DateTimeLikeSchema,
 });
 
+export const UserCouponClaimStatusSchema = z.enum([
+  "claimed",
+  "used",
+  "expired",
+]);
+
+export const UserCouponDisplayStatusSchema = z.enum([
+  "claimable",
+  "claimed",
+  "used",
+  "expired",
+]);
+
+export const UserCouponClaimSchema = z.object({
+  id: EntityIdSchema,
+  marketingRuleId: EntityIdSchema,
+  status: UserCouponClaimStatusSchema.default("claimed"),
+  claimedAt: DateTimeLikeSchema,
+  expiresAt: DateTimeLikeSchema.optional(),
+  usedAt: DateTimeLikeSchema.optional(),
+  usedOrderId: EntityIdSchema.optional(),
+  updatedAt: DateTimeLikeSchema,
+});
+
 export const UserPreferenceSchema = z.object({
   userId: EntityIdSchema,
   favoriteCourses: z.array(UserFavoriteCourseSchema).default([]),
+  couponClaims: z.array(UserCouponClaimSchema).default([]),
   updatedAt: DateTimeLikeSchema,
 });
 
@@ -38,14 +63,26 @@ export const UserPreferenceFavoriteUpdateRequestSchema = z.object({
   source: UserFavoriteCourseSourceSchema.default("unknown"),
 });
 
+export const UserPreferenceCouponClaimRequestSchema = z.object({
+  marketingRuleId: EntityIdSchema,
+});
+
 export type UserFavoriteCourseSource = z.infer<
   typeof UserFavoriteCourseSourceSchema
 >;
 export type UserFavoriteCourse = z.infer<typeof UserFavoriteCourseSchema>;
+export type UserCouponClaimStatus = z.infer<typeof UserCouponClaimStatusSchema>;
+export type UserCouponDisplayStatus = z.infer<
+  typeof UserCouponDisplayStatusSchema
+>;
+export type UserCouponClaim = z.infer<typeof UserCouponClaimSchema>;
 export type UserPreference = z.infer<typeof UserPreferenceSchema>;
 export type UserPreferenceResult = z.infer<typeof UserPreferenceResultSchema>;
 export type UserPreferenceFavoriteUpdateRequest = z.infer<
   typeof UserPreferenceFavoriteUpdateRequestSchema
+>;
+export type UserPreferenceCouponClaimRequest = z.infer<
+  typeof UserPreferenceCouponClaimRequestSchema
 >;
 
 export function createEmptyUserPreference({
@@ -58,6 +95,7 @@ export function createEmptyUserPreference({
   return UserPreferenceSchema.parse({
     userId,
     favoriteCourses: [],
+    couponClaims: [],
     updatedAt: now,
   });
 }
@@ -75,12 +113,24 @@ export function normalizeUserPreference(
     }
   }
 
+  const couponByRuleId = new Map<string, UserCouponClaim>();
+  for (const coupon of parsed.data.couponClaims) {
+    if (!couponByRuleId.has(coupon.marketingRuleId)) {
+      couponByRuleId.set(coupon.marketingRuleId, coupon);
+    }
+  }
+
   return UserPreferenceSchema.parse({
     ...parsed.data,
     favoriteCourses: Array.from(favoriteByCourseId.values()).sort(
       (left, right) =>
         Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
         right.courseId - left.courseId
+    ),
+    couponClaims: Array.from(couponByRuleId.values()).sort(
+      (left, right) =>
+        Date.parse(right.claimedAt) - Date.parse(left.claimedAt) ||
+        right.marketingRuleId.localeCompare(left.marketingRuleId)
     ),
   });
 }
@@ -112,6 +162,43 @@ export function updateUserFavoriteCourses({
         updatedAt: now,
       });
     }),
+    updatedAt: now,
+  });
+}
+
+function safeIdPart(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+}
+
+export function claimUserCoupon({
+  preference,
+  marketingRuleId,
+  expiresAt,
+  now = new Date().toISOString(),
+}: {
+  preference: UserPreference;
+  marketingRuleId: string;
+  expiresAt?: string;
+  now?: string;
+}): UserPreference {
+  const existing = preference.couponClaims.find(
+    claim => claim.marketingRuleId === marketingRuleId
+  );
+  if (existing) return UserPreferenceSchema.parse(preference);
+
+  return UserPreferenceSchema.parse({
+    ...preference,
+    couponClaims: [
+      UserCouponClaimSchema.parse({
+        id: `coupon_${safeIdPart(preference.userId)}_${safeIdPart(marketingRuleId)}`,
+        marketingRuleId,
+        status: "claimed",
+        claimedAt: now,
+        expiresAt,
+        updatedAt: now,
+      }),
+      ...preference.couponClaims,
+    ],
     updatedAt: now,
   });
 }

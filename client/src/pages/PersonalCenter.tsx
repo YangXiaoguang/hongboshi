@@ -25,11 +25,14 @@ import type {
   CourseMarketingRule,
   Order,
   OrderStatus,
+  UserCouponDisplayStatus,
+  UserPreference,
   UserRole,
 } from "@shared/domain";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/contexts/AuthContext";
+import { httpUserPreferenceRepository } from "@/features/courses/api/httpUserPreferenceRepository";
 import {
   useCourseAccess,
   useCourseCatalog,
@@ -119,6 +122,20 @@ function couponValue(rule: CourseMarketingRule) {
   }
   return `${Math.round(rule.discount.rate * 100)}% 组合折扣`;
 }
+
+const couponStatusCopy = {
+  claimable: "可领取",
+  claimed: "已领取",
+  used: "已使用",
+  expired: "已过期",
+} satisfies Record<UserCouponDisplayStatus, string>;
+
+const couponStatusTone = {
+  claimable: "bg-[#FFF1D8] text-[#8A641C]",
+  claimed: "bg-[#E6EDDF] text-[#41675A]",
+  used: "bg-[#EFEAE1] text-[#7B817C]",
+  expired: "bg-[#F4E5DE] text-[#A65F48]",
+} satisfies Record<UserCouponDisplayStatus, string>;
 
 function courseForOrder(order: Order, courses: Course[]) {
   const item = order.items[0];
@@ -221,6 +238,10 @@ export default function PersonalCenter() {
     avatarUrl: "",
   });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [userPreference, setUserPreference] = useState<UserPreference>();
+  const [isPreferenceLoading, setIsPreferenceLoading] = useState(false);
+  const [preferenceError, setPreferenceError] = useState<string | undefined>();
+  const [claimingRuleId, setClaimingRuleId] = useState<string | undefined>();
   const { user, isLoggedIn, openLoginModal, updateProfile } = useAuth();
   const {
     accessState,
@@ -282,12 +303,59 @@ export default function PersonalCenter() {
       .filter(Boolean)
       .join("、") ?? "未登录";
 
+  const claimedCouponByRuleId = useMemo(
+    () =>
+      new Map(
+        (userPreference?.couponClaims ?? []).map(claim => [
+          claim.marketingRuleId,
+          claim,
+        ])
+      ),
+    [userPreference?.couponClaims]
+  );
+
+  const claimedCouponCount = userPreference?.couponClaims.filter(
+    claim => claim.status === "claimed"
+  ).length;
+
   useEffect(() => {
     setProfileForm({
       displayName: user?.nickname ?? "",
       avatarUrl: user?.avatar ?? "",
     });
   }, [user?.avatar, user?.id, user?.nickname]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setUserPreference(undefined);
+      setPreferenceError(undefined);
+      setIsPreferenceLoading(false);
+      return;
+    }
+
+    let mounted = true;
+    setIsPreferenceLoading(true);
+    httpUserPreferenceRepository
+      .getMyPreference()
+      .then(preference => {
+        if (!mounted) return;
+        setUserPreference(preference);
+        setPreferenceError(undefined);
+      })
+      .catch(err => {
+        if (!mounted) return;
+        setPreferenceError(
+          err instanceof Error ? err.message : "账号券包暂时不可用"
+        );
+      })
+      .finally(() => {
+        if (mounted) setIsPreferenceLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [isLoggedIn, user?.id]);
 
   const changeTab = (tab: PersonalTab) => {
     setActiveTab(tab);
@@ -321,6 +389,30 @@ export default function PersonalCenter() {
       });
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  const claimCoupon = async (rule: CourseMarketingRule) => {
+    if (!isLoggedIn) {
+      openLoginModal();
+      return;
+    }
+
+    setClaimingRuleId(rule.id);
+    try {
+      const preference = await httpUserPreferenceRepository.claimCoupon(
+        rule.id
+      );
+      setUserPreference(preference);
+      toast("优惠券已领取", {
+        description: `「${rule.name}」已放入你的账号券包`,
+      });
+    } catch (err) {
+      toast("领取失败", {
+        description: err instanceof Error ? err.message : "请稍后再试",
+      });
+    } finally {
+      setClaimingRuleId(undefined);
     }
   };
 
@@ -795,8 +887,17 @@ export default function PersonalCenter() {
                 <div className="border-b border-[#E8DED0] px-5 py-4">
                   <h2 className="text-xl font-semibold">优惠与权益</h2>
                   <p className="mt-1 text-sm text-[#6D746F]">
-                    当前可用优惠来自服务端营销规则，结算时会按课程自动计算。
+                    {isLoggedIn
+                      ? isPreferenceLoading
+                        ? "正在同步账号券包，稍后会展示已领取状态。"
+                        : `可用优惠来自服务端营销规则，已领取 ${claimedCouponCount ?? 0} 张课程券。`
+                      : "登录后可领取课程券并沉淀到账号券包，未登录仍可查看当前活动。"}
                   </p>
+                  {preferenceError && (
+                    <p className="mt-2 text-xs font-semibold text-[#A65F48]">
+                      {preferenceError}
+                    </p>
+                  )}
                 </div>
                 {courseCoupons.length ? (
                   <div className="grid gap-4 p-5 md:grid-cols-2">
@@ -805,21 +906,27 @@ export default function PersonalCenter() {
                       const courseTitle = courseId
                         ? courseTitleById(allCourses, courseId)
                         : "适用课程";
+                      const claim = claimedCouponByRuleId.get(rule.id);
+                      const status = (claim?.status ??
+                        "claimable") as UserCouponDisplayStatus;
+                      const isClaiming = claimingRuleId === rule.id;
                       return (
-                        <button
+                        <div
                           key={rule.id}
-                          onClick={() =>
-                            courseId
-                              ? navigate(`/courses/${courseId}`)
-                              : navigate("/courses")
-                          }
                           className="group overflow-hidden rounded-lg border border-[#E8DED0] bg-[#FFF9F0] text-left transition hover:border-[#CDAA72]"
                         >
                           <div className="flex items-center justify-between gap-4 border-b border-[#EBDCC9] px-5 py-4">
                             <div>
-                              <p className="text-sm font-semibold text-[#A65F48]">
-                                {couponValue(rule)}
-                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-semibold text-[#A65F48]">
+                                  {couponValue(rule)}
+                                </p>
+                                <span
+                                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${couponStatusTone[status]}`}
+                                >
+                                  {couponStatusCopy[status]}
+                                </span>
+                              </div>
                               <h3 className="mt-2 font-semibold text-[#243B35]">
                                 {rule.name}
                               </h3>
@@ -833,12 +940,37 @@ export default function PersonalCenter() {
                             <p className="mt-3 text-xs text-[#8A8176]">
                               适用：{courseTitle}
                             </p>
-                            <p className="mt-4 inline-flex items-center text-sm font-semibold text-[#41675A]">
-                              去使用
-                              <ArrowRight className="ml-1.5 h-4 w-4 transition group-hover:translate-x-0.5" />
-                            </p>
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {status === "claimable" ? (
+                                <button
+                                  onClick={() => claimCoupon(rule)}
+                                  disabled={isClaiming}
+                                  className="inline-flex h-9 items-center justify-center rounded-full bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {isClaiming && (
+                                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                  )}
+                                  {isLoggedIn ? "领取" : "登录领取"}
+                                </button>
+                              ) : (
+                                <span className="inline-flex h-9 items-center justify-center rounded-full bg-[#E6EDDF] px-3 text-xs font-semibold text-[#41675A]">
+                                  已入账号券包
+                                </span>
+                              )}
+                              <button
+                                onClick={() =>
+                                  courseId
+                                    ? navigate(`/courses/${courseId}`)
+                                    : navigate("/courses")
+                                }
+                                className="inline-flex h-9 items-center justify-center rounded-full border border-[#D8CDBC] px-3 text-xs font-semibold text-[#41675A] transition hover:bg-[#F2F7EE]"
+                              >
+                                去使用
+                                <ArrowRight className="ml-1.5 h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                              </button>
+                            </div>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -859,7 +991,7 @@ export default function PersonalCenter() {
                     <div className="flex items-start gap-3">
                       <WalletCards className="mt-0.5 h-4 w-4 text-[#6F8F83]" />
                       <p className="text-sm leading-6 text-[#6D746F]">
-                        优惠在结算抽屉中自动抵扣，无需手动输入券码。
+                        领取后会沉淀到账号券包，结算抽屉当前仍按服务端规则自动抵扣。
                       </p>
                     </div>
                     <div className="flex items-start gap-3">
