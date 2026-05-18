@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_ORDER_ADMIN_ITEM_TYPE,
   ALL_ORDER_ADMIN_STATUS,
+  OrderAfterSalesCreateRequestSchema,
+  OrderAfterSalesMutationResultSchema,
   OrderAdminActionRequestSchema,
   OrderAdminAuditEventSchema,
   OrderAdminDetailSchema,
@@ -128,6 +130,73 @@ describe("order admin domain contract", () => {
     expect(parsed.timeline.map(event => event.type)).toContain(
       "payment_succeeded"
     );
+  });
+
+  it("validates user order after-sales requests", () => {
+    expect(
+      OrderAfterSalesCreateRequestSchema.parse({
+        requestType: "learning_access_issue",
+        description: "课程无法进入学习页，请协助确认权益。",
+        contact: "13800139019",
+      })
+    ).toMatchObject({
+      requestType: "learning_access_issue",
+    });
+
+    const parsed = OrderAfterSalesMutationResultSchema.parse({
+      request: {
+        id: "after_sales_1",
+        orderId: "order_1",
+        userId: "u_member_1",
+        requestType: "refund_consultation",
+        status: "submitted",
+        description: "想了解退款流程。",
+        contact: "13800139019",
+        createdAt: "2026-05-12T10:00:00+08:00",
+        updatedAt: "2026-05-12T10:00:00+08:00",
+      },
+      requests: [
+        {
+          id: "after_sales_1",
+          orderId: "order_1",
+          userId: "u_member_1",
+          requestType: "refund_consultation",
+          status: "submitted",
+          description: "想了解退款流程。",
+          contact: "13800139019",
+          createdAt: "2026-05-12T10:00:00+08:00",
+          updatedAt: "2026-05-12T10:00:00+08:00",
+        },
+      ],
+      summaries: [
+        {
+          id: "after_sales_1",
+          orderId: "order_1",
+          userId: "u_member_1",
+          requestType: "refund_consultation",
+          status: "submitted",
+          descriptionPreview: "想了解退款流程。",
+          contactMasked: "138****9019",
+          createdAt: "2026-05-12T10:00:00+08:00",
+          updatedAt: "2026-05-12T10:00:00+08:00",
+        },
+      ],
+      activeRequest: {
+        id: "after_sales_1",
+        orderId: "order_1",
+        userId: "u_member_1",
+        requestType: "refund_consultation",
+        status: "submitted",
+        description: "想了解退款流程。",
+        contact: "13800139019",
+        createdAt: "2026-05-12T10:00:00+08:00",
+        updatedAt: "2026-05-12T10:00:00+08:00",
+      },
+      privacyNotice: "售后申请只用于订单核查。",
+      generatedAt: "2026-05-12T10:00:00+08:00",
+    });
+
+    expect(parsed.activeRequest?.status).toBe("submitted");
   });
 
   it("validates order admin action and audit contracts", () => {

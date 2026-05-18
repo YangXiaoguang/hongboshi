@@ -26,6 +26,7 @@ import {
   type Order,
   type OrderAdminExceptionFlag,
   type OrderAdminUserSummary,
+  type OrderAfterSalesSummary,
   type PaymentWebhookReceiptSnapshot,
   type PurchasableType,
   type TransactionAdminActionRequest,
@@ -67,6 +68,7 @@ import {
   getTransactionRefundProvider,
   type TransactionRefundProvider,
 } from "./transactionRefundProvider";
+import { listOrderAfterSalesSummariesByOrderIds } from "../orders/orderAfterSalesApi";
 
 type TransactionAdminActor = Pick<LoginSession["user"], "id" | "roles">;
 type DirectoryProfile = OrderAdminUserSummary & {
@@ -80,6 +82,7 @@ type OrderContext = {
   order: Order;
   relatedOrder: TransactionAdminRelatedOrder;
   businessObjects: TransactionAdminBusinessObject[];
+  afterSalesRequests: OrderAfterSalesSummary[];
 };
 
 const TransactionAdminListResponseSchema = ApiResponseSchema(
@@ -579,22 +582,39 @@ async function buildOrderContextMap() {
     if (active) openExceptionByOrderId.set(active.orderId, active);
   }
 
-  const contexts = new Map<string, OrderContext>();
+  const pendingContexts: Array<{
+    orderId: string;
+    context: Omit<OrderContext, "afterSalesRequests">;
+  }> = [];
   for (const source of sources) {
     const user =
       profiles.get(source.userId) ?? createSyntheticUser(source.userId);
     for (const order of source.state.orders) {
       const exception = openExceptionByOrderId.get(order.id);
-      contexts.set(order.id, {
-        order,
-        relatedOrder: relatedOrderFromSource({
+      pendingContexts.push({
+        orderId: order.id,
+        context: {
           order,
-          user,
-          exception,
-        }),
-        businessObjects: await businessObjectsFromOrder(source.state, order),
+          relatedOrder: relatedOrderFromSource({
+            order,
+            user,
+            exception,
+          }),
+          businessObjects: await businessObjectsFromOrder(source.state, order),
+        },
       });
     }
+  }
+
+  const afterSalesByOrderId = await listOrderAfterSalesSummariesByOrderIds(
+    pendingContexts.map(item => item.orderId)
+  );
+  const contexts = new Map<string, OrderContext>();
+  for (const item of pendingContexts) {
+    contexts.set(item.orderId, {
+      ...item.context,
+      afterSalesRequests: afterSalesByOrderId.get(item.orderId) ?? [],
+    });
   }
 
   return contexts;
@@ -701,6 +721,16 @@ function buildIssues(
         )
       );
     }
+
+    if (
+      context.afterSalesRequests.some(request =>
+        ["submitted", "reviewing", "linked_to_refund"].includes(request.status)
+      )
+    ) {
+      issues.push(
+        issue("after_sales_open", "warning", "该订单存在用户售后申请待处理")
+      );
+    }
   }
 
   if (workOrder?.status === "open") {
@@ -748,6 +778,7 @@ function transactionItemFromReceipt(
     user: relatedOrder?.user,
     relatedOrder,
     businessObjects: context?.businessObjects ?? [],
+    afterSalesRequests: context?.afterSalesRequests ?? [],
     itemTypes: relatedOrder?.itemTypes ?? [],
     primaryTitle:
       relatedOrder?.primaryTitle ?? `未匹配订单 ${snapshot.orderId}`,
@@ -958,6 +989,15 @@ function timelineFromTransaction(
     });
   }
 
+  for (const request of item.afterSalesRequests) {
+    events.push({
+      type: "after_sales_request",
+      label: "用户售后申请",
+      occurredAt: request.createdAt,
+      detail: `${request.status} · ${request.descriptionPreview}`,
+    });
+  }
+
   if (item.workOrder) {
     events.push({
       type: "transaction_work_order",
@@ -1010,6 +1050,7 @@ function detailFromItem(
       receivedAt: item.receivedAt,
       processedAt: item.processedAt,
     }),
+    afterSalesRequests: item.afterSalesRequests,
     auditEvents,
     privacyNotice:
       "交易后台仅展示对账、履约排障和客服核查所需信息，不展示咨询说明、测评答案和风险信号原文。",

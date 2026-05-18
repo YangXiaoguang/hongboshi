@@ -5,9 +5,15 @@ import {
   CourseAccessStateSchema,
   COURSE_ACCESS_USER_ID_HEADER,
   LOCAL_COURSE_ACCESS_USER_ID,
+  OrderAfterSalesCreateRequestSchema,
+  OrderAfterSalesListResultSchema,
+  OrderAfterSalesMutationResultSchema,
   type CourseAccessState,
   type CourseCheckoutMode,
   type CourseCheckoutOrderResult,
+  type OrderAfterSalesCreateRequest,
+  type OrderAfterSalesListResult,
+  type OrderAfterSalesMutationResult,
   type PaymentChannel,
 } from "@shared/domain";
 
@@ -15,8 +21,15 @@ const CourseAccessResponseSchema = ApiResponseSchema(CourseAccessStateSchema);
 const CourseCheckoutOrderResponseSchema = ApiResponseSchema(
   CourseCheckoutOrderResultSchema
 );
+const OrderAfterSalesListResponseSchema = ApiResponseSchema(
+  OrderAfterSalesListResultSchema
+);
+const OrderAfterSalesMutationResponseSchema = ApiResponseSchema(
+  OrderAfterSalesMutationResultSchema
+);
 
 const API_BASE = "/api/course-access";
+const ORDER_API_BASE = "/api/orders/me";
 
 export class CourseAccessRequestError extends Error {
   constructor(
@@ -49,6 +62,26 @@ export function parseCourseCheckoutOrderResponse(
   payload: unknown
 ): CourseCheckoutOrderResult {
   const parsed = CourseCheckoutOrderResponseSchema.parse(payload);
+  if (!parsed.ok) {
+    throw new CourseAccessRequestError(parsed.error.message, parsed.error.code);
+  }
+  return parsed.data;
+}
+
+export function parseOrderAfterSalesListResponse(
+  payload: unknown
+): OrderAfterSalesListResult {
+  const parsed = OrderAfterSalesListResponseSchema.parse(payload);
+  if (!parsed.ok) {
+    throw new CourseAccessRequestError(parsed.error.message, parsed.error.code);
+  }
+  return parsed.data;
+}
+
+export function parseOrderAfterSalesMutationResponse(
+  payload: unknown
+): OrderAfterSalesMutationResult {
+  const parsed = OrderAfterSalesMutationResponseSchema.parse(payload);
   if (!parsed.ok) {
     throw new CourseAccessRequestError(parsed.error.message, parsed.error.code);
   }
@@ -126,6 +159,42 @@ async function requestCheckoutOrder(
   }
 }
 
+async function requestOrderAfterSales(
+  orderId: string,
+  init?: RequestInit
+): Promise<OrderAfterSalesListResult | OrderAfterSalesMutationResult> {
+  const response = await fetch(
+    `${ORDER_API_BASE}/orders/${encodeURIComponent(orderId)}/after-sales`,
+    {
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+      cache: "no-store",
+      credentials: "same-origin",
+      ...init,
+    }
+  );
+  const payload = await readJson(response);
+  try {
+    const result =
+      init?.method === "POST"
+        ? parseOrderAfterSalesMutationResponse(payload)
+        : parseOrderAfterSalesListResponse(payload);
+    if (!response.ok) {
+      throw new CourseAccessRequestError(
+        "售后申请服务暂时不可用",
+        undefined,
+        response.status
+      );
+    }
+    return result;
+  } catch (err) {
+    throw withStatus(err, response.status);
+  }
+}
+
 export const httpCourseAccessRepository = {
   load(userId = LOCAL_COURSE_ACCESS_USER_ID): Promise<CourseAccessState> {
     return requestAccessState("", undefined, userId);
@@ -198,6 +267,25 @@ export const httpCourseAccessRepository = {
       },
       userId
     );
+  },
+
+  loadOrderAfterSalesRequests(
+    orderId: string
+  ): Promise<OrderAfterSalesListResult> {
+    return requestOrderAfterSales(orderId).then(result =>
+      OrderAfterSalesListResultSchema.parse(result)
+    );
+  },
+
+  createOrderAfterSalesRequest(
+    orderId: string,
+    request: OrderAfterSalesCreateRequest
+  ): Promise<OrderAfterSalesMutationResult> {
+    const normalized = OrderAfterSalesCreateRequestSchema.parse(request);
+    return requestOrderAfterSales(orderId, {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    }).then(result => OrderAfterSalesMutationResultSchema.parse(result));
   },
 
   activateMembership(

@@ -64,6 +64,78 @@ export const OrderSchema = z.object({
   entitlementDeliveredAt: DateTimeLikeSchema.optional(),
 });
 
+export const OrderAfterSalesRequestTypeSchema = z.enum([
+  "learning_access_issue",
+  "duplicate_payment",
+  "refund_consultation",
+  "invoice_receipt",
+  "other",
+]);
+
+export const OrderAfterSalesRequestStatusSchema = z.enum([
+  "submitted",
+  "reviewing",
+  "linked_to_refund",
+  "resolved",
+  "closed",
+]);
+
+export const OrderAfterSalesRequestDescriptionSchema = z
+  .string()
+  .trim()
+  .min(4)
+  .max(500);
+
+export const OrderAfterSalesContactSchema = z.string().trim().min(4).max(80);
+
+export const OrderAfterSalesCreateRequestSchema = z.object({
+  requestType: OrderAfterSalesRequestTypeSchema,
+  description: OrderAfterSalesRequestDescriptionSchema,
+  contact: OrderAfterSalesContactSchema,
+});
+
+export const OrderAfterSalesRequestSchema = z.object({
+  id: EntityIdSchema,
+  orderId: EntityIdSchema,
+  userId: EntityIdSchema,
+  requestType: OrderAfterSalesRequestTypeSchema,
+  status: OrderAfterSalesRequestStatusSchema,
+  description: OrderAfterSalesRequestDescriptionSchema,
+  contact: OrderAfterSalesContactSchema,
+  linkedTransactionId: EntityIdSchema.optional(),
+  linkedRefundRequestId: EntityIdSchema.optional(),
+  operatorNote: z.string().trim().min(1).max(240).optional(),
+  createdAt: DateTimeLikeSchema,
+  updatedAt: DateTimeLikeSchema,
+});
+
+export const OrderAfterSalesSummarySchema = z.object({
+  id: EntityIdSchema,
+  orderId: EntityIdSchema,
+  userId: EntityIdSchema,
+  requestType: OrderAfterSalesRequestTypeSchema,
+  status: OrderAfterSalesRequestStatusSchema,
+  descriptionPreview: z.string().trim().min(1).max(140),
+  contactMasked: z.string().trim().min(1).max(80),
+  linkedTransactionId: EntityIdSchema.optional(),
+  linkedRefundRequestId: EntityIdSchema.optional(),
+  createdAt: DateTimeLikeSchema,
+  updatedAt: DateTimeLikeSchema,
+});
+
+export const OrderAfterSalesListResultSchema = z.object({
+  requests: z.array(OrderAfterSalesRequestSchema),
+  summaries: z.array(OrderAfterSalesSummarySchema),
+  activeRequest: OrderAfterSalesRequestSchema.optional(),
+  privacyNotice: z.string().min(1),
+  generatedAt: DateTimeLikeSchema,
+});
+
+export const OrderAfterSalesMutationResultSchema =
+  OrderAfterSalesListResultSchema.extend({
+    request: OrderAfterSalesRequestSchema,
+  });
+
 export const PaymentSchema = z.object({
   id: EntityIdSchema,
   orderId: EntityIdSchema,
@@ -229,6 +301,7 @@ export const OrderAdminTimelineEventTypeSchema = z.enum([
   "refund_succeeded",
   "appointment_status",
   "order_status",
+  "after_sales_request",
 ]);
 
 export const OrderAdminTimelineEventSchema = z.object({
@@ -378,6 +451,7 @@ export const TransactionAdminIssueCodeSchema = z.enum([
   "refund_business_not_completed",
   "order_exception_open",
   "transaction_work_order_open",
+  "after_sales_open",
 ]);
 
 export const TransactionAdminIssueSchema = z.object({
@@ -490,6 +564,7 @@ export const TransactionAdminListItemSchema = z.object({
   user: OrderAdminUserSummarySchema.optional(),
   relatedOrder: TransactionAdminRelatedOrderSchema.optional(),
   businessObjects: z.array(TransactionAdminBusinessObjectSchema).default([]),
+  afterSalesRequests: z.array(OrderAfterSalesSummarySchema).default([]),
   itemTypes: z.array(PurchasableTypeSchema).default([]),
   primaryTitle: z.string().min(1),
   workOrder: TransactionAdminWorkOrderSchema.optional(),
@@ -535,6 +610,7 @@ export const TransactionAdminTimelineEventTypeSchema = z.enum([
   "business_status",
   "order_exception",
   "transaction_work_order",
+  "after_sales_request",
 ]);
 
 export const TransactionAdminTimelineEventSchema = z.object({
@@ -550,6 +626,7 @@ export const TransactionAdminDetailSchema = z.object({
   businessObjects: z.array(TransactionAdminBusinessObjectSchema),
   timeline: z.array(TransactionAdminTimelineEventSchema),
   receipt: PaymentWebhookReceiptSnapshotSchema,
+  afterSalesRequests: z.array(OrderAfterSalesSummarySchema).default([]),
   auditEvents: z.array(TransactionAdminAuditEventSchema).default([]),
   privacyNotice: z.string().min(1),
   generatedAt: DateTimeLikeSchema,
@@ -650,6 +727,7 @@ export const OrderAdminDetailSchema = z.object({
   paymentReceipts: z.array(OrderAdminPaymentReceiptSummarySchema),
   relatedObjects: z.array(OrderAdminRelatedObjectSchema),
   timeline: z.array(OrderAdminTimelineEventSchema),
+  afterSalesRequests: z.array(OrderAfterSalesSummarySchema).default([]),
   auditEvents: z.array(OrderAdminAuditEventSchema).default([]),
   privacyNotice: z.string().min(1),
   generatedAt: DateTimeLikeSchema,
@@ -901,6 +979,27 @@ export type OrderCouponApplication = z.infer<
   typeof OrderCouponApplicationSchema
 >;
 export type Order = z.infer<typeof OrderSchema>;
+export type OrderAfterSalesRequestType = z.infer<
+  typeof OrderAfterSalesRequestTypeSchema
+>;
+export type OrderAfterSalesRequestStatus = z.infer<
+  typeof OrderAfterSalesRequestStatusSchema
+>;
+export type OrderAfterSalesCreateRequest = z.infer<
+  typeof OrderAfterSalesCreateRequestSchema
+>;
+export type OrderAfterSalesRequest = z.infer<
+  typeof OrderAfterSalesRequestSchema
+>;
+export type OrderAfterSalesSummary = z.infer<
+  typeof OrderAfterSalesSummarySchema
+>;
+export type OrderAfterSalesListResult = z.infer<
+  typeof OrderAfterSalesListResultSchema
+>;
+export type OrderAfterSalesMutationResult = z.infer<
+  typeof OrderAfterSalesMutationResultSchema
+>;
 export type Payment = z.infer<typeof PaymentSchema>;
 export type Refund = z.infer<typeof RefundSchema>;
 export type PaymentSucceededWebhookEvent = z.infer<

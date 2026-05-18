@@ -25,6 +25,14 @@ import {
   setPaymentWebhookEventStore,
 } from "../payments/paymentWebhookEventStore";
 import {
+  createOrderAfterSalesRequestPayload,
+} from "./orderAfterSalesApi";
+import {
+  InMemoryOrderAfterSalesStore,
+  setOrderAfterSalesStore,
+  type OrderAfterSalesStore,
+} from "./orderAfterSalesStore";
+import {
   getAdminOrderDetailPayload,
   getAdminOrderListPayload,
   updateAdminOrderActionPayload,
@@ -37,6 +45,7 @@ let authStore: AuthSessionStore;
 let courseAccessStore: CourseAccessStore;
 let counselingStore: CounselingAppointmentStore;
 let paymentStore: PaymentWebhookEventStore;
+let afterSalesStore: OrderAfterSalesStore;
 
 beforeEach(() => {
   authStore = new InMemoryAuthSessionStore();
@@ -45,11 +54,13 @@ beforeEach(() => {
     new Date("2026-05-12T00:00:00.000Z")
   );
   paymentStore = new InMemoryPaymentWebhookEventStore();
+  afterSalesStore = new InMemoryOrderAfterSalesStore();
 
   setAuthSessionStore(authStore);
   setCourseAccessStore(courseAccessStore);
   setCounselingAppointmentStore(counselingStore);
   setPaymentWebhookEventStore(paymentStore);
+  setOrderAfterSalesStore(afterSalesStore);
 });
 
 describe("order admin api payloads", () => {
@@ -288,6 +299,17 @@ describe("order admin api payloads", () => {
       { ok: true },
       "2026-05-12T09:25:02.000Z"
     );
+    await createOrderAfterSalesRequestPayload(
+      order.id,
+      {
+        requestType: "refund_consultation",
+        description: "想确认咨询预约取消后的退款处理流程。",
+        contact: "13800139019",
+      },
+      userId,
+      "2026-05-12T09:40:00.000Z",
+      afterSalesStore
+    );
 
     const list = await getAdminOrderListPayload(
       operator,
@@ -320,6 +342,13 @@ describe("order admin api payloads", () => {
       });
       expect(detail.body.data.timeline.map(event => event.type)).toContain(
         "payment_succeeded"
+      );
+      expect(detail.body.data.afterSalesRequests[0]).toMatchObject({
+        requestType: "refund_consultation",
+        contactMasked: "138****9019",
+      });
+      expect(detail.body.data.timeline.map(event => event.type)).toContain(
+        "after_sales_request"
       );
     }
   });

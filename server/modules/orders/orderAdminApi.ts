@@ -34,6 +34,7 @@ import {
   type OrderAdminRelatedObject,
   type OrderAdminTimelineEvent,
   type OrderAdminUserSummary,
+  type OrderAfterSalesSummary,
   type PurchasableType,
   type UserProfile,
 } from "../../../shared/domain";
@@ -57,6 +58,7 @@ import {
   getPaymentWebhookEventStore,
   type PaymentWebhookReceipt,
 } from "../payments/paymentWebhookEventStore";
+import { listOrderAfterSalesSummariesByOrderIds } from "./orderAfterSalesApi";
 
 type OrderAdminActor = Pick<LoginSession["user"], "id" | "roles">;
 type DirectoryProfile = OrderAdminUserSummary & {
@@ -68,6 +70,7 @@ type OrderProjection = {
   paymentReceipts: OrderAdminPaymentReceiptSummary[];
   relatedObjects: OrderAdminRelatedObject[];
   timeline: OrderAdminTimelineEvent[];
+  afterSalesRequests: OrderAfterSalesSummary[];
   exception?: OrderAdminExceptionFlag;
 };
 
@@ -333,10 +336,12 @@ function timelineFromOrder({
   order,
   receipts,
   relatedObjects,
+  afterSalesRequests,
 }: {
   order: Order;
   receipts: OrderAdminPaymentReceiptSummary[];
   relatedObjects: OrderAdminRelatedObject[];
+  afterSalesRequests: OrderAfterSalesSummary[];
 }) {
   const events: OrderAdminTimelineEvent[] = [
     {
@@ -376,6 +381,15 @@ function timelineFromOrder({
       label: "关联对象状态",
       occurredAt: order.paidAt ?? order.createdAt,
       detail: `${relatedObject.title} · ${relatedObject.status}`,
+    });
+  }
+
+  for (const request of afterSalesRequests) {
+    events.push({
+      type: "after_sales_request",
+      label: "用户售后申请",
+      occurredAt: request.createdAt,
+      detail: `${request.status} · ${request.descriptionPreview}`,
     });
   }
 
@@ -628,17 +642,31 @@ async function buildOrderProjections(now: string): Promise<OrderProjection[]> {
         user,
         paymentReceipts,
         relatedObjects,
-        timeline: timelineFromOrder({
-          order,
-          receipts: paymentReceipts,
-          relatedObjects,
-        }),
+        timeline: [],
+        afterSalesRequests: [],
         exception: openExceptionByOrderId.get(order.id),
       });
     }
   }
 
-  return projections;
+  const afterSalesByOrderId = await listOrderAfterSalesSummariesByOrderIds(
+    projections.map(projection => projection.order.id)
+  );
+
+  return projections.map(projection => {
+    const afterSalesRequests =
+      afterSalesByOrderId.get(projection.order.id) ?? [];
+    return {
+      ...projection,
+      afterSalesRequests,
+      timeline: timelineFromOrder({
+        order: projection.order,
+        receipts: projection.paymentReceipts,
+        relatedObjects: projection.relatedObjects,
+        afterSalesRequests,
+      }),
+    };
+  });
 }
 
 async function buildOrderListResult(
@@ -680,6 +708,7 @@ async function buildOrderDetail(
     paymentReceipts: projection.paymentReceipts,
     relatedObjects: projection.relatedObjects,
     timeline: projection.timeline,
+    afterSalesRequests: projection.afterSalesRequests,
     auditEvents,
     privacyNotice:
       "订单后台仅展示履约和对账所需信息：用户身份使用脱敏摘要，不展示咨询说明、测评答案和风险信号原文。",

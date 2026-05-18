@@ -35,6 +35,8 @@ import {
   type OrderAdminDetail,
   type OrderAdminListItem,
   type OrderAdminListQuery,
+  type OrderAfterSalesRequestStatus,
+  type OrderAfterSalesRequestType,
   type OrderStatus,
   type PaymentWebhookReceiptStatus,
   type PurchasableType,
@@ -74,6 +76,22 @@ const exceptionSeverityCopy = {
   warning: "需关注",
   critical: "严重异常",
 } satisfies Record<"warning" | "critical", string>;
+
+const afterSalesTypeCopy = {
+  learning_access_issue: "无法学习/权益异常",
+  duplicate_payment: "重复扣款",
+  refund_consultation: "退款咨询",
+  invoice_receipt: "票据/支付凭证",
+  other: "其他问题",
+} satisfies Record<OrderAfterSalesRequestType, string>;
+
+const afterSalesStatusCopy = {
+  submitted: "已提交",
+  reviewing: "处理中",
+  linked_to_refund: "已转退款处理",
+  resolved: "已解决",
+  closed: "已关闭",
+} satisfies Record<OrderAfterSalesRequestStatus, string>;
 
 const sortOptions: {
   value: OrderAdminListQuery["sort"];
@@ -582,6 +600,34 @@ function OrderDetailPanel({
                 <p className="mt-1 text-xs text-[#8A8176]">
                   {object.status ?? "未记录"}
                   {object.counselorName ? ` · ${object.counselorName}` : ""}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </DetailSection>
+
+      <DetailSection title="售后申请">
+        {detail.afterSalesRequests.length === 0 ? (
+          <p className="text-sm text-[#8A8176]">暂无用户售后申请</p>
+        ) : (
+          <div className="space-y-3">
+            {detail.afterSalesRequests.map(request => (
+              <div key={request.id} className="rounded-lg bg-[#FFF7EC] px-3 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-[#243B35]">
+                    {afterSalesTypeCopy[request.requestType]}
+                  </p>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-[#8F6B1C]">
+                    {afterSalesStatusCopy[request.status]}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-[#5F6B64]">
+                  {request.descriptionPreview}
+                </p>
+                <p className="mt-2 break-all text-xs text-[#8A8176]">
+                  {request.contactMasked} · {formatDate(request.createdAt)} ·{" "}
+                  {request.id}
                 </p>
               </div>
             ))}

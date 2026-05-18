@@ -18,6 +18,7 @@ import {
   capturePaymentWebhookRawBody,
   registerPaymentApi,
 } from "./modules/payments/paymentApi";
+import { registerOrderAfterSalesApi } from "./modules/orders/orderAfterSalesApi";
 import { registerOrderAdminApi } from "./modules/orders/orderAdminApi";
 import { registerRiskAdminApi } from "./modules/risk/riskAdminApi";
 import { registerTransactionAdminApi } from "./modules/transactions/transactionAdminApi";
@@ -47,6 +48,7 @@ async function startServer() {
   registerFinanceAdminApi(app);
   registerGrowthProfileApi(app);
   registerPaymentApi(app);
+  registerOrderAfterSalesApi(app);
   registerOrderAdminApi(app);
   registerRiskAdminApi(app);
   registerTransactionAdminApi(app);

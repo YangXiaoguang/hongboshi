@@ -27,6 +27,14 @@ import {
   setPaymentWebhookEventStore,
 } from "../payments/paymentWebhookEventStore";
 import {
+  createOrderAfterSalesRequestPayload,
+} from "../orders/orderAfterSalesApi";
+import {
+  InMemoryOrderAfterSalesStore,
+  setOrderAfterSalesStore,
+  type OrderAfterSalesStore,
+} from "../orders/orderAfterSalesStore";
+import {
   getAdminTransactionDetailPayload,
   getAdminTransactionListPayload,
   updateAdminTransactionActionPayload,
@@ -47,6 +55,7 @@ let courseAccessStore: CourseAccessStore;
 let counselingStore: CounselingAppointmentStore;
 let paymentStore: PaymentWebhookEventStore;
 let transactionOperationStore: TransactionOperationStore;
+let afterSalesStore: OrderAfterSalesStore;
 
 beforeEach(() => {
   authStore = new InMemoryAuthSessionStore();
@@ -54,12 +63,14 @@ beforeEach(() => {
   counselingStore = new InMemoryCounselingAppointmentStore(new Date(now));
   paymentStore = new InMemoryPaymentWebhookEventStore();
   transactionOperationStore = new InMemoryTransactionOperationStore();
+  afterSalesStore = new InMemoryOrderAfterSalesStore();
 
   setAuthSessionStore(authStore);
   setCourseAccessStore(courseAccessStore);
   setCounselingAppointmentStore(counselingStore);
   setPaymentWebhookEventStore(paymentStore);
   setTransactionOperationStore(transactionOperationStore);
+  setOrderAfterSalesStore(afterSalesStore);
 });
 
 describe("transaction admin api payloads", () => {
@@ -471,6 +482,17 @@ describe("transaction admin api payloads", () => {
         orders: [paidOrder, refundedOrder],
       })
     );
+    await createOrderAfterSalesRequestPayload(
+      paidOrder.id,
+      {
+        requestType: "learning_access_issue",
+        description: "课程支付后无法进入学习页，需要后台核查。",
+        contact: "13800139019",
+      },
+      userId,
+      "2026-05-12T09:10:00.000Z",
+      afterSalesStore
+    );
     await courseAccessStore.saveOrderAdminExceptionFlag({
       orderId: paidOrder.id,
       status: "open",
@@ -544,8 +566,27 @@ describe("transaction admin api payloads", () => {
         issues: expect.arrayContaining([
           expect.objectContaining({ code: "webhook_failed" }),
           expect.objectContaining({ code: "order_exception_open" }),
+          expect.objectContaining({ code: "after_sales_open" }),
         ]),
       });
+    }
+
+    const detail = await getAdminTransactionDetailPayload(
+      operator,
+      paymentEvent.id,
+      now,
+      paymentStore,
+      transactionOperationStore
+    );
+    expect(detail.status).toBe(200);
+    expect(detail.body.ok).toBe(true);
+    if (detail.body.ok) {
+      expect(detail.body.data.afterSalesRequests[0]).toMatchObject({
+        requestType: "learning_access_issue",
+      });
+      expect(detail.body.data.timeline.map(event => event.type)).toContain(
+        "after_sales_request"
+      );
     }
   });
 });

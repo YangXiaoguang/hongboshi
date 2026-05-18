@@ -29,6 +29,10 @@ import {
 import type {
   CourseMarketingRule,
   Order,
+  OrderAfterSalesCreateRequest,
+  OrderAfterSalesListResult,
+  OrderAfterSalesRequestType,
+  OrderAfterSalesRequestStatus,
   PaymentChannel,
   OrderStatus,
   UserCouponDisplayStatus,
@@ -108,6 +112,22 @@ const paymentChannelCopy = {
   alipay: "支付宝",
   manual: "人工确认",
 } satisfies Record<PaymentChannel, string>;
+
+const afterSalesRequestTypeCopy = {
+  learning_access_issue: "无法学习/权益异常",
+  duplicate_payment: "重复扣款",
+  refund_consultation: "退款咨询",
+  invoice_receipt: "票据/支付凭证",
+  other: "其他问题",
+} satisfies Record<OrderAfterSalesRequestType, string>;
+
+const afterSalesStatusCopy = {
+  submitted: "已提交",
+  reviewing: "处理中",
+  linked_to_refund: "已转退款处理",
+  resolved: "已解决",
+  closed: "已关闭",
+} satisfies Record<OrderAfterSalesRequestStatus, string>;
 
 const appointmentStatusCopy = {
   pending_payment: "待支付",
@@ -291,11 +311,21 @@ export default function PersonalCenter() {
   const [orderActionPendingId, setOrderActionPendingId] = useState<
     string | undefined
   >();
+  const [orderAfterSalesByOrderId, setOrderAfterSalesByOrderId] = useState<
+    Record<string, OrderAfterSalesListResult>
+  >({});
+  const [afterSalesLoadingOrderId, setAfterSalesLoadingOrderId] = useState<
+    string | undefined
+  >();
+  const [afterSalesSubmittingOrderId, setAfterSalesSubmittingOrderId] =
+    useState<string | undefined>();
   const { user, isLoggedIn, openLoginModal, updateProfile } = useAuth();
   const {
     accessState,
     cancelCheckoutOrder,
+    createOrderAfterSalesRequest,
     hasActiveMembership,
+    loadOrderAfterSalesRequests,
     membership,
     ownedCourseCount,
     orderCount,
@@ -361,6 +391,10 @@ export default function PersonalCenter() {
 
   const selectedOrderCouponName = selectedOrder
     ? couponNameForOrder(selectedOrder, marketingRules)
+    : undefined;
+
+  const selectedOrderAfterSales = selectedOrder
+    ? orderAfterSalesByOrderId[selectedOrder.id]
     : undefined;
 
   const activeRoleLabels =
@@ -451,6 +485,37 @@ export default function PersonalCenter() {
     };
   }, [isLoggedIn, user?.id]);
 
+  useEffect(() => {
+    if (!selectedOrder || !isLoggedIn) return;
+    if (!["paid", "refunding", "refunded"].includes(selectedOrder.status)) {
+      return;
+    }
+
+    let mounted = true;
+    setAfterSalesLoadingOrderId(selectedOrder.id);
+    loadOrderAfterSalesRequests(selectedOrder.id)
+      .then(result => {
+        if (!mounted || result === "auth_required") return;
+        setOrderAfterSalesByOrderId(prev => ({
+          ...prev,
+          [selectedOrder.id]: result,
+        }));
+      })
+      .catch(err => {
+        if (!mounted) return;
+        toast("售后申请读取失败", {
+          description: err instanceof Error ? err.message : "请稍后再试。",
+        });
+      })
+      .finally(() => {
+        if (mounted) setAfterSalesLoadingOrderId(undefined);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [isLoggedIn, loadOrderAfterSalesRequests, selectedOrder]);
+
   const changeTab = (tab: PersonalTab) => {
     setActiveTab(tab);
     if (tab !== "orders") {
@@ -495,6 +560,38 @@ export default function PersonalCenter() {
       });
     } finally {
       setOrderActionPendingId(undefined);
+    }
+  };
+
+  const handleSubmitAfterSalesRequest = async (
+    order: Order,
+    request: OrderAfterSalesCreateRequest
+  ) => {
+    setAfterSalesSubmittingOrderId(order.id);
+    try {
+      const result = await createOrderAfterSalesRequest(order.id, request);
+      if (result === "auth_required") {
+        toast("请先登录", {
+          description: "登录后可提交并追踪售后申请。",
+        });
+        return false;
+      }
+
+      setOrderAfterSalesByOrderId(prev => ({
+        ...prev,
+        [order.id]: result,
+      }));
+      toast("售后申请已提交", {
+        description: "后台会按订单号跟进，退款状态不会在用户端直接变更。",
+      });
+      return true;
+    } catch (err) {
+      toast("售后申请提交失败", {
+        description: err instanceof Error ? err.message : "请稍后再试。",
+      });
+      return false;
+    } finally {
+      setAfterSalesSubmittingOrderId(undefined);
     }
   };
 
@@ -1188,14 +1285,20 @@ export default function PersonalCenter() {
       </main>
 
       <PersonalOrderDetailDrawer
+        afterSales={selectedOrderAfterSales}
         couponName={selectedOrderCouponName}
         course={selectedOrderCourse}
         isActionPending={orderActionPendingId === selectedOrder?.id}
+        isAfterSalesLoading={afterSalesLoadingOrderId === selectedOrder?.id}
+        isAfterSalesSubmitting={
+          afterSalesSubmittingOrderId === selectedOrder?.id
+        }
         isOpen={Boolean(selectedOrder)}
         order={selectedOrder}
         onCancelOrder={handleCancelOrderFromDetail}
         onClose={closeOrderDetail}
         onContinuePayment={order => navigateToOrderCourse(order, true)}
+        onSubmitAfterSales={handleSubmitAfterSalesRequest}
         onViewCourse={order => navigateToOrderCourse(order)}
         onViewWorkspace={() => {
           closeOrderDetail();
@@ -1209,37 +1312,65 @@ export default function PersonalCenter() {
 }
 
 function PersonalOrderDetailDrawer({
+  afterSales,
   couponName,
   course,
   isActionPending,
+  isAfterSalesLoading,
+  isAfterSalesSubmitting,
   isOpen,
   order,
   onCancelOrder,
   onClose,
   onContinuePayment,
+  onSubmitAfterSales,
   onViewCourse,
   onViewWorkspace,
 }: {
+  afterSales?: OrderAfterSalesListResult;
   couponName?: string;
   course?: Course;
   isActionPending: boolean;
+  isAfterSalesLoading: boolean;
+  isAfterSalesSubmitting: boolean;
   isOpen: boolean;
   order?: Order;
   onCancelOrder: (order: Order) => void;
   onClose: () => void;
   onContinuePayment: (order: Order) => void;
+  onSubmitAfterSales: (
+    order: Order,
+    request: OrderAfterSalesCreateRequest
+  ) => Promise<boolean>;
   onViewCourse: (order: Order) => void;
   onViewWorkspace: () => void;
 }) {
   const amountRows = order ? createPersonalOrderAmountRows(order) : [];
   const timeline = order ? createPersonalOrderTimeline(order) : [];
   const serviceNotes = order ? createPersonalOrderServiceNotes(order) : [];
+  const [afterSalesType, setAfterSalesType] =
+    useState<OrderAfterSalesRequestType>("learning_access_issue");
+  const [afterSalesDescription, setAfterSalesDescription] = useState("");
+  const [afterSalesContact, setAfterSalesContact] = useState("");
   const firstItem = order?.items[0];
   const canPay = order?.status === "pending_payment";
   const canViewCourse =
     order?.status === "paid" ||
     order?.status === "refunding" ||
     order?.status === "refunded";
+  const canSubmitAfterSales =
+    order?.status === "paid" || order?.status === "refunding";
+  const activeAfterSales = afterSales?.activeRequest;
+  const afterSalesRequests = afterSales?.requests ?? [];
+  const isAfterSalesFormReady =
+    afterSalesDescription.trim().length >= 4 &&
+    afterSalesContact.trim().length >= 4;
+
+  useEffect(() => {
+    setAfterSalesType("learning_access_issue");
+    setAfterSalesDescription("");
+    setAfterSalesContact("");
+  }, [order?.id]);
 
   return (
     <AnimatePresence>
@@ -1418,6 +1549,108 @@ function PersonalOrderDetailDrawer({
                     <li key={note}>· {note}</li>
                   ))}
                 </ul>
+                {isAfterSalesLoading && (
+                  <div className="mt-4 flex items-center gap-2 rounded-[16px] bg-white/70 px-3 py-3 text-sm text-[#6D746F]">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    正在同步售后申请状态
+                  </div>
+                )}
+                {afterSalesRequests.length > 0 && (
+                  <div className="mt-4 space-y-3">
+                    {afterSalesRequests.map(request => (
+                      <div
+                        key={request.id}
+                        className="rounded-[16px] border border-[#E6D6C8] bg-white/80 px-3 py-3 text-sm"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold text-[#243B35]">
+                            {afterSalesRequestTypeCopy[request.requestType]}
+                          </span>
+                          <span className="rounded-full bg-[#F4EFE6] px-2.5 py-1 text-xs font-semibold text-[#6D746F]">
+                            {afterSalesStatusCopy[request.status]}
+                          </span>
+                        </div>
+                        <p className="mt-2 line-clamp-2 text-[#6D746F]">
+                          {request.description}
+                        </p>
+                        <p className="mt-2 break-all text-xs text-[#8B8175]">
+                          工单号 {request.id} · {formatDate(request.createdAt)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {canSubmitAfterSales && !activeAfterSales && (
+                  <form
+                    className="mt-4 space-y-3"
+                    onSubmit={event => {
+                      event.preventDefault();
+                      if (!isAfterSalesFormReady || isAfterSalesSubmitting) {
+                        return;
+                      }
+                      void onSubmitAfterSales(order, {
+                        requestType: afterSalesType,
+                        description: afterSalesDescription,
+                        contact: afterSalesContact,
+                      }).then(success => {
+                        if (success) {
+                          setAfterSalesDescription("");
+                          setAfterSalesContact("");
+                        }
+                      });
+                    }}
+                  >
+                    <select
+                      value={afterSalesType}
+                      onChange={event =>
+                        setAfterSalesType(
+                          event.target.value as OrderAfterSalesRequestType
+                        )
+                      }
+                      className="h-11 w-full rounded-[16px] border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                    >
+                      {Object.entries(afterSalesRequestTypeCopy).map(
+                        ([key, label]) => (
+                          <option key={key} value={key}>
+                            {label}
+                          </option>
+                        )
+                      )}
+                    </select>
+                    <textarea
+                      value={afterSalesDescription}
+                      onChange={event =>
+                        setAfterSalesDescription(event.target.value)
+                      }
+                      maxLength={500}
+                      rows={3}
+                      placeholder="请简要说明遇到的问题"
+                      className="min-h-[96px] w-full resize-none rounded-[16px] border border-[#D8CDBC] bg-white px-3 py-3 text-sm text-[#243B35] outline-none transition placeholder:text-[#A69D91] focus:border-[#6F8F83]"
+                    />
+                    <input
+                      value={afterSalesContact}
+                      onChange={event => setAfterSalesContact(event.target.value)}
+                      maxLength={80}
+                      placeholder="手机号或邮箱"
+                      className="h-11 w-full rounded-[16px] border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition placeholder:text-[#A69D91] focus:border-[#6F8F83]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!isAfterSalesFormReady || isAfterSalesSubmitting}
+                      className="inline-flex h-11 w-full items-center justify-center rounded-full bg-[#A65F48] text-sm font-semibold text-white transition hover:bg-[#8F4F3C] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isAfterSalesSubmitting && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      提交售后申请
+                    </button>
+                  </form>
+                )}
+                {activeAfterSales && (
+                  <p className="mt-4 rounded-[16px] bg-white/80 px-3 py-3 text-sm leading-6 text-[#6D746F]">
+                    当前申请正在处理中，后台会结合订单、交易流水和权益记录核查。
+                  </p>
+                )}
               </section>
 
               <div className="mt-6 grid gap-3">

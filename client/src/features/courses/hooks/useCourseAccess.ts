@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Course } from "@shared/domain";
+import type {
+  Course,
+  OrderAfterSalesCreateRequest,
+  OrderAfterSalesListResult,
+  OrderAfterSalesMutationResult,
+} from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   CourseAccessRequestError,
@@ -240,6 +245,60 @@ export function useCourseAccess() {
     [accessUserId, openLoginModal, persist, requireLoggedInAccess, user]
   );
 
+  const loadOrderAfterSalesRequests = useCallback(
+    async (
+      orderId: string
+    ): Promise<OrderAfterSalesListResult | "auth_required"> => {
+      if (!user) return requireLoggedInAccess();
+
+      try {
+        const result =
+          await httpCourseAccessRepository.loadOrderAfterSalesRequests(orderId);
+        setAccessError(undefined);
+        return result;
+      } catch (err) {
+        if (isAuthorizationError(err)) {
+          setAccessError(
+            err instanceof Error ? err.message : "请先登录后继续操作"
+          );
+          openLoginModal();
+          return "auth_required" as const;
+        }
+        throw err;
+      }
+    },
+    [openLoginModal, requireLoggedInAccess, user]
+  );
+
+  const createOrderAfterSalesRequest = useCallback(
+    async (
+      orderId: string,
+      request: OrderAfterSalesCreateRequest
+    ): Promise<OrderAfterSalesMutationResult | "auth_required"> => {
+      if (!user) return requireLoggedInAccess();
+
+      try {
+        const result =
+          await httpCourseAccessRepository.createOrderAfterSalesRequest(
+            orderId,
+            request
+          );
+        setAccessError(undefined);
+        return result;
+      } catch (err) {
+        if (isAuthorizationError(err)) {
+          setAccessError(
+            err instanceof Error ? err.message : "请先登录后继续操作"
+          );
+          openLoginModal();
+          return "auth_required" as const;
+        }
+        throw err;
+      }
+    },
+    [openLoginModal, requireLoggedInAccess, user]
+  );
+
   const purchaseCourse = useCallback(
     async (course: Course) => {
       const created = await createCheckoutOrder(course, "course");
@@ -306,7 +365,9 @@ export function useCourseAccess() {
     createCheckoutOrder,
     payCheckoutOrder,
     cancelCheckoutOrder,
+    createOrderAfterSalesRequest,
     purchaseCourse,
+    loadOrderAfterSalesRequests,
     activateMembership,
   };
 }
