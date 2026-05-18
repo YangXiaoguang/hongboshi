@@ -58,6 +58,15 @@ function initialTabFromUrl(): PersonalTab {
   return tabs.some(item => item.key === tab) ? (tab as PersonalTab) : "account";
 }
 
+function initialOrderIdFromUrl(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return new URLSearchParams(window.location.search).get("orderId") ?? undefined;
+}
+
+function orderElementId(orderId: string) {
+  return `personal-order-${orderId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+}
+
 const roleCopy = {
   visitor: "访客",
   member: "普通用户",
@@ -240,6 +249,9 @@ function Metric({
 export default function PersonalCenter() {
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState<PersonalTab>(initialTabFromUrl);
+  const [focusedOrderId, setFocusedOrderId] = useState<string | undefined>(
+    initialOrderIdFromUrl
+  );
   const [profileForm, setProfileForm] = useState({
     displayName: "",
     avatarUrl: "",
@@ -326,6 +338,26 @@ export default function PersonalCenter() {
   ).length;
 
   useEffect(() => {
+    if (activeTab !== "orders" || !focusedOrderId) return;
+
+    window.setTimeout(() => {
+      document
+        .getElementById(orderElementId(focusedOrderId))
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+  }, [activeTab, focusedOrderId, recentOrders.length]);
+
+  const focusOrder = (orderId: string) => {
+    setActiveTab("orders");
+    setFocusedOrderId(orderId);
+    window.history.replaceState(
+      null,
+      "",
+      `/me?tab=orders&orderId=${encodeURIComponent(orderId)}`
+    );
+  };
+
+  useEffect(() => {
     setProfileForm({
       displayName: user?.nickname ?? "",
       avatarUrl: user?.avatar ?? "",
@@ -366,6 +398,7 @@ export default function PersonalCenter() {
 
   const changeTab = (tab: PersonalTab) => {
     setActiveTab(tab);
+    if (tab !== "orders") setFocusedOrderId(undefined);
     window.history.replaceState(null, "", `/me?tab=${tab}`);
   };
 
@@ -729,8 +762,13 @@ export default function PersonalCenter() {
                       const canPay = order.status === "pending_payment";
                       return (
                         <div
+                          id={orderElementId(order.id)}
                           key={order.id}
-                          className="grid gap-4 px-5 py-5 md:grid-cols-[minmax(0,1fr)_140px_120px]"
+                          className={`grid gap-4 px-5 py-5 transition md:grid-cols-[minmax(0,1fr)_140px_120px] ${
+                            focusedOrderId === order.id
+                              ? "bg-[#FFF7EC] ring-1 ring-inset ring-[#D8B271]"
+                              : ""
+                          }`}
                         >
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
@@ -989,7 +1027,9 @@ export default function PersonalCenter() {
                               <button
                                 onClick={() =>
                                   status === "used"
-                                    ? navigate("/me?tab=orders")
+                                    ? claim?.usedOrderId
+                                      ? focusOrder(claim.usedOrderId)
+                                      : changeTab("orders")
                                     : courseId
                                       ? navigate(`/courses/${courseId}`)
                                       : navigate("/courses")

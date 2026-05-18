@@ -40,6 +40,7 @@ export function formatCheckoutDateTime(value?: string): string {
 interface CourseCheckoutDrawerProps {
   acceptedTerms: boolean;
   claimableCouponCount?: number;
+  claimingCouponRuleId?: string;
   checkoutError?: string;
   checkoutOrder?: CourseCheckoutOrderResult;
   course: Course;
@@ -56,8 +57,10 @@ interface CourseCheckoutDrawerProps {
   onCancelOrder: () => void;
   onClose: () => void;
   onConfirm: () => void;
+  onClaimCoupon?: (marketingRuleId: string) => void;
   onCouponClaimChange?: (claimId?: string) => void;
   onPaymentChannelChange: (channel: CourseCheckoutPaymentChannel) => void;
+  onViewOrder?: (orderId: string) => void;
   onStartLearning: () => void;
   onViewWorkspace: () => void;
 }
@@ -65,6 +68,7 @@ interface CourseCheckoutDrawerProps {
 export default function CourseCheckoutDrawer({
   acceptedTerms,
   claimableCouponCount = 0,
+  claimingCouponRuleId,
   checkoutError,
   checkoutOrder,
   course,
@@ -81,8 +85,10 @@ export default function CourseCheckoutDrawer({
   onCancelOrder,
   onClose,
   onConfirm,
+  onClaimCoupon,
   onCouponClaimChange,
   onPaymentChannelChange,
+  onViewOrder,
   onStartLearning,
   onViewWorkspace,
 }: CourseCheckoutDrawerProps) {
@@ -109,8 +115,15 @@ export default function CourseCheckoutDrawer({
             ? `继续支付 ${formatCheckoutMoney(summary?.payableAmount ?? 0)}`
             : `创建订单并支付 ${formatCheckoutMoney(summary?.payableAmount ?? 0)}`;
   const selectedCoupon = couponOptions.find(
-    option => option.claimId === selectedCouponClaimId
+    option => option.claimId && option.claimId === selectedCouponClaimId
   );
+  const orderCoupon = checkoutOrder?.order.couponApplication
+    ? couponOptions.find(
+        option =>
+          option.marketingRuleId ===
+          checkoutOrder.order.couponApplication?.marketingRuleId
+      )
+    : undefined;
   const showCouponBag =
     summary?.mode === "course" &&
     (couponOptions.length > 0 ||
@@ -167,6 +180,11 @@ export default function CourseCheckoutDrawer({
                       订单号 {checkoutOrder.order.id}
                     </p>
                   )}
+                  {orderCoupon && (
+                    <p className="mt-3 rounded-[16px] bg-white/10 px-3 py-2 text-xs leading-5 text-[#DDE8D9]">
+                      本单使用 {orderCoupon.label}，支付成功后已写入账号券包使用记录。
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-6 rounded-[24px] border border-[#E4DCCF] bg-[#F9F5EE] p-5">
@@ -182,6 +200,14 @@ export default function CourseCheckoutDrawer({
                 </div>
 
                 <div className="mt-auto grid gap-3 pt-8">
+                  {checkoutOrder && onViewOrder && (
+                    <button
+                      onClick={() => onViewOrder(checkoutOrder.order.id)}
+                      className="inline-flex h-12 items-center justify-center rounded-full border border-[#D8CEC0] bg-white text-sm font-semibold text-[#41675A] transition hover:bg-[#EEF4EA]"
+                    >
+                      查看订单
+                    </button>
+                  )}
                   <button
                     onClick={onStartLearning}
                     className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
@@ -275,7 +301,7 @@ export default function CourseCheckoutDrawer({
                         <p className="mt-1 text-xs leading-5 text-[#7B817C]">
                           {selectedCoupon
                             ? `已关联 ${selectedCoupon.label}，支付成功后标记为已使用。`
-                            : "可用已领券会关联到本单，价格仍由营销规则统一计算。"}
+                            : "可用券会关联到本单，价格仍由营销规则统一计算。"}
                         </p>
                       </div>
                       <BadgePercent className="h-5 w-5 shrink-0 text-[#B08A3C]" />
@@ -291,17 +317,26 @@ export default function CourseCheckoutDrawer({
                       <div className="mt-4 grid gap-2">
                         {couponOptions.map(option => (
                           <CheckoutCouponOptionButton
-                            key={option.claimId}
+                            key={option.claimId ?? option.marketingRuleId}
                             option={option}
                             selected={
+                              Boolean(option.claimId) &&
                               selectedCouponClaimId === option.claimId
                             }
+                            claiming={
+                              claimingCouponRuleId === option.marketingRuleId
+                            }
+                            onClaim={() =>
+                              onClaimCoupon?.(option.marketingRuleId)
+                            }
                             onClick={() =>
-                              onCouponClaimChange?.(
-                                selectedCouponClaimId === option.claimId
-                                  ? undefined
-                                  : option.claimId
-                              )
+                              option.claimId
+                                ? onCouponClaimChange?.(
+                                    selectedCouponClaimId === option.claimId
+                                      ? undefined
+                                      : option.claimId
+                                  )
+                                : undefined
                             }
                           />
                         ))}
@@ -329,7 +364,7 @@ export default function CourseCheckoutDrawer({
 
                     {claimableCouponCount > 0 && (
                       <p className="mt-3 text-xs leading-5 text-[#8A8176]">
-                        还有 {claimableCouponCount} 张适用课程券可领取，领取后可在结算时沉淀使用记录。
+                        有 {claimableCouponCount} 张适用课程券可在本页直接领取，领取成功后会自动用于本单。
                       </p>
                     )}
 
@@ -552,6 +587,7 @@ function CheckoutPromotionRow({
 }
 
 const couponStatusCopy = {
+  claimable: "可领取",
   available: "可用",
   used: "已使用",
   expired: "已过期",
@@ -559,23 +595,38 @@ const couponStatusCopy = {
 
 function CheckoutCouponOptionButton({
   option,
+  claiming,
   selected,
+  onClaim,
   onClick,
 }: {
   option: CourseCheckoutCouponOption;
+  claiming?: boolean;
   selected: boolean;
+  onClaim?: () => void;
   onClick: () => void;
 }) {
-  const disabled = option.status !== "available";
+  const disabled =
+    option.status === "used" || option.status === "expired" || claiming;
+  const isClaimable = option.status === "claimable";
+  const actionLabel = claiming
+    ? "领取中"
+    : isClaimable
+      ? "领取并使用"
+      : selected
+        ? "已选中"
+        : couponStatusCopy[option.status];
 
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => (isClaimable ? onClaim?.() : onClick())}
       disabled={disabled}
       className={`rounded-[16px] border px-4 py-3 text-left transition disabled:cursor-not-allowed ${
         selected
           ? "border-[#6F8F83] bg-[#EEF4EA]"
+          : isClaimable
+            ? "border-[#E9D5BF] bg-[#FFF7EC] hover:border-[#CDAA72]"
           : disabled
             ? "border-[#E8DED0] bg-[#F9F5EE] opacity-72"
             : "border-[#E8DED0] bg-white hover:border-[#AFC2AB]"
@@ -594,8 +645,12 @@ function CheckoutCouponOptionButton({
           <span className="block text-sm font-semibold text-[#A65F48]">
             {option.value}
           </span>
-          <span className="mt-1 block text-xs font-semibold text-[#6F8F83]">
-            {couponStatusCopy[option.status]}
+          <span
+            className={`mt-1 block text-xs font-semibold ${
+              isClaimable ? "text-[#A65F48]" : "text-[#6F8F83]"
+            }`}
+          >
+            {actionLabel}
           </span>
         </span>
       </span>

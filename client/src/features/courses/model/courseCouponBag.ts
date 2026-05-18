@@ -8,12 +8,13 @@ import {
 import { formatCheckoutMoney } from "./courseCheckout";
 
 export type CourseCheckoutCouponOptionStatus =
+  | "claimable"
   | "available"
   | "used"
   | "expired";
 
 export interface CourseCheckoutCouponOption {
-  claimId: string;
+  claimId?: string;
   marketingRuleId: string;
   label: string;
   description: string;
@@ -74,17 +75,22 @@ export function createCourseCheckoutCouponOptions({
   couponClaims,
   now = new Date().toISOString(),
 }: CourseCouponBagInput): CourseCheckoutCouponOption[] {
-  const ruleById = new Map(
-    activeCourseCouponRules({ course, marketingRules, now }).map(rule => [
-      rule.id,
-      rule,
-    ])
+  const claimByRuleId = new Map(
+    couponClaims.map(claim => [claim.marketingRuleId, claim])
   );
 
-  return couponClaims
-    .flatMap((claim): CourseCheckoutCouponOption[] => {
-      const rule = ruleById.get(claim.marketingRuleId);
-      if (!rule) return [];
+  return activeCourseCouponRules({ course, marketingRules, now })
+    .map((rule): CourseCheckoutCouponOption => {
+      const claim = claimByRuleId.get(rule.id);
+      if (!claim) {
+        return {
+          marketingRuleId: rule.id,
+          label: rule.name,
+          description: rule.description,
+          value: couponValue(rule),
+          status: "claimable",
+        };
+      }
 
       const option: CourseCheckoutCouponOption = {
         claimId: claim.id,
@@ -97,10 +103,10 @@ export function createCourseCheckoutCouponOptions({
       if (claim.expiresAt) option.expiresAt = claim.expiresAt;
       if (claim.usedOrderId) option.usedOrderId = claim.usedOrderId;
 
-      return [option];
+      return option;
     })
     .sort((left, right) => {
-      const statusRank = { available: 0, used: 1, expired: 2 };
+      const statusRank = { available: 0, claimable: 1, used: 2, expired: 3 };
       return (
         statusRank[left.status] - statusRank[right.status] ||
         left.marketingRuleId.localeCompare(right.marketingRuleId)
@@ -133,7 +139,13 @@ export function resolveDefaultCheckoutCouponClaimId({
   selectedCouponClaimId?: string;
 }): string | undefined {
   const orderClaimId = order?.couponApplication?.claimId;
-  if (orderClaimId && options.some(option => option.claimId === orderClaimId)) {
+  if (
+    orderClaimId &&
+    options.some(
+      option =>
+        option.claimId === orderClaimId && option.status === "available"
+    )
+  ) {
     return orderClaimId;
   }
 

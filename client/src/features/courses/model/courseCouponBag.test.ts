@@ -78,6 +78,25 @@ describe("course coupon bag model", () => {
     ).toBe(1);
   });
 
+  it("shows unclaimed active coupons as claimable checkout options", () => {
+    const options = createCourseCheckoutCouponOptions({
+      course,
+      marketingRules: [couponRule],
+      couponClaims: [],
+      now: "2026-05-18T09:00:00.000Z",
+    });
+
+    expect(options).toEqual([
+      expect.objectContaining({
+        marketingRuleId: couponRule.id,
+        status: "claimable",
+        value: "-¥20",
+      }),
+    ]);
+    expect(options[0]).not.toHaveProperty("claimId");
+    expect(resolveDefaultCheckoutCouponClaimId({ options })).toBeUndefined();
+  });
+
   it("prefers order coupon application over default available coupon", () => {
     const selected = resolveDefaultCheckoutCouponClaimId({
       options: [

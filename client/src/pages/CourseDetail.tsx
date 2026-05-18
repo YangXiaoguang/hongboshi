@@ -129,7 +129,9 @@ export default function CourseDetail() {
   });
   const { rules: marketingRules } = useCourseMarketingRules();
   const {
+    claimCoupon,
     couponClaims,
+    claimingCouponRuleId,
     isPreferenceLoading,
     preferenceError,
     reloadPreference,
@@ -441,6 +443,23 @@ export default function CourseDetail() {
     isCouponSelectionManual,
     selectedCouponClaimId,
   ]);
+
+  const handleClaimCheckoutCoupon = async (marketingRuleId: string) => {
+    const preference = await claimCoupon(marketingRuleId);
+    const claim = preference?.couponClaims.find(
+      item => item.marketingRuleId === marketingRuleId
+    );
+    if (!claim) {
+      toast("领取失败", { description: "请稍后再试或先登录账号。" });
+      return;
+    }
+
+    setIsCouponSelectionManual(true);
+    setSelectedCouponClaimId(claim.id);
+    toast("优惠券已领取", {
+      description: "已自动用于当前课程订单。",
+    });
+  };
 
   const handlePrimaryAction = (
     source: CourseConversionSource = "course_detail_panel"
@@ -1197,12 +1216,14 @@ export default function CourseDetail() {
         checkoutError={checkoutError}
         acceptedTerms={acceptedTerms}
         claimableCouponCount={checkoutClaimableCouponCount}
+        claimingCouponRuleId={claimingCouponRuleId}
         couponOptions={checkoutCouponOptions}
         isPreferenceLoading={isPreferenceLoading}
         preferenceError={preferenceError}
         isSyncing={isSyncing}
         onAcceptedTermsChange={setAcceptedTerms}
         onCancelOrder={handleCancelCheckoutOrder}
+        onClaimCoupon={handleClaimCheckoutCoupon}
         onClose={closeCheckout}
         onConfirm={handleConfirmCheckout}
         onCouponClaimChange={claimId => {
@@ -1210,6 +1231,10 @@ export default function CourseDetail() {
           setSelectedCouponClaimId(claimId);
         }}
         onPaymentChannelChange={setSelectedPaymentChannel}
+        onViewOrder={orderId => {
+          closeCheckout();
+          navigate(`/me?tab=orders&orderId=${encodeURIComponent(orderId)}`);
+        }}
         onStartLearning={handleStartAfterCheckout}
         onViewWorkspace={() => {
           closeCheckout();
