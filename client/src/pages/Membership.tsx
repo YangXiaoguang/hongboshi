@@ -64,8 +64,10 @@ export default function Membership() {
   const {
     product,
     primaryPlan: plan,
+    availability: membershipProductAvailability,
     error: membershipProductError,
     isFallback: isMembershipProductFallback,
+    isPurchasable: isMembershipProductPurchasable,
   } = useCourseMembershipProduct();
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutStatus, setCheckoutStatus] =
@@ -98,6 +100,11 @@ export default function Membership() {
       }).filter(prompt => prompt.mode === "membership"),
     [accessState, allCourses, getCourseAccess]
   );
+  const primaryPendingMembershipCheckout =
+    pendingMembershipPrompts[0]?.checkout;
+  const isMembershipProductUnavailable =
+    membershipProductAvailability === "unavailable" ||
+    !isMembershipProductPurchasable;
 
   const closeCheckout = () => {
     setIsCheckoutOpen(false);
@@ -122,6 +129,15 @@ export default function Membership() {
     const nextPendingCheckout =
       pendingCheckout ??
       findPendingMembershipCheckoutOrder(accessState, plan.id);
+
+    if (!nextPendingCheckout && isMembershipProductUnavailable) {
+      toast("会员暂不可购买", {
+        description:
+          membershipProductError ??
+          "当前会员商品或套餐已暂停，已有待支付订单仍可继续完成。",
+      });
+      return;
+    }
 
     setIsCheckoutOpen(true);
     setCheckoutStatus(nextPendingCheckout ? "pending_payment" : "idle");
@@ -154,6 +170,17 @@ export default function Membership() {
     void (async () => {
       let pendingCheckout = checkoutOrder;
       if (pendingCheckout?.order.status !== "pending_payment") {
+        if (isMembershipProductUnavailable) {
+          setCheckoutStatus("failed");
+          setCheckoutError(
+            membershipProductError ?? "当前会员商品或套餐已暂停，暂不能创建新订单。"
+          );
+          toast("会员暂不可购买", {
+            description: "已有待支付订单仍可继续完成，新订单需要等待套餐恢复。",
+          });
+          return;
+        }
+
         setCheckoutStatus("creating");
         const created = await createMembershipCheckoutOrder({
           membershipProduct: product,
@@ -255,6 +282,13 @@ export default function Membership() {
   const originalPrice = formatCheckoutMoney(plan.originalPrice);
   const isCheckoutBusy =
     checkoutStatus === "creating" || checkoutStatus === "processing";
+  const primaryCtaLabel = hasActiveMembership
+    ? "查看会员课程"
+    : primaryPendingMembershipCheckout
+      ? "继续支付会员订单"
+      : isMembershipProductUnavailable
+        ? "暂不可购买"
+        : "立即开通会员";
 
   return (
     <div className="min-h-screen bg-[#F8F3EA] text-[#243B35]">
@@ -289,11 +323,18 @@ export default function Membership() {
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <button
-                  onClick={() => openMembershipCheckout()}
-                  disabled={isCheckoutBusy || isSyncing}
+                  onClick={() =>
+                    openMembershipCheckout(primaryPendingMembershipCheckout)
+                  }
+                  disabled={
+                    isCheckoutBusy ||
+                    isSyncing ||
+                    (isMembershipProductUnavailable &&
+                      !primaryPendingMembershipCheckout)
+                  }
                   className="inline-flex h-12 items-center justify-center rounded-full bg-[#DDE8D9] px-6 text-sm font-semibold text-[#20362F] transition hover:bg-white disabled:cursor-wait disabled:opacity-70"
                 >
-                  {hasActiveMembership ? "查看会员课程" : "立即开通会员"}
+                  {primaryCtaLabel}
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </button>
                 <button
@@ -357,7 +398,17 @@ export default function Membership() {
                   当前会员有效期至 {formatDate(membership.expiresAt)}
                 </p>
               )}
-              {isMembershipProductFallback && membershipProductError && (
+              {isMembershipProductUnavailable && (
+                <p className="mt-4 rounded-lg bg-[#FFF1EC] px-4 py-3 text-sm text-[#A65F48]">
+                  当前会员商品暂不可购买。
+                  {primaryPendingMembershipCheckout
+                    ? "你仍可继续完成已创建的待支付会员订单。"
+                    : (membershipProductError ?? "请稍后再试。")}
+                </p>
+              )}
+              {!isMembershipProductUnavailable &&
+                isMembershipProductFallback &&
+                membershipProductError && (
                 <p className="mt-4 rounded-lg bg-[#FFF4DE] px-4 py-3 text-sm text-[#8A6534]">
                   当前正在使用本地会员套餐兜底展示：{membershipProductError}
                 </p>
@@ -491,14 +542,27 @@ export default function Membership() {
             </h2>
           </div>
           <button
-            onClick={() => openMembershipCheckout()}
-            disabled={isCheckoutBusy || isSyncing}
+            onClick={() =>
+              openMembershipCheckout(primaryPendingMembershipCheckout)
+            }
+            disabled={
+              isCheckoutBusy ||
+              isSyncing ||
+              (isMembershipProductUnavailable &&
+                !primaryPendingMembershipCheckout)
+            }
             className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] px-6 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-wait disabled:opacity-70"
           >
             {isCheckoutBusy && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
-            {hasActiveMembership ? "查看会员课程" : `${planPrice} 开通会员`}
+            {hasActiveMembership
+              ? "查看会员课程"
+              : primaryPendingMembershipCheckout
+                ? "继续支付会员订单"
+                : isMembershipProductUnavailable
+                  ? "暂不可购买"
+                  : `${planPrice} 开通会员`}
             <ArrowRight className="ml-2 h-4 w-4" />
           </button>
         </section>

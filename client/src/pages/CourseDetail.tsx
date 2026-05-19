@@ -117,8 +117,12 @@ export default function CourseDetail() {
     isSyncing,
     payCheckoutOrder,
   } = useCourseAccess();
-  const { product: membershipProduct, primaryPlan: membershipPlan } =
-    useCourseMembershipProduct();
+  const {
+    product: membershipProduct,
+    primaryPlan: membershipPlan,
+    error: membershipProductError,
+    isPurchasable: isMembershipProductPurchasable,
+  } = useCourseMembershipProduct();
   const {
     getProgress,
     getProgressPercent,
@@ -362,12 +366,25 @@ export default function CourseDetail() {
   const openCheckout = (
     mode: CourseCheckoutMode,
     source: CourseConversionSource = "course_detail_panel"
-  ) => {
+  ): boolean => {
     const pendingCheckout = findPendingCourseCheckoutOrder(
       accessState,
       course,
       mode
     );
+
+    if (
+      mode === "membership" &&
+      !pendingCheckout &&
+      !isMembershipProductPurchasable
+    ) {
+      toast("会员暂不可购买", {
+        description:
+          membershipProductError ??
+          "当前会员商品或套餐已暂停，已有待支付订单仍可继续完成。",
+      });
+      return false;
+    }
 
     setCheckoutMode(mode);
     setCheckoutStatus(pendingCheckout ? "pending_payment" : "idle");
@@ -383,6 +400,7 @@ export default function CourseDetail() {
         hasPendingCheckout: Boolean(pendingCheckout),
       },
     });
+    return true;
   };
 
   useEffect(() => {
@@ -557,6 +575,17 @@ export default function CourseDetail() {
         pendingCheckout?.order.status !== "pending_payment" ||
         pendingCouponClaimId !== checkoutCouponClaimId
       ) {
+        if (checkoutMode === "membership" && !isMembershipProductPurchasable) {
+          setCheckoutStatus("failed");
+          setCheckoutError(
+            membershipProductError ?? "当前会员商品或套餐已暂停，暂不能创建新订单。"
+          );
+          toast("会员暂不可购买", {
+            description: "已有待支付订单仍可继续完成，新订单需要等待套餐恢复。",
+          });
+          return;
+        }
+
         setCheckoutStatus("creating");
         const created = await createCheckoutOrder(
           course,

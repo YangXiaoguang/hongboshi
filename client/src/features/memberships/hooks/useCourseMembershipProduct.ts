@@ -5,7 +5,15 @@ import {
   getPrimaryCourseMembershipPlan,
   type CourseMembershipProductSnapshot,
 } from "@shared/domain";
-import { httpCourseMembershipProductRepository } from "../api/httpCourseMembershipProductRepository";
+import {
+  CourseMembershipProductRequestError,
+  httpCourseMembershipProductRepository,
+} from "../api/httpCourseMembershipProductRepository";
+
+export type CourseMembershipProductAvailability =
+  | "available"
+  | "fallback"
+  | "unavailable";
 
 function createFallbackSnapshot(): CourseMembershipProductSnapshot {
   return {
@@ -22,6 +30,20 @@ export function useCourseMembershipProduct() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [isFallback, setIsFallback] = useState(true);
+  const [availability, setAvailability] =
+    useState<CourseMembershipProductAvailability>("fallback");
+
+  const applyLoadFailure = useCallback((err: unknown) => {
+    setSnapshot(createFallbackSnapshot());
+    setError(err instanceof Error ? err.message : "会员商品暂时不可用");
+    setIsFallback(true);
+    setAvailability(
+      err instanceof CourseMembershipProductRequestError &&
+        err.code === "CONFLICT"
+        ? "unavailable"
+        : "fallback"
+    );
+  }, []);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -31,14 +53,13 @@ export function useCourseMembershipProduct() {
       setSnapshot(remoteSnapshot);
       setError(undefined);
       setIsFallback(false);
+      setAvailability("available");
     } catch (err) {
-      setSnapshot(createFallbackSnapshot());
-      setError(err instanceof Error ? err.message : "会员商品暂时不可用");
-      setIsFallback(true);
+      applyLoadFailure(err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [applyLoadFailure]);
 
   useEffect(() => {
     let mounted = true;
@@ -50,12 +71,11 @@ export function useCourseMembershipProduct() {
         setSnapshot(remoteSnapshot);
         setError(undefined);
         setIsFallback(false);
+        setAvailability("available");
       })
       .catch(err => {
         if (!mounted) return;
-        setSnapshot(createFallbackSnapshot());
-        setError(err instanceof Error ? err.message : "会员商品暂时不可用");
-        setIsFallback(true);
+        applyLoadFailure(err);
       })
       .finally(() => {
         if (mounted) setIsLoading(false);
@@ -64,17 +84,23 @@ export function useCourseMembershipProduct() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [applyLoadFailure]);
 
   const primaryPlan = useMemo(
     () => getPrimaryCourseMembershipPlan(snapshot.product),
     [snapshot.product]
   );
+  const isPurchasable =
+    availability !== "unavailable" &&
+    snapshot.product.status === "active" &&
+    primaryPlan.status === "active";
 
   return {
     snapshot,
     product: snapshot.product,
     primaryPlan,
+    availability,
+    isPurchasable,
     isLoading,
     isFallback,
     error,

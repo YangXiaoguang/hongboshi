@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Copy,
   Crown,
+  ExternalLink,
   History,
   Loader2,
   PauseCircle,
@@ -138,6 +140,7 @@ export default function MembershipProducts() {
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [mutatingPlanId, setMutatingPlanId] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
+  const [notice, setNotice] = useState<string | undefined>();
 
   const canManage = Boolean(
     user && userCan(user, MEMBERSHIP_PRODUCT_ADMIN_PERMISSIONS.manage)
@@ -167,12 +170,37 @@ export default function MembershipProducts() {
     void loadConsole();
   }, []);
 
+  const product = consoleData?.product;
   const activePlanCount = useMemo(
     () =>
       consoleData?.product.plans.filter(plan => plan.status === "active")
         .length ?? 0,
     [consoleData?.product.plans]
   );
+  const primaryActivePlan = useMemo(
+    () => product?.plans.find(plan => plan.status === "active"),
+    [product?.plans]
+  );
+  const publicMembershipUrl =
+    typeof window === "undefined"
+      ? "/membership"
+      : `${window.location.origin}/membership`;
+  const publicSnapshotReady = Boolean(
+    product?.status === "active" && primaryActivePlan
+  );
+
+  const showFrontstageUpdatedNotice = (action: string) => {
+    setNotice(`${action}已保存，前台会员商品快照会随下一次读取同步。`);
+  };
+
+  const copyPublicMembershipLink = async () => {
+    try {
+      await navigator.clipboard.writeText(publicMembershipUrl);
+      setNotice("已复制前台会员商品页链接。");
+    } catch {
+      setError("复制链接失败，请直接打开前台会员页。");
+    }
+  };
 
   const submitProduct = async () => {
     if (!productForm || !canManage) return;
@@ -180,6 +208,7 @@ export default function MembershipProducts() {
     try {
       await httpCourseMembershipProductRepository.updateProduct(productForm);
       await loadConsole();
+      showFrontstageUpdatedNotice("商品信息");
       setError(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "会员商品基础信息更新失败");
@@ -209,6 +238,7 @@ export default function MembershipProducts() {
         reason: draft.reason,
       });
       await loadConsole();
+      showFrontstageUpdatedNotice("套餐价格");
       setError(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "会员套餐更新失败");
@@ -230,6 +260,7 @@ export default function MembershipProducts() {
       });
       await loadConsole();
       setPlanStatusReasons(previous => ({ ...previous, [plan.id]: "" }));
+      showFrontstageUpdatedNotice("套餐状态");
       setError(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "会员套餐状态更新失败");
@@ -237,8 +268,6 @@ export default function MembershipProducts() {
       setMutatingPlanId(undefined);
     }
   };
-
-  const product = consoleData?.product;
 
   return (
     <div className="space-y-6">
@@ -266,6 +295,11 @@ export default function MembershipProducts() {
         {error && (
           <div className="mt-5 rounded-lg border border-[#E7C7B8] bg-[#FFF3ED] px-4 py-3 text-sm text-[#A65F48]">
             {error}
+          </div>
+        )}
+        {notice && (
+          <div className="mt-5 rounded-lg border border-[#D5E3CD] bg-[#F1F7EE] px-4 py-3 text-sm text-[#41675A]">
+            {notice}
           </div>
         )}
       </section>
@@ -619,6 +653,54 @@ export default function MembershipProducts() {
           </div>
 
           <aside className="space-y-4">
+            <section className="rounded-lg border border-[#E4DCCF] bg-[#FFFDF8] p-5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                <ExternalLink className="h-4 w-4 text-[#6F8F83]" />
+                前台快照预览
+              </div>
+              <p className="mt-3 text-xs leading-5 text-[#7B817C]">
+                运营改价或暂停套餐后，用户端会员页和会员结算会读取同一份公共快照。
+              </p>
+              <div className="mt-4 rounded-lg bg-[#F8F3EA] px-4 py-3">
+                <p className="text-xs font-semibold text-[#7B817C]">
+                  前台状态
+                </p>
+                <p
+                  className={`mt-2 text-lg font-semibold ${
+                    publicSnapshotReady ? "text-[#41675A]" : "text-[#A65F48]"
+                  }`}
+                >
+                  {publicSnapshotReady ? "可售" : "暂不可购买"}
+                </p>
+                <p className="mt-2 text-xs leading-5 text-[#6D746F]">
+                  {publicSnapshotReady && primaryActivePlan
+                    ? `${primaryActivePlan.title} · ${formatMoney(
+                        primaryActivePlan.payablePrice
+                      )}`
+                    : "商品暂停或无可售套餐时，前台会阻止新会员订单。"}
+                </p>
+              </div>
+              <div className="mt-4 grid gap-2">
+                <a
+                  href="/membership"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-10 items-center justify-center rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
+                >
+                  打开前台会员页
+                  <ExternalLink className="ml-2 h-4 w-4" />
+                </a>
+                <button
+                  type="button"
+                  onClick={copyPublicMembershipLink}
+                  className="inline-flex h-10 items-center justify-center rounded-lg border border-[#D8CDBE] bg-white px-4 text-sm font-semibold text-[#4C5F57] transition hover:bg-[#F8F3EA]"
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  复制前台链接
+                </button>
+              </div>
+            </section>
+
             <section className="overflow-hidden rounded-lg border border-[#E4DCCF] bg-[#FFFDF8]">
               <div className="flex items-center gap-2 border-b border-[#E4DCCF] px-5 py-4 text-sm font-semibold text-[#243B35]">
                 <History className="h-4 w-4 text-[#6F8F83]" />

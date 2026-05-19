@@ -99,6 +99,11 @@ export default function CoursePendingCheckoutBanner({
                     <ArrowRight className="ml-1 h-3.5 w-3.5" />
                   </span>
                 </span>
+                {prompt.mode === "membership" && (
+                  <span className="mt-3 block rounded-[14px] bg-white/72 px-3 py-2 text-xs leading-5 text-[#8A641C]">
+                    会员历史订单按订单金额继续支付，不受当前套餐暂停影响。
+                  </span>
+                )}
               </button>
 
               {onCancel && (

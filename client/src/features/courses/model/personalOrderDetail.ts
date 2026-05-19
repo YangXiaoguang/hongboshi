@@ -96,8 +96,9 @@ export function createPersonalOrderServiceNotes(order: Order): string[] {
   if (order.status === "pending_payment") {
     if (firstItemType === "membership") {
       return [
-        "待支付会员订单可继续支付或取消，取消后不会开通会员权益。",
+        "待支付会员订单按创建时的订单金额继续支付；即使后台后来暂停套餐，也不会影响这笔历史订单。",
         "支付保留时间以订单记录为准，超时后需要重新开通。",
+        "取消后不会开通会员权益，重新下单会按当时前台可售套餐重新计算。",
       ];
     }
 

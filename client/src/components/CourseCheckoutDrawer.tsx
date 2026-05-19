@@ -95,6 +95,15 @@ export default function CourseCheckoutDrawer({
   onViewWorkspace,
 }: CourseCheckoutDrawerProps) {
   const busy = status === "creating" || status === "processing";
+  const displayListPrice =
+    checkoutOrder?.order.subtotal ?? summary?.listPrice ?? 0;
+  const displayDiscountAmount =
+    checkoutOrder?.order.discountAmount ?? summary?.discountAmount ?? 0;
+  const displayPayableAmount =
+    checkoutOrder?.payment.payableAmount ?? summary?.payableAmount ?? 0;
+  const isHistoricalMembershipOrder =
+    summary?.mode === "membership" &&
+    checkoutOrder?.order.status === "pending_payment";
   const orderStatusLabel = checkoutOrder
     ? {
         created: "已创建",
@@ -114,8 +123,8 @@ export default function CourseCheckoutDrawer({
           ? "订单已关闭"
           : checkoutOrder?.order.status === "pending_payment" ||
               status === "failed"
-            ? `继续支付 ${formatCheckoutMoney(summary?.payableAmount ?? 0)}`
-            : `创建订单并支付 ${formatCheckoutMoney(summary?.payableAmount ?? 0)}`;
+            ? `继续支付 ${formatCheckoutMoney(displayPayableAmount)}`
+            : `创建订单并支付 ${formatCheckoutMoney(displayPayableAmount)}`;
   const selectedCoupon = couponOptions.find(
     option => option.claimId && option.claimId === selectedCouponClaimId
   );
@@ -256,30 +265,36 @@ export default function CourseCheckoutDrawer({
                 <div className="mt-6 divide-y divide-[#E7DED0] border-y border-[#E7DED0]">
                   <CheckoutAmountRow
                     label="商品金额"
-                    value={formatCheckoutMoney(summary.listPrice)}
+                    value={formatCheckoutMoney(displayListPrice)}
                   />
-                  {summary.originalPrice > summary.listPrice && (
+                  {!checkoutOrder && summary.originalPrice > summary.listPrice && (
                     <CheckoutAmountRow
                       label="原价参考"
                       value={formatCheckoutMoney(summary.originalPrice)}
                       muted
                     />
                   )}
-                  {summary.discountAmount > 0 && (
+                  {displayDiscountAmount > 0 && (
                     <CheckoutAmountRow
                       label="优惠抵扣"
-                      value={`-${formatCheckoutMoney(summary.discountAmount)}`}
+                      value={`-${formatCheckoutMoney(displayDiscountAmount)}`}
                       accent
                     />
                   )}
                   <CheckoutAmountRow
                     label="实付金额"
-                    value={formatCheckoutMoney(summary.payableAmount)}
+                    value={formatCheckoutMoney(displayPayableAmount)}
                     strong
                   />
                 </div>
 
-                {summary.promotionItems.length > 0 && (
+                {isHistoricalMembershipOrder && (
+                  <p className="mt-4 rounded-[18px] border border-[#E9D5BF] bg-[#FFF7EC] px-4 py-3 text-xs leading-5 text-[#8A641C]">
+                    这是已创建的会员历史订单，继续支付将按订单记录金额完成，不受当前套餐改价或暂停影响。
+                  </p>
+                )}
+
+                {summary.promotionItems.length > 0 && !checkoutOrder && (
                   <div className="mt-4 rounded-[20px] border border-[#E9D5BF] bg-[#FFF7EC] p-4">
                     <div className="flex items-center justify-between gap-4">
                       <p className="text-sm font-semibold text-[#243B35]">

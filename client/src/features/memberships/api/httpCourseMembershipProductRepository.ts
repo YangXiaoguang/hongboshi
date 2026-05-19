@@ -1,4 +1,5 @@
 import {
+  type ApiError,
   ApiResponseSchema,
   CourseMembershipProductAdminConsoleSchema,
   CourseMembershipProductAdminMutationResultSchema,
@@ -24,6 +25,17 @@ const CourseMembershipProductMutationResponseSchema = ApiResponseSchema(
 const API_BASE = "/api/memberships/admin";
 const PUBLIC_API_BASE = "/api/memberships";
 
+export class CourseMembershipProductRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code?: ApiError["code"],
+    readonly status?: number
+  ) {
+    super(message);
+    this.name = "CourseMembershipProductRequestError";
+  }
+}
+
 async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
@@ -36,7 +48,12 @@ export function parseCourseMembershipProductConsoleResponse(
   payload: unknown
 ): CourseMembershipProductAdminConsole {
   const parsed = CourseMembershipProductConsoleResponseSchema.parse(payload);
-  if (!parsed.ok) throw new Error(parsed.error.message);
+  if (!parsed.ok) {
+    throw new CourseMembershipProductRequestError(
+      parsed.error.message,
+      parsed.error.code
+    );
+  }
   return parsed.data;
 }
 
@@ -44,7 +61,12 @@ export function parseCourseMembershipProductSnapshotResponse(
   payload: unknown
 ): CourseMembershipProductSnapshot {
   const parsed = CourseMembershipProductSnapshotResponseSchema.parse(payload);
-  if (!parsed.ok) throw new Error(parsed.error.message);
+  if (!parsed.ok) {
+    throw new CourseMembershipProductRequestError(
+      parsed.error.message,
+      parsed.error.code
+    );
+  }
   return parsed.data;
 }
 
@@ -52,30 +74,48 @@ export function parseCourseMembershipProductMutationResponse(
   payload: unknown
 ): CourseMembershipProductAdminMutationResult {
   const parsed = CourseMembershipProductMutationResponseSchema.parse(payload);
-  if (!parsed.ok) throw new Error(parsed.error.message);
+  if (!parsed.ok) {
+    throw new CourseMembershipProductRequestError(
+      parsed.error.message,
+      parsed.error.code
+    );
+  }
   return parsed.data;
 }
 
-function extractErrorMessage(payload: unknown, fallback: string) {
+function extractApiError(payload: unknown): ApiError | undefined {
   const snapshotParsed =
     CourseMembershipProductSnapshotResponseSchema.safeParse(payload);
   if (snapshotParsed.success && !snapshotParsed.data.ok) {
-    return snapshotParsed.data.error.message;
+    return snapshotParsed.data.error;
   }
 
   const consoleParsed =
     CourseMembershipProductConsoleResponseSchema.safeParse(payload);
   if (consoleParsed.success && !consoleParsed.data.ok) {
-    return consoleParsed.data.error.message;
+    return consoleParsed.data.error;
   }
 
   const mutationParsed =
     CourseMembershipProductMutationResponseSchema.safeParse(payload);
   if (mutationParsed.success && !mutationParsed.data.ok) {
-    return mutationParsed.data.error.message;
+    return mutationParsed.data.error;
   }
 
-  return fallback;
+  return undefined;
+}
+
+function requestErrorFromPayload(
+  payload: unknown,
+  fallback: string,
+  status: number
+) {
+  const apiError = extractApiError(payload);
+  return new CourseMembershipProductRequestError(
+    apiError?.message ?? fallback,
+    apiError?.code,
+    status
+  );
 }
 
 export const httpCourseMembershipProductRepository = {
@@ -89,7 +129,7 @@ export const httpCourseMembershipProductRepository = {
     });
     const payload = await readJson(response);
     if (!response.ok) {
-      throw new Error(extractErrorMessage(payload, "会员商品暂时不可用"));
+      throw requestErrorFromPayload(payload, "会员商品暂时不可用", response.status);
     }
     return parseCourseMembershipProductSnapshotResponse(payload);
   },
@@ -104,7 +144,11 @@ export const httpCourseMembershipProductRepository = {
     });
     const payload = await readJson(response);
     if (!response.ok) {
-      throw new Error(extractErrorMessage(payload, "会员商品后台暂时不可用"));
+      throw requestErrorFromPayload(
+        payload,
+        "会员商品后台暂时不可用",
+        response.status
+      );
     }
     return parseCourseMembershipProductConsoleResponse(payload);
   },
@@ -159,7 +203,7 @@ async function requestMembershipProductMutation(
   });
   const payload = await readJson(response);
   if (!response.ok) {
-    throw new Error(extractErrorMessage(payload, fallback));
+    throw requestErrorFromPayload(payload, fallback, response.status);
   }
   return parseCourseMembershipProductMutationResponse(payload);
 }

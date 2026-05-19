@@ -104,7 +104,7 @@ export function createPendingCourseCheckoutPrompts({
         mode: "membership",
         checkout,
         title: item.title,
-        subtitle: "开通后会员课程可直接学习",
+        subtitle: "历史待支付会员订单，按订单金额继续支付",
       });
     }
   });
@@ -130,7 +130,7 @@ export function createPendingCheckoutPromptForCourse(
     title: item?.title ?? course.title,
     subtitle:
       mode === "membership"
-        ? "开通后会员课程可直接学习"
+        ? "历史待支付会员订单，按订单金额继续支付"
         : `${course.teacher} · ${course.category}`,
   };
 }

@@ -38,6 +38,18 @@ const implementationRows = [
     "会员商品、套餐价格、状态生命周期和审计记录",
   ],
   [
+    "UX-AA",
+    "会员快照同步",
+    "已完成",
+    "用户端会员快照、动态结算金额和暂停新单拒绝",
+  ],
+  [
+    "UX-AB",
+    "会员可用性体验",
+    "已完成",
+    "不可售提示、历史订单金额和前台快照预览",
+  ],
+  [
     "M3-A",
     "用户与会员只读台",
     "已完成",
@@ -68,7 +80,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "M9-C", icon: GitBranch },
+  { label: "下一阶段", value: "UX-AC", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -207,7 +219,7 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经完成会员商品配置化首个切片，下一步进入用户端会员商品读取服务端快照和结算金额同步。
+              当前连续执行状态已经完成会员商品可用性体验与运营联动收口，下一步进入会员售卖状态端到端回归与真实支付前准备。
             </p>
           </div>
           <div className="overflow-x-auto">

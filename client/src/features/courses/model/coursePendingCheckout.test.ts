@@ -81,7 +81,7 @@ describe("course pending checkout prompts", () => {
       course: vipCourse,
       mode: "membership",
       title: "成长会员年卡",
-      subtitle: "开通后会员课程可直接学习",
+      subtitle: "历史待支付会员订单，按订单金额继续支付",
     });
   });
 

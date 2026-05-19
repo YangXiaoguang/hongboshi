@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultCourseMembershipProduct } from "@shared/domain";
 import {
+  CourseMembershipProductRequestError,
   parseCourseMembershipProductConsoleResponse,
   parseCourseMembershipProductMutationResponse,
   parseCourseMembershipProductSnapshotResponse,
@@ -36,6 +37,33 @@ describe("http course membership product repository parsers", () => {
     expect(parsed.version).toBe("2026.05");
     expect(parsed.product.plans).toHaveLength(1);
     expect(parsed.product.plans[0]?.status).toBe("active");
+  });
+
+  it("preserves public snapshot unavailable errors for user-facing guards", () => {
+    expect(() =>
+      parseCourseMembershipProductSnapshotResponse({
+        ok: false,
+        error: {
+          code: "CONFLICT",
+          message: "会员商品暂不可用",
+        },
+      })
+    ).toThrow(CourseMembershipProductRequestError);
+
+    try {
+      parseCourseMembershipProductSnapshotResponse({
+        ok: false,
+        error: {
+          code: "CONFLICT",
+          message: "会员商品暂不可用",
+        },
+      });
+    } catch (err) {
+      expect(err).toBeInstanceOf(CourseMembershipProductRequestError);
+      expect((err as CourseMembershipProductRequestError).code).toBe(
+        "CONFLICT"
+      );
+    }
   });
 
   it("parses mutation responses and surfaces API errors", () => {

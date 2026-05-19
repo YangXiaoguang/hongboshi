@@ -735,8 +735,12 @@ export default function MyCourses() {
     payCheckoutOrder,
   } = useCourseAccess();
   const { rules: marketingRules } = useCourseMarketingRules();
-  const { product: membershipProduct, primaryPlan: membershipPlan } =
-    useCourseMembershipProduct();
+  const {
+    product: membershipProduct,
+    primaryPlan: membershipPlan,
+    error: membershipProductError,
+    isPurchasable: isMembershipProductPurchasable,
+  } = useCourseMembershipProduct();
   const {
     claimCoupon,
     couponClaims,
@@ -867,7 +871,20 @@ export default function MyCourses() {
     course: Course,
     mode: CourseCheckoutMode,
     pendingCheckout = findPendingCourseCheckoutOrder(accessState, course, mode)
-  ) => {
+  ): boolean => {
+    if (
+      mode === "membership" &&
+      !pendingCheckout &&
+      !isMembershipProductPurchasable
+    ) {
+      toast("会员暂不可购买", {
+        description:
+          membershipProductError ??
+          "当前会员商品或套餐已暂停，已有待支付订单仍可继续完成。",
+      });
+      return false;
+    }
+
     setCheckoutCourse(course);
     setCheckoutMode(mode);
     setCheckoutStatus(pendingCheckout ? "pending_payment" : "idle");
@@ -876,6 +893,7 @@ export default function MyCourses() {
     setCheckoutOrder(pendingCheckout);
     setCheckoutError(undefined);
     setIsCouponSelectionManual(false);
+    return true;
   };
 
   useEffect(() => {
@@ -896,10 +914,12 @@ export default function MyCourses() {
 
     if (!access.canActivateMembership) return;
 
-    openCheckout(anchorCourse, "membership");
-    toast("已打开会员开通", {
-      description: "开通后，会员课程会自动进入成长空间。",
-    });
+    const opened = openCheckout(anchorCourse, "membership");
+    if (opened) {
+      toast("已打开会员开通", {
+        description: "开通后，会员课程会自动进入成长空间。",
+      });
+    }
   }, [allCourses, checkoutIntentHandled, isLoggedIn]);
 
   const closeCheckout = () => {
@@ -1014,6 +1034,17 @@ export default function MyCourses() {
         pendingCheckout?.order.status !== "pending_payment" ||
         pendingCouponClaimId !== checkoutCouponClaimId
       ) {
+        if (checkoutMode === "membership" && !isMembershipProductPurchasable) {
+          setCheckoutStatus("failed");
+          setCheckoutError(
+            membershipProductError ?? "当前会员商品或套餐已暂停，暂不能创建新订单。"
+          );
+          toast("会员暂不可购买", {
+            description: "已有待支付订单仍可继续完成，新订单需要等待套餐恢复。",
+          });
+          return;
+        }
+
         setCheckoutStatus("creating");
         const created = await createCheckoutOrder(
           checkoutCourse,

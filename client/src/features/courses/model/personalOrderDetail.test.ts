@@ -90,6 +90,24 @@ describe("personal order detail model", () => {
     ).toContain("会员权益已交付");
   });
 
+  it("explains pending membership orders keep their historical amount", () => {
+    expect(
+      createPersonalOrderServiceNotes({
+        ...paidOrder,
+        status: "pending_payment",
+        items: [
+          {
+            type: "membership",
+            targetId: "growth_membership_yearly",
+            title: "成长会员年卡",
+            unitPrice: 699,
+            quantity: 1,
+          },
+        ],
+      }).join(" ")
+    ).toContain("创建时的订单金额");
+  });
+
   it("explains that refunded course access has stopped", () => {
     expect(
       createPersonalOrderServiceNotes({
