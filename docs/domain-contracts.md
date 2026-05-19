@@ -4,25 +4,26 @@
 
 ## 当前模块
 
-| 文件                      | 责任                                                             |
-| ------------------------- | ---------------------------------------------------------------- |
-| `common.ts`               | ID、日期、分页、金额、API 响应和错误结构                         |
-| `course.ts`               | 课程、优惠、折扣、学习进度                                       |
-| `courseCatalog.ts`        | 课程目录筛选、搜索、排序、分页                                   |
-| `courseProduct.ts`        | 后台课程商品、价格、状态、审核、详情内容和列表查询               |
-| `courseAccess.ts`         | 课程购买权益、会员权益、访问判断                                 |
-| `courseLearningRecord.ts` | 课程学习进度、练习记录、完成快照和阶段证明预览准备               |
-| `user.ts`                 | 用户资料、角色、权限、登录来源、协议同意、登录请求和用户后台聚合 |
-| `userNotification.ts`     | 用户站内消息、售后进度通知、读取状态和隐私最小化摘要             |
-| `userPreference.ts`       | 用户偏好、账号收藏课程、账号券包、收藏/领取/使用来源和更新时间   |
-| `assessment.ts`           | 测评题目、答案、报告、推荐、风险等级                             |
-| `assessmentEngine.ts`     | 测评维度评分、风险分级、推荐路径生成                             |
-| `counseling.ts`           | 咨询师、擅长方向、时段、预约状态、预约请求与结果                 |
-| `growthProfile.ts`        | 成长档案聚合、摘要指标和用户成长时间线                           |
-| `order.ts`                | 可购买对象、订单、支付、订单后台和交易后台聚合契约               |
-| `finance.ts`              | 财务后台查询、汇总、导出、账期规则、手续费和结算预览             |
-| `risk.ts`                 | 风险事件、风险复核后台、SOP 模板、升级队列和审计日志             |
-| `auditCenter.ts`          | 统一审计中心只读聚合、导出、详情追踪、归档事件和隐私边界         |
+| 文件                         | 责任                                                             |
+| ---------------------------- | ---------------------------------------------------------------- |
+| `common.ts`                  | ID、日期、分页、金额、API 响应和错误结构                         |
+| `course.ts`                  | 课程、优惠、折扣、学习进度                                       |
+| `courseCatalog.ts`           | 课程目录筛选、搜索、排序、分页                                   |
+| `courseProduct.ts`           | 后台课程商品、价格、状态、审核、详情内容和列表查询               |
+| `courseAccess.ts`            | 课程购买权益、会员权益、访问判断                                 |
+| `courseMembershipProduct.ts` | 用户端会员商品/套餐、价格、权益、适用人群和开通入口契约          |
+| `courseLearningRecord.ts`    | 课程学习进度、练习记录、完成快照和阶段证明预览准备               |
+| `user.ts`                    | 用户资料、角色、权限、登录来源、协议同意、登录请求和用户后台聚合 |
+| `userNotification.ts`        | 用户站内消息、售后进度通知、读取状态和隐私最小化摘要             |
+| `userPreference.ts`          | 用户偏好、账号收藏课程、账号券包、收藏/领取/使用来源和更新时间   |
+| `assessment.ts`              | 测评题目、答案、报告、推荐、风险等级                             |
+| `assessmentEngine.ts`        | 测评维度评分、风险分级、推荐路径生成                             |
+| `counseling.ts`              | 咨询师、擅长方向、时段、预约状态、预约请求与结果                 |
+| `growthProfile.ts`           | 成长档案聚合、摘要指标和用户成长时间线                           |
+| `order.ts`                   | 可购买对象、订单、支付、订单后台和交易后台聚合契约               |
+| `finance.ts`                 | 财务后台查询、汇总、导出、账期规则、手续费和结算预览             |
+| `risk.ts`                    | 风险事件、风险复核后台、SOP 模板、升级队列和审计日志             |
+| `auditCenter.ts`             | 统一审计中心只读聚合、导出、详情追踪、归档事件和隐私边界         |
 
 ## 使用约定
 
@@ -49,6 +50,8 @@
 `CourseLearningRecordSchema` 是用户端课程学习记录同步契约，按 `userId + courseId` 保存章节进度、练习记录、课程完成快照和阶段证明预览。`CourseLearningProgressSyncRequestSchema`、`CourseLearningPracticeSyncRequestSchema` 与 `CourseLearningCompletionSubmitRequestSchema` 分别描述章节完成同步、章节练习保存和课程完成反馈提交；服务端必须校验登录态、课程已发布已审核、课程权益可学习、章节 ID 属于当前课程，才能写入记录。阶段证明当前只允许 `preview`/`pending_review`/`issued` 的准备字段，第一版只生成预览，不签发正式证书编号。
 
 `CourseCheckoutCreateRequestSchema` 是课程结算创建请求契约，除课程 ID 和结算模式外，可携带账号券包的 `couponClaimId`。服务端会读取 `UserPreferenceSchema` 校验该券已领取、未使用、未过期，并确认对应营销规则仍是当前课程可用的 `course_coupon`；金额仍由服务端课程定价与营销规则统一计算，前端不得自行改写应付金额。`OrderCouponApplicationSchema` 记录订单关联的券包 claim ID、marketing rule ID、预留/已使用状态、关联时间和使用时间；支付成功后课程 checkout service 会把订单券应用推进为 `used`，并同步把账号券包记录写入使用订单和使用时间。用户端结算抽屉可以展示未领取但适用的课程券并调用 `UserPreferenceCouponClaimRequestSchema` 完成领取；领取只更新账号券包和使用意图，订单金额与核销仍以服务端 checkout 为准。个人中心订单深链以 `orderId` 查询参数打开同一订单详情抽屉，详情只读取 `Order`、`couponApplication`、课程权益与营销规则名称来展示商品、金额、支付、用券、权益交付、时间线和售后说明。`OrderAfterSalesCreateRequestSchema`、`OrderAfterSalesRequestSchema`、`OrderAfterSalesSummarySchema`、`OrderAfterSalesListResultSchema` 与 `OrderAfterSalesMutationResultSchema` 是用户端售后申请契约，只允许登录用户对本人已支付或退款中订单提交售后诉求，记录申请类型、说明、联系方式、状态和创建时间；申请写入独立售后 Store 并追加保存，用户端提交不会直接推进 `refunding` 或 `refunded`。后台处理后，个人中心只展示售后状态、运营备注摘要、退款受理单号和退款完成摘要提示；课程订单退款完成由 `POST /api/payments/webhooks/simulated` 的 `refund.succeeded` 事件推进到 `refunded`，用户端不直接改写退款成功状态。
+
+`CourseMembershipProductSchema` 与 `CourseMembershipPlanSchema` 是用户端会员商品化的第一版共享契约，描述会员商品 ID、状态、首图、卖点、套餐价格、原价参考、有效期、覆盖权益、适合人群、服务保障、购买须知和后续后台配置预留字段。当前 `defaultCourseMembershipProduct` 承载“成长会员年卡”，`/membership` 独立会员页、个人中心会员卡、课程中心会员 CTA、成长空间会员入口和已退款会员订单重开入口都以该契约作为展示来源；课程上下文中的会员结算仍可保留“开通后可学本课”的解释。当前结算服务端仍复用 `CourseCheckoutCreateRequestSchema` 的 `membership` 模式，并通过 `findMembershipCheckoutAnchorCourse` 选择一门课程作为过渡锚点；下一步应扩展服务端按 `membershipPlanId` 创建会员订单，避免会员商品继续依赖具体课程 ID。
 
 课程 `refund.succeeded` 回调保存 `refunded` 订单时，会通过 `settleRefundedCourseAccessOrder` 结清权益：单课退款先保留退款完成订单事实，再按课程 ID 检查是否仍有其他 `paid/refunding` 同课订单；只有不存在其他有效同课订单时，才从 `ownedCourseIds` 移除该课程。`CourseMembershipSchema` 已新增 `sourceType`、`sourceOrderId`、`sourceActorId` 和 `sourceUpdatedAt`，会员 checkout 支付成功会写入 `checkout_order` 来源，后台人工开通、延期、到期和计划调整会写入 `admin_manual` 来源，旧的直接开通接口写入 `direct_activation` 来源。会员订单退款完成时，仅当当前会员来源仍匹配这笔退款订单且没有其他有效会员订单覆盖，才把会员降为 `expired`；如果会员已被后台人工调整、直接开通或由另一笔会员订单覆盖，则保留当前会员权益，避免退款误伤。`/admin/users` 用户详情只展示来源摘要、来源订单 ID 或操作者 ID、更新时间，不扩展手机号、咨询说明、测评答案或风险原文。用户端课程列表、课程详情和成长空间继续只依赖 `resolveCourseAccess` 计算可学习状态，已退款权益会回到购买/开通入口；个人中心已退款订单只展示退款完成、权益已停止或已按来源处理，并通过稳定的 `checkout=membership&intent=renew_membership` 入口打开可开通会员的结算链路，不再让用户回到列表后自行寻找入口。
 

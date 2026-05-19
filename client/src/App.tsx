@@ -21,6 +21,7 @@ import CourseProducts from "./pages/admin/CourseProducts";
 import FinanceManagement from "./pages/admin/FinanceManagement";
 import Home from "./pages/Home";
 import MarketingRules from "./pages/admin/MarketingRules";
+import Membership from "./pages/Membership";
 import MyCourses from "./pages/MyCourses";
 import OrderManagement from "./pages/admin/OrderManagement";
 import PaymentReconciliation from "./pages/PaymentReconciliation";
@@ -34,6 +35,7 @@ function Router() {
     <Switch>
       <Route path={"/"} component={Home} />
       <Route path={"/courses"} component={Courses} />
+      <Route path={"/membership"} component={Membership} />
       <Route path={"/courses/:courseId/learn"} component={CourseLearning} />
       <Route path={"/courses/:courseId"} component={CourseDetail} />
       <Route path={"/consulting"} component={Consulting} />

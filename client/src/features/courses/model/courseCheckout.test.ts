@@ -72,9 +72,21 @@ describe("course checkout summary", () => {
     expect(summary.productSubtitle).toContain(course.title);
     expect(summary.payableAmount).toBe(COURSE_MEMBERSHIP_CHECKOUT_PRICE);
     expect(summary.promotionItems.map(item => item.label)).toContain(
-      "会员年卡优惠"
+      "成长会员年卡优惠"
     );
-    expect(summary.deliveryItems.map(item => item.label)).toContain("会员课程");
+    expect(summary.deliveryItems.map(item => item.label)).toContain(
+      "会员课程可学"
+    );
+  });
+
+  it("can describe membership checkout as an independent product", () => {
+    const summary = createCourseCheckoutSummary(course, "membership", {
+      membershipContext: "standalone",
+    });
+
+    expect(summary.productTitle).toBe("成长会员年卡");
+    expect(summary.productSubtitle).not.toContain(course.title);
+    expect(summary.productSubtitle).toContain("持续学习心理课程");
   });
 
   it("formats checkout money without noisy decimals", () => {

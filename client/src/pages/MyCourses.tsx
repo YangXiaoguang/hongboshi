@@ -44,6 +44,7 @@ import {
   createLearningPlanWorkspace,
   createLearningArchiveWorkspace,
   createPendingCourseCheckoutPrompts,
+  COURSE_MEMBERSHIP_PAGE_PATH,
   findMembershipCheckoutAnchorCourse,
   findPendingCourseCheckoutOrder,
   getCourseAccessDescription,
@@ -1570,10 +1571,10 @@ export default function MyCourses() {
                   : "开通后可学习会员课程，收藏中的会员课会更容易转入学习计划。"}
               </p>
               <button
-                onClick={() => navigate("/courses")}
+                onClick={() => navigate(COURSE_MEMBERSHIP_PAGE_PATH)}
                 className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-full border border-[#D8CEC0] text-xs font-semibold text-[#4F5B54] transition hover:bg-[#F4EFE6]"
               >
-                {hasActiveMembership ? "查看会员课程" : "了解会员课程"}
+                {hasActiveMembership ? "查看会员权益" : "了解会员套餐"}
                 <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
               </button>
             </div>

@@ -1,5 +1,7 @@
 export const COURSE_MEMBERSHIP_REOPEN_INTENT = "renew_membership";
-export const COURSE_MEMBERSHIP_REOPEN_PATH = `/courses?checkout=membership&intent=${COURSE_MEMBERSHIP_REOPEN_INTENT}`;
+export const COURSE_MEMBERSHIP_PAGE_PATH = "/membership";
+export const COURSE_MEMBERSHIP_CHECKOUT_PATH = `${COURSE_MEMBERSHIP_PAGE_PATH}?checkout=membership`;
+export const COURSE_MEMBERSHIP_REOPEN_PATH = `${COURSE_MEMBERSHIP_CHECKOUT_PATH}&intent=${COURSE_MEMBERSHIP_REOPEN_INTENT}`;
 
 function toSearchParams(search: string | URLSearchParams) {
   if (search instanceof URLSearchParams) return search;

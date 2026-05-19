@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 const footerLinks = [
   { label: "咨询服务", href: "/consulting" },
   { label: "心理课程", href: "/courses" },
+  { label: "成长会员", href: "/membership" },
   { label: "成长测评", href: "/assessment" },
   { label: "关于我们", href: "/about" },
   { label: "个人中心", href: "/me" },

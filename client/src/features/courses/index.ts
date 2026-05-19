@@ -85,6 +85,8 @@ export {
   type CoursePendingCheckoutPrompt,
 } from "./model/coursePendingCheckout";
 export {
+  COURSE_MEMBERSHIP_CHECKOUT_PATH,
+  COURSE_MEMBERSHIP_PAGE_PATH,
   COURSE_MEMBERSHIP_REOPEN_INTENT,
   COURSE_MEMBERSHIP_REOPEN_PATH,
   getCourseMembershipCheckoutIntent,

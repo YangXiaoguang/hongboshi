@@ -20,6 +20,7 @@ import { canAccessAdmin as canAccessAdminShell } from "@/features/admin/adminNav
 const navItems = [
   { label: "首页", href: "/" },
   { label: "心理课程", href: "/courses" },
+  { label: "成长会员", href: "/membership" },
   { label: "咨询服务", href: "/consulting" },
   { label: "成长测评", href: "/assessment" },
   { label: "关于我们", href: "/about" },
@@ -51,6 +52,7 @@ export default function AppHeader() {
     if (label === "首页") return location === "/";
     if (label === "咨询服务") return location.startsWith("/consulting");
     if (label === "心理课程") return location.startsWith("/courses");
+    if (label === "成长会员") return location.startsWith("/membership");
     if (label === "成长测评") return location.startsWith("/assessment");
     if (label === "关于我们") return location.startsWith("/about");
     return false;
@@ -60,6 +62,7 @@ export default function AppHeader() {
     if (
       item.href === "/" ||
       item.href === "/courses" ||
+      item.href === "/membership" ||
       item.href === "/assessment" ||
       item.href === "/consulting" ||
       item.href === "/about"

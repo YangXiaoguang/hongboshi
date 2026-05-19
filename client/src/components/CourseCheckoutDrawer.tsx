@@ -49,6 +49,7 @@ interface CourseCheckoutDrawerProps {
   isPreferenceLoading?: boolean;
   isSyncing: boolean;
   preferenceError?: string;
+  productImageUrl?: string;
   selectedCouponClaimId?: string;
   selectedPaymentChannel: CourseCheckoutPaymentChannel;
   status: CourseCheckoutStatus;
@@ -77,6 +78,7 @@ export default function CourseCheckoutDrawer({
   isPreferenceLoading = false,
   isSyncing,
   preferenceError,
+  productImageUrl,
   selectedCouponClaimId,
   selectedPaymentChannel,
   status,
@@ -151,7 +153,11 @@ export default function CourseCheckoutDrawer({
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#E7DED0] bg-[#FFFDF8]/95 px-5 py-4 backdrop-blur">
               <div>
                 <p className="text-xs font-semibold text-[#6F8F83]">
-                  {status === "success" ? "支付结果" : "课程订单"}
+                  {status === "success"
+                    ? "支付结果"
+                    : summary.mode === "membership"
+                      ? "会员订单"
+                      : "课程订单"}
                 </p>
                 <h2 className="mt-1 text-xl font-semibold">
                   {status === "success" ? "权益已准备好" : "订单确认"}
@@ -172,7 +178,7 @@ export default function CourseCheckoutDrawer({
                   <h3 className="mt-5 text-2xl font-semibold">购买已确认</h3>
                   <p className="mt-3 text-sm leading-7 text-white/68">
                     {summary.mode === "membership"
-                      ? "会员权益已经写入账户，本课和更多会员课程可以进入学习。"
+                      ? "会员权益已经写入账户，会员课程可以进入学习。"
                       : "课程权益已经写入账户，可以立即加入学习计划。"}
                   </p>
                   {checkoutOrder && (
@@ -182,7 +188,8 @@ export default function CourseCheckoutDrawer({
                   )}
                   {orderCoupon && (
                     <p className="mt-3 rounded-[16px] bg-white/10 px-3 py-2 text-xs leading-5 text-[#DDE8D9]">
-                      本单使用 {orderCoupon.label}，支付成功后已写入账号券包使用记录。
+                      本单使用 {orderCoupon.label}
+                      ，支付成功后已写入账号券包使用记录。
                     </p>
                   )}
                 </div>
@@ -212,7 +219,9 @@ export default function CourseCheckoutDrawer({
                     onClick={onStartLearning}
                     className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
                   >
-                    开始学习
+                    {summary.mode === "membership"
+                      ? "查看会员课程"
+                      : "开始学习"}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </button>
                   <button
@@ -227,7 +236,7 @@ export default function CourseCheckoutDrawer({
               <div className="px-5 py-6">
                 <div className="flex gap-4 rounded-[24px] bg-[#F4EFE6] p-4">
                   <img
-                    src={course.coverUrl}
+                    src={productImageUrl ?? course.coverUrl}
                     alt=""
                     className="h-24 w-28 shrink-0 rounded-[18px] object-cover"
                   />
@@ -364,7 +373,8 @@ export default function CourseCheckoutDrawer({
 
                     {claimableCouponCount > 0 && (
                       <p className="mt-3 text-xs leading-5 text-[#8A8176]">
-                        有 {claimableCouponCount} 张适用课程券可在本页直接领取，领取成功后会自动用于本单。
+                        有 {claimableCouponCount}{" "}
+                        张适用课程券可在本页直接领取，领取成功后会自动用于本单。
                       </p>
                     )}
 
@@ -627,9 +637,9 @@ function CheckoutCouponOptionButton({
           ? "border-[#6F8F83] bg-[#EEF4EA]"
           : isClaimable
             ? "border-[#E9D5BF] bg-[#FFF7EC] hover:border-[#CDAA72]"
-          : disabled
-            ? "border-[#E8DED0] bg-[#F9F5EE] opacity-72"
-            : "border-[#E8DED0] bg-white hover:border-[#AFC2AB]"
+            : disabled
+              ? "border-[#E8DED0] bg-[#F9F5EE] opacity-72"
+              : "border-[#E8DED0] bg-white hover:border-[#AFC2AB]"
       }`}
     >
       <span className="flex items-start justify-between gap-3">

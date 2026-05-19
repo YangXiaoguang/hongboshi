@@ -53,6 +53,7 @@ import {
   useCourseCatalog,
   useCourseEngagement,
   useCourseMarketingRules,
+  COURSE_MEMBERSHIP_PAGE_PATH,
   COURSE_MEMBERSHIP_REOPEN_PATH,
   createPersonalOrderAmountRows,
   createPersonalOrderServiceNotes,
@@ -1039,10 +1040,10 @@ export default function PersonalCenter() {
                         : "会员课程、阶段档案和后续权益会集中沉淀在当前账号。"}
                     </p>
                     <button
-                      onClick={() => navigate("/courses")}
+                      onClick={() => navigate(COURSE_MEMBERSHIP_PAGE_PATH)}
                       className="mt-5 inline-flex h-10 items-center justify-center rounded-full border border-[#D8CDBC] px-4 text-sm font-semibold text-[#41675A] transition hover:bg-[#F2F7EE]"
                     >
-                      查看会员课程
+                      {hasActiveMembership ? "查看会员权益" : "了解会员套餐"}
                     </button>
                   </div>
                 </section>

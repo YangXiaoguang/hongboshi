@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`UX-W 会员来源可视化与重新开通直达体验`
-- 当前状态：`UX-W 会员来源可视化与重新开通直达体验` 已完成，后台用户详情可解释当前会员来源，个人中心已退款会员订单会进入稳定的会员重开 intent，课程列表可直接打开会员结算，成长空间会在登录后承接同一 intent。
-- 本轮完成后下一步：执行 `UX-X 会员独立商品化与套餐开通入口`
+- 当前阶段：`UX-X 会员独立商品化与套餐开通入口`
+- 当前状态：`UX-X 会员独立商品化与套餐开通入口` 已完成，成长会员已有共享商品/套餐契约、独立 `/membership` 商品页、独立开通入口和会员结算抽屉展示；个人中心、课程中心、成长空间、页头页脚与已退款会员订单重开链路都可进入会员商品页。
+- 本轮完成后下一步：执行 `UX-Y 会员结算服务端去课程锚点与会员套餐订单化`
 
 ## 已完成关键能力
 
@@ -56,6 +56,7 @@
 - 完成退款完成后的课程权益回收与用户端访问边界：课程 `refunded` 订单会在没有其他有效已支付同课订单时移除对应 `ownedCourseIds`，课程列表、课程详情和成长空间随权益状态回到购买入口，个人中心订单详情显示权益已停止并提供重新购买入口。
 - 完成会员退款权益来源字段与退款后会员边界：`CourseMembership` 新增 `sourceType/sourceOrderId/sourceActorId/sourceUpdatedAt`，会员 checkout 写入订单来源，后台人工会员动作写入人工来源，会员退款只回收匹配当前订单来源且无其他有效会员订单覆盖的会员权益。
 - 完成会员来源可视化与重新开通直达体验：`/admin/users` 用户详情展示会员来源摘要、来源订单/操作者和更新时间；个人中心已退款会员订单进入 `checkout=membership&intent=renew_membership`，课程列表自动打开会员结算，成长空间登录后承接同一重开意图。
+- 完成会员独立商品化与套餐开通入口：新增 `CourseMembershipProductSchema`、`CourseMembershipPlanSchema` 和默认成长会员年卡，新增 `/membership` 会员商品页，课程中心、个人中心、成长空间、页头页脚和已退款会员订单重开链路均可进入独立会员商品页或会员结算；结算抽屉可在独立会员上下文展示会员订单、会员首图、套餐权益和购买须知。
 - 完成课程订单状态与支付结果服务端化：新增课程 checkout 共享契约、订单扩展字段、服务端创建/读取/支付/取消 API 和前端 repository/hook，课程权益只在服务端支付成功后交付，重复支付保持幂等。
 - 课程详情页购买抽屉已接入订单状态，支持待创建、待支付、支付中、支付成功、失败重试和取消待支付订单，并展示订单号、支付保留时间、支付渠道和权益交付摘要。
 - TRX-C 浏览器验证已通过：在 `/courses/16` 完成登录、创建订单、模拟支付成功、权益到账和“开始学习”入口切换；`pnpm run ci` 已通过 87 个测试文件 / 411 个测试和生产构建。
@@ -517,41 +518,41 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：UX-W 会员来源可视化与重新开通直达体验
+### 最近完成阶段：UX-X 会员独立商品化与套餐开通入口
 
-UX-W 已交付：
+UX-X 已交付：
 
-- `client/src/features/users/model/userMembershipSource.ts`：新增会员来源展示模型，把 `checkout_order`、`admin_manual`、`direct_activation` 转成后台可读摘要，并保持隐私最小化。
-- `client/src/pages/admin/UserMembers.tsx`：用户会员详情展示“权益来源”、来源订单 ID/操作者 ID 和更新时间，运营可快速判断会员来自订单、人工调整还是直接开通。
-- `client/src/features/courses/model/courseMembershipIntent.ts`：新增稳定的会员重开入口 `COURSE_MEMBERSHIP_REOPEN_PATH`，统一使用 `/courses?checkout=membership&intent=renew_membership`。
-- `client/src/features/courses/model/coursePendingCheckout.ts`：导出 `findMembershipCheckoutAnchorCourse`，优先选择未解锁的会员课程作为会员结算锚点，无 VIP 课程时回退到付费课程。
-- `client/src/pages/PersonalCenter.tsx`：已退款会员订单列表和订单详情的“重新开通/重新开通会员”不再跳普通课程列表，而是进入会员重开 intent。
-- `client/src/pages/Courses.tsx`：课程中心识别会员重开 intent，自动打开会员结算抽屉，并清理 URL，减少用户再次寻找开通入口。
-- `client/src/pages/MyCourses.tsx`：成长空间识别同一会员重开 intent，但在未登录时保留登录守卫，登录后再承接会员结算。
-- `docs/domain-contracts.md` 与 `docs/product-engineering-roadmap.md` 已同步会员来源可视化和会员重开 intent 边界。
+- `shared/domain/courseMembershipProduct.ts`：新增会员商品/套餐共享契约，描述套餐 ID、商品状态、首图、价格、原价参考、有效期、覆盖权益、适合人群、服务保障、购买须知和后续后台配置预留字段。
+- `client/src/pages/Membership.tsx` 与 `/membership` 路由：新增独立会员商品页，首屏展示成长会员价值、价格、有效期、会员课程数量、套餐权益、保障说明、购买须知和会员课程入口。
+- `client/src/components/CourseCheckoutDrawer.tsx`：支持独立会员上下文，会员订单使用会员首图、会员订单标题、会员权益摘要和独立成功态文案。
+- `client/src/features/courses/model/courseCheckout.ts`：会员结算摘要可区分课程上下文和独立会员上下文，课程详情仍能解释“开通后可学本课”，独立会员页展示会员商品描述。
+- `client/src/features/courses/model/courseMembershipIntent.ts`：会员开通页稳定路径调整为 `/membership`，已退款会员订单重开入口改为 `/membership?checkout=membership&intent=renew_membership`。
+- `client/src/components/AppHeader.tsx`、`client/src/components/AppFooter.tsx`、`client/src/pages/Courses.tsx`、`client/src/pages/PersonalCenter.tsx` 和 `client/src/pages/MyCourses.tsx`：页头页脚、课程中心、个人中心会员卡、已退款会员订单和成长空间会员入口都可进入独立会员商品页或会员结算。
+- `docs/domain-contracts.md` 与 `docs/product-engineering-roadmap.md` 已同步会员商品契约、独立会员页和当前仍复用课程 checkout 锚点的过渡边界。
 
-UX-W 验收结果：
+UX-X 验收结果：
 
-- 定向测试已通过：`client/src/features/users/model/userMembershipSource.test.ts`、`client/src/features/courses/model/courseMembershipIntent.test.ts`、`client/src/features/courses/model/coursePendingCheckout.test.ts` 和 `client/src/features/users/api/httpAdminUserRepository.test.ts` 覆盖后台来源展示模型、会员重开 URL、会员结算锚点和后台 API 来源字段解析。
+- 定向测试已通过：`shared/domain/courseMembershipProduct.test.ts`、`client/src/features/courses/model/courseCheckout.test.ts`、`client/src/features/courses/model/courseMembershipIntent.test.ts` 和 `client/src/features/courses/model/coursePendingCheckout.test.ts` 覆盖会员商品契约、独立会员摘要、会员重开 URL 和会员结算锚点。
 - `pnpm exec tsc --noEmit --pretty false` 已通过。
-- `pnpm run ci` 已通过：类型检查、113 个测试文件 / 530 个测试和生产构建均完成；Vite 仍保留既有大 chunk 提醒。
-- 浏览器已验证 `/courses?checkout=membership&intent=renew_membership`：会自动回到 `/courses` 并打开“成长会员年卡”结算抽屉，页面控制台无应用错误。
-- 浏览器已验证 `/me/courses?checkout=membership&intent=renew_membership` 与 `/admin/users` 的未登录守卫：成长空间和后台用户页均正常展示登录入口，页面控制台无应用错误；后台来源正常态由模型、仓储解析和服务端聚合测试覆盖。
+- `pnpm run ci` 已通过：类型检查、114 个测试文件 / 533 个测试和生产构建均完成；Vite 仍保留既有大 chunk 提醒。
+- 浏览器已验证 `/membership`：独立会员商品页展示“成长会员”“立即开通会员”“成长会员年卡”和“购买须知”，页面控制台无本地应用错误。
+- 浏览器已验证 `/membership?checkout=membership&intent=renew_membership`：URL 自动回到 `/membership`，并打开“成长会员年卡”会员订单抽屉，页面控制台无本地应用错误。
+- 浏览器已验证 `/courses`：课程中心可看到“成长会员”导航和“开通会员”入口，页面控制台无本地应用错误。
 
-### 用户端待续：UX-X 会员独立商品化与套餐开通入口
+### 用户端待续：UX-Y 会员结算服务端去课程锚点与会员套餐订单化
 
 业务目标：
 
-UX-W 仍然需要用一门会员课程作为结算锚点。下一步应把“成长会员”从课程附属购买升级为独立会员商品，让用户可以从个人中心、课程页、成长空间和后续营销位直接购买会员套餐，同时保留课程上下文里的“开通后可学本课”转化解释。
+UX-X 已让用户从独立会员商品页购买成长会员，但订单创建仍通过一门课程作为过渡锚点。下一步应把会员订单从课程 ID 依赖中拆出来，让前端传会员套餐 ID，服务端按会员商品和套餐契约创建、支付、交付、退款和召回会员订单。
 
 建议实施范围：
 
-- 建立会员商品/套餐的共享契约，描述套餐 ID、名称、价格、原价、权益范围、有效期、适合人群、售后说明和状态，为后续后台会员商品管理预留字段。
-- 新增用户端会员商品页或会员开通页，首屏直接展示套餐价值、适用课程、权益边界、价格、优惠和购买须知。
-- 让个人中心会员卡、已退款会员订单、课程中心会员 CTA、课程详情会员 CTA 和成长空间会员 CTA 都可以进入独立会员开通页或独立会员结算，不再必须依赖具体课程锚点。
-- 保持服务端 checkout 仍是会员权益最终写入点，前端只传会员套餐意图，不直接修改 `CourseMembership`。
-- 补充会员商品模型、会员开通入口、个人中心/课程页跳转和结算兼容测试。
-- 更新测试、领域契约、路线图和本执行状态。
+- 扩展 `CourseCheckoutCreateRequestSchema`、服务端 checkout API 和前端 repository，使 `membership` checkout 可以传 `membershipPlanId` 或 `membershipProductId`，不再要求 `courseId`。
+- 会员订单 item、业务快照、支付回调、会员来源字段和退款结清逻辑直接记录会员商品/套餐 ID，仍由服务端 service 决策权益写入与回收。
+- `/membership` 的结算创建改为按会员套餐创建订单，移除 `findMembershipCheckoutAnchorCourse` 在独立会员页的使用；课程详情里的会员 CTA 只在展示层保留课程上下文解释。
+- 待支付召回、个人中心订单详情、后台订单台、交易台和财务台识别会员套餐订单，不再把会员订单展示为某一门课程的附属购买。
+- 补充服务端 API、支付回调、退款结清、个人中心订单详情、后台订单/交易/财务投影和前端会员页结算测试。
+- 更新领域契约、路线图和本执行状态，明确会员商品后台配置化仍是后续独立任务包。
 
 ## 执行不变量
 
@@ -572,4 +573,4 @@ UX-W 仍然需要用一门会员课程作为结算锚点。下一步应把“成
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-X 会员独立商品化与套餐开通入口，正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-Y 会员结算服务端去课程锚点与会员套餐订单化，正式证书签发审核流需另立任务包。

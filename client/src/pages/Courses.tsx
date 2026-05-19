@@ -26,6 +26,7 @@ import {
   createCourseCheckoutCouponOptions,
   createCourseCheckoutSummary,
   createPendingCourseCheckoutPrompts,
+  COURSE_MEMBERSHIP_PAGE_PATH,
   findPendingCourseCheckoutOrder,
   findMembershipCheckoutAnchorCourse,
   getCourseDetailPrimaryActionCopy,
@@ -669,6 +670,12 @@ export default function Courses() {
                   className="inline-flex h-12 items-center justify-center rounded-full border border-white/35 px-6 text-sm font-semibold text-white transition hover:bg-white/10"
                 >
                   先做测评推荐课程
+                </button>
+                <button
+                  onClick={() => navigate(COURSE_MEMBERSHIP_PAGE_PATH)}
+                  className="inline-flex h-12 items-center justify-center rounded-full border border-white/35 px-6 text-sm font-semibold text-white transition hover:bg-white/10"
+                >
+                  开通会员
                 </button>
               </div>
             </motion.div>

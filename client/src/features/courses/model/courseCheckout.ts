@@ -2,6 +2,8 @@ import {
   COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
   COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
   calculateMembershipPricing,
+  defaultCourseMembershipProduct,
+  getPrimaryCourseMembershipPlan,
   type Course,
   type CourseMarketingRule,
   type PaymentChannel,
@@ -49,6 +51,7 @@ export interface CoursePaymentMethod {
 
 interface CreateCourseCheckoutSummaryOptions {
   marketingRules?: CourseMarketingRule[];
+  membershipContext?: "course" | "standalone";
 }
 
 export const COURSE_MEMBERSHIP_CHECKOUT_PRICE =
@@ -96,10 +99,11 @@ function createCoursePromotionItems(
 
 function createMembershipPromotionItems(): CourseCheckoutPromotionItem[] {
   const pricing = calculateMembershipPricing();
+  const plan = getPrimaryCourseMembershipPlan();
 
   return [
     {
-      label: "会员年卡优惠",
+      label: `${plan.title}优惠`,
       value: `-${formatCheckoutMoney(pricing.discountAmount)}`,
       description: "成长会员当前活动价，支付后写入会员权益。",
       tone: "member",
@@ -133,11 +137,15 @@ export function createCourseCheckoutSummary(
 ): CourseCheckoutSummary {
   if (mode === "membership") {
     const pricing = calculateMembershipPricing();
+    const plan = getPrimaryCourseMembershipPlan();
+    const standalone = options.membershipContext === "standalone";
 
     return {
       mode,
-      productTitle: "成长会员年卡",
-      productSubtitle: `含本课学习权益：${course.title}`,
+      productTitle: plan.title,
+      productSubtitle: standalone
+        ? defaultCourseMembershipProduct.description
+        : `含本课学习权益：${course.title}`,
       listPrice: pricing.listPrice,
       originalPrice: pricing.originalPrice,
       discountAmount: pricing.discountAmount,
@@ -145,20 +153,15 @@ export function createCourseCheckoutSummary(
       savingsAmount: pricing.savingsAmount,
       accessLabel: "开通后会员课可直接学习",
       promotionItems: createMembershipPromotionItems(),
-      deliveryItems: [
-        { label: "会员课程", value: "会员内容有效期内可学" },
-        { label: "学习档案", value: "统一沉淀课程记录" },
-        { label: "成长空间", value: "集中管理课程权益" },
-      ],
-      protectionItems: [
-        { label: "会员期", value: "365 天" },
-        { label: "隐私", value: "学习记录仅自己可见" },
-        { label: "支持", value: "可衔接测评与咨询" },
-      ],
-      notices: [
-        "当前为开发期支付确认，确认后会写入会员权益。",
-        "正式支付渠道接入后，权益将以支付成功回调为准。",
-      ],
+      deliveryItems: plan.benefits.map(benefit => ({
+        label: benefit.title,
+        value: benefit.description,
+      })),
+      protectionItems: plan.protections.map(protection => ({
+        label: protection.title,
+        value: protection.description,
+      })),
+      notices: plan.notices,
     };
   }
 

@@ -9,7 +9,7 @@ import {
 describe("course membership checkout intent", () => {
   it("uses a stable path for refunded membership re-open flows", () => {
     expect(COURSE_MEMBERSHIP_REOPEN_PATH).toBe(
-      "/courses?checkout=membership&intent=renew_membership"
+      "/membership?checkout=membership&intent=renew_membership"
     );
     expect(COURSE_MEMBERSHIP_REOPEN_INTENT).toBe("renew_membership");
   });
