@@ -20,6 +20,7 @@ export {
   normalizeCourseAccessState,
   payCourseCheckoutOrder,
   resolveCourseAccess,
+  settleRefundedCourseAccessOrder,
   type CourseAccessResult,
   type CourseAccessState,
   type CourseCheckoutCouponApplicationInput,

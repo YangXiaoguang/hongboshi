@@ -312,6 +312,7 @@ describe("payment webhook api payloads", () => {
         id: courseRefundingOrder.id,
         status: "refunded",
       });
+      expect(access.data.ownedCourseIds).toEqual([]);
     }
 
     const completedRequest = await afterSalesStore.getById(
@@ -333,9 +334,8 @@ describe("payment webhook api payloads", () => {
       after: { status: "resolved" },
     });
 
-    const notifications = await notificationStore.listByUserId(
-      courseRefundUserId
-    );
+    const notifications =
+      await notificationStore.listByUserId(courseRefundUserId);
     expect(notifications[0]).toMatchObject({
       type: "refund_completed",
       title: "退款已完成",

@@ -26,7 +26,7 @@ import {
   findCourseAccessOrder,
   isCourseMarketingRuleActiveAt,
   payCourseCheckoutOrder,
-  upsertCourseAccessOrder,
+  settleRefundedCourseAccessOrder,
   useUserCouponClaim,
   type Course,
   type CourseAccessState,
@@ -372,7 +372,7 @@ export async function processCourseAccessRefundWebhookEvent(
   try {
     await saveCourseAccessState(
       source.userId,
-      upsertCourseAccessOrder(source.state, webhookResult.order)
+      settleRefundedCourseAccessOrder(source.state, webhookResult.order)
     );
 
     return {

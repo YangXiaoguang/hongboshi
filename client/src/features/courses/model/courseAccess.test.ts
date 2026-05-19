@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { Course } from "@shared/domain";
+import type { Course, Order } from "@shared/domain";
 import {
   activateCourseMembership,
   cancelCourseCheckoutOrder,
   createEmptyCourseAccessState,
   createCourseCheckoutOrder,
+  createCourseCheckoutOrderResult,
   findPendingCourseCheckoutOrder,
   grantPurchasedCourseAccess,
   hasActiveCourseMembership,
   payCourseCheckoutOrder,
   resolveCourseAccess,
+  settleRefundedCourseAccessOrder,
 } from "./courseAccess";
 
 const baseCourse: Course = {
@@ -25,6 +27,28 @@ const baseCourse: Course = {
   isFree: false,
   isVip: false,
   createdAt: "2026-02-03",
+};
+
+const refundedCourseOrder: Order = {
+  id: "order_course_11_refunded",
+  userId: "u_10001",
+  status: "refunded",
+  items: [
+    {
+      type: "course",
+      targetId: "11",
+      title: "个人成长心理学",
+      unitPrice: 399,
+      quantity: 1,
+    },
+  ],
+  subtotal: 399,
+  discountAmount: 0,
+  payableAmount: 399,
+  createdAt: "2026-05-09T10:00:00.000Z",
+  paidAt: "2026-05-09T10:02:00.000Z",
+  entitlementDeliveredAt: "2026-05-09T10:02:00.000Z",
+  paymentChannel: "wechat_pay",
 };
 
 describe("course access model", () => {
@@ -220,5 +244,100 @@ describe("course access model", () => {
         "2026-05-09T10:00:00.000Z"
       )
     ).toBe(false);
+  });
+
+  it("revokes course ownership after a refunded course order settles", () => {
+    const state = settleRefundedCourseAccessOrder(
+      {
+        ownedCourseIds: [11],
+        membership: { status: "none" },
+        orders: [{ ...refundedCourseOrder, status: "refunding" }],
+      },
+      refundedCourseOrder
+    );
+
+    expect(state.orders[0]).toMatchObject({
+      id: refundedCourseOrder.id,
+      status: "refunded",
+    });
+    expect(state.ownedCourseIds).toEqual([]);
+    expect(resolveCourseAccess(state, baseCourse).status).toBe(
+      "requires_purchase"
+    );
+  });
+
+  it("keeps ownership when another effective paid order exists for the same course", () => {
+    const otherPaidOrder: Order = {
+      ...refundedCourseOrder,
+      id: "order_course_11_second_paid",
+      status: "paid",
+      paidAt: "2026-05-10T10:02:00.000Z",
+    };
+
+    const state = settleRefundedCourseAccessOrder(
+      {
+        ownedCourseIds: [11],
+        membership: { status: "none" },
+        orders: [otherPaidOrder, refundedCourseOrder],
+      },
+      refundedCourseOrder
+    );
+
+    expect(state.ownedCourseIds).toEqual([11]);
+    expect(resolveCourseAccess(state, baseCourse).status).toBe("owned");
+  });
+
+  it("does not revoke membership from refunded membership orders yet", () => {
+    const refundedMembershipOrder: Order = {
+      ...refundedCourseOrder,
+      id: "order_membership_refunded",
+      items: [
+        {
+          type: "membership",
+          targetId: "course_membership_yearly",
+          title: "成长会员",
+          unitPrice: 999,
+          quantity: 1,
+        },
+      ],
+      subtotal: 999,
+      payableAmount: 499,
+    };
+
+    const state = settleRefundedCourseAccessOrder(
+      {
+        ownedCourseIds: [],
+        membership: {
+          status: "active",
+          planName: "成长会员",
+          activatedAt: "2026-05-09T10:00:00.000Z",
+          expiresAt: "2027-05-09T10:00:00.000Z",
+        },
+        orders: [refundedMembershipOrder],
+      },
+      refundedMembershipOrder
+    );
+
+    expect(state.membership.status).toBe("active");
+    expect(state.orders[0]).toMatchObject({
+      id: refundedMembershipOrder.id,
+      status: "refunded",
+    });
+  });
+
+  it("describes refunded checkout entitlement as stopped", () => {
+    const result = createCourseCheckoutOrderResult({
+      state: {
+        ownedCourseIds: [],
+        membership: { status: "none" },
+        orders: [refundedCourseOrder],
+      },
+      order: refundedCourseOrder,
+    });
+
+    expect(result.entitlement).toMatchObject({
+      status: "not_delivered",
+      description: "订单已退款，课程权益已停止；如需继续学习可重新购买。",
+    });
   });
 });

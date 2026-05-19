@@ -78,7 +78,9 @@ function initialTabFromUrl(): PersonalTab {
 
 function initialOrderIdFromUrl(): string | undefined {
   if (typeof window === "undefined") return undefined;
-  return new URLSearchParams(window.location.search).get("orderId") ?? undefined;
+  return (
+    new URLSearchParams(window.location.search).get("orderId") ?? undefined
+  );
 }
 
 function orderElementId(orderId: string) {
@@ -1056,6 +1058,8 @@ export default function PersonalCenter() {
                       const firstItem = order.items[0];
                       const title = firstItem?.title ?? "订单商品";
                       const canPay = order.status === "pending_payment";
+                      const canRebuyCourse =
+                        order.status === "refunded" && Boolean(course);
                       return (
                         <div
                           id={orderElementId(order.id)}
@@ -1098,7 +1102,11 @@ export default function PersonalCenter() {
                               onClick={() => {
                                 if (course) {
                                   navigate(
-                                    `/courses/${course.id}${canPay ? "?checkout=course" : ""}`
+                                    `/courses/${course.id}${
+                                      canPay || canRebuyCourse
+                                        ? "?checkout=course"
+                                        : ""
+                                    }`
                                   );
                                   return;
                                 }
@@ -1106,7 +1114,11 @@ export default function PersonalCenter() {
                               }}
                               className="inline-flex h-9 items-center justify-center rounded-full border border-[#D8CDBC] px-3 text-xs font-semibold text-[#41675A] transition hover:bg-[#F2F7EE]"
                             >
-                              {canPay ? "继续支付" : "查看课程"}
+                              {canPay
+                                ? "继续支付"
+                                : canRebuyCourse
+                                  ? "重新购买"
+                                  : "查看课程"}
                             </button>
                           </div>
                         </div>
@@ -1213,9 +1225,7 @@ export default function PersonalCenter() {
                         key={notification.id}
                         onClick={() => openNotificationOrder(notification)}
                         className={`grid w-full gap-4 px-5 py-5 text-left transition hover:bg-[#F8F3EA] md:grid-cols-[minmax(0,1fr)_132px] ${
-                          notification.status === "unread"
-                            ? "bg-[#FFF9F0]"
-                            : ""
+                          notification.status === "unread" ? "bg-[#FFF9F0]" : ""
                         }`}
                       >
                         <div className="min-w-0">
@@ -1362,7 +1372,9 @@ export default function PersonalCenter() {
                         "claimable") as UserCouponDisplayStatus;
                       const isClaiming = claimingRuleId === rule.id;
                       const usedOrder = claim?.usedOrderId
-                        ? recentOrders.find(order => order.id === claim.usedOrderId)
+                        ? recentOrders.find(
+                            order => order.id === claim.usedOrderId
+                          )
                         : undefined;
                       return (
                         <div
@@ -1506,6 +1518,7 @@ export default function PersonalCenter() {
         onCancelOrder={handleCancelOrderFromDetail}
         onClose={closeOrderDetail}
         onContinuePayment={order => navigateToOrderCourse(order, true)}
+        onRebuyCourse={order => navigateToOrderCourse(order, true)}
         onSubmitAfterSales={handleSubmitAfterSalesRequest}
         onViewCourse={order => navigateToOrderCourse(order)}
         onViewWorkspace={() => {
@@ -1532,6 +1545,7 @@ function PersonalOrderDetailDrawer({
   onCancelOrder,
   onClose,
   onContinuePayment,
+  onRebuyCourse,
   onSubmitAfterSales,
   onViewCourse,
   onViewWorkspace,
@@ -1548,6 +1562,7 @@ function PersonalOrderDetailDrawer({
   onCancelOrder: (order: Order) => void;
   onClose: () => void;
   onContinuePayment: (order: Order) => void;
+  onRebuyCourse: (order: Order) => void;
   onSubmitAfterSales: (
     order: Order,
     request: OrderAfterSalesCreateRequest
@@ -1565,9 +1580,8 @@ function PersonalOrderDetailDrawer({
   const firstItem = order?.items[0];
   const canPay = order?.status === "pending_payment";
   const canViewCourse =
-    order?.status === "paid" ||
-    order?.status === "refunding" ||
-    order?.status === "refunded";
+    order?.status === "paid" || order?.status === "refunding";
+  const canRebuyCourse = order?.status === "refunded";
   const canSubmitAfterSales =
     order?.status === "paid" || order?.status === "refunding";
   const activeAfterSales = afterSales?.activeRequest;
@@ -1602,9 +1616,7 @@ function PersonalOrderDetailDrawer({
           >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#E7DED0] bg-[#FFFDF8]/95 px-5 py-4 backdrop-blur">
               <div>
-                <p className="text-xs font-semibold text-[#6F8F83]">
-                  订单详情
-                </p>
+                <p className="text-xs font-semibold text-[#6F8F83]">订单详情</p>
                 <h2 className="mt-1 text-xl font-semibold">
                   {orderStatusCopy[order.status]}
                 </h2>
@@ -1707,11 +1719,13 @@ function PersonalOrderDetailDrawer({
                   <p>
                     交付状态：
                     <span className="font-semibold text-[#243B35]">
-                      {order.entitlementDeliveredAt
-                        ? `已交付 · ${formatDate(order.entitlementDeliveredAt)}`
-                        : order.status === "pending_payment"
-                          ? "待支付后交付"
-                          : "未交付"}
+                      {order.status === "refunded"
+                        ? "已退款，权益已停止"
+                        : order.entitlementDeliveredAt
+                          ? `已交付 · ${formatDate(order.entitlementDeliveredAt)}`
+                          : order.status === "pending_payment"
+                            ? "待支付后交付"
+                            : "未交付"}
                     </span>
                   </p>
                 </div>
@@ -1878,14 +1892,18 @@ function PersonalOrderDetailDrawer({
                     />
                     <input
                       value={afterSalesContact}
-                      onChange={event => setAfterSalesContact(event.target.value)}
+                      onChange={event =>
+                        setAfterSalesContact(event.target.value)
+                      }
                       maxLength={80}
                       placeholder="手机号或邮箱"
                       className="h-11 w-full rounded-[16px] border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition placeholder:text-[#A69D91] focus:border-[#6F8F83]"
                     />
                     <button
                       type="submit"
-                      disabled={!isAfterSalesFormReady || isAfterSalesSubmitting}
+                      disabled={
+                        !isAfterSalesFormReady || isAfterSalesSubmitting
+                      }
                       className="inline-flex h-11 w-full items-center justify-center rounded-full bg-[#A65F48] text-sm font-semibold text-white transition hover:bg-[#8F4F3C] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isAfterSalesSubmitting && (
@@ -1930,6 +1948,15 @@ function PersonalOrderDetailDrawer({
                     className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
                   >
                     查看课程
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </button>
+                )}
+                {canRebuyCourse && course && (
+                  <button
+                    onClick={() => onRebuyCourse(order)}
+                    className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
+                  >
+                    重新购买
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </button>
                 )}

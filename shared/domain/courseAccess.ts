@@ -237,6 +237,28 @@ function entitlementForOrder(
     };
   }
 
+  if (order.status === "refunded") {
+    return {
+      status: "not_delivered",
+      title,
+      description:
+        mode === "membership"
+          ? "订单已退款，会员权益以后续权益来源记录为准。"
+          : "订单已退款，课程权益已停止；如需继续学习可重新购买。",
+    };
+  }
+
+  if (order.status === "refunding") {
+    return {
+      status: "pending",
+      title,
+      description:
+        mode === "membership"
+          ? "退款处理中，会员权益会根据最终退款结果调整。"
+          : "退款处理中，课程权益会根据最终退款结果调整。",
+    };
+  }
+
   return {
     status: "pending",
     title,
@@ -563,6 +585,63 @@ export function upsertCourseAccessOrder(
       parsedOrder,
       ...normalized.orders.filter(item => item.id !== parsedOrder.id),
     ],
+  });
+}
+
+function courseIdFromCourseOrder(order: Order): number | undefined {
+  const courseItem = order.items.find(item => item.type === "course");
+  if (!courseItem) return undefined;
+
+  const courseId = Number(courseItem.targetId);
+  return Number.isInteger(courseId) && courseId > 0 ? courseId : undefined;
+}
+
+function hasEffectiveSameCourseOrder(
+  state: CourseAccessState,
+  courseId: number,
+  excludedOrderId: string
+) {
+  return state.orders.some(order => {
+    if (order.id === excludedOrderId) return false;
+    if (!["paid", "refunding"].includes(order.status)) return false;
+
+    return order.items.some(
+      item => item.type === "course" && Number(item.targetId) === courseId
+    );
+  });
+}
+
+export function settleRefundedCourseAccessOrder(
+  state: CourseAccessState,
+  refundedOrder: Order
+): CourseAccessState {
+  const normalized = normalizeCourseAccessState(state);
+  const parsedOrder = OrderSchema.parse(refundedOrder);
+  const stateWithRefundedOrder = upsertCourseAccessOrder(
+    normalized,
+    parsedOrder
+  );
+
+  if (parsedOrder.status !== "refunded") return stateWithRefundedOrder;
+
+  const refundedCourseId = courseIdFromCourseOrder(parsedOrder);
+  if (!refundedCourseId) return stateWithRefundedOrder;
+
+  if (
+    hasEffectiveSameCourseOrder(
+      stateWithRefundedOrder,
+      refundedCourseId,
+      parsedOrder.id
+    )
+  ) {
+    return stateWithRefundedOrder;
+  }
+
+  return normalizeCourseAccessState({
+    ...stateWithRefundedOrder,
+    ownedCourseIds: stateWithRefundedOrder.ownedCourseIds.filter(
+      courseId => courseId !== refundedCourseId
+    ),
   });
 }
 

@@ -72,5 +72,13 @@ describe("personal order detail model", () => {
       "退款不会在用户端直接完成"
     );
   });
-});
 
+  it("explains that refunded course access has stopped", () => {
+    expect(
+      createPersonalOrderServiceNotes({
+        ...paidOrder,
+        status: "refunded",
+      }).join(" ")
+    ).toContain("相关课程权益已停止");
+  });
+});

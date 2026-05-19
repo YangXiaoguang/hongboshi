@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`UX-T 退款成功回调与售后工单自动收尾通知`
-- 当前状态：`UX-T 退款成功回调与售后工单自动收尾通知` 已完成，课程 `refund.succeeded` 回调可把退款中订单推进到已退款，并自动把关联售后工单收尾为已解决，写入系统审计和“退款已完成”站内通知；个人中心消息与订单详情可展示该最终进度。
-- 本轮完成后下一步：执行 `UX-U 退款完成后的课程权益回收与用户端访问边界`
+- 当前阶段：`UX-U 退款完成后的课程权益回收与用户端访问边界`
+- 当前状态：`UX-U 退款完成后的课程权益回收与用户端访问边界` 已完成，课程退款成功回调保存 `refunded` 订单时会同步回收单课 `ownedCourseIds`，仅在存在其他有效已支付同课订单时保留权益；个人中心已退款订单不再展示继续看课入口，改为退款完成提示与重新购买。
+- 本轮完成后下一步：执行 `UX-V 会员退款权益来源字段与退款后会员边界`
 
 ## 已完成关键能力
 
@@ -53,6 +53,7 @@
 - 完成售后工单后台处理动作与退款申请联动：新增售后后台动作契约、审计事件、订单/交易后台处理面板和用户端处理进度展示；运营可将售后工单标记处理中、解决、关闭，或在权限与交易安全检查通过后联动发起退款申请。
 - 完成售后进度通知与个人中心消息联动：新增账号级站内消息契约、通知 Store/API、售后后台动作通知写入、顶部消息入口、个人中心消息 tab 和订单详情售后进度展示。
 - 完成退款成功回调与售后工单自动收尾：课程 `refund.succeeded` 支持课程订单，订单进入 `refunded` 后自动解决关联售后工单、写入系统审计和 `refund_completed` 站内通知，支付对账可识别 `course_access` 业务快照。
+- 完成退款完成后的课程权益回收与用户端访问边界：课程 `refunded` 订单会在没有其他有效已支付同课订单时移除对应 `ownedCourseIds`，课程列表、课程详情和成长空间随权益状态回到购买入口，个人中心订单详情显示权益已停止并提供重新购买入口。
 - 完成课程订单状态与支付结果服务端化：新增课程 checkout 共享契约、订单扩展字段、服务端创建/读取/支付/取消 API 和前端 repository/hook，课程权益只在服务端支付成功后交付，重复支付保持幂等。
 - 课程详情页购买抽屉已接入订单状态，支持待创建、待支付、支付中、支付成功、失败重试和取消待支付订单，并展示订单号、支付保留时间、支付渠道和权益交付摘要。
 - TRX-C 浏览器验证已通过：在 `/courses/16` 完成登录、创建订单、模拟支付成功、权益到账和“开始学习”入口切换；`pnpm run ci` 已通过 87 个测试文件 / 411 个测试和生产构建。
@@ -514,36 +515,37 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：UX-T 退款成功回调与售后工单自动收尾通知
+### 最近完成阶段：UX-U 退款完成后的课程权益回收与用户端访问边界
 
-UX-T 已交付：
+UX-U 已交付：
 
-- `shared/domain/userNotification.ts`：新增 `refund_completed` 站内消息类型和 `createAfterSalesRefundCompletedNotification`，内容只输出退款完成摘要、售后自动收尾和原渠道到账提示，不包含支付 raw payload。
-- `server/modules/courses/courseAccessApi.ts`：新增课程退款成功回调处理，按课程权益 Store 查找真实订单，校验订单 ID、金额和状态后把 `refunding` 订单推进到 `refunded`，并为支付对账返回 `course_access` 业务快照。
-- `server/modules/orders/orderAfterSalesRefundCompletion.ts`：新增支付回调后的售后自动收尾服务，只处理同订单、同用户、状态为 `linked_to_refund` 的工单；系统操作者固定为 `system_payment_webhook`，审计 action 使用 `resolve`。
-- `server/modules/payments/paymentApi.ts`：`refund.succeeded` 对咨询和课程退款成功都会触发售后收尾；课程退款不再落到不支持业务订单的 404。
-- `client/src/pages/PersonalCenter.tsx`：个人中心消息列表和订单详情售后进度区支持展示“退款已完成”通知。
-- `docs/domain-contracts.md` 与 `docs/product-engineering-roadmap.md` 已同步课程退款回调、售后自动收尾、支付对账 `course_access` 业务域和隐私最小化边界。
+- `shared/domain/courseAccess.ts`：新增 `settleRefundedCourseAccessOrder` 纯函数，先写入退款完成订单，再对单课订单判断是否仍存在其他 `paid/refunding` 同课订单；没有其他有效订单时才回收对应 `ownedCourseIds`。
+- `server/modules/courses/courseAccessApi.ts`：课程 `refund.succeeded` 回调保存退款订单时改用权益结清函数，避免 `refunded` 订单仍让用户被识别为已购。
+- `client/src/pages/PersonalCenter.tsx`：个人中心订单列表和订单详情把 `refunded` 课程订单从“查看课程”切换为“重新购买”，交付状态显示“已退款，权益已停止”，仅 `paid/refunding` 订单保留查看课程入口。
+- `client/src/features/courses/model/personalOrderDetail.ts`：已退款订单售后说明明确相关课程权益已停止；课程详情、课程列表和成长空间继续复用 `resolveCourseAccess`，权益回收后自动回到购买主动作。
+- `docs/domain-contracts.md` 与 `docs/product-engineering-roadmap.md` 已同步退款后单课权益回收、同课多订单保留规则和会员退款暂保守边界。
 
-UX-T 验收结果：
+UX-U 验收结果：
 
-- 定向测试已通过：`shared/domain/userNotification.test.ts` 和 `server/modules/payments/paymentApi.test.ts` 覆盖退款完成通知、课程退款成功回调、售后 Store 自动解决、通知 Store 写入和支付对账 `course_access` 快照。
-- `pnpm run check` 已通过。
-- `pnpm run ci` 已通过：类型检查、111 个测试文件 / 513 个测试和生产构建均完成；Vite 仍保留既有大 chunk 提醒。
-- 浏览器已验证 `/courses` 与 `/me?tab=messages`：课程页主动作正常，个人中心消息入口可渲染，页面无横向溢出，控制台未发现错误；当前浏览器已回到 `/courses`。
+- 定向测试已通过：`client/src/features/courses/model/courseAccess.test.ts`、`client/src/features/courses/model/personalOrderDetail.test.ts` 和 `server/modules/payments/paymentApi.test.ts` 覆盖退款后权益回收、同课多订单保留、会员退款暂不回收、已退款提示和 webhook 落库。
+- `pnpm exec tsc --noEmit --pretty false` 已通过。
+- `pnpm test -- client/src/features/courses/model/courseAccess.test.ts client/src/features/courses/model/personalOrderDetail.test.ts server/modules/payments/paymentApi.test.ts` 已通过：111 个测试文件 / 518 个测试。
+- `pnpm run ci` 已通过：类型检查、111 个测试文件 / 518 个测试和生产构建均完成；Vite 仍保留既有大 chunk 提醒。
+- 浏览器已验证 `/courses` 与 `/me?tab=orders`：课程页主动作正常，个人中心订单区可渲染，页面控制台未发现应用错误；当前浏览器已回到 `/courses`。
 
-### 用户端待续：UX-U 退款完成后的课程权益回收与用户端访问边界
+### 用户端待续：UX-V 会员退款权益来源字段与退款后会员边界
 
 业务目标：
 
-在 UX-T 已经让课程订单进入 `refunded` 并完成售后通知后，继续补齐退款完成后的权益边界：课程退款成功后用户不应继续被 `ownedCourseIds` 误判为已购，也不应从个人中心或课程详情看到“继续学习”的主动作。
+在 UX-U 已完成单课退款后的权益回收后，继续补齐会员订单退款边界。当前 `membership` 只有账号级状态，没有订单来源字段；为避免误伤人工开通或其他渠道权益，会员退款暂不自动关闭会员。下一步需要把会员权益来源与订单关联补齐，再让会员退款完成后按来源安全回收。
 
 建议实施范围：
 
-- 在 `shared/domain/courseAccess.ts` 增加退款完成后的课程权益回收纯函数，单课退款后仅在没有其他有效已支付同课程订单时移除对应 `ownedCourseIds`。
-- 课程 `refund.succeeded` 回调保存订单 `refunded` 时同步应用权益回收；会员退款先保持保守状态并在文档中明确后续需要会员订单来源字段。
-- 更新课程详情、课程列表、成长空间和个人中心订单详情的退款后主动作，`refunded` 订单不再展示“进入课程/继续学习”，改为查看退款完成与重新购买。
-- 补充 course access、payment webhook 和前端访问边界测试。
+- 为 `CourseMembership` 增加可迁移的来源字段，例如 `sourceOrderId`、`activatedBy`、`sourceType` 或来源快照，并保持旧数据默认兼容。
+- 会员 checkout 支付成功时写入会员来源；后台人工开通、延期和标记到期继续写入会员操作审计，并区分人工来源与订单来源。
+- 会员订单 `refund.succeeded` 时，仅当当前会员来源匹配该订单且没有其他有效会员订单覆盖时，才关闭或降级会员权益。
+- 更新成长空间、课程详情、课程列表和个人中心会员订单的退款后文案与主动作，避免会员课在退款后继续误判为可学。
+- 补充会员权益来源迁移、会员支付、会员退款 webhook、后台人工会员操作不被误伤和前端访问边界测试。
 - 更新测试、领域契约、路线图和本执行状态。
 
 ## 执行不变量
@@ -565,4 +567,4 @@ UX-T 验收结果：
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-U 退款完成后的课程权益回收与用户端访问边界，正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-V 会员退款权益来源字段与退款后会员边界，正式证书签发审核流需另立任务包。

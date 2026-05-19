@@ -113,7 +113,7 @@ export function createPersonalOrderServiceNotes(order: Order): string[] {
   }
 
   if (order.status === "refunded") {
-    return ["订单已完成退款，课程权益以最终退款处理结果为准。"];
+    return ["订单已完成退款，相关课程权益已停止；如需继续学习可重新购买。"];
   }
 
   if (order.status === "closed") {
@@ -122,4 +122,3 @@ export function createPersonalOrderServiceNotes(order: Order): string[] {
 
   return ["订单已创建，后续状态以支付结果和权益交付记录为准。"];
 }
-
