@@ -50,6 +50,12 @@ const implementationRows = [
     "不可售提示、历史订单金额和前台快照预览",
   ],
   [
+    "UX-AC",
+    "会员售卖回归",
+    "已完成",
+    "改价、暂停、恢复售卖和真实支付前策略",
+  ],
+  [
     "M3-A",
     "用户与会员只读台",
     "已完成",
@@ -80,7 +86,7 @@ const overviewMetrics: {
   icon: LucideIcon;
 }[] = [
   { label: "已接入模块", value: 0, icon: Layers3 },
-  { label: "下一阶段", value: "UX-AC", icon: GitBranch },
+  { label: "下一阶段", value: "UX-AD", icon: GitBranch },
   { label: "后台原则", value: 0, icon: ClipboardCheck },
   { label: "可追踪文档", value: 3, icon: FileText },
 ];
@@ -219,7 +225,7 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经完成会员商品可用性体验与运营联动收口，下一步进入会员售卖状态端到端回归与真实支付前准备。
+              当前连续执行状态已经完成会员售卖状态端到端回归与真实支付前准备，下一步进入会员待支付订单过期状态机与用户端过期提示。
             </p>
           </div>
           <div className="overflow-x-auto">

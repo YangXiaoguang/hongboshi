@@ -69,13 +69,15 @@ function sendJson(
 
 function errorPayload(
   code: CourseMembershipProductApiErrorCode,
-  message: string
+  message: string,
+  details?: unknown
 ) {
   return {
     ok: false,
     error: {
       code,
       message,
+      ...(details === undefined ? {} : { details }),
     },
   } as const;
 }
@@ -499,13 +501,21 @@ function courseMembershipProductSnapshotFailure(
 ): CourseMembershipProductApiPayload {
   const message = err instanceof Error ? err.message : "";
 
-  if (
-    message === "MEMBERSHIP_PRODUCT_NOT_AVAILABLE" ||
-    message === "MEMBERSHIP_PLAN_NOT_AVAILABLE"
-  ) {
+  if (message === "MEMBERSHIP_PRODUCT_NOT_AVAILABLE") {
     return {
       status: 409,
-      body: errorPayload("CONFLICT", "会员商品暂不可用"),
+      body: errorPayload("CONFLICT", "会员商品已暂停，暂不可购买", {
+        reason: "product_inactive",
+      }),
+    };
+  }
+
+  if (message === "MEMBERSHIP_PLAN_NOT_AVAILABLE") {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "会员套餐已暂停，暂不可购买", {
+        reason: "no_active_plan",
+      }),
     };
   }
 

@@ -45,7 +45,8 @@ describe("http course membership product repository parsers", () => {
         ok: false,
         error: {
           code: "CONFLICT",
-          message: "会员商品暂不可用",
+          message: "会员套餐已暂停，暂不可购买",
+          details: { reason: "no_active_plan" },
         },
       })
     ).toThrow(CourseMembershipProductRequestError);
@@ -55,7 +56,8 @@ describe("http course membership product repository parsers", () => {
         ok: false,
         error: {
           code: "CONFLICT",
-          message: "会员商品暂不可用",
+          message: "会员套餐已暂停，暂不可购买",
+          details: { reason: "no_active_plan" },
         },
       });
     } catch (err) {
@@ -63,6 +65,9 @@ describe("http course membership product repository parsers", () => {
       expect((err as CourseMembershipProductRequestError).code).toBe(
         "CONFLICT"
       );
+      expect((err as CourseMembershipProductRequestError).details).toEqual({
+        reason: "no_active_plan",
+      });
     }
   });
 

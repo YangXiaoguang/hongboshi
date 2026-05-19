@@ -29,7 +29,8 @@ export class CourseMembershipProductRequestError extends Error {
   constructor(
     message: string,
     readonly code?: ApiError["code"],
-    readonly status?: number
+    readonly status?: number,
+    readonly details?: ApiError["details"]
   ) {
     super(message);
     this.name = "CourseMembershipProductRequestError";
@@ -51,7 +52,9 @@ export function parseCourseMembershipProductConsoleResponse(
   if (!parsed.ok) {
     throw new CourseMembershipProductRequestError(
       parsed.error.message,
-      parsed.error.code
+      parsed.error.code,
+      undefined,
+      parsed.error.details
     );
   }
   return parsed.data;
@@ -64,7 +67,9 @@ export function parseCourseMembershipProductSnapshotResponse(
   if (!parsed.ok) {
     throw new CourseMembershipProductRequestError(
       parsed.error.message,
-      parsed.error.code
+      parsed.error.code,
+      undefined,
+      parsed.error.details
     );
   }
   return parsed.data;
@@ -77,7 +82,9 @@ export function parseCourseMembershipProductMutationResponse(
   if (!parsed.ok) {
     throw new CourseMembershipProductRequestError(
       parsed.error.message,
-      parsed.error.code
+      parsed.error.code,
+      undefined,
+      parsed.error.details
     );
   }
   return parsed.data;
@@ -114,7 +121,8 @@ function requestErrorFromPayload(
   return new CourseMembershipProductRequestError(
     apiError?.message ?? fallback,
     apiError?.code,
-    status
+    status,
+    apiError?.details
   );
 }
 

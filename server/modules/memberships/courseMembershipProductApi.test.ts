@@ -68,6 +68,46 @@ describe("course membership product admin api payloads", () => {
     expect("auditEvents" in payload.body.data).toBe(false);
   });
 
+  it("explains why public membership snapshots are unavailable", async () => {
+    const productPaused = await getCourseMembershipProductSnapshotPayload(
+      new InMemoryCourseMembershipProductStore({
+        ...defaultCourseMembershipProduct,
+        status: "inactive",
+      })
+    );
+    const planPaused = await getCourseMembershipProductSnapshotPayload(
+      new InMemoryCourseMembershipProductStore({
+        ...defaultCourseMembershipProduct,
+        plans: [
+          {
+            ...defaultCourseMembershipProduct.plans[0]!,
+            status: "inactive",
+          },
+        ],
+      })
+    );
+
+    expect(productPaused.status).toBe(409);
+    expect(productPaused.body.ok).toBe(false);
+    if (!productPaused.body.ok) {
+      expect(productPaused.body.error).toMatchObject({
+        code: "CONFLICT",
+        message: "会员商品已暂停，暂不可购买",
+        details: { reason: "product_inactive" },
+      });
+    }
+
+    expect(planPaused.status).toBe(409);
+    expect(planPaused.body.ok).toBe(false);
+    if (!planPaused.body.ok) {
+      expect(planPaused.body.error).toMatchObject({
+        code: "CONFLICT",
+        message: "会员套餐已暂停，暂不可购买",
+        details: { reason: "no_active_plan" },
+      });
+    }
+  });
+
   it("allows operators to update plan price and records audit", async () => {
     const store = new InMemoryCourseMembershipProductStore();
     const plan = defaultCourseMembershipProduct.plans[0]!;
