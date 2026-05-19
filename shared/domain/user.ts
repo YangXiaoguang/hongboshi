@@ -6,7 +6,10 @@ import {
   PageMetaSchema,
   PaginationQuerySchema,
 } from "./common";
-import { CourseMembershipSchema } from "./courseAccess";
+import {
+  CourseMembershipSchema,
+  CourseMembershipSourceTypeSchema,
+} from "./courseAccess";
 import { AppointmentStatusSchema, CounselingChannelSchema } from "./counseling";
 import { OrderStatusSchema, PurchasableTypeSchema } from "./order";
 import {
@@ -321,6 +324,10 @@ export const UserAdminMembershipSummarySchema = z.object({
   planName: z.string().min(1).optional(),
   activatedAt: DateTimeLikeSchema.optional(),
   expiresAt: DateTimeLikeSchema.optional(),
+  sourceType: CourseMembershipSourceTypeSchema.optional(),
+  sourceOrderId: EntityIdSchema.optional(),
+  sourceActorId: EntityIdSchema.optional(),
+  sourceUpdatedAt: DateTimeLikeSchema.optional(),
   activeNow: z.boolean(),
 });
 

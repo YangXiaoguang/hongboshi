@@ -91,6 +91,8 @@ export function createPersonalOrderTimeline(
 }
 
 export function createPersonalOrderServiceNotes(order: Order): string[] {
+  const firstItemType = order.items[0]?.type;
+
   if (order.status === "pending_payment") {
     return [
       "待支付订单可继续支付或取消，取消后不会发放课程权益。",
@@ -113,6 +115,12 @@ export function createPersonalOrderServiceNotes(order: Order): string[] {
   }
 
   if (order.status === "refunded") {
+    if (firstItemType === "membership") {
+      return [
+        "订单已完成退款，会员权益已根据来源记录处理；如需继续学习会员课程可重新开通。",
+      ];
+    }
+
     return ["订单已完成退款，相关课程权益已停止；如需继续学习可重新购买。"];
   }
 

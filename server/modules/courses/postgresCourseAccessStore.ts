@@ -22,6 +22,10 @@ type CourseMembershipRow = {
   plan_name: string | null;
   activated_at: string | Date | null;
   expires_at: string | Date | null;
+  source_type: CourseMembership["sourceType"] | null;
+  source_order_id: string | null;
+  source_actor_id: string | null;
+  source_updated_at: string | Date | null;
 };
 
 type CourseAccessGrantRow = {
@@ -117,6 +121,10 @@ function membershipRowToDomain(
     planName: row.plan_name ?? undefined,
     activatedAt: toDateTimeLike(row.activated_at),
     expiresAt: toDateTimeLike(row.expires_at),
+    sourceType: row.source_type ?? undefined,
+    sourceOrderId: row.source_order_id ?? undefined,
+    sourceActorId: row.source_actor_id ?? undefined,
+    sourceUpdatedAt: toDateTimeLike(row.source_updated_at),
   };
 }
 
@@ -217,7 +225,11 @@ export class PostgresCourseAccessStore {
             status,
             plan_name,
             activated_at,
-            expires_at
+            expires_at,
+            source_type,
+            source_order_id,
+            source_actor_id,
+            source_updated_at
           FROM course_memberships
           WHERE user_id = $1
           LIMIT 1
@@ -318,14 +330,22 @@ export class PostgresCourseAccessStore {
           plan_name,
           activated_at,
           expires_at,
+          source_type,
+          source_order_id,
+          source_actor_id,
+          source_updated_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
         ON CONFLICT (user_id) DO UPDATE SET
           status = EXCLUDED.status,
           plan_name = EXCLUDED.plan_name,
           activated_at = EXCLUDED.activated_at,
           expires_at = EXCLUDED.expires_at,
+          source_type = EXCLUDED.source_type,
+          source_order_id = EXCLUDED.source_order_id,
+          source_actor_id = EXCLUDED.source_actor_id,
+          source_updated_at = EXCLUDED.source_updated_at,
           updated_at = NOW()
       `,
       [
@@ -334,6 +354,10 @@ export class PostgresCourseAccessStore {
         normalized.membership.planName ?? null,
         normalized.membership.activatedAt ?? null,
         normalized.membership.expiresAt ?? null,
+        normalized.membership.sourceType ?? null,
+        normalized.membership.sourceOrderId ?? null,
+        normalized.membership.sourceActorId ?? null,
+        normalized.membership.sourceUpdatedAt ?? null,
       ]
     );
 

@@ -9,6 +9,7 @@ export {
   CourseCheckoutOrderResultSchema,
   CourseCheckoutPayRequestSchema,
   CourseMembershipSchema,
+  CourseMembershipSourceTypeSchema,
   activateCourseMembership,
   cancelCourseCheckoutOrder,
   createEmptyCourseAccessState,
@@ -29,4 +30,6 @@ export {
   type CourseCheckoutOrderResult,
   type CourseCheckoutPayRequest,
   type CourseMembership,
+  type CourseMembershipActivationSource,
+  type CourseMembershipSourceType,
 } from "@shared/domain/courseAccess";

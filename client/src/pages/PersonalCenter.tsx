@@ -1058,8 +1058,12 @@ export default function PersonalCenter() {
                       const firstItem = order.items[0];
                       const title = firstItem?.title ?? "订单商品";
                       const canPay = order.status === "pending_payment";
+                      const isMembershipOrder =
+                        firstItem?.type === "membership";
                       const canRebuyCourse =
                         order.status === "refunded" && Boolean(course);
+                      const canRenewMembership =
+                        order.status === "refunded" && isMembershipOrder;
                       return (
                         <div
                           id={orderElementId(order.id)}
@@ -1118,7 +1122,9 @@ export default function PersonalCenter() {
                                 ? "继续支付"
                                 : canRebuyCourse
                                   ? "重新购买"
-                                  : "查看课程"}
+                                  : canRenewMembership
+                                    ? "重新开通"
+                                    : "查看课程"}
                             </button>
                           </div>
                         </div>
@@ -1519,6 +1525,10 @@ export default function PersonalCenter() {
         onClose={closeOrderDetail}
         onContinuePayment={order => navigateToOrderCourse(order, true)}
         onRebuyCourse={order => navigateToOrderCourse(order, true)}
+        onRenewMembership={() => {
+          closeOrderDetail();
+          navigate("/courses");
+        }}
         onSubmitAfterSales={handleSubmitAfterSalesRequest}
         onViewCourse={order => navigateToOrderCourse(order)}
         onViewWorkspace={() => {
@@ -1546,6 +1556,7 @@ function PersonalOrderDetailDrawer({
   onClose,
   onContinuePayment,
   onRebuyCourse,
+  onRenewMembership,
   onSubmitAfterSales,
   onViewCourse,
   onViewWorkspace,
@@ -1563,6 +1574,7 @@ function PersonalOrderDetailDrawer({
   onClose: () => void;
   onContinuePayment: (order: Order) => void;
   onRebuyCourse: (order: Order) => void;
+  onRenewMembership: () => void;
   onSubmitAfterSales: (
     order: Order,
     request: OrderAfterSalesCreateRequest
@@ -1579,9 +1591,11 @@ function PersonalOrderDetailDrawer({
   const [afterSalesContact, setAfterSalesContact] = useState("");
   const firstItem = order?.items[0];
   const canPay = order?.status === "pending_payment";
+  const isMembershipOrder = firstItem?.type === "membership";
   const canViewCourse =
     order?.status === "paid" || order?.status === "refunding";
-  const canRebuyCourse = order?.status === "refunded";
+  const canRebuyCourse = order?.status === "refunded" && !isMembershipOrder;
+  const canRenewMembership = order?.status === "refunded" && isMembershipOrder;
   const canSubmitAfterSales =
     order?.status === "paid" || order?.status === "refunding";
   const activeAfterSales = afterSales?.activeRequest;
@@ -1720,7 +1734,9 @@ function PersonalOrderDetailDrawer({
                     交付状态：
                     <span className="font-semibold text-[#243B35]">
                       {order.status === "refunded"
-                        ? "已退款，权益已停止"
+                        ? isMembershipOrder
+                          ? "已退款，会员权益已按来源处理"
+                          : "已退款，权益已停止"
                         : order.entitlementDeliveredAt
                           ? `已交付 · ${formatDate(order.entitlementDeliveredAt)}`
                           : order.status === "pending_payment"
@@ -1957,6 +1973,15 @@ function PersonalOrderDetailDrawer({
                     className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
                   >
                     重新购买
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </button>
+                )}
+                {canRenewMembership && (
+                  <button
+                    onClick={onRenewMembership}
+                    className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] text-sm font-semibold text-white transition hover:bg-[#315047]"
+                  >
+                    重新开通会员
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </button>
                 )}

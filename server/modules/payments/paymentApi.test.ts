@@ -41,6 +41,7 @@ import {
 
 const fixedNow = new Date("2026-05-10T00:00:00.000Z");
 const courseRefundUserId = "u_course_refund_1";
+const membershipRefundUserId = "u_membership_refund_1";
 const courseRefundingOrder: Order = {
   id: "order_course_refund_webhook_1",
   userId: courseRefundUserId,
@@ -57,6 +58,27 @@ const courseRefundingOrder: Order = {
   subtotal: 149,
   discountAmount: 20,
   payableAmount: 129,
+  createdAt: "2026-05-10T00:00:00.000Z",
+  paidAt: "2026-05-10T00:02:00.000Z",
+  entitlementDeliveredAt: "2026-05-10T00:02:00.000Z",
+  paymentChannel: "wechat_pay",
+};
+const membershipRefundingOrder: Order = {
+  id: "order_membership_refund_webhook_1",
+  userId: membershipRefundUserId,
+  status: "refunding",
+  items: [
+    {
+      type: "membership",
+      targetId: "course_membership_yearly",
+      title: "成长会员",
+      unitPrice: 999,
+      quantity: 1,
+    },
+  ],
+  subtotal: 999,
+  discountAmount: 500,
+  payableAmount: 499,
   createdAt: "2026-05-10T00:00:00.000Z",
   paidAt: "2026-05-10T00:02:00.000Z",
   entitlementDeliveredAt: "2026-05-10T00:02:00.000Z",
@@ -359,6 +381,59 @@ describe("payment webhook api payloads", () => {
           domain: "course_access",
           orderStatus: "refunded",
         },
+      });
+    }
+  });
+
+  it("expires checkout-sourced membership when membership refund succeeds", async () => {
+    await resetCourseAccessStore(
+      CourseAccessStateSchema.parse({
+        ownedCourseIds: [],
+        membership: {
+          status: "active",
+          planName: "成长会员",
+          activatedAt: "2026-05-10T00:02:00.000Z",
+          expiresAt: "2027-05-10T00:02:00.000Z",
+          sourceType: "checkout_order",
+          sourceOrderId: membershipRefundingOrder.id,
+          sourceUpdatedAt: "2026-05-10T00:02:00.000Z",
+        },
+        orders: [membershipRefundingOrder],
+      }),
+      membershipRefundUserId
+    );
+
+    const refundPayload = await processPaymentWebhookPayload(
+      createSimulatedRefundSucceededEvent({
+        order: membershipRefundingOrder,
+        channel: "wechat_pay",
+        transactionId: "refund_tx_membership_1",
+        now: "2026-05-10T00:25:00.000Z",
+      })
+    );
+
+    expect(refundPayload.status).toBe(200);
+    expect(refundPayload.body.ok).toBe(true);
+    if (refundPayload.body.ok) {
+      expect(refundPayload.body.data.order).toMatchObject({
+        id: membershipRefundingOrder.id,
+        status: "refunded",
+      });
+    }
+
+    const access = await getCourseAccessPayload(membershipRefundUserId);
+    expect(access.ok).toBe(true);
+    if (access.ok) {
+      expect(access.data.orders[0]).toMatchObject({
+        id: membershipRefundingOrder.id,
+        status: "refunded",
+      });
+      expect(access.data.membership).toMatchObject({
+        status: "expired",
+        sourceType: "checkout_order",
+        sourceOrderId: membershipRefundingOrder.id,
+        sourceUpdatedAt: "2026-05-10T00:25:00.000Z",
+        expiresAt: "2026-05-10T00:25:00.000Z",
       });
     }
   });

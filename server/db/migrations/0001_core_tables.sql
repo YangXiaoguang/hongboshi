@@ -43,6 +43,13 @@ CREATE TABLE IF NOT EXISTS course_memberships (
   plan_name TEXT,
   activated_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ,
+  source_type TEXT CHECK (
+    source_type IS NULL
+    OR source_type IN ('checkout_order', 'admin_manual', 'direct_activation')
+  ),
+  source_order_id TEXT,
+  source_actor_id TEXT,
+  source_updated_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

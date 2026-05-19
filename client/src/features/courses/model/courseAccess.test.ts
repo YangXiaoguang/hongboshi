@@ -51,6 +51,28 @@ const refundedCourseOrder: Order = {
   paymentChannel: "wechat_pay",
 };
 
+const refundedMembershipOrder: Order = {
+  id: "order_membership_refunded",
+  userId: "u_10001",
+  status: "refunded",
+  items: [
+    {
+      type: "membership",
+      targetId: "course_membership_yearly",
+      title: "成长会员",
+      unitPrice: 999,
+      quantity: 1,
+    },
+  ],
+  subtotal: 999,
+  discountAmount: 500,
+  payableAmount: 499,
+  createdAt: "2026-05-09T10:00:00.000Z",
+  paidAt: "2026-05-09T10:02:00.000Z",
+  entitlementDeliveredAt: "2026-05-09T10:02:00.000Z",
+  paymentChannel: "wechat_pay",
+};
+
 describe("course access model", () => {
   it("allows free courses without creating an order", () => {
     const course = {
@@ -232,6 +254,30 @@ describe("course access model", () => {
     });
   });
 
+  it("records paid membership checkout orders as membership source", () => {
+    const vipCourse = { ...baseCourse, id: 17, isVip: true };
+    const pending = createCourseCheckoutOrder(
+      createEmptyCourseAccessState(),
+      vipCourse,
+      "membership",
+      "2026-05-09T10:00:00.000Z",
+      "u_10001"
+    );
+    const paid = payCourseCheckoutOrder(
+      pending.accessState,
+      pending.order.id,
+      "wechat_pay",
+      "2026-05-09T10:02:00.000Z"
+    );
+
+    expect(paid.accessState.membership).toMatchObject({
+      status: "active",
+      sourceType: "checkout_order",
+      sourceOrderId: pending.order.id,
+      sourceUpdatedAt: "2026-05-09T10:02:00.000Z",
+    });
+  });
+
   it("treats expired memberships as inactive", () => {
     expect(
       hasActiveCourseMembership(
@@ -287,21 +333,75 @@ describe("course access model", () => {
     expect(resolveCourseAccess(state, baseCourse).status).toBe("owned");
   });
 
-  it("does not revoke membership from refunded membership orders yet", () => {
-    const refundedMembershipOrder: Order = {
-      ...refundedCourseOrder,
-      id: "order_membership_refunded",
-      items: [
-        {
-          type: "membership",
-          targetId: "course_membership_yearly",
-          title: "成长会员",
-          unitPrice: 999,
-          quantity: 1,
+  it("expires membership after its source checkout order is refunded", () => {
+    const vipCourse = { ...baseCourse, id: 17, isVip: true };
+    const state = settleRefundedCourseAccessOrder(
+      {
+        ownedCourseIds: [],
+        membership: {
+          status: "active",
+          planName: "成长会员",
+          activatedAt: "2026-05-09T10:00:00.000Z",
+          expiresAt: "2027-05-09T10:00:00.000Z",
+          sourceType: "checkout_order",
+          sourceOrderId: refundedMembershipOrder.id,
+          sourceUpdatedAt: "2026-05-09T10:02:00.000Z",
         },
-      ],
-      subtotal: 999,
-      payableAmount: 499,
+        orders: [{ ...refundedMembershipOrder, status: "refunding" }],
+      },
+      refundedMembershipOrder,
+      "2026-05-10T00:25:00.000Z"
+    );
+
+    expect(state.membership).toMatchObject({
+      status: "expired",
+      sourceType: "checkout_order",
+      sourceOrderId: refundedMembershipOrder.id,
+      sourceUpdatedAt: "2026-05-10T00:25:00.000Z",
+      expiresAt: "2026-05-10T00:25:00.000Z",
+    });
+    expect(state.orders[0]).toMatchObject({
+      id: refundedMembershipOrder.id,
+      status: "refunded",
+    });
+    expect(
+      resolveCourseAccess(state, vipCourse, "2026-05-10T00:26:00.000Z").status
+    ).toBe("requires_membership");
+  });
+
+  it("does not expire manually sourced memberships when an old order refunds", () => {
+    const state = settleRefundedCourseAccessOrder(
+      {
+        ownedCourseIds: [],
+        membership: {
+          status: "active",
+          planName: "成长会员",
+          activatedAt: "2026-05-09T10:00:00.000Z",
+          expiresAt: "2027-05-09T10:00:00.000Z",
+          sourceType: "admin_manual",
+          sourceActorId: "operator_1",
+          sourceUpdatedAt: "2026-05-09T10:05:00.000Z",
+        },
+        orders: [refundedMembershipOrder],
+      },
+      refundedMembershipOrder,
+      "2026-05-10T00:25:00.000Z"
+    );
+
+    expect(state.membership).toMatchObject({
+      status: "active",
+      sourceType: "admin_manual",
+      sourceActorId: "operator_1",
+    });
+  });
+
+  it("keeps membership active when another effective membership order exists", () => {
+    const otherMembershipOrder: Order = {
+      ...refundedMembershipOrder,
+      id: "order_membership_second_paid",
+      status: "paid",
+      paidAt: "2026-05-10T10:02:00.000Z",
+      entitlementDeliveredAt: "2026-05-10T10:02:00.000Z",
     };
 
     const state = settleRefundedCourseAccessOrder(
@@ -312,16 +412,21 @@ describe("course access model", () => {
           planName: "成长会员",
           activatedAt: "2026-05-09T10:00:00.000Z",
           expiresAt: "2027-05-09T10:00:00.000Z",
+          sourceType: "checkout_order",
+          sourceOrderId: refundedMembershipOrder.id,
+          sourceUpdatedAt: "2026-05-09T10:02:00.000Z",
         },
-        orders: [refundedMembershipOrder],
+        orders: [otherMembershipOrder, refundedMembershipOrder],
       },
-      refundedMembershipOrder
+      refundedMembershipOrder,
+      "2026-05-10T00:25:00.000Z"
     );
 
-    expect(state.membership.status).toBe("active");
-    expect(state.orders[0]).toMatchObject({
-      id: refundedMembershipOrder.id,
-      status: "refunded",
+    expect(state.membership).toMatchObject({
+      status: "active",
+      sourceType: "checkout_order",
+      sourceOrderId: otherMembershipOrder.id,
+      sourceUpdatedAt: "2026-05-10T00:25:00.000Z",
     });
   });
 

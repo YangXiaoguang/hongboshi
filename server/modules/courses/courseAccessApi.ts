@@ -12,6 +12,7 @@ import {
   CourseCheckoutPayRequestSchema,
   CourseAccessStateSchema,
   CourseSchema,
+  COURSE_MEMBERSHIP_ORDER_TITLE,
   LOCAL_COURSE_ACCESS_USER_ID,
   LegacyNumericIdSchema,
   PaymentBusinessOrderSnapshotSchema,
@@ -372,7 +373,11 @@ export async function processCourseAccessRefundWebhookEvent(
   try {
     await saveCourseAccessState(
       source.userId,
-      settleRefundedCourseAccessOrder(source.state, webhookResult.order)
+      settleRefundedCourseAccessOrder(
+        source.state,
+        webhookResult.order,
+        refundEvent.occurredAt
+      )
     );
 
     return {
@@ -617,7 +622,17 @@ export async function activateMembershipPayload(
   userId = LOCAL_COURSE_ACCESS_USER_ID
 ) {
   const currentState = await courseAccessStore.load(userId);
-  const nextState = activateCourseMembership(currentState);
+  const now = new Date().toISOString();
+  const nextState = activateCourseMembership(
+    currentState,
+    now,
+    COURSE_MEMBERSHIP_ORDER_TITLE,
+    {
+      sourceType: "direct_activation",
+      sourceActorId: userId,
+      sourceUpdatedAt: now,
+    }
+  );
   await courseAccessStore.save(userId, nextState);
 
   return {

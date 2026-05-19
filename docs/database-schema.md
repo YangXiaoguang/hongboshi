@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。课程学习记录已新增独立内存/JSON Store，先保存章节进度、练习记录、完成快照和阶段证明预览准备字段，后续再补专用 PostgreSQL 表。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。M9-A/M9-B 审计中心仍是只读聚合模型，列表、详情和 CSV 导出直接消费各业务 Store/表中的既有审计事实。M9-C 新增统一审计 Store 方案与 `audit_center_archived_events` 只追加归档表草案；M9-D 新增 Archive Store 和手动归档任务；M9-E 新增归档后台入口和只读校验接口，但当前仍不把业务写动作或审计真相源切换到该表。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。会员权益表已补充来源字段，用于区分会员 checkout 订单、后台人工会员动作和旧的直接开通来源，支撑会员退款后的安全权益回收。课程学习记录已新增独立内存/JSON Store，先保存章节进度、练习记录、完成快照和阶段证明预览准备字段，后续再补专用 PostgreSQL 表。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。M9-A/M9-B 审计中心仍是只读聚合模型，列表、详情和 CSV 导出直接消费各业务 Store/表中的既有审计事实。M9-C 新增统一审计 Store 方案与 `audit_center_archived_events` 只追加归档表草案；M9-D 新增 Archive Store 和手动归档任务；M9-E 新增归档后台入口和只读校验接口，但当前仍不把业务写动作或审计真相源切换到该表。
 
 ## 文件位置
 
@@ -20,6 +20,7 @@
 - `server/db/migrations/0013_counselor_profile_audit_actions.sql`：扩展咨询运营审计动作约束，允许记录咨询师档案和接单状态维护。
 - `server/db/migrations/0014_risk_review_sop_persistence.sql`：风险复核处理记录、风险 SOP 模板和升级队列表，包含审计中心预备投影字段与查询索引。
 - `server/db/migrations/0015_audit_center_archive.sql`：统一审计中心归档表草案，包含唯一幂等键、source descriptor、summary-only 摘要字段和跨模块查询索引。
+- `server/db/migrations/0016_course_membership_source_fields.sql`：课程会员权益来源字段，补充订单来源、人工操作者来源和来源更新时间。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。

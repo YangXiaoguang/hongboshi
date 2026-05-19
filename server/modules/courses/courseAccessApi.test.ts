@@ -249,7 +249,11 @@ describe("course access API payloads", () => {
     expect(payload.status).toBe(200);
     expect(payload.body.ok).toBe(true);
     if (!payload.body.ok) return;
-    expect(payload.body.data.membership.status).toBe("active");
+    expect(payload.body.data.membership).toMatchObject({
+      status: "active",
+      sourceType: "direct_activation",
+      sourceActorId: "local-user",
+    });
     expect(payload.body.data.membership.expiresAt).toBeTruthy();
   });
 

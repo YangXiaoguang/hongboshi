@@ -87,6 +87,9 @@ function createState(): CourseAccessState {
       planName: "成长会员",
       activatedAt: "2026-05-10T08:00:00.000Z",
       expiresAt: "2027-05-10T08:00:00.000Z",
+      sourceType: "admin_manual",
+      sourceActorId: "operator_1",
+      sourceUpdatedAt: "2026-05-10T08:05:00.000Z",
     },
     orders: [
       {
@@ -125,6 +128,20 @@ describe("postgres course access store", () => {
         query.text.includes("INSERT INTO course_memberships")
       )
     ).toBe(true);
+    const membershipQuery = db.queries.find(query =>
+      query.text.includes("INSERT INTO course_memberships")
+    );
+    expect(membershipQuery?.values?.slice(0, 9)).toEqual([
+      "user_1",
+      "active",
+      "成长会员",
+      "2026-05-10T08:00:00.000Z",
+      "2027-05-10T08:00:00.000Z",
+      "admin_manual",
+      null,
+      "operator_1",
+      "2026-05-10T08:05:00.000Z",
+    ]);
     expect(
       db.queries.some(query =>
         query.text.includes("UPDATE course_access_grants")
@@ -176,6 +193,10 @@ describe("postgres course access store", () => {
           plan_name: "成长会员",
           activated_at: new Date("2026-05-10T08:00:00.000Z"),
           expires_at: new Date("2027-05-10T08:00:00.000Z"),
+          source_type: "admin_manual",
+          source_order_id: null,
+          source_actor_id: "operator_1",
+          source_updated_at: new Date("2026-05-10T08:05:00.000Z"),
         },
       ],
       grants: [{ course_id: 16 }],
@@ -211,6 +232,9 @@ describe("postgres course access store", () => {
       membership: {
         status: "active",
         activatedAt: "2026-05-10T08:00:00.000Z",
+        sourceType: "admin_manual",
+        sourceActorId: "operator_1",
+        sourceUpdatedAt: "2026-05-10T08:05:00.000Z",
       },
     });
     expect(state.orders[0]).toMatchObject({

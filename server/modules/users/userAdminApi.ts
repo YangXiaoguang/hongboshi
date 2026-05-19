@@ -86,6 +86,9 @@ const fallbackUsers: DirectoryUser[] = [
         planName: "成长会员",
         activatedAt: "2026-05-01T09:10:00+08:00",
         expiresAt: "2027-05-01T09:10:00+08:00",
+        sourceType: "checkout_order",
+        sourceOrderId: "order_demo_membership_1",
+        sourceUpdatedAt: "2026-05-01T09:12:00+08:00",
       },
       orders: [
         {
@@ -531,14 +534,22 @@ function addDays(dateTime: string, days: number) {
 function applyMembershipAction(
   membership: CourseMembership,
   request: UserAdminMembershipActionRequest,
-  now: string
+  now: string,
+  actor: AdminUserActor
 ): CourseMembership {
+  const adminSource = {
+    sourceType: "admin_manual" as const,
+    sourceActorId: actor.id,
+    sourceUpdatedAt: now,
+  };
+
   if (request.action === "activate") {
     return {
       status: "active",
       planName: request.planName,
       activatedAt: now,
       expiresAt: addDays(now, request.durationDays),
+      ...adminSource,
     };
   }
 
@@ -553,6 +564,7 @@ function applyMembershipAction(
       planName: membership.planName ?? "成长会员",
       activatedAt: membership.activatedAt ?? now,
       expiresAt: addDays(baseDate, request.durationDays),
+      ...adminSource,
     };
   }
 
@@ -562,6 +574,7 @@ function applyMembershipAction(
       planName: membership.planName,
       activatedAt: membership.activatedAt,
       expiresAt: now,
+      ...adminSource,
     };
   }
 
@@ -573,6 +586,7 @@ function applyMembershipAction(
         ? "expired"
         : membership.status,
     planName: request.planName,
+    ...adminSource,
   };
 }
 
@@ -647,6 +661,10 @@ async function buildUserDetail(
       planName: courseAccess.membership.planName,
       activatedAt: courseAccess.membership.activatedAt,
       expiresAt: courseAccess.membership.expiresAt,
+      sourceType: courseAccess.membership.sourceType,
+      sourceOrderId: courseAccess.membership.sourceOrderId,
+      sourceActorId: courseAccess.membership.sourceActorId,
+      sourceUpdatedAt: courseAccess.membership.sourceUpdatedAt,
       activeNow: hasActiveCourseMembership(courseAccess.membership, now),
     },
     membershipAuditEvents: auditEvents.slice(0, 10),
@@ -781,7 +799,7 @@ export async function updateAdminUserMembershipPayload(
     directoryUser.seedCourseAccess
   );
   const before = currentState.membership;
-  const after = applyMembershipAction(before, requestResult.data, now);
+  const after = applyMembershipAction(before, requestResult.data, now, actor);
   const nextState = CourseAccessStateSchema.parse({
     ...currentState,
     membership: after,

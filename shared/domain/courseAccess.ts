@@ -38,12 +38,21 @@ export {
 } from "./coursePricing";
 
 const MembershipStatusSchema = z.enum(["none", "active", "expired"]);
+export const CourseMembershipSourceTypeSchema = z.enum([
+  "checkout_order",
+  "admin_manual",
+  "direct_activation",
+]);
 
 export const CourseMembershipSchema = z.object({
   status: MembershipStatusSchema.default("none"),
   planName: z.string().min(1).optional(),
   activatedAt: DateTimeLikeSchema.optional(),
   expiresAt: DateTimeLikeSchema.optional(),
+  sourceType: CourseMembershipSourceTypeSchema.optional(),
+  sourceOrderId: EntityIdSchema.optional(),
+  sourceActorId: EntityIdSchema.optional(),
+  sourceUpdatedAt: DateTimeLikeSchema.optional(),
 });
 
 export const CourseAccessStateSchema = z.object({
@@ -88,6 +97,9 @@ export const CourseCheckoutPayRequestSchema = z.object({
 });
 
 export type CourseMembership = z.infer<typeof CourseMembershipSchema>;
+export type CourseMembershipSourceType = z.infer<
+  typeof CourseMembershipSourceTypeSchema
+>;
 export type CourseAccessState = z.infer<typeof CourseAccessStateSchema>;
 export type CourseCheckoutMode = z.infer<typeof CourseCheckoutModeSchema>;
 export type CourseCheckoutOrderResult = z.infer<
@@ -110,6 +122,13 @@ export interface CourseAccessResult {
 export interface CourseCheckoutCouponApplicationInput {
   couponClaimId?: string;
   couponMarketingRuleId?: string;
+}
+
+export interface CourseMembershipActivationSource {
+  sourceType?: CourseMembershipSourceType;
+  sourceOrderId?: string;
+  sourceActorId?: string;
+  sourceUpdatedAt?: string;
 }
 
 export function createEmptyCourseAccessState(): CourseAccessState {
@@ -243,7 +262,7 @@ function entitlementForOrder(
       title,
       description:
         mode === "membership"
-          ? "订单已退款，会员权益以后续权益来源记录为准。"
+          ? "订单已退款，会员权益已根据当前权益来源完成处理。"
           : "订单已退款，课程权益已停止；如需继续学习可重新购买。",
     };
   }
@@ -450,7 +469,11 @@ function deliverCourseCheckoutEntitlement(
 ): CourseAccessState {
   const mode = checkoutModeFromOrder(order);
   if (mode === "membership") {
-    return activateCourseMembership(state, now, COURSE_MEMBERSHIP_ORDER_TITLE);
+    return activateCourseMembership(state, now, COURSE_MEMBERSHIP_ORDER_TITLE, {
+      sourceType: "checkout_order",
+      sourceOrderId: order.id,
+      sourceUpdatedAt: now,
+    });
   }
 
   const courseId = Number(order.items[0]?.targetId);
@@ -596,6 +619,10 @@ function courseIdFromCourseOrder(order: Order): number | undefined {
   return Number.isInteger(courseId) && courseId > 0 ? courseId : undefined;
 }
 
+function hasMembershipOrderItem(order: Order): boolean {
+  return order.items.some(item => item.type === "membership");
+}
+
 function hasEffectiveSameCourseOrder(
   state: CourseAccessState,
   courseId: number,
@@ -611,9 +638,79 @@ function hasEffectiveSameCourseOrder(
   });
 }
 
+function effectiveMembershipOrderTime(order: Order) {
+  return order.entitlementDeliveredAt ?? order.paidAt ?? order.createdAt;
+}
+
+function findEffectiveMembershipOrder(
+  state: CourseAccessState,
+  excludedOrderId: string
+): Order | undefined {
+  return state.orders
+    .filter(order => {
+      if (order.id === excludedOrderId) return false;
+      if (!["paid", "refunding"].includes(order.status)) return false;
+      return hasMembershipOrderItem(order);
+    })
+    .sort(
+      (a, b) =>
+        Date.parse(effectiveMembershipOrderTime(b)) -
+        Date.parse(effectiveMembershipOrderTime(a))
+    )[0];
+}
+
+function membershipSourceMatchesOrder(
+  membership: CourseMembership,
+  orderId: string
+) {
+  return (
+    membership.sourceType === "checkout_order" &&
+    membership.sourceOrderId === orderId
+  );
+}
+
+function settleRefundedMembershipOrder(
+  state: CourseAccessState,
+  refundedOrder: Order,
+  settledAt: string
+): CourseAccessState {
+  if (!hasMembershipOrderItem(refundedOrder)) return state;
+  if (!membershipSourceMatchesOrder(state.membership, refundedOrder.id)) {
+    return state;
+  }
+
+  const replacementOrder = findEffectiveMembershipOrder(
+    state,
+    refundedOrder.id
+  );
+  if (replacementOrder) {
+    return normalizeCourseAccessState({
+      ...state,
+      membership: {
+        ...state.membership,
+        sourceType: "checkout_order",
+        sourceOrderId: replacementOrder.id,
+        sourceActorId: undefined,
+        sourceUpdatedAt: settledAt,
+      },
+    });
+  }
+
+  return normalizeCourseAccessState({
+    ...state,
+    membership: {
+      ...state.membership,
+      status: "expired",
+      expiresAt: settledAt,
+      sourceUpdatedAt: settledAt,
+    },
+  });
+}
+
 export function settleRefundedCourseAccessOrder(
   state: CourseAccessState,
-  refundedOrder: Order
+  refundedOrder: Order,
+  settledAt = new Date().toISOString()
 ): CourseAccessState {
   const normalized = normalizeCourseAccessState(state);
   const parsedOrder = OrderSchema.parse(refundedOrder);
@@ -625,30 +722,37 @@ export function settleRefundedCourseAccessOrder(
   if (parsedOrder.status !== "refunded") return stateWithRefundedOrder;
 
   const refundedCourseId = courseIdFromCourseOrder(parsedOrder);
-  if (!refundedCourseId) return stateWithRefundedOrder;
+  if (refundedCourseId) {
+    if (
+      hasEffectiveSameCourseOrder(
+        stateWithRefundedOrder,
+        refundedCourseId,
+        parsedOrder.id
+      )
+    ) {
+      return stateWithRefundedOrder;
+    }
 
-  if (
-    hasEffectiveSameCourseOrder(
-      stateWithRefundedOrder,
-      refundedCourseId,
-      parsedOrder.id
-    )
-  ) {
-    return stateWithRefundedOrder;
+    return normalizeCourseAccessState({
+      ...stateWithRefundedOrder,
+      ownedCourseIds: stateWithRefundedOrder.ownedCourseIds.filter(
+        courseId => courseId !== refundedCourseId
+      ),
+    });
   }
 
-  return normalizeCourseAccessState({
-    ...stateWithRefundedOrder,
-    ownedCourseIds: stateWithRefundedOrder.ownedCourseIds.filter(
-      courseId => courseId !== refundedCourseId
-    ),
-  });
+  return settleRefundedMembershipOrder(
+    stateWithRefundedOrder,
+    parsedOrder,
+    settledAt
+  );
 }
 
 export function activateCourseMembership(
   state: CourseAccessState,
   now = new Date().toISOString(),
-  planName = "成长会员"
+  planName = "成长会员",
+  source: CourseMembershipActivationSource = {}
 ): CourseAccessState {
   const startedAt = Date.parse(now);
   const expiresAt = new Date(
@@ -662,6 +766,12 @@ export function activateCourseMembership(
       planName,
       activatedAt: now,
       expiresAt,
+      sourceType: source.sourceType,
+      sourceOrderId: source.sourceOrderId,
+      sourceActorId: source.sourceActorId,
+      sourceUpdatedAt: source.sourceType
+        ? (source.sourceUpdatedAt ?? now)
+        : undefined,
     },
   });
 }

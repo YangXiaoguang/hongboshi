@@ -81,4 +81,22 @@ describe("personal order detail model", () => {
       }).join(" ")
     ).toContain("相关课程权益已停止");
   });
+
+  it("explains refunded membership source handling separately", () => {
+    expect(
+      createPersonalOrderServiceNotes({
+        ...paidOrder,
+        status: "refunded",
+        items: [
+          {
+            type: "membership",
+            targetId: "course_membership_yearly",
+            title: "成长会员",
+            unitPrice: 999,
+            quantity: 1,
+          },
+        ],
+      }).join(" ")
+    ).toContain("会员权益已根据来源记录处理");
+  });
 });

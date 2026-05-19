@@ -248,6 +248,8 @@ describe("user admin api payloads", () => {
         after: {
           status: "active",
           expiresAt: "2027-05-31T01:10:00.000Z",
+          sourceType: "admin_manual",
+          sourceActorId: "operator_1",
         },
       });
       expect(payload.body.data.detail.membershipAuditEvents[0]).toMatchObject({
@@ -260,6 +262,9 @@ describe("user admin api payloads", () => {
     expect(storedState.membership).toMatchObject({
       status: "active",
       expiresAt: "2027-05-31T01:10:00.000Z",
+      sourceType: "admin_manual",
+      sourceActorId: "operator_1",
+      sourceUpdatedAt: now,
     });
 
     const detail = await getAdminUserDetailPayload(
