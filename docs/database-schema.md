@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。会员权益表已补充来源字段，用于区分会员 checkout 订单、后台人工会员动作和旧的直接开通来源，支撑会员退款后的安全权益回收。课程学习记录已新增独立内存/JSON Store，先保存章节进度、练习记录、完成快照和阶段证明预览准备字段，后续再补专用 PostgreSQL 表。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。M9-A/M9-B 审计中心仍是只读聚合模型，列表、详情和 CSV 导出直接消费各业务 Store/表中的既有审计事实。M9-C 新增统一审计 Store 方案与 `audit_center_archived_events` 只追加归档表草案；M9-D 新增 Archive Store 和手动归档任务；M9-E 新增归档后台入口和只读校验接口，但当前仍不把业务写动作或审计真相源切换到该表。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。课程详情内容表已补充 `sales_assets`，用于承载课程详情页成交主视觉、成交卖点和运营图文资产。会员权益表已补充来源字段，用于区分会员 checkout 订单、后台人工会员动作和旧的直接开通来源，支撑会员退款后的安全权益回收。课程学习记录已新增独立内存/JSON Store，先保存章节进度、练习记录、完成快照和阶段证明预览准备字段，后续再补专用 PostgreSQL 表。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。M9-A/M9-B 审计中心仍是只读聚合模型，列表、详情和 CSV 导出直接消费各业务 Store/表中的既有审计事实。M9-C 新增统一审计 Store 方案与 `audit_center_archived_events` 只追加归档表草案；M9-D 新增 Archive Store 和手动归档任务；M9-E 新增归档后台入口和只读校验接口，但当前仍不把业务写动作或审计真相源切换到该表。
 
 ## 文件位置
 
@@ -21,6 +21,7 @@
 - `server/db/migrations/0014_risk_review_sop_persistence.sql`：风险复核处理记录、风险 SOP 模板和升级队列表，包含审计中心预备投影字段与查询索引。
 - `server/db/migrations/0015_audit_center_archive.sql`：统一审计中心归档表草案，包含唯一幂等键、source descriptor、summary-only 摘要字段和跨模块查询索引。
 - `server/db/migrations/0016_course_membership_source_fields.sql`：课程会员权益来源字段，补充订单来源、人工操作者来源和来源更新时间。
+- `server/db/migrations/0017_course_product_merchandising_assets.sql`：课程详情成交图文素材字段，为课程商品详情增加 `sales_assets` JSONB，用于保存主视觉、成交卖点和图文资产。
 - `server/db/migrationRunner.ts`：轻量 SQL migration runner，记录已应用迁移。
 - `server/db/runtimeConfig.ts`：运行时持久化 Store 配置解析与校验。
 - `server/db/schema.test.ts`：检查迁移中是否包含核心表、关键列和查询索引。
@@ -98,7 +99,7 @@
 
 `server/modules/catalog/courseProductContentStore.ts` 已实现课程详情内容的内存 Store、JSON 文件 Store 和批量内容质量校验。开发期默认使用 `.hongboshi-data/course-product-content.json` 保存详情摘要、适合人群、章节和素材占位；当设置 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 时可临时切回内存。
 
-`server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节和素材占位；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
+`server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节、素材占位和 `sales_assets` 成交图文素材；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
 
 `server/modules/audit/auditArchiveStore.ts` 已实现统一审计归档 Store 接口和内存实现，`server/modules/audit/postgresAuditArchiveStore.ts` 已实现 `audit_center_archived_events` 的幂等写入、列表、计数、长期检索和测试清理能力，列表可按发生时间或归档时间排序，并支持模块、动作、操作者、批次、资源关键词、发生日期和归档日期筛选。手动归档任务通过 `AuditCenterArchiveEventSchema` 校验后写入，只保存稳定事件 ID、唯一幂等键、来源模块/源事件 ID、来源 Store/表、模块、动作、资源、操作者、角色、原因、summary-only 前后摘要、发生时间、归档时间、结构版本和隐私口径版本，并使用模块、动作、资源、操作者、来源和归档时间索引。归档只读校验通过 Archive Store 读取总数、模块计数、最近批次和最近归档事件摘要，用于解释归档表和当前聚合口径的差异；归档检索预览通过同一 Store 返回摘要行。当前没有对应业务写入切换，审计中心列表/导出/详情仍读取现有聚合逻辑。
 

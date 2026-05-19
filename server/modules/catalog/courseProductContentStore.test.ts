@@ -23,6 +23,8 @@ describe("course product content store", () => {
 
     expect(content.productId).toBe(product.id);
     expect(content.summary).toContain(product.title);
+    expect(content.merchandising.showcaseImageUrl).toBe(product.coverUrl);
+    expect(content.merchandising.sellingPoints.length).toBeGreaterThan(1);
     expect(content.chapters).toHaveLength(3);
   });
 
@@ -51,6 +53,21 @@ describe("course product content store", () => {
       request: {
         summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
         targetAudience: ["希望提升情绪调节能力的学习者"],
+        merchandising: {
+          headline: "情绪调节成交主视觉",
+          subheadline: "用更清晰的图文介绍帮助用户理解课程适合什么状态。",
+          showcaseImageUrl: "https://example.com/emotion-showcase.jpg",
+          sellingPoints: ["先识别情绪触发点", "再完成一组课后练习"],
+          imageAssets: [
+            {
+              id: "sales_asset_1",
+              title: "课程主视觉",
+              imageUrl: "https://example.com/emotion-showcase.jpg",
+              usage: "showcase",
+              complianceStatus: "approved",
+            },
+          ],
+        },
         chapters: [
           {
             id: "chapter_1",
@@ -90,6 +107,10 @@ describe("course product content store", () => {
         productId: product.id,
         summary: "这是一段达到契约最低长度但还不足以支撑审核判断的摘要。",
         targetAudience: ["学习者"],
+        merchandising: {
+          sellingPoints: [],
+          imageAssets: [],
+        },
         chapters: [
           {
             id: "chapter_1",

@@ -32,6 +32,7 @@ import {
   COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES,
   COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES,
   COURSE_PRODUCT_CONTENT_MATERIAL_TYPES,
+  COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES,
   COURSE_TYPES,
   CourseProductDetailContentSchema,
   evaluateCourseProductContentQuality,
@@ -46,6 +47,7 @@ import {
   type CourseProductDetailContent,
   type CourseProductListItem,
   type CourseProductListQuery,
+  type CourseProductMerchandisingAssetUsage,
   type CourseProductListResult,
   type CourseProductPriceUpdateRequest,
   type CourseProductReviewAction,
@@ -103,9 +105,27 @@ type ContentChapterFormState = {
   durationMinutes: string;
   materialPlaceholders: ContentMaterialFormState[];
 };
+type ContentMerchandisingAssetFormState = {
+  id: string;
+  title: string;
+  imageUrl: string;
+  altText: string;
+  usage: CourseProductMerchandisingAssetUsage;
+  complianceStatus: CourseProductContentAssetReviewStatus;
+  note: string;
+};
+type ContentMerchandisingFormState = {
+  headline: string;
+  subheadline: string;
+  showcaseImageUrl: string;
+  showcaseImageAlt: string;
+  sellingPointsText: string;
+  imageAssets: ContentMerchandisingAssetFormState[];
+};
 type ContentFormState = {
   summary: string;
   targetAudienceText: string;
+  merchandising: ContentMerchandisingFormState;
   chapters: ContentChapterFormState[];
   reason: string;
 };
@@ -173,6 +193,12 @@ const assetReviewStatusCopy = {
   approved: "已通过",
   rejected: "已驳回",
 } satisfies Record<CourseProductContentAssetReviewStatus, string>;
+
+const merchandisingAssetUsageCopy = {
+  showcase: "主视觉",
+  proof: "证明图",
+  gallery: "详情图",
+} satisfies Record<CourseProductMerchandisingAssetUsage, string>;
 
 function formatMoney(item: CourseProductListItem) {
   if (item.price.isFree) return "免费";
@@ -356,6 +382,22 @@ function contentFormFromDetail(
   return {
     summary: content.summary,
     targetAudienceText: content.targetAudience.join("\n"),
+    merchandising: {
+      headline: content.merchandising.headline ?? "",
+      subheadline: content.merchandising.subheadline ?? "",
+      showcaseImageUrl: content.merchandising.showcaseImageUrl ?? "",
+      showcaseImageAlt: content.merchandising.showcaseImageAlt ?? "",
+      sellingPointsText: content.merchandising.sellingPoints.join("\n"),
+      imageAssets: content.merchandising.imageAssets.map(asset => ({
+        id: asset.id,
+        title: asset.title,
+        imageUrl: asset.imageUrl,
+        altText: asset.altText ?? "",
+        usage: asset.usage,
+        complianceStatus: asset.complianceStatus,
+        note: asset.note ?? "",
+      })),
+    },
     chapters: content.chapters.map(chapter => ({
       id: chapter.id,
       title: chapter.title,
@@ -383,6 +425,42 @@ function targetAudienceFromText(value: string) {
     .split("\n")
     .map(item => item.trim())
     .filter(Boolean);
+}
+
+function sellingPointsFromText(value: string) {
+  return value
+    .split("\n")
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function merchandisingFromContentForm(
+  merchandising: ContentMerchandisingFormState
+) {
+  return {
+    headline: merchandising.headline.trim()
+      ? merchandising.headline.trim()
+      : undefined,
+    subheadline: merchandising.subheadline.trim()
+      ? merchandising.subheadline.trim()
+      : undefined,
+    showcaseImageUrl: merchandising.showcaseImageUrl.trim()
+      ? merchandising.showcaseImageUrl.trim()
+      : undefined,
+    showcaseImageAlt: merchandising.showcaseImageAlt.trim()
+      ? merchandising.showcaseImageAlt.trim()
+      : undefined,
+    sellingPoints: sellingPointsFromText(merchandising.sellingPointsText),
+    imageAssets: merchandising.imageAssets.map(asset => ({
+      id: asset.id,
+      title: asset.title,
+      imageUrl: asset.imageUrl,
+      altText: asset.altText.trim() ? asset.altText.trim() : undefined,
+      usage: asset.usage,
+      complianceStatus: asset.complianceStatus,
+      note: asset.note.trim() ? asset.note.trim() : undefined,
+    })),
+  };
 }
 
 function chaptersFromContentForm(chapters: ContentChapterFormState[]) {
@@ -416,6 +494,7 @@ function contentQualityFromForm(
     productId,
     summary: form.summary,
     targetAudience: targetAudienceFromText(form.targetAudienceText),
+    merchandising: merchandisingFromContentForm(form.merchandising),
     chapters: chaptersFromContentForm(form.chapters),
     updatedAt: new Date(0).toISOString(),
   });
@@ -465,6 +544,21 @@ function createContentMaterial(
     uploadedBy: "",
     complianceStatus: "not_required",
     downloadEnabled: false,
+    note: "",
+  };
+}
+
+function createMerchandisingAsset(
+  productId: string,
+  index: number
+): ContentMerchandisingAssetFormState {
+  return {
+    id: `${productId}_sales_asset_${Date.now()}_${index}`,
+    title: "",
+    imageUrl: "",
+    altText: "",
+    usage: "gallery",
+    complianceStatus: "pending",
     note: "",
   };
 }
@@ -775,6 +869,14 @@ export default function CourseProducts() {
   const [contentForm, setContentForm] = useState<ContentFormState>({
     summary: "",
     targetAudienceText: "",
+    merchandising: {
+      headline: "",
+      subheadline: "",
+      showcaseImageUrl: "",
+      showcaseImageAlt: "",
+      sellingPointsText: "",
+      imageAssets: [],
+    },
     chapters: [],
     reason: "",
   });
@@ -1053,6 +1155,66 @@ export default function CourseProducts() {
     []
   );
 
+  const updateMerchandising = useCallback(
+    (patch: Partial<Omit<ContentMerchandisingFormState, "imageAssets">>) => {
+      setContentForm(current => ({
+        ...current,
+        merchandising: {
+          ...current.merchandising,
+          ...patch,
+        },
+      }));
+    },
+    []
+  );
+
+  const updateMerchandisingAsset = useCallback(
+    (
+      assetIndex: number,
+      patch: Partial<ContentMerchandisingAssetFormState>
+    ) => {
+      setContentForm(current => ({
+        ...current,
+        merchandising: {
+          ...current.merchandising,
+          imageAssets: current.merchandising.imageAssets.map((asset, index) =>
+            index === assetIndex ? { ...asset, ...patch } : asset
+          ),
+        },
+      }));
+    },
+    []
+  );
+
+  const addMerchandisingAsset = useCallback(() => {
+    if (!contentEditor) return;
+    setContentForm(current => ({
+      ...current,
+      merchandising: {
+        ...current.merchandising,
+        imageAssets: [
+          ...current.merchandising.imageAssets,
+          createMerchandisingAsset(
+            contentEditor.id,
+            current.merchandising.imageAssets.length + 1
+          ),
+        ],
+      },
+    }));
+  }, [contentEditor]);
+
+  const removeMerchandisingAsset = useCallback((assetIndex: number) => {
+    setContentForm(current => ({
+      ...current,
+      merchandising: {
+        ...current.merchandising,
+        imageAssets: current.merchandising.imageAssets.filter(
+          (_, index) => index !== assetIndex
+        ),
+      },
+    }));
+  }, []);
+
   const addContentChapter = useCallback(() => {
     if (!contentEditor) return;
     setContentForm(current => ({
@@ -1143,6 +1305,7 @@ export default function CourseProducts() {
     const request: CourseProductContentUpdateRequest = {
       summary: contentForm.summary,
       targetAudience,
+      merchandising: merchandisingFromContentForm(contentForm.merchandising),
       chapters,
       reason: contentForm.reason,
     };
@@ -1845,6 +2008,203 @@ export default function CourseProducts() {
                   />
                 </label>
 
+                <div className="mt-5 rounded-xl border border-[#E1D7C8] bg-[#FFFDF8] p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-[#41524B]">
+                        成交图文素材
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                        维护课程详情页“课程亮点”区域使用的主视觉、标题、卖点和商品图文资产。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addMerchandisingAsset}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                    >
+                      <Plus className="h-4 w-4" />
+                      添加图文资产
+                    </button>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label className="text-sm font-semibold text-[#41524B]">
+                      成交标题
+                      <input
+                        value={contentForm.merchandising.headline}
+                        onChange={event =>
+                          updateMerchandising({
+                            headline: event.target.value,
+                          })
+                        }
+                        placeholder="例如：先稳住情绪，再恢复行动感"
+                        className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                      />
+                    </label>
+                    <label className="text-sm font-semibold text-[#41524B]">
+                      主视觉图 URL
+                      <input
+                        value={contentForm.merchandising.showcaseImageUrl}
+                        onChange={event =>
+                          updateMerchandising({
+                            showcaseImageUrl: event.target.value,
+                          })
+                        }
+                        placeholder="https://..."
+                        className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="mt-3 block text-sm font-semibold text-[#41524B]">
+                    副标题 / 购买判断说明
+                    <textarea
+                      value={contentForm.merchandising.subheadline}
+                      onChange={event =>
+                        updateMerchandising({
+                          subheadline: event.target.value,
+                        })
+                      }
+                      placeholder="说明这门课解决什么、适合谁、为什么现在值得学习"
+                      className="mt-2 min-h-[76px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                    />
+                  </label>
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-[1fr_0.8fr]">
+                    <label className="text-sm font-semibold text-[#41524B]">
+                      成交卖点
+                      <textarea
+                        value={contentForm.merchandising.sellingPointsText}
+                        onChange={event =>
+                          updateMerchandising({
+                            sellingPointsText: event.target.value,
+                          })
+                        }
+                        placeholder="每行一条，例如：识别情绪触发点"
+                        className="mt-2 min-h-[92px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                      />
+                    </label>
+                    <label className="text-sm font-semibold text-[#41524B]">
+                      主视觉替代文本
+                      <textarea
+                        value={contentForm.merchandising.showcaseImageAlt}
+                        onChange={event =>
+                          updateMerchandising({
+                            showcaseImageAlt: event.target.value,
+                          })
+                        }
+                        placeholder="用于无障碍说明和素材识别"
+                        className="mt-2 min-h-[92px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                      />
+                    </label>
+                  </div>
+
+                  {contentForm.merchandising.imageAssets.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      {contentForm.merchandising.imageAssets.map(
+                        (asset, assetIndex) => (
+                          <div
+                            key={asset.id}
+                            className="rounded-lg bg-[#F8F3EA] p-3"
+                          >
+                            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_120px_120px_auto]">
+                              <input
+                                value={asset.title}
+                                onChange={event =>
+                                  updateMerchandisingAsset(assetIndex, {
+                                    title: event.target.value,
+                                  })
+                                }
+                                placeholder="图文资产标题"
+                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              />
+                              <select
+                                value={asset.usage}
+                                onChange={event =>
+                                  updateMerchandisingAsset(assetIndex, {
+                                    usage: event.target
+                                      .value as CourseProductMerchandisingAssetUsage,
+                                  })
+                                }
+                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              >
+                                {COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES.map(
+                                  usage => (
+                                    <option key={usage} value={usage}>
+                                      {merchandisingAssetUsageCopy[usage]}
+                                    </option>
+                                  )
+                                )}
+                              </select>
+                              <select
+                                value={asset.complianceStatus}
+                                onChange={event =>
+                                  updateMerchandisingAsset(assetIndex, {
+                                    complianceStatus: event.target
+                                      .value as CourseProductContentAssetReviewStatus,
+                                  })
+                                }
+                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              >
+                                {COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES.map(
+                                  status => (
+                                    <option key={status} value={status}>
+                                      {assetReviewStatusCopy[status]}
+                                    </option>
+                                  )
+                                )}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removeMerchandisingAsset(assetIndex)
+                                }
+                                aria-label="移除图文资产"
+                                className="flex h-9 w-9 items-center justify-center rounded-lg text-[#A65F48] transition hover:bg-[#FFE8DE]"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                            <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
+                              <input
+                                value={asset.imageUrl}
+                                onChange={event =>
+                                  updateMerchandisingAsset(assetIndex, {
+                                    imageUrl: event.target.value,
+                                  })
+                                }
+                                placeholder="图片 URL"
+                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              />
+                              <input
+                                value={asset.altText}
+                                onChange={event =>
+                                  updateMerchandisingAsset(assetIndex, {
+                                    altText: event.target.value,
+                                  })
+                                }
+                                placeholder="替代文本"
+                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              />
+                              <input
+                                value={asset.note}
+                                onChange={event =>
+                                  updateMerchandisingAsset(assetIndex, {
+                                    note: event.target.value,
+                                  })
+                                }
+                                placeholder="素材备注"
+                                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              />
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {contentQuality && (
                   <div
                     className={`mt-4 rounded-lg border px-4 py-3 ${
@@ -1878,7 +2238,9 @@ export default function CourseProducts() {
                     {contentQuality.issues.length > 0 && (
                       <ul className="mt-3 space-y-1 text-xs leading-5 text-[#7D746B]">
                         {contentQuality.issues.slice(0, 4).map(issue => (
-                          <li key={`${issue.code}-${issue.path ?? issue.message}`}>
+                          <li
+                            key={`${issue.code}-${issue.path ?? issue.message}`}
+                          >
                             {issue.message}
                           </li>
                         ))}
@@ -2101,8 +2463,7 @@ export default function CourseProducts() {
                                         chapterIndex,
                                         materialIndex,
                                         {
-                                          downloadEnabled:
-                                            event.target.checked,
+                                          downloadEnabled: event.target.checked,
                                         }
                                       )
                                     }

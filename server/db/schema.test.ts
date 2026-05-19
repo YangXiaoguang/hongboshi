@@ -18,7 +18,16 @@ function tableBlock(tableName: string) {
       "i"
     )
   );
-  return match?.[1] ?? "";
+  const alterBlocks = Array.from(
+    migrationSql.matchAll(
+      new RegExp(
+        `ALTER TABLE ${tableName}\\s+ADD COLUMN IF NOT EXISTS\\s+([^;]+);`,
+        "gi"
+      )
+    )
+  ).map(item => item[1] ?? "");
+
+  return [match?.[1] ?? "", ...alterBlocks].join("\n");
 }
 
 describe("database schema contract", () => {

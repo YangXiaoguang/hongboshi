@@ -76,9 +76,18 @@ export const COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES = [
   "rejected",
 ] as const;
 
+export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
+  "showcase",
+  "proof",
+  "gallery",
+] as const;
+
 export const COURSE_PRODUCT_CONTENT_QUALITY_ISSUE_CODES = [
   "schema_invalid",
   "summary_too_short",
+  "merchandising_image_missing",
+  "merchandising_points_missing",
+  "merchandising_asset_pending",
   "audience_too_few",
   "chapters_too_few",
   "chapter_duration_too_short",
@@ -119,6 +128,10 @@ export const CourseProductContentMaterialStatusSchema = z.enum(
 
 export const CourseProductContentAssetReviewStatusSchema = z.enum(
   COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES
+);
+
+export const CourseProductMerchandisingAssetUsageSchema = z.enum(
+  COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES
 );
 
 export const CourseProductContentQualityIssueCodeSchema = z.enum(
@@ -270,9 +283,8 @@ export const CourseProductContentMaterialSchema = z.object({
   assetUrl: z.string().trim().url().optional(),
   uploadedBy: EntityIdSchema.optional(),
   uploadedAt: DateTimeLikeSchema.optional(),
-  complianceStatus: CourseProductContentAssetReviewStatusSchema.default(
-    "not_required"
-  ),
+  complianceStatus:
+    CourseProductContentAssetReviewStatusSchema.default("not_required"),
   downloadEnabled: z.boolean().default(false),
   note: z.string().trim().max(200).optional(),
 });
@@ -287,10 +299,42 @@ export const CourseProductContentChapterSchema = z.object({
     .default([]),
 });
 
+export const CourseProductMerchandisingAssetSchema = z.object({
+  id: EntityIdSchema,
+  title: z.string().trim().min(2).max(80),
+  imageUrl: z.string().trim().url(),
+  altText: z.string().trim().max(120).optional(),
+  usage: CourseProductMerchandisingAssetUsageSchema.default("gallery"),
+  complianceStatus:
+    CourseProductContentAssetReviewStatusSchema.default("not_required"),
+  note: z.string().trim().max(200).optional(),
+});
+
+export const CourseProductMerchandisingContentSchema = z
+  .object({
+    headline: z.string().trim().min(6).max(100).optional(),
+    subheadline: z.string().trim().min(10).max(240).optional(),
+    showcaseImageUrl: z.string().trim().url().optional(),
+    showcaseImageAlt: z.string().trim().max(120).optional(),
+    sellingPoints: z
+      .array(z.string().trim().min(4).max(120))
+      .max(6)
+      .default([]),
+    imageAssets: z
+      .array(CourseProductMerchandisingAssetSchema)
+      .max(8)
+      .default([]),
+  })
+  .default({
+    sellingPoints: [],
+    imageAssets: [],
+  });
+
 export const CourseProductDetailContentSchema = z.object({
   productId: EntityIdSchema,
   summary: z.string().trim().min(20).max(500),
   targetAudience: z.array(z.string().trim().min(2).max(80)).min(1).max(8),
+  merchandising: CourseProductMerchandisingContentSchema,
   chapters: z.array(CourseProductContentChapterSchema).min(1).max(60),
   updatedAt: DateTimeLikeSchema,
 });
@@ -379,6 +423,44 @@ export function evaluateCourseProductContentQuality(
       severity: "blocking",
       message: "适合人群至少需要 2 条，方便前台用户判断是否匹配。",
       path: "targetAudience",
+    });
+  }
+
+  const hasShowcaseImage =
+    Boolean(normalized.merchandising.showcaseImageUrl) ||
+    normalized.merchandising.imageAssets.some(
+      asset => asset.usage === "showcase"
+    );
+  if (!hasShowcaseImage) {
+    addIssue({
+      code: "merchandising_image_missing",
+      severity: "warning",
+      message: "课程详情建议配置成交主视觉，提升商品介绍的吸引力。",
+      path: "merchandising.showcaseImageUrl",
+    });
+  }
+
+  if (normalized.merchandising.sellingPoints.length < 2) {
+    addIssue({
+      code: "merchandising_points_missing",
+      severity: "warning",
+      message: "课程详情建议至少配置 2 条成交卖点，减少用户购买前的理解成本。",
+      path: "merchandising.sellingPoints",
+    });
+  }
+
+  const pendingMerchandisingAssetCount =
+    normalized.merchandising.imageAssets.filter(
+      asset =>
+        asset.complianceStatus === "pending" ||
+        asset.complianceStatus === "rejected"
+    ).length;
+  if (pendingMerchandisingAssetCount > 0) {
+    addIssue({
+      code: "merchandising_asset_pending",
+      severity: "warning",
+      message: `课程成交图文还有 ${pendingMerchandisingAssetCount} 个素材待合规确认。`,
+      path: "merchandising.imageAssets",
     });
   }
 
@@ -489,6 +571,9 @@ export type CourseProductContentMaterialStatus = z.infer<
 export type CourseProductContentAssetReviewStatus = z.infer<
   typeof CourseProductContentAssetReviewStatusSchema
 >;
+export type CourseProductMerchandisingAssetUsage = z.infer<
+  typeof CourseProductMerchandisingAssetUsageSchema
+>;
 export type CourseProductContentQualityIssueCode = z.infer<
   typeof CourseProductContentQualityIssueCodeSchema
 >;
@@ -500,6 +585,12 @@ export type CourseProductContentMaterial = z.infer<
 >;
 export type CourseProductContentChapter = z.infer<
   typeof CourseProductContentChapterSchema
+>;
+export type CourseProductMerchandisingAsset = z.infer<
+  typeof CourseProductMerchandisingAssetSchema
+>;
+export type CourseProductMerchandisingContent = z.infer<
+  typeof CourseProductMerchandisingContentSchema
 >;
 export type CourseProductDetailContent = z.infer<
   typeof CourseProductDetailContentSchema

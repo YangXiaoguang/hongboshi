@@ -68,6 +68,9 @@ export function useCourseDetail(courseId: number | undefined) {
     fallback.relatedCourses
   );
   const [allCourses, setAllCourses] = useState<Course[]>(fallback.allCourses);
+  const [detailContent, setDetailContent] = useState<
+    CourseProductDetailContent | undefined
+  >();
   const [isLoading, setIsLoading] = useState(Boolean(validCourseId));
   const [error, setError] = useState<string | undefined>();
   const [dataSource, setDataSource] = useState<"api" | "fallback">("fallback");
@@ -76,6 +79,7 @@ export function useCourseDetail(courseId: number | undefined) {
     setCourse(fallback.course);
     setAllCourses(fallback.allCourses);
     setRelatedCourses(fallback.relatedCourses);
+    setDetailContent(undefined);
     setDataSource("fallback");
   }, [fallback.allCourses, fallback.course, fallback.relatedCourses]);
 
@@ -94,6 +98,7 @@ export function useCourseDetail(courseId: number | undefined) {
 
       const detail = buildDetailFromCourse(remoteCourse, remoteContent);
       setCourse(detail);
+      setDetailContent(remoteContent);
       setAllCourses(remoteCourses);
       setRelatedCourses(
         detail ? getRelatedCourses(remoteCourses, detail, 3) : []
@@ -103,6 +108,7 @@ export function useCourseDetail(courseId: number | undefined) {
     } catch (err) {
       const nextFallback = getFallbackDetail(validCourseId);
       setCourse(nextFallback.course);
+      setDetailContent(undefined);
       setAllCourses(nextFallback.allCourses);
       setRelatedCourses(nextFallback.relatedCourses);
       setDataSource("fallback");
@@ -118,6 +124,7 @@ export function useCourseDetail(courseId: number | undefined) {
 
   return {
     course,
+    detailContent,
     allCourses,
     relatedCourses,
     dataSource,

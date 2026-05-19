@@ -32,9 +32,10 @@ class FakeCourseProductContentExecutor implements DatabaseQueryExecutor {
         product_id: values?.[0],
         summary: values?.[1],
         target_audience: JSON.parse(String(values?.[2] ?? "[]")),
-        chapters: JSON.parse(String(values?.[3] ?? "[]")),
-        created_at: values?.[4],
-        updated_at: values?.[4],
+        sales_assets: JSON.parse(String(values?.[3] ?? "{}")),
+        chapters: JSON.parse(String(values?.[4] ?? "[]")),
+        created_at: values?.[5],
+        updated_at: values?.[5],
       };
       this.contents = [
         ...this.contents.filter(
@@ -82,6 +83,9 @@ describe("postgres course product content store", () => {
       content.summary,
       JSON.stringify(content.targetAudience),
     ]);
+    expect(db.queries[0]?.values?.[3]).toBe(
+      JSON.stringify(content.merchandising)
+    );
   });
 
   it("loads detail content from PostgreSQL rows", async () => {
@@ -95,6 +99,7 @@ describe("postgres course product content store", () => {
         product_id: content.productId,
         summary: content.summary,
         target_audience: content.targetAudience,
+        sales_assets: content.merchandising,
         chapters: content.chapters,
         created_at: new Date("2026-05-12T09:00:00.000Z"),
         updated_at: new Date("2026-05-12T09:20:00.000Z"),

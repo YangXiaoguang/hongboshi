@@ -203,6 +203,7 @@ export async function updateCourseProductContent({
     productId,
     summary: request.summary,
     targetAudience: request.targetAudience,
+    merchandising: request.merchandising,
     chapters: request.chapters,
     updatedAt: now,
   });
@@ -310,6 +311,27 @@ export function buildDefaultCourseProductContent(
       "需要低压力练习和清晰步骤的学习者",
       "希望把课程、测评和咨询结合起来的人",
     ],
+    merchandising: {
+      headline: `${product.category}课程：先看清问题，再开始练习`,
+      subheadline: `围绕「${product.title}」配置成交主视觉、课程卖点和图文资产，帮助用户在购买前快速判断是否适合自己。`,
+      showcaseImageUrl: product.coverUrl,
+      showcaseImageAlt: product.title,
+      sellingPoints: [
+        `围绕${product.category}的常见场景展开`,
+        "章节结构清晰，适合碎片时间学习",
+        "搭配练习素材，方便回到日常复盘",
+      ],
+      imageAssets: [
+        {
+          id: `${product.id}_merch_showcase`,
+          title: "课程成交主视觉",
+          imageUrl: product.coverUrl,
+          altText: product.title,
+          usage: "showcase",
+          complianceStatus: "not_required",
+        },
+      ],
+    },
     chapters: [
       {
         id: `${product.id}_chapter_1`,
@@ -359,6 +381,11 @@ function pickContentAuditFields(content: CourseProductDetailContent) {
   return {
     summary: content.summary,
     targetAudienceCount: content.targetAudience.length,
+    merchandisingHeadline: content.merchandising.headline ?? null,
+    merchandisingAssetCount:
+      content.merchandising.imageAssets.length +
+      (content.merchandising.showcaseImageUrl ? 1 : 0),
+    merchandisingSellingPointCount: content.merchandising.sellingPoints.length,
     chapterCount: content.chapters.length,
     materialCount: content.chapters.reduce(
       (total, chapter) => total + chapter.materialPlaceholders.length,

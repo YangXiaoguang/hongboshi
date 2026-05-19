@@ -166,6 +166,7 @@ describe("course product domain contract", () => {
       updatedAt: "2026-05-11T10:40:00+08:00",
     });
 
+    expect(parsed.merchandising.imageAssets).toEqual([]);
     expect(parsed.chapters[0]?.materialPlaceholders[0]?.status).toBe("pending");
     expect(parsed.chapters[0]?.materialPlaceholders[0]?.assetId).toBe(
       "asset_emotion_intro_1"
@@ -222,7 +223,26 @@ describe("course product domain contract", () => {
       productId: "course_product_1",
       summary:
         "这门课程围绕情绪识别、调节练习和日常沟通展开，帮助学习者把困扰拆成可执行的行动计划。",
-      targetAudience: ["希望提升情绪调节能力的学习者", "需要关系沟通练习的用户"],
+      targetAudience: [
+        "希望提升情绪调节能力的学习者",
+        "需要关系沟通练习的用户",
+      ],
+      merchandising: {
+        headline: "先稳住情绪，再恢复行动感",
+        subheadline:
+          "用真实课程主视觉和清晰卖点，帮助用户快速判断这门课是否适合自己。",
+        showcaseImageUrl: "https://cdn.example.com/assets/emotion-showcase.jpg",
+        sellingPoints: ["识别情绪触发点", "完成日常稳定练习"],
+        imageAssets: [
+          {
+            id: "sales_asset_1",
+            title: "课程成交主视觉",
+            imageUrl: "https://cdn.example.com/assets/emotion-showcase.jpg",
+            usage: "showcase",
+            complianceStatus: "approved",
+          },
+        ],
+      },
       chapters: [
         {
           id: "chapter_1",
@@ -254,13 +274,13 @@ describe("course product domain contract", () => {
       updatedAt: "2026-05-12T09:00:00+08:00",
     });
 
-    expect(evaluateCourseProductContentQuality(readyWithWarnings)).toMatchObject(
-      {
-        ready: true,
-        blockingCount: 0,
-        warningCount: 1,
-      }
-    );
+    expect(
+      evaluateCourseProductContentQuality(readyWithWarnings)
+    ).toMatchObject({
+      ready: true,
+      blockingCount: 0,
+      warningCount: 1,
+    });
 
     const blocked = CourseProductDetailContentSchema.parse({
       productId: "course_product_1",

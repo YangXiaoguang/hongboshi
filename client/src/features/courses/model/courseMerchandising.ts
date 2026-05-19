@@ -1,4 +1,10 @@
-import type { Course, CourseCategory, CourseDetail } from "@shared/domain";
+import type {
+  Course,
+  CourseCategory,
+  CourseDetail,
+  CourseProductMerchandisingAsset,
+  CourseProductMerchandisingContent,
+} from "@shared/domain";
 import type { CourseLearningPath } from "./coursePath";
 
 export interface CourseMerchandisingProof {
@@ -7,12 +13,23 @@ export interface CourseMerchandisingProof {
   description: string;
 }
 
+export interface CourseMerchandisingVisualAsset {
+  id: string;
+  title: string;
+  imageUrl: string;
+  altText: string;
+  usage: "proof" | "gallery";
+  note?: string;
+}
+
 export interface CourseMerchandisingProfile {
   promise: string;
   buyerQuestion: string;
   showcaseImageUrl: string;
+  showcaseImageAlt: string;
   proofPoints: CourseMerchandisingProof[];
   sellingPoints: string[];
+  visualAssets: CourseMerchandisingVisualAsset[];
 }
 
 const showcaseImages: Record<CourseCategory, string> = {
@@ -95,26 +112,72 @@ export function getCourseMerchandisingImage(course: Course): string {
   return showcaseImages[course.category] ?? course.coverUrl;
 }
 
+function isPublicMerchandisingAsset(asset: CourseProductMerchandisingAsset) {
+  return (
+    asset.complianceStatus === "approved" ||
+    asset.complianceStatus === "not_required"
+  );
+}
+
+function isPublicVisualAsset(
+  asset: CourseProductMerchandisingAsset
+): asset is CourseProductMerchandisingAsset & { usage: "proof" | "gallery" } {
+  return asset.usage !== "showcase" && isPublicMerchandisingAsset(asset);
+}
+
 export function createCourseMerchandisingProfile({
   course,
   learningPath,
+  merchandising,
   totalDuration,
   totalLessons,
 }: {
   course: CourseDetail;
   learningPath: CourseLearningPath;
+  merchandising?: CourseProductMerchandisingContent;
   totalDuration: number;
   totalLessons: number;
 }): CourseMerchandisingProfile {
   const primaryAudience = course.suitableFor[0];
   const primaryOutcome = course.outcomes[0];
+  const showcaseAsset = merchandising?.imageAssets.find(
+    asset => asset.usage === "showcase" && isPublicMerchandisingAsset(asset)
+  );
+  const visualAssets =
+    merchandising?.imageAssets
+      .filter(isPublicVisualAsset)
+      .slice(0, 3)
+      .map(asset => {
+        const visualAsset: CourseMerchandisingVisualAsset = {
+          id: asset.id,
+          title: asset.title,
+          imageUrl: asset.imageUrl,
+          altText: asset.altText ?? asset.title,
+          usage: asset.usage,
+        };
+        if (asset.note) visualAsset.note = asset.note;
+        return visualAsset;
+      }) ?? [];
+  const sellingPoints = merchandising?.sellingPoints.length
+    ? merchandising.sellingPoints
+    : course.outcomes.slice(0, 4);
+  const buyerQuestion =
+    merchandising?.subheadline ??
+    (primaryAudience
+      ? `如果你正在经历「${primaryAudience.title}」，这门课会先帮你把困扰拆成能练习的小步骤。`
+      : "先看清这门课解决什么，再决定是否下单。");
 
   return {
-    promise: categoryPromises[course.category],
-    buyerQuestion: primaryAudience
-      ? `如果你正在经历「${primaryAudience.title}」，这门课会先帮你把困扰拆成能练习的小步骤。`
-      : "先看清这门课解决什么，再决定是否下单。",
-    showcaseImageUrl: getCourseMerchandisingImage(course),
+    promise: merchandising?.headline ?? categoryPromises[course.category],
+    buyerQuestion,
+    showcaseImageUrl:
+      merchandising?.showcaseImageUrl ??
+      showcaseAsset?.imageUrl ??
+      getCourseMerchandisingImage(course),
+    showcaseImageAlt:
+      merchandising?.showcaseImageAlt ??
+      showcaseAsset?.altText ??
+      `${course.title}课程主视觉`,
     proofPoints: [
       {
         label: "适合状态",
@@ -137,6 +200,7 @@ export function createCourseMerchandisingProfile({
         description: learningPath.outcome,
       },
     ],
-    sellingPoints: course.outcomes.slice(0, 4),
+    sellingPoints,
+    visualAssets,
   };
 }

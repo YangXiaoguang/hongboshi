@@ -9,6 +9,7 @@ type CourseProductContentRow = {
   product_id: string;
   summary: string;
   target_audience: unknown;
+  sales_assets?: unknown;
   chapters: unknown;
   created_at: string | Date;
   updated_at: string | Date;
@@ -27,14 +28,13 @@ export function courseProductContentRowToDomain(
     productId: row.product_id,
     summary: row.summary,
     targetAudience: row.target_audience,
+    merchandising: row.sales_assets ?? {},
     chapters: row.chapters,
     updatedAt: toDateTimeLike(row.updated_at),
   });
 }
 
-export class PostgresCourseProductContentStore
-  implements CourseProductContentStore
-{
+export class PostgresCourseProductContentStore implements CourseProductContentStore {
   constructor(private readonly db: DatabaseQueryExecutor) {}
 
   async getContent(productId: string) {
@@ -44,6 +44,7 @@ export class PostgresCourseProductContentStore
           product_id,
           summary,
           target_audience,
+          sales_assets,
           chapters,
           created_at,
           updated_at
@@ -66,20 +67,23 @@ export class PostgresCourseProductContentStore
           product_id,
           summary,
           target_audience,
+          sales_assets,
           chapters,
           created_at,
           updated_at
         )
-        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $5)
+        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $6)
         ON CONFLICT (product_id) DO UPDATE SET
           summary = EXCLUDED.summary,
           target_audience = EXCLUDED.target_audience,
+          sales_assets = EXCLUDED.sales_assets,
           chapters = EXCLUDED.chapters,
           updated_at = EXCLUDED.updated_at
         RETURNING
           product_id,
           summary,
           target_audience,
+          sales_assets,
           chapters,
           created_at,
           updated_at
@@ -88,6 +92,7 @@ export class PostgresCourseProductContentStore
         normalized.productId,
         normalized.summary,
         JSON.stringify(normalized.targetAudience),
+        JSON.stringify(normalized.merchandising),
         JSON.stringify(normalized.chapters),
         normalized.updatedAt,
       ]

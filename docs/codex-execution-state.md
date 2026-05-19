@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`CUX-H 课程交易界面商品化优化`
-- 当前状态：`CUX-H 课程交易界面商品化优化` 已完成，首页首屏、课程中心首屏和课程详情页已围绕“先看到课程商品、再看清课程内容、随时可下单”重构，并补充可测试的课程商品陈列模型。
-- 本轮完成后下一步：执行 `CUX-I 课程详情内容素材后台化与真实图文资产管理`
+- 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
+- 当前状态：`CUX-I-A 课程详情成交图文素材后台化` 已完成，后台可维护课程详情成交标题、副标题、主视觉、卖点和图文资产，前台详情页会优先消费后台素材并过滤待审/驳回图文资产。
+- 本轮完成后下一步：执行 `CUX-I-B 课程素材文件上传、对象存储与合规审核队列`
 
 ## 已完成关键能力
 
@@ -40,6 +40,7 @@
 - 完成全局待支付订单召回：新增 `coursePendingCheckout` 纯模型和 `CoursePendingCheckoutBanner` 共享组件，课程中心、课程详情和成长空间复用同一套继续支付/取消订单入口。
 - 完成课程优惠与组合购：新增共享 `coursePricing` 和前端 `coursePromotion` 纯模型，课程卡片、快速开始区、详情页和结算抽屉统一展示券后价、本单优惠、会员替代和路径组合预览。
 - 完成课程交易界面商品化优化：新增课程商品陈列模型，首页首屏直接展示可购买课程商品，课程中心首屏提供热门课程商品推荐和独立货架，课程卡片默认进入详情页课程介绍区，详情页新增粘性锚点、图文课程亮点区、内容规模/适合状态/核心收获证明点和就近购买动作，降低用户找课与购买路径成本。
+- 完成课程详情成交图文素材后台化：`CourseProductDetailContentSchema` 新增 `merchandising` 成交素材契约，后台 `/admin/courses` 可维护主视觉、成交卖点和图文资产，前台课程详情优先使用运营素材，PostgreSQL `course_product_contents.sales_assets` 可保存同一份内容。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -214,6 +215,21 @@
 - `/admin/audit` 管理员归档控制台已加入“归档检索预览”，按当前筛选读取归档表前 5 条摘要行；归档预览为空或失败不影响主审计列表、导出、详情、归档和校验。
 
 ## 最近完成阶段
+
+CUX-I-A 课程详情成交图文素材后台化已交付：
+
+- `shared/domain/courseProduct.ts`：新增 `CourseProductMerchandisingContentSchema`、成交图文资产 usage、内容质量提醒和更新请求字段，详情内容契约可保存成交标题、副标题、主视觉、卖点和图文资产。
+- `server/modules/catalog/courseProductContentStore.ts` 与 `server/modules/catalog/postgresCourseProductContentStore.ts`：默认详情内容会生成成交图文素材，更新内容时保存 `merchandising`；PostgreSQL 版新增 `sales_assets` JSONB 字段映射，并补充迁移与 schema 测试。
+- `client/src/pages/admin/CourseProducts.tsx`：课程商品详情编辑器新增“成交图文素材”区，运营可维护详情主视觉、替代文本、成交卖点、图文资产用途、合规状态和素材备注，内容质量会提示缺少主视觉、卖点不足或资产待合规确认。
+- `client/src/features/courses/model/courseMerchandising.ts` 与 `client/src/pages/CourseDetail.tsx`：课程详情商品化模型优先消费后台成交素材，详情页课程亮点区展示后台主视觉、标题、卖点和已审核图文资产，待审或驳回图文资产不会进入用户端展示。
+- `docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和 `docs/database-schema.md` 已同步 CUX-I-A 的契约、后台边界和数据库字段。
+
+CUX-I-A 验收结果：
+
+- `pnpm run check` 已通过。
+- `pnpm test -- client/src/features/courses/model/courseMerchandising.test.ts shared/domain/courseProduct.test.ts server/modules/catalog/courseProductContentStore.test.ts server/modules/catalog/postgresCourseProductContentStore.test.ts server/db/schema.test.ts` 实际执行全量 119 个测试文件 / 563 个测试并通过。
+- 浏览器验证已通过：`/courses/17?focus=content` 的课程亮点区正常展示主视觉和买前文案，无横向溢出、无业务相关 console error；未登录访问 `/admin/courses` 可稳定进入后台登录提示态。
+- `pnpm run ci` 已通过：类型检查、119 个测试文件 / 563 个测试和生产构建均成功；Vite 仍保留既有大 chunk 提醒。
 
 CUX-H 课程交易界面商品化优化已交付：
 
@@ -537,35 +553,28 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：UX-AC 会员售卖状态端到端回归与真实支付前准备
+### 最近完成阶段：CUX-I-A 课程详情成交图文素材后台化
 
-UX-AC 稳定切片已交付：
+CUX-I-A 稳定切片已交付：
 
-- `server/modules/memberships/courseMembershipSalesRegression.test.ts`：新增会员售卖状态回归用例，串起后台改价、公共快照、会员 checkout、套餐暂停、历史待支付继续支付、恢复售卖和新订单金额同步。
-- `server/modules/memberships/courseMembershipProductApi.ts`：公共快照不可售错误补充稳定 `details.reason`，商品暂停为 `product_inactive`，无 active 套餐为 `no_active_plan`。
-- `client/src/features/memberships/api/httpCourseMembershipProductRepository.ts`：会员商品请求错误保留 API `details`，为后续前端细分不可售文案提供稳定数据。
-- `docs/membership-sales-readiness.md`：新增真实支付前会员订单策略文档，明确待支付有效期、改价后的历史订单、暂停/恢复售卖、支付成功交付和退款边界。
-- `docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和后台总览已同步 UX-AC 状态。
+- 课程详情内容契约新增 `merchandising`，覆盖成交标题、副标题、主视觉、卖点、图文资产用途和合规状态。
+- 后台课程商品详情编辑器已可维护成交图文素材，并将素材质量提醒纳入内容校验。
+- 前台课程详情页优先展示后台维护的成交主视觉、卖点和已审核图文资产，缺省时继续使用本地商品化素材 fallback。
+- `course_product_contents` 已新增 `sales_assets` JSONB 字段，PostgreSQL Store 和 schema 测试同步覆盖。
 
-UX-AC 验收结果：
-
-- `pnpm exec vitest run --root . server/modules/memberships/courseMembershipSalesRegression.test.ts server/modules/memberships/courseMembershipProductApi.test.ts client/src/features/memberships/api/httpCourseMembershipProductRepository.test.ts` 已通过：3 个测试文件 / 13 个测试。
-- `pnpm run ci` 已通过：类型检查、118 个测试文件 / 559 个测试和生产构建均完成；Vite 仍保留既有大 chunk 提醒。
-- 浏览器已验证 `/membership` 可展示成长会员与 ¥399 价格，点击“立即开通会员”后可打开会员订单确认抽屉，抽屉展示实付金额 ¥399；控制台未出现错误。
-
-### 用户端待续：UX-AD 会员待支付订单过期状态机与用户端过期提示
+### 用户端待续：CUX-I-B 课程素材文件上传、对象存储与合规审核队列
 
 业务目标：
 
-UX-AC 已把会员售卖状态和真实支付前策略固化到测试与文档。下一步要把当前只存在字段层面的 `expiresAt` 变成服务端可执行状态机，让会员待支付订单过期后不能继续支付，并在用户端用清晰提示引导重新下单。
+CUX-I-A 先用 URL 字段打通“后台维护 -> Store 持久化 -> 前台展示”的稳定链路。下一步要把真实课程素材从手填 URL 升级为受控上传资产：运营可上传主视觉、详情图、练习资料或讲义文件，素材进入合规状态机，通过后才能进入前台详情展示或学习页下载。
 
 建议实施范围：
 
-- 在会员/课程 checkout 状态机中统一识别待支付订单过期，过期后进入受控关闭或过期态，不能继续支付。
-- 读取 course access、个人中心订单、待支付召回和 checkout 详情时，由服务端派生或推进过期状态，前端不直接改写敏感订单状态。
-- 用户端待支付召回、订单详情和会员结算抽屉展示“订单已过期，请按当前套餐重新下单”，重新下单使用当前会员商品 Store 价格和状态。
-- 补充测试覆盖未过期可继续支付、已过期不可支付、过期后新单使用当前价格、套餐暂停时过期订单不能绕过不可售状态。
-- 更新领域契约、路线图和本执行状态；保持 `pnpm run ci` 与浏览器主链路验证为每轮必跑项。
+- 建立课程素材共享契约，区分 `detail_image`、`proof_image`、`chapter_material`、`worksheet`、`audio`、`video` 等资产类型，保存文件名、MIME、大小、用途、课程/章节归属、合规状态和上传者。
+- 服务端新增素材 Store 与开发期本地文件/JSON 实现，先保留对象存储适配接口；后台上传接口只允许运营/管理员调用，并校验文件类型、大小和课程归属。
+- `/admin/courses` 详情编辑器从“图片 URL”升级为可选择已上传素材，素材上传后默认 `pending`，通过合规确认后才能被前台 `CourseDetail` 和学习页资料下载消费。
+- 前台课程详情只展示 `approved/not_required` 的详情图文资产；学习页资料下载只对已解锁课程开放，并由服务端返回受控下载 URL 或开发期文件流。
+- 补充测试覆盖上传参数校验、权限失败、素材状态机、前台过滤待审素材、未解锁课程不能下载章节资料；更新数据库准备文档和连续执行状态。
 
 ## 执行不变量
 
@@ -586,4 +595,4 @@ UX-AC 已把会员售卖状态和真实支付前策略固化到测试与文档�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-AD 会员待支付订单过期状态机与用户端过期提示，正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 CUX-I-B 课程素材文件上传、对象存储与合规审核队列，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

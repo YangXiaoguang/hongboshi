@@ -181,6 +181,7 @@ export const coreDatabaseTables = [
       "product_id",
       "summary",
       "target_audience",
+      "sales_assets",
       "chapters",
       "created_at",
       "updated_at",

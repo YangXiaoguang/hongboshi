@@ -166,9 +166,8 @@ export default function CourseDetail() {
   const [contentFocusHandledCourseId, setContentFocusHandledCourseId] =
     useState<number | undefined>();
   const courseId = Number(params?.courseId);
-  const { course, allCourses, relatedCourses, isLoading } = useCourseDetail(
-    Number.isInteger(courseId) ? courseId : undefined
-  );
+  const { course, detailContent, allCourses, relatedCourses, isLoading } =
+    useCourseDetail(Number.isInteger(courseId) ? courseId : undefined);
   const trackedDetailViewsRef = useRef(new Set<number>());
 
   if (!course && isLoading) {
@@ -214,6 +213,7 @@ export default function CourseDetail() {
   const merchandisingProfile = createCourseMerchandisingProfile({
     course,
     learningPath,
+    merchandising: detailContent?.merchandising,
     totalDuration,
     totalLessons,
   });
@@ -1551,7 +1551,7 @@ function CourseContentShowcase({
         >
           <img
             src={profile.showcaseImageUrl}
-            alt=""
+            alt={profile.showcaseImageAlt}
             className="absolute inset-0 h-full w-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#13211D]/86 via-[#13211D]/24 to-transparent" />
@@ -1612,6 +1612,33 @@ function CourseContentShowcase({
               </div>
             ))}
           </div>
+
+          {profile.visualAssets.length > 0 && (
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+              {profile.visualAssets.map(asset => (
+                <figure
+                  key={asset.id}
+                  className="overflow-hidden rounded-[18px] border border-[#E4DCCF] bg-[#FFFDF8]"
+                >
+                  <img
+                    src={asset.imageUrl}
+                    alt={asset.altText}
+                    className="aspect-[4/3] w-full object-cover"
+                  />
+                  <figcaption className="px-3 py-3">
+                    <p className="line-clamp-1 text-xs font-semibold text-[#243B35]">
+                      {asset.title}
+                    </p>
+                    {asset.note && (
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#7B817C]">
+                        {asset.note}
+                      </p>
+                    )}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          )}
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <button
