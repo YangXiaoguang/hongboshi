@@ -31,15 +31,22 @@ function sortPendingOrdersNewestFirst(accessState: CourseAccessState) {
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
-function findMembershipAnchorCourse(
+export function findMembershipCheckoutAnchorCourse(
   courses: Course[],
   resolveAccess?: (course: Course) => CourseAccessResult
 ): Course | undefined {
   return (
+    courses.find(course => {
+      const access = resolveAccess?.(course);
+      return (
+        access?.status === "requires_membership" && access.canActivateMembership
+      );
+    }) ??
     courses.find(
       course => course.isVip && !(resolveAccess?.(course).canStart ?? false)
     ) ??
     courses.find(course => course.isVip) ??
+    courses.find(course => !course.isFree) ??
     courses[0]
   );
 }
@@ -50,7 +57,7 @@ export function createPendingCourseCheckoutPrompts({
   limit = 3,
   resolveAccess,
 }: CreatePendingCourseCheckoutPromptOptions): CoursePendingCheckoutPrompt[] {
-  const membershipAnchorCourse = findMembershipAnchorCourse(
+  const membershipAnchorCourse = findMembershipCheckoutAnchorCourse(
     courses,
     resolveAccess
   );

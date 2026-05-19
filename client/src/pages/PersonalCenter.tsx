@@ -53,6 +53,7 @@ import {
   useCourseCatalog,
   useCourseEngagement,
   useCourseMarketingRules,
+  COURSE_MEMBERSHIP_REOPEN_PATH,
   createPersonalOrderAmountRows,
   createPersonalOrderServiceNotes,
   createPersonalOrderTimeline,
@@ -636,6 +637,11 @@ export default function PersonalCenter() {
     navigate("/courses");
   };
 
+  const navigateToMembershipReopen = () => {
+    closeOrderDetail();
+    navigate(COURSE_MEMBERSHIP_REOPEN_PATH);
+  };
+
   const handleCancelOrderFromDetail = async (order: Order) => {
     if (order.status !== "pending_payment") return;
 
@@ -1104,6 +1110,10 @@ export default function PersonalCenter() {
                             </button>
                             <button
                               onClick={() => {
+                                if (canRenewMembership) {
+                                  navigateToMembershipReopen();
+                                  return;
+                                }
                                 if (course) {
                                   navigate(
                                     `/courses/${course.id}${
@@ -1525,10 +1535,7 @@ export default function PersonalCenter() {
         onClose={closeOrderDetail}
         onContinuePayment={order => navigateToOrderCourse(order, true)}
         onRebuyCourse={order => navigateToOrderCourse(order, true)}
-        onRenewMembership={() => {
-          closeOrderDetail();
-          navigate("/courses");
-        }}
+        onRenewMembership={navigateToMembershipReopen}
         onSubmitAfterSales={handleSubmitAfterSalesRequest}
         onViewCourse={order => navigateToOrderCourse(order)}
         onViewWorkspace={() => {

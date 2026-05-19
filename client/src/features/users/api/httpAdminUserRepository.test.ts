@@ -66,6 +66,9 @@ const detailData = {
     planName: "成长会员",
     activatedAt: "2026-05-10T10:00:00+08:00",
     expiresAt: "2027-05-10T10:00:00+08:00",
+    sourceType: "checkout_order",
+    sourceOrderId: "order_membership_1",
+    sourceUpdatedAt: "2026-05-10T10:01:00+08:00",
     activeNow: true,
   },
   membershipAuditEvents: [],
@@ -162,6 +165,7 @@ describe("http admin user repository", () => {
     });
 
     expect(parsed.courseAccess.recentOrders[0]?.status).toBe("paid");
+    expect(parsed.membership.sourceOrderId).toBe("order_membership_1");
     expect(JSON.stringify(parsed)).not.toContain("risk signal");
   });
 

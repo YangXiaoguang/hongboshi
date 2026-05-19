@@ -44,8 +44,10 @@ import {
   createLearningPlanWorkspace,
   createLearningArchiveWorkspace,
   createPendingCourseCheckoutPrompts,
+  findMembershipCheckoutAnchorCourse,
   findPendingCourseCheckoutOrder,
   getCourseAccessDescription,
+  isCourseMembershipCheckoutIntent,
   resolveDefaultCheckoutCouponClaimId,
   useCourseAccess,
   useCourseCatalog,
@@ -756,6 +758,7 @@ export default function MyCourses() {
     string | undefined
   >();
   const [isCouponSelectionManual, setIsCouponSelectionManual] = useState(false);
+  const [checkoutIntentHandled, setCheckoutIntentHandled] = useState(false);
   const { engagementState, engagementSyncError, startCourse } =
     useCourseEngagement({
       userId: user?.id,
@@ -869,6 +872,30 @@ export default function MyCourses() {
     setCheckoutError(undefined);
     setIsCouponSelectionManual(false);
   };
+
+  useEffect(() => {
+    if (checkoutIntentHandled) return;
+    if (typeof window === "undefined") return;
+    if (!isCourseMembershipCheckoutIntent(window.location.search)) return;
+    if (!isLoggedIn) return;
+
+    const anchorCourse = findMembershipCheckoutAnchorCourse(
+      allCourses,
+      getCourseAccess
+    );
+    if (!anchorCourse) return;
+
+    const access = getCourseAccess(anchorCourse);
+    setCheckoutIntentHandled(true);
+    window.history.replaceState(null, "", "/me/courses");
+
+    if (!access.canActivateMembership) return;
+
+    openCheckout(anchorCourse, "membership");
+    toast("已打开会员开通", {
+      description: "开通后，会员课程会自动进入成长空间。",
+    });
+  }, [allCourses, checkoutIntentHandled, isLoggedIn]);
 
   const closeCheckout = () => {
     setCheckoutCourse(undefined);

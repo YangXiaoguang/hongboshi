@@ -27,8 +27,10 @@ import {
   createCourseCheckoutSummary,
   createPendingCourseCheckoutPrompts,
   findPendingCourseCheckoutOrder,
+  findMembershipCheckoutAnchorCourse,
   getCourseDetailPrimaryActionCopy,
   getCourseLearningPath,
+  isCourseMembershipCheckoutIntent,
   resolveDefaultCheckoutCouponClaimId,
   trackCourseConversionEvent,
   useCourseAccess,
@@ -120,6 +122,7 @@ export default function Courses() {
     string | undefined
   >();
   const [isCouponSelectionManual, setIsCouponSelectionManual] = useState(false);
+  const [checkoutIntentHandled, setCheckoutIntentHandled] = useState(false);
   const selectedPath = getCourseLearningPath(selectedPathId);
   const checkoutSummary =
     checkoutCourse && checkoutMode
@@ -287,6 +290,34 @@ export default function Courses() {
       }
     );
   };
+
+  useEffect(() => {
+    if (checkoutIntentHandled) return;
+    if (typeof window === "undefined") return;
+    if (!isCourseMembershipCheckoutIntent(window.location.search)) return;
+
+    const anchorCourse = findMembershipCheckoutAnchorCourse(
+      allCourses,
+      getCourseAccess
+    );
+    if (!anchorCourse) return;
+
+    const access = getCourseAccess(anchorCourse);
+    if (!access.canActivateMembership) {
+      setCheckoutIntentHandled(true);
+      window.history.replaceState(null, "", "/courses");
+      return;
+    }
+
+    setCheckoutIntentHandled(true);
+    window.history.replaceState(null, "", "/courses");
+    openCheckout(anchorCourse, "membership", {
+      source: "url_checkout_intent",
+    });
+    toast("已打开会员开通", {
+      description: "开通后，会员课程会自动进入可学习权益。",
+    });
+  }, [allCourses, checkoutIntentHandled]);
 
   const closeCheckout = () => {
     setCheckoutCourse(undefined);

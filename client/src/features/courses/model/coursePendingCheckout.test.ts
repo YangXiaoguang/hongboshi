@@ -3,6 +3,7 @@ import { createCourseCheckoutOrder } from "./courseAccess";
 import {
   createPendingCheckoutPromptForCourse,
   createPendingCourseCheckoutPrompts,
+  findMembershipCheckoutAnchorCourse,
 } from "./coursePendingCheckout";
 import type { Course } from "@shared/domain";
 
@@ -81,5 +82,48 @@ describe("course pending checkout prompts", () => {
       title: "成长会员年卡",
       subtitle: "开通后会员课程可直接学习",
     });
+  });
+
+  it("selects a membership checkout anchor course from locked VIP courses first", () => {
+    const fallbackPaidCourse: Course = {
+      ...baseCourse,
+      id: 8,
+      title: "非会员单课",
+      isVip: false,
+      isFree: false,
+    };
+
+    const anchor = findMembershipCheckoutAnchorCourse(
+      [fallbackPaidCourse, vipCourse],
+      course => ({
+        status: course.isVip ? "requires_membership" : "requires_purchase",
+        canStart: false,
+        canPurchase: !course.isVip,
+        canActivateMembership: course.isVip,
+      })
+    );
+
+    expect(anchor?.id).toBe(vipCourse.id);
+  });
+
+  it("falls back to a paid course when no VIP course exists", () => {
+    const freeCourse: Course = {
+      ...baseCourse,
+      id: 9,
+      title: "免费体验课",
+      isFree: true,
+      isVip: false,
+    };
+    const paidCourse: Course = {
+      ...baseCourse,
+      id: 10,
+      title: "付费单课",
+      isFree: false,
+      isVip: false,
+    };
+
+    expect(
+      findMembershipCheckoutAnchorCourse([freeCourse, paidCourse])?.id
+    ).toBe(paidCourse.id);
   });
 });

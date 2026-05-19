@@ -37,7 +37,10 @@ import {
   type UserRole,
 } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
-import { httpAdminUserRepository } from "@/features/users";
+import {
+  createUserMembershipSourceSummary,
+  httpAdminUserRepository,
+} from "@/features/users";
 
 const roleCopy = {
   visitor: "访客",
@@ -379,6 +382,8 @@ function UserDetailPanel({
     );
   }
 
+  const membershipSource = createUserMembershipSourceSummary(detail.membership);
+
   return (
     <div>
       <div className="px-5 py-5">
@@ -440,6 +445,29 @@ function UserDetailPanel({
             <span className="font-semibold text-[#243B35]">
               {formatDate(detail.membership.expiresAt)}
             </span>
+          </div>
+          <div className="rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] px-3 py-3">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#E5ECE1] text-[#41675A]">
+                <ShieldCheck className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-[#8A8176]">
+                    权益来源
+                  </span>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#41675A]">
+                    {membershipSource.label}
+                  </span>
+                </div>
+                <p className="mt-2 break-all text-sm font-semibold text-[#243B35]">
+                  {membershipSource.detail}
+                </p>
+                <p className="mt-1 text-xs text-[#8A8176]">
+                  更新时间 {formatDate(membershipSource.updatedAt)}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
         {canManageMembership && (

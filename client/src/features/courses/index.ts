@@ -81,8 +81,15 @@ export {
 export {
   createPendingCheckoutPromptForCourse,
   createPendingCourseCheckoutPrompts,
+  findMembershipCheckoutAnchorCourse,
   type CoursePendingCheckoutPrompt,
 } from "./model/coursePendingCheckout";
+export {
+  COURSE_MEMBERSHIP_REOPEN_INTENT,
+  COURSE_MEMBERSHIP_REOPEN_PATH,
+  getCourseMembershipCheckoutIntent,
+  isCourseMembershipCheckoutIntent,
+} from "./model/courseMembershipIntent";
 export {
   createCoursePromotionSummary,
   type CoursePathBundlePromotion,
