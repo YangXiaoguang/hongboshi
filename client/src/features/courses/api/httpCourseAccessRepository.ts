@@ -3,6 +3,8 @@ import {
   ApiResponseSchema,
   CourseCheckoutOrderResultSchema,
   CourseAccessStateSchema,
+  COURSE_MEMBERSHIP_ORDER_TARGET_ID,
+  COURSE_MEMBERSHIP_PRODUCT_ID,
   COURSE_ACCESS_USER_ID_HEADER,
   LOCAL_COURSE_ACCESS_USER_ID,
   OrderAfterSalesCreateRequestSchema,
@@ -224,7 +226,33 @@ export const httpCourseAccessRepository = {
       "/checkout/orders",
       {
         method: "POST",
-        body: JSON.stringify({ courseId, mode, couponClaimId }),
+        body: JSON.stringify(
+          mode === "membership"
+            ? {
+                mode,
+                membershipProductId: COURSE_MEMBERSHIP_PRODUCT_ID,
+                membershipPlanId: COURSE_MEMBERSHIP_ORDER_TARGET_ID,
+              }
+            : { courseId, mode, couponClaimId }
+        ),
+      },
+      userId
+    );
+  },
+
+  createMembershipCheckoutOrder(
+    userId = LOCAL_COURSE_ACCESS_USER_ID,
+    membershipPlanId = COURSE_MEMBERSHIP_ORDER_TARGET_ID
+  ): Promise<CourseCheckoutOrderResult> {
+    return requestCheckoutOrder(
+      "/checkout/orders",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          mode: "membership",
+          membershipProductId: COURSE_MEMBERSHIP_PRODUCT_ID,
+          membershipPlanId,
+        }),
       },
       userId
     );

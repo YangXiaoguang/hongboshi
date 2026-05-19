@@ -15,6 +15,7 @@ import {
   activateCourseMembership,
   cancelCourseCheckoutOrder,
   createCourseCheckoutOrder,
+  createMembershipCheckoutOrder as createMembershipCheckoutOrderModel,
   hasActiveCourseMembership,
   LOCAL_COURSE_ACCESS_USER_ID,
   payCourseCheckoutOrder,
@@ -116,12 +117,17 @@ export function useCourseAccess() {
 
       setIsSyncing(true);
       try {
-        const checkout = await httpCourseAccessRepository.createCheckoutOrder(
-          course.id,
-          mode,
-          accessUserId,
-          couponClaimId
-        );
+        const checkout =
+          mode === "membership"
+            ? await httpCourseAccessRepository.createMembershipCheckoutOrder(
+                accessUserId
+              )
+            : await httpCourseAccessRepository.createCheckoutOrder(
+                course.id,
+                mode,
+                accessUserId,
+                couponClaimId
+              );
         setState(persist(checkout.accessState));
         setAccessError(undefined);
         return { syncMode: "api", checkout };
@@ -137,13 +143,20 @@ export function useCourseAccess() {
           throw err;
         }
 
-        const checkout = createCourseCheckoutOrder(
-          localCourseAccessRepository.load(accessUserId),
-          course,
-          mode,
-          undefined,
-          accessUserId
-        );
+        const checkout =
+          mode === "membership"
+            ? createMembershipCheckoutOrderModel(
+                localCourseAccessRepository.load(accessUserId),
+                undefined,
+                accessUserId
+              )
+            : createCourseCheckoutOrder(
+                localCourseAccessRepository.load(accessUserId),
+                course,
+                mode,
+                undefined,
+                accessUserId
+              );
         setState(persist(checkout.accessState));
         setAccessError(
           err instanceof Error ? err.message : "课程订单服务暂时不可用"
@@ -155,6 +168,47 @@ export function useCourseAccess() {
     },
     [accessUserId, openLoginModal, persist, requireLoggedInAccess, user]
   );
+
+  const createMembershipCheckoutOrder = useCallback(async (): Promise<
+    CourseCheckoutActionResult | "auth_required"
+  > => {
+    if (!user) return requireLoggedInAccess();
+
+    setIsSyncing(true);
+    try {
+      const checkout =
+        await httpCourseAccessRepository.createMembershipCheckoutOrder(
+          accessUserId
+        );
+      setState(persist(checkout.accessState));
+      setAccessError(undefined);
+      return { syncMode: "api", checkout };
+    } catch (err) {
+      if (!shouldUseCheckoutLocalFallback(err)) {
+        setAccessError(
+          err instanceof Error ? err.message : "请先登录后继续操作"
+        );
+        if (isAuthorizationError(err)) {
+          openLoginModal();
+          return "auth_required" as const;
+        }
+        throw err;
+      }
+
+      const checkout = createMembershipCheckoutOrderModel(
+        localCourseAccessRepository.load(accessUserId),
+        undefined,
+        accessUserId
+      );
+      setState(persist(checkout.accessState));
+      setAccessError(
+        err instanceof Error ? err.message : "会员订单服务暂时不可用"
+      );
+      return { syncMode: "fallback", checkout };
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [accessUserId, openLoginModal, persist, requireLoggedInAccess, user]);
 
   const payCheckoutOrder = useCallback(
     async (
@@ -363,6 +417,7 @@ export function useCourseAccess() {
     accessError,
     getCourseAccess,
     createCheckoutOrder,
+    createMembershipCheckoutOrder,
     payCheckoutOrder,
     cancelCheckoutOrder,
     createOrderAfterSalesRequest,

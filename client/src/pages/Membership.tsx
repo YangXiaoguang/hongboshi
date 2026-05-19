@@ -26,16 +26,13 @@ import {
   getPrimaryCourseMembershipPlan,
 } from "@shared/domain";
 import {
-  createCourseCheckoutSummary,
   createPendingCourseCheckoutPrompts,
-  findMembershipCheckoutAnchorCourse,
-  findPendingCourseCheckoutOrder,
+  createStandaloneMembershipCheckoutSummary,
+  findPendingMembershipCheckoutOrder,
   formatCheckoutMoney,
   isCourseMembershipCheckoutIntent,
   useCourseAccess,
   useCourseCatalog,
-  type Course,
-  type CourseCheckoutMode,
   type CourseCheckoutOrderResult,
   type CourseCheckoutPaymentChannel,
   type CoursePendingCheckoutPrompt,
@@ -60,7 +57,7 @@ export default function Membership() {
   const {
     accessState,
     cancelCheckoutOrder,
-    createCheckoutOrder,
+    createMembershipCheckoutOrder,
     getCourseAccess,
     hasActiveMembership,
     isSyncing,
@@ -69,7 +66,7 @@ export default function Membership() {
   } = useCourseAccess();
   const product = defaultCourseMembershipProduct;
   const plan = getPrimaryCourseMembershipPlan(product);
-  const [checkoutCourse, setCheckoutCourse] = useState<Course | undefined>();
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutStatus, setCheckoutStatus] =
     useState<CourseCheckoutStatus>("idle");
   const [checkoutOrder, setCheckoutOrder] = useState<
@@ -80,18 +77,9 @@ export default function Membership() {
   const [selectedPaymentChannel, setSelectedPaymentChannel] =
     useState<CourseCheckoutPaymentChannel>("wechat_pay");
   const [checkoutIntentHandled, setCheckoutIntentHandled] = useState(false);
-  const checkoutMode: CourseCheckoutMode | undefined = checkoutCourse
-    ? "membership"
+  const checkoutSummary = isCheckoutOpen
+    ? createStandaloneMembershipCheckoutSummary()
     : undefined;
-  const checkoutSummary = checkoutCourse
-    ? createCourseCheckoutSummary(checkoutCourse, "membership", {
-        membershipContext: "standalone",
-      })
-    : undefined;
-  const anchorCourse = useMemo(
-    () => findMembershipCheckoutAnchorCourse(allCourses, getCourseAccess),
-    [allCourses, getCourseAccess]
-  );
   const vipCourses = useMemo(
     () => allCourses.filter(course => course.isVip).slice(0, 4),
     [allCourses]
@@ -111,7 +99,7 @@ export default function Membership() {
   );
 
   const closeCheckout = () => {
-    setCheckoutCourse(undefined);
+    setIsCheckoutOpen(false);
     setCheckoutStatus("idle");
     setCheckoutOrder(undefined);
     setCheckoutError(undefined);
@@ -130,18 +118,11 @@ export default function Membership() {
       return;
     }
 
-    if (!anchorCourse) {
-      toast("会员商品暂时不可购买", {
-        description: "当前没有可承接会员权益的课程，请稍后再试。",
-      });
-      return;
-    }
-
     const nextPendingCheckout =
       pendingCheckout ??
-      findPendingCourseCheckoutOrder(accessState, anchorCourse, "membership");
+      findPendingMembershipCheckoutOrder(accessState, plan.id);
 
-    setCheckoutCourse(anchorCourse);
+    setIsCheckoutOpen(true);
     setCheckoutStatus(nextPendingCheckout ? "pending_payment" : "idle");
     setCheckoutOrder(nextPendingCheckout);
     setCheckoutError(undefined);
@@ -153,15 +134,14 @@ export default function Membership() {
     if (checkoutIntentHandled) return;
     if (typeof window === "undefined") return;
     if (!isCourseMembershipCheckoutIntent(window.location.search)) return;
-    if (!anchorCourse && allCourses.length === 0) return;
 
     setCheckoutIntentHandled(true);
     window.history.replaceState(null, "", "/membership");
     openMembershipCheckout();
-  }, [allCourses.length, anchorCourse, checkoutIntentHandled]);
+  }, [checkoutIntentHandled]);
 
   const handleConfirmCheckout = () => {
-    if (!checkoutCourse || !checkoutMode) return;
+    if (!isCheckoutOpen) return;
     if (!acceptedTerms) {
       toast("请先确认购买须知", {
         description: "确认会员有效期、权益交付和开发期支付说明后再继续。",
@@ -174,7 +154,7 @@ export default function Membership() {
       let pendingCheckout = checkoutOrder;
       if (pendingCheckout?.order.status !== "pending_payment") {
         setCheckoutStatus("creating");
-        const created = await createCheckoutOrder(checkoutCourse, checkoutMode);
+        const created = await createMembershipCheckoutOrder();
         if (created === "auth_required") {
           setCheckoutStatus("idle");
           openLoginModal();
@@ -514,13 +494,12 @@ export default function Membership() {
         </section>
       </main>
 
-      {checkoutCourse && (
+      {isCheckoutOpen && (
         <CourseCheckoutDrawer
           acceptedTerms={acceptedTerms}
           checkoutError={checkoutError}
           checkoutOrder={checkoutOrder}
-          course={checkoutCourse}
-          isOpen={Boolean(checkoutMode)}
+          isOpen={isCheckoutOpen}
           isSyncing={isSyncing}
           productImageUrl={product.heroImageUrl}
           selectedPaymentChannel={selectedPaymentChannel}

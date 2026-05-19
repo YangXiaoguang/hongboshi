@@ -3,6 +3,7 @@ import type { Course } from "@shared/domain";
 import {
   COURSE_MEMBERSHIP_CHECKOUT_PRICE,
   createCourseCheckoutSummary,
+  createStandaloneMembershipCheckoutSummary,
   formatCheckoutMoney,
 } from "./courseCheckout";
 
@@ -80,9 +81,7 @@ describe("course checkout summary", () => {
   });
 
   it("can describe membership checkout as an independent product", () => {
-    const summary = createCourseCheckoutSummary(course, "membership", {
-      membershipContext: "standalone",
-    });
+    const summary = createStandaloneMembershipCheckoutSummary();
 
     expect(summary.productTitle).toBe("成长会员年卡");
     expect(summary.productSubtitle).not.toContain(course.title);

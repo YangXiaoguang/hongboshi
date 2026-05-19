@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createCourseCheckoutOrder } from "./courseAccess";
+import {
+  createCourseCheckoutOrder,
+  createMembershipCheckoutOrder,
+} from "./courseAccess";
 import {
   createPendingCheckoutPromptForCourse,
   createPendingCourseCheckoutPrompts,
@@ -62,10 +65,8 @@ describe("course pending checkout prompts", () => {
   });
 
   it("builds a single course prompt for detail page recall", () => {
-    const result = createCourseCheckoutOrder(
+    const result = createMembershipCheckoutOrder(
       { ownedCourseIds: [], membership: { status: "none" }, orders: [] },
-      vipCourse,
-      "membership",
       "2026-05-17T10:00:00.000Z",
       "u_2"
     );

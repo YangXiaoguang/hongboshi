@@ -53,6 +53,7 @@ import {
   useCourseCatalog,
   useCourseEngagement,
   useCourseMarketingRules,
+  COURSE_MEMBERSHIP_CHECKOUT_PATH,
   COURSE_MEMBERSHIP_PAGE_PATH,
   COURSE_MEMBERSHIP_REOPEN_PATH,
   createPersonalOrderAmountRows,
@@ -628,6 +629,14 @@ export default function PersonalCenter() {
   };
 
   const navigateToOrderCourse = (order: Order, checkout = false) => {
+    if (order.items[0]?.type === "membership") {
+      closeOrderDetail();
+      navigate(
+        checkout ? COURSE_MEMBERSHIP_CHECKOUT_PATH : COURSE_MEMBERSHIP_PAGE_PATH
+      );
+      return;
+    }
+
     const course = courseForOrder(order, allCourses);
     closeOrderDetail();
     if (course) {

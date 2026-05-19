@@ -1,6 +1,6 @@
 import {
-  COURSE_MEMBERSHIP_ORDER_TARGET_ID,
   findPendingCourseCheckoutOrder,
+  findPendingMembershipCheckoutOrder,
   type CourseAccessResult,
   type CourseAccessState,
   type CourseCheckoutMode,
@@ -91,15 +91,10 @@ export function createPendingCourseCheckoutPrompts({
       return;
     }
 
-    if (
-      item.type === "membership" &&
-      item.targetId === COURSE_MEMBERSHIP_ORDER_TARGET_ID &&
-      membershipAnchorCourse
-    ) {
-      const checkout = findPendingCourseCheckoutOrder(
+    if (item.type === "membership" && membershipAnchorCourse) {
+      const checkout = findPendingMembershipCheckoutOrder(
         accessState,
-        membershipAnchorCourse,
-        "membership"
+        item.targetId
       );
       if (!checkout) return;
 

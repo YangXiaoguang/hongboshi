@@ -121,6 +121,37 @@ describe("course access API payloads", () => {
     expect(duplicate.body.data.order.paidAt).toBe("2026-05-09T10:02:00.000Z");
   });
 
+  it("creates and pays membership checkout orders by plan id without course id", async () => {
+    const created = await createCourseCheckoutOrderPayload(
+      { mode: "membership", membershipPlanId: "growth_membership_yearly" },
+      "u_member_10001",
+      "2026-05-09T10:00:00.000Z"
+    );
+    if (!created.body.ok) throw new Error("expected created checkout");
+    const paid = await payCourseCheckoutOrderPayload(
+      created.body.data.order.id,
+      { paymentChannel: "wechat_pay" },
+      "u_member_10001",
+      "2026-05-09T10:02:00.000Z"
+    );
+
+    expect(created.status).toBe(200);
+    expect(created.body.data.order.items[0]).toMatchObject({
+      type: "membership",
+      targetId: "growth_membership_yearly",
+      title: "成长会员年卡",
+    });
+    expect(paid.status).toBe(200);
+    expect(paid.body.ok).toBe(true);
+    if (!paid.body.ok) return;
+    expect(paid.body.data.accessState.membership).toMatchObject({
+      status: "active",
+      planName: "成长会员",
+      sourceType: "checkout_order",
+      sourceOrderId: created.body.data.order.id,
+    });
+  });
+
   it("records claimed coupon on checkout and marks it used after payment", async () => {
     const productStore = new InMemoryCourseProductStore(seedProducts());
     const claimed = await claimUserCouponPayload(

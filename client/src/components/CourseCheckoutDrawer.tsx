@@ -43,7 +43,7 @@ interface CourseCheckoutDrawerProps {
   claimingCouponRuleId?: string;
   checkoutError?: string;
   checkoutOrder?: CourseCheckoutOrderResult;
-  course: Course;
+  course?: Course;
   couponOptions?: CourseCheckoutCouponOption[];
   isOpen: boolean;
   isPreferenceLoading?: boolean;
@@ -236,7 +236,7 @@ export default function CourseCheckoutDrawer({
               <div className="px-5 py-6">
                 <div className="flex gap-4 rounded-[24px] bg-[#F4EFE6] p-4">
                   <img
-                    src={productImageUrl ?? course.coverUrl}
+                    src={productImageUrl ?? course?.coverUrl ?? ""}
                     alt=""
                     className="h-24 w-28 shrink-0 rounded-[18px] object-cover"
                   />

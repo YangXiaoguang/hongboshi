@@ -24,6 +24,7 @@ import {
   courseMatchesMarketingRule,
   createCourseCheckoutOrder,
   createCourseCheckoutOrderResult,
+  createMembershipCheckoutOrder,
   findCourseAccessOrder,
   isCourseMarketingRuleActiveAt,
   payCourseCheckoutOrder,
@@ -206,6 +207,7 @@ function checkoutActionFailure(err: unknown, fallbackMessage: string) {
       "COURSE_IS_FREE",
       "COURSE_NOT_PURCHASABLE",
       "MEMBERSHIP_NOT_PURCHASABLE",
+      "MEMBERSHIP_PLAN_NOT_AVAILABLE",
       "CHECKOUT_ORDER_NOT_PAYABLE",
       "SIMULATED_PAYMENT_FAILED",
       "INVALID_ORDER_CLOSE_TRANSITION",
@@ -230,6 +232,8 @@ function checkoutActionFailure(err: unknown, fallbackMessage: string) {
 
   if (
     message === "CHECKOUT_ORDER_NOT_FOUND" ||
+    message === "MEMBERSHIP_PRODUCT_NOT_FOUND" ||
+    message === "MEMBERSHIP_PLAN_NOT_FOUND" ||
     message === "USER_COUPON_CLAIM_NOT_FOUND" ||
     message === "COURSE_COUPON_RULE_NOT_FOUND"
   ) {
@@ -239,7 +243,9 @@ function checkoutActionFailure(err: unknown, fallbackMessage: string) {
         "NOT_FOUND",
         message === "CHECKOUT_ORDER_NOT_FOUND"
           ? "课程订单不存在"
-          : "优惠券不存在或未领取"
+          : message.startsWith("MEMBERSHIP_")
+            ? "会员套餐不存在或暂不可用"
+            : "优惠券不存在或未领取"
       ),
     } as const;
   }
@@ -485,35 +491,52 @@ export async function createCourseCheckoutOrderPayload(
     } as const;
   }
 
-  const coursePayload = await findCheckoutCourse(
-    parsed.data.courseId,
-    productStore
-  );
-  if (coursePayload.status !== 200) return coursePayload;
-
   try {
+    const request = parsed.data;
+    const currentState = await courseAccessStore.load(userId);
+    if (request.mode === "membership") {
+      const checkout = createMembershipCheckoutOrder(
+        currentState,
+        now,
+        userId,
+        request.membershipPlanId,
+        request.membershipProductId
+      );
+      await courseAccessStore.save(userId, checkout.accessState);
+
+      return {
+        status: 200,
+        body: checkoutOrderPayload(checkout),
+      } as const;
+    }
+
+    const coursePayload = await findCheckoutCourse(
+      request.courseId,
+      productStore
+    );
+    if (coursePayload.status !== 200) return coursePayload;
     const { application } = await resolveCourseCheckoutCouponApplication({
-      couponClaimId:
-        parsed.data.mode === "course" ? parsed.data.couponClaimId : undefined,
+      couponClaimId: request.couponClaimId,
       course: coursePayload.course,
       marketingRuleStore,
       now,
       userId,
     });
-    const currentState = await courseAccessStore.load(userId);
-    const checkout = createCourseCheckoutOrder(
+
+    const courseCheckout = createCourseCheckoutOrder(
       currentState,
       coursePayload.course,
-      parsed.data.mode,
+      request.mode,
       now,
       userId,
       application
     );
-    await courseAccessStore.save(userId, checkout.accessState);
+
+    await courseAccessStore.save(userId, courseCheckout.accessState);
 
     return {
       status: 200,
-      body: checkoutOrderPayload(checkout),
+      body: checkoutOrderPayload(courseCheckout),
     } as const;
   } catch (err) {
     return checkoutActionFailure(err, "课程订单创建失败");

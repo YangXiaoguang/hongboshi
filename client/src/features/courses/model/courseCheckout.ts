@@ -130,39 +130,48 @@ function createProtectionItems(course: Course): CourseCheckoutLineItem[] {
   ];
 }
 
+export function createStandaloneMembershipCheckoutSummary(): CourseCheckoutSummary {
+  const pricing = calculateMembershipPricing();
+  const plan = getPrimaryCourseMembershipPlan();
+
+  return {
+    mode: "membership",
+    productTitle: plan.title,
+    productSubtitle: defaultCourseMembershipProduct.description,
+    listPrice: pricing.listPrice,
+    originalPrice: pricing.originalPrice,
+    discountAmount: pricing.discountAmount,
+    payableAmount: pricing.payableAmount,
+    savingsAmount: pricing.savingsAmount,
+    accessLabel: "开通后会员课可直接学习",
+    promotionItems: createMembershipPromotionItems(),
+    deliveryItems: plan.benefits.map(benefit => ({
+      label: benefit.title,
+      value: benefit.description,
+    })),
+    protectionItems: plan.protections.map(protection => ({
+      label: protection.title,
+      value: protection.description,
+    })),
+    notices: plan.notices,
+  };
+}
+
 export function createCourseCheckoutSummary(
   course: Course,
   mode: CourseCheckoutMode,
   options: CreateCourseCheckoutSummaryOptions = {}
 ): CourseCheckoutSummary {
   if (mode === "membership") {
-    const pricing = calculateMembershipPricing();
-    const plan = getPrimaryCourseMembershipPlan();
     const standalone = options.membershipContext === "standalone";
+    const summary = createStandaloneMembershipCheckoutSummary();
 
-    return {
-      mode,
-      productTitle: plan.title,
-      productSubtitle: standalone
-        ? defaultCourseMembershipProduct.description
-        : `含本课学习权益：${course.title}`,
-      listPrice: pricing.listPrice,
-      originalPrice: pricing.originalPrice,
-      discountAmount: pricing.discountAmount,
-      payableAmount: pricing.payableAmount,
-      savingsAmount: pricing.savingsAmount,
-      accessLabel: "开通后会员课可直接学习",
-      promotionItems: createMembershipPromotionItems(),
-      deliveryItems: plan.benefits.map(benefit => ({
-        label: benefit.title,
-        value: benefit.description,
-      })),
-      protectionItems: plan.protections.map(protection => ({
-        label: protection.title,
-        value: protection.description,
-      })),
-      notices: plan.notices,
-    };
+    return standalone
+      ? summary
+      : {
+          ...summary,
+          productSubtitle: `含本课学习权益：${course.title}`,
+        };
   }
 
   const promotion = createCoursePromotionSummary(course, {

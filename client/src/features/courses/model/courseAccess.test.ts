@@ -6,7 +6,9 @@ import {
   createEmptyCourseAccessState,
   createCourseCheckoutOrder,
   createCourseCheckoutOrderResult,
+  createMembershipCheckoutOrder,
   findPendingCourseCheckoutOrder,
+  findPendingMembershipCheckoutOrder,
   grantPurchasedCourseAccess,
   hasActiveCourseMembership,
   payCourseCheckoutOrder,
@@ -58,8 +60,8 @@ const refundedMembershipOrder: Order = {
   items: [
     {
       type: "membership",
-      targetId: "course_membership_yearly",
-      title: "成长会员",
+      targetId: "growth_membership_yearly",
+      title: "成长会员年卡",
       unitPrice: 999,
       quantity: 1,
     },
@@ -255,11 +257,8 @@ describe("course access model", () => {
   });
 
   it("records paid membership checkout orders as membership source", () => {
-    const vipCourse = { ...baseCourse, id: 17, isVip: true };
-    const pending = createCourseCheckoutOrder(
+    const pending = createMembershipCheckoutOrder(
       createEmptyCourseAccessState(),
-      vipCourse,
-      "membership",
       "2026-05-09T10:00:00.000Z",
       "u_10001"
     );
@@ -272,10 +271,32 @@ describe("course access model", () => {
 
     expect(paid.accessState.membership).toMatchObject({
       status: "active",
+      planName: "成长会员",
       sourceType: "checkout_order",
       sourceOrderId: pending.order.id,
       sourceUpdatedAt: "2026-05-09T10:02:00.000Z",
     });
+  });
+
+  it("creates and recalls membership checkout orders by plan id without a course anchor", () => {
+    const pending = createMembershipCheckoutOrder(
+      createEmptyCourseAccessState(),
+      "2026-05-09T10:00:00.000Z",
+      "u_10001",
+      "growth_membership_yearly"
+    );
+    const recalled = findPendingMembershipCheckoutOrder(
+      pending.accessState,
+      "growth_membership_yearly"
+    );
+
+    expect(pending.order.items[0]).toMatchObject({
+      type: "membership",
+      targetId: "growth_membership_yearly",
+      title: "成长会员年卡",
+    });
+    expect(recalled?.order.id).toBe(pending.order.id);
+    expect(recalled?.payment.payableAmount).toBe(399);
   });
 
   it("treats expired memberships as inactive", () => {

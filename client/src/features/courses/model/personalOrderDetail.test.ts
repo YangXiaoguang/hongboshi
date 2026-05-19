@@ -73,6 +73,23 @@ describe("personal order detail model", () => {
     );
   });
 
+  it("describes paid membership orders as membership delivery", () => {
+    expect(
+      createPersonalOrderServiceNotes({
+        ...paidOrder,
+        items: [
+          {
+            type: "membership",
+            targetId: "growth_membership_yearly",
+            title: "成长会员年卡",
+            unitPrice: 699,
+            quantity: 1,
+          },
+        ],
+      }).join(" ")
+    ).toContain("会员权益已交付");
+  });
+
   it("explains that refunded course access has stopped", () => {
     expect(
       createPersonalOrderServiceNotes({
@@ -90,9 +107,9 @@ describe("personal order detail model", () => {
         items: [
           {
             type: "membership",
-            targetId: "course_membership_yearly",
-            title: "成长会员",
-            unitPrice: 999,
+            targetId: "growth_membership_yearly",
+            title: "成长会员年卡",
+            unitPrice: 699,
             quantity: 1,
           },
         ],
