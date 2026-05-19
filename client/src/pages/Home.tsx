@@ -1,16 +1,22 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { useLocation } from "wouter";
 import {
   ArrowRight,
+  BadgePercent,
+  BookOpenCheck,
   CalendarCheck,
   ClipboardList,
+  Crown,
   HeartHandshake,
   Leaf,
   MessageCircle,
   Monitor,
   ShieldCheck,
+  ShoppingBag,
   Smartphone,
+  Star,
+  Users,
 } from "lucide-react";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
@@ -20,11 +26,19 @@ import MobileView from "@/components/MobileView";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   DEFAULT_COURSE_LEARNING_PATH_ID,
+  createCoursePromotionSummary,
+  formatCheckoutMoney,
+  getCourseDetailPrimaryActionCopy,
   getCourseLearningPath,
+  selectFeaturedCourseProducts,
   useCourseAccess,
   useCourseCatalog,
   useCourseEngagement,
+  useCourseMarketingRules,
+  type Course,
+  type CourseCheckoutMode,
   type CourseLearningPath,
+  type CourseMarketingRule,
 } from "@/features/courses";
 
 const heroImage =
@@ -79,7 +93,7 @@ export default function Home() {
     setVipOnlyFilter,
     setCurrentPage,
   } = useCourseCatalog();
-  const { favoriteCourseIds, favoriteCount, toggleFavorite } =
+  const { favoriteCourseIds, favoriteCount, startCourse, toggleFavorite } =
     useCourseEngagement({
       userId: user?.id,
       enableRemoteSync: isLoggedIn,
@@ -87,6 +101,7 @@ export default function Home() {
     });
   const { getCourseAccess, hasActiveMembership, ownedCourseCount } =
     useCourseAccess();
+  const { rules: marketingRules } = useCourseMarketingRules();
   const [viewMode, setViewMode] = useState<"pc" | "mobile">("pc");
   const [selectedPathId, setSelectedPathId] = useState(
     DEFAULT_COURSE_LEARNING_PATH_ID
@@ -96,6 +111,10 @@ export default function Home() {
   const heroScale = useTransform(scrollYProgress, [0, 0.35], [1, 1.08]);
   const heroY = useTransform(scrollYProgress, [0, 0.35], [0, 38]);
   const selectedPath = getCourseLearningPath(selectedPathId);
+  const featuredProducts = useMemo(
+    () => selectFeaturedCourseProducts(allCourses, 3),
+    [allCourses]
+  );
 
   const applyCoursePath = (path: CourseLearningPath) => {
     setSelectedPathId(path.id);
@@ -110,6 +129,61 @@ export default function Home() {
     document
       .getElementById("courses")
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const getCheckoutModeForCourse = (
+    course: Course
+  ): CourseCheckoutMode | undefined => {
+    const access = getCourseAccess(course);
+    if (access.canStart) return undefined;
+    return access.status === "requires_membership" ? "membership" : "course";
+  };
+
+  const getHomeCoursePrimaryAction = (course: Course) => {
+    const access = getCourseAccess(course);
+    const copy = getCourseDetailPrimaryActionCopy(access, false);
+
+    if (access.canStart) {
+      return {
+        label: "开始学习",
+        description: copy.description,
+        tone: "learn" as const,
+      };
+    }
+
+    if (access.status === "requires_membership") {
+      return {
+        label: "开通会员",
+        description: copy.description,
+        tone: "member" as const,
+      };
+    }
+
+    return {
+      label: course.isFree ? "免费学习" : "立即购买",
+      description: copy.description,
+      tone: course.isFree ? ("learn" as const) : ("buy" as const),
+    };
+  };
+
+  const handleHomeCourseSelect = (course: Course) => {
+    navigate(`/courses/${course.id}?focus=content`);
+  };
+
+  const handleHomeCoursePrimaryAction = (course: Course) => {
+    const access = getCourseAccess(course);
+    if (access.canStart) {
+      startCourse(course.id);
+      navigate(`/courses/${course.id}/learn`);
+      return;
+    }
+
+    const mode = getCheckoutModeForCourse(course);
+    navigate(
+      mode
+        ? `/courses/${course.id}?checkout=${mode}`
+        : `/courses/${course.id}?focus=content`
+    );
   };
 
   if (viewMode === "mobile") {
@@ -169,7 +243,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-gradient-to-r from-[#13211D]/86 via-[#243B35]/52 to-[#F9F5EE]/10" />
           <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#F9F5EE] to-transparent" />
 
-          <div className="relative z-10 flex min-h-[590px] items-center px-5 py-14 sm:px-8 lg:min-h-[calc(100svh-180px)] lg:px-12">
+          <div className="relative z-10 grid min-h-[590px] items-center gap-10 px-5 py-12 sm:px-8 lg:min-h-[calc(100svh-180px)] lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.62fr)] lg:px-12">
             <motion.div
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
@@ -189,10 +263,14 @@ export default function Home() {
 
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
                 <button
-                  onClick={() => navigate("/courses")}
+                  onClick={() =>
+                    document
+                      .getElementById("courses")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
                   className="inline-flex h-12 items-center justify-center rounded-full bg-[#DDE8D9] px-6 text-sm font-semibold text-[#20362F] transition hover:bg-white"
                 >
-                  浏览课程
+                  立即选课
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </button>
                 <button
@@ -203,6 +281,19 @@ export default function Home() {
                 </button>
               </div>
             </motion.div>
+
+            <HomeHeroCourseShelf
+              courses={featuredProducts}
+              marketingRules={marketingRules}
+              getCourseAction={getHomeCoursePrimaryAction}
+              onCourseAction={handleHomeCoursePrimaryAction}
+              onCourseSelect={handleHomeCourseSelect}
+              onViewAll={() =>
+                document
+                  .getElementById("courses")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+            />
           </div>
 
           <div className="absolute bottom-5 left-5 z-20 hidden items-center gap-3 text-sm font-semibold text-[#243B35] sm:left-8 sm:flex lg:left-12">
@@ -214,10 +305,13 @@ export default function Home() {
 
         <CoursePathSection
           courses={allCourses}
+          marketingRules={marketingRules}
           selectedPathId={selectedPathId}
           onPathChange={applyCoursePath}
           onExplorePath={handleExploreCoursePath}
-          onCourseSelect={course => navigate(`/courses/${course.id}`)}
+          onCourseSelect={handleHomeCourseSelect}
+          getCourseAction={getHomeCoursePrimaryAction}
+          onCourseAction={handleHomeCoursePrimaryAction}
           onAssessment={() => navigate("/assessment")}
         />
 
@@ -243,8 +337,12 @@ export default function Home() {
           pageNumbers={pageNumbers}
           paginatedCourses={paginatedCourses}
           favoriteCourseIds={favoriteCourseIds}
+          marketingRules={marketingRules}
           getCourseAccessStatus={course => getCourseAccess(course).status}
+          getCoursePrimaryAction={getHomeCoursePrimaryAction}
           onToggleFavorite={toggleFavorite}
+          onCourseSelect={handleHomeCourseSelect}
+          onCoursePrimaryAction={handleHomeCoursePrimaryAction}
           onCategoryChange={setCategory}
           onTypeChange={setType}
           onSortChange={setSort}
@@ -359,6 +457,169 @@ export default function Home() {
 
       <AppFooter />
     </div>
+  );
+}
+
+function HomeHeroCourseShelf({
+  courses,
+  marketingRules,
+  getCourseAction,
+  onCourseAction,
+  onCourseSelect,
+  onViewAll,
+}: {
+  courses: Course[];
+  marketingRules?: CourseMarketingRule[];
+  getCourseAction: (course: Course) => {
+    label: string;
+    description: string;
+    tone: "buy" | "learn" | "member";
+  };
+  onCourseAction: (course: Course) => void;
+  onCourseSelect: (course: Course) => void;
+  onViewAll: () => void;
+}) {
+  if (courses.length === 0) return null;
+
+  const [featuredCourse, ...secondaryCourses] = courses;
+  const featuredPromotion = createCoursePromotionSummary(featuredCourse, {
+    marketingRules,
+  });
+  const featuredAction = getCourseAction(featuredCourse);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 24 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.62, ease: [0.16, 1, 0.3, 1], delay: 0.12 }}
+      className="w-full max-w-[480px] justify-self-end"
+    >
+      <div className="overflow-hidden rounded-[30px] border border-white/18 bg-[#FFFDF8] text-[#243B35] shadow-2xl shadow-[#13211D]/24">
+        <button
+          onClick={() => onCourseSelect(featuredCourse)}
+          className="group relative block w-full overflow-hidden text-left"
+        >
+          <img
+            src={featuredCourse.coverUrl}
+            alt=""
+            className="h-[220px] w-full object-cover transition duration-700 group-hover:scale-105"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#13211D]/76 via-[#13211D]/20 to-transparent" />
+          <div className="absolute left-5 right-5 top-5 flex items-center justify-between gap-3">
+            <span className="inline-flex items-center rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-[#41675A]">
+              <Star className="mr-1.5 h-3.5 w-3.5 fill-current" />
+              本周优先推荐
+            </span>
+            {featuredCourse.coupon && (
+              <span className="inline-flex items-center rounded-full bg-[#F4E5DE] px-3 py-1.5 text-xs font-semibold text-[#A65F48]">
+                <BadgePercent className="mr-1.5 h-3.5 w-3.5" />
+                {featuredCourse.coupon.label}
+              </span>
+            )}
+          </div>
+          <div className="absolute bottom-5 left-5 right-5 text-white">
+            <p className="text-xs font-semibold text-white/72">
+              {featuredCourse.category} / {featuredCourse.teacher}
+            </p>
+            <h2 className="mt-2 line-clamp-2 text-2xl font-semibold leading-tight">
+              {featuredCourse.title}
+            </h2>
+          </div>
+        </button>
+
+        <div className="p-5">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold text-[#A65F48]">
+                {featuredPromotion.courseCouponAmount > 0
+                  ? "券后到手"
+                  : "课程价"}
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-[#A65F48]">
+                {featuredCourse.isFree
+                  ? "免费"
+                  : formatCheckoutMoney(featuredPromotion.coursePayableAmount)}
+              </p>
+            </div>
+            <button
+              onClick={() => onCourseAction(featuredCourse)}
+              title={featuredAction.description}
+              className="inline-flex h-11 items-center justify-center rounded-full bg-[#243B35] px-5 text-sm font-semibold text-white transition hover:bg-[#315047]"
+            >
+              {featuredAction.tone === "member" ? (
+                <Crown className="mr-2 h-4 w-4" />
+              ) : featuredAction.tone === "learn" ? (
+                <BookOpenCheck className="mr-2 h-4 w-4" />
+              ) : (
+                <ShoppingBag className="mr-2 h-4 w-4" />
+              )}
+              {featuredAction.label}
+            </button>
+          </div>
+
+          <div className="mt-5 divide-y divide-[#EFE6DA] border-y border-[#EFE6DA]">
+            {secondaryCourses.map(course => {
+              const promotion = createCoursePromotionSummary(course, {
+                marketingRules,
+              });
+              const action = getCourseAction(course);
+
+              return (
+                <div
+                  key={course.id}
+                  className="grid grid-cols-[72px_1fr_auto] items-center gap-3 py-3"
+                >
+                  <button
+                    onClick={() => onCourseSelect(course)}
+                    className="overflow-hidden rounded-[18px] bg-[#EEE6DB]"
+                  >
+                    <img
+                      src={course.coverUrl}
+                      alt=""
+                      className="h-16 w-[72px] object-cover transition duration-500 hover:scale-105"
+                    />
+                  </button>
+                  <button
+                    onClick={() => onCourseSelect(course)}
+                    className="min-w-0 text-left"
+                  >
+                    <span className="line-clamp-1 text-sm font-semibold text-[#243B35]">
+                      {course.title}
+                    </span>
+                    <span className="mt-1 flex items-center gap-1.5 text-xs text-[#7B817C]">
+                      <Users className="h-3.5 w-3.5" />
+                      {course.learners.toLocaleString("zh-CN")} 人学习
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => onCourseAction(course)}
+                    title={action.description}
+                    className="text-right"
+                  >
+                    <span className="block text-sm font-semibold text-[#A65F48]">
+                      {course.isFree
+                        ? "免费"
+                        : formatCheckoutMoney(promotion.coursePayableAmount)}
+                    </span>
+                    <span className="mt-1 inline-flex h-7 items-center rounded-full bg-[#E6EDDF] px-3 text-[11px] font-semibold text-[#41675A]">
+                      {action.label}
+                    </span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={onViewAll}
+            className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-full border border-[#D8CDBD] text-sm font-semibold text-[#41675A] transition hover:bg-[#EEF4EA]"
+          >
+            查看全部课程
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 

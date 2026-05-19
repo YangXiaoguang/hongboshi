@@ -47,6 +47,7 @@ import {
   createCourseCheckoutCouponOptions,
   createCourseTrustSummary,
   createCourseCheckoutSummary,
+  createCourseMerchandisingProfile,
   createCoursePromotionSummary,
   createPendingCheckoutPromptForCourse,
   findPendingCourseCheckoutOrder,
@@ -69,6 +70,8 @@ import {
   type CourseCheckoutPaymentChannel,
   type CourseConversionEventName,
   type CourseConversionSource,
+  type CourseDetail as CourseDetailData,
+  type CourseMerchandisingProfile,
   type CoursePendingCheckoutPrompt,
   type CoursePromotionOffer,
   type CoursePromotionSummary,
@@ -160,6 +163,8 @@ export default function CourseDetail() {
   >();
   const [isCouponSelectionManual, setIsCouponSelectionManual] = useState(false);
   const [checkoutIntentHandled, setCheckoutIntentHandled] = useState(false);
+  const [contentFocusHandledCourseId, setContentFocusHandledCourseId] =
+    useState<number | undefined>();
   const courseId = Number(params?.courseId);
   const { course, allCourses, relatedCourses, isLoading } = useCourseDetail(
     Number.isInteger(courseId) ? courseId : undefined
@@ -205,6 +210,12 @@ export default function CourseDetail() {
   const promotionSummary = createCoursePromotionSummary(course, {
     pathCourses: nextPathCourses,
     marketingRules,
+  });
+  const merchandisingProfile = createCourseMerchandisingProfile({
+    course,
+    learningPath,
+    totalDuration,
+    totalLessons,
   });
   const supplementalCourses = relatedCourses
     .filter(
@@ -435,6 +446,28 @@ export default function CourseDetail() {
     course.id,
   ]);
 
+  useEffect(() => {
+    if (contentFocusHandledCourseId === course.id) return;
+    if (typeof window === "undefined") return;
+
+    const focusTarget = new URLSearchParams(window.location.search).get(
+      "focus"
+    );
+    if (focusTarget !== "content") return;
+
+    setContentFocusHandledCourseId(course.id);
+    window.history.replaceState(null, "", `/courses/${course.id}`);
+    const scrollToContent = () => {
+      document
+        .getElementById("course-content")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    window.requestAnimationFrame(() =>
+      window.requestAnimationFrame(scrollToContent)
+    );
+    window.setTimeout(scrollToContent, 360);
+  }, [contentFocusHandledCourseId, course.id]);
+
   const closeCheckout = () => {
     setCheckoutMode(undefined);
     setCheckoutStatus("idle");
@@ -578,7 +611,8 @@ export default function CourseDetail() {
         if (checkoutMode === "membership" && !isMembershipProductPurchasable) {
           setCheckoutStatus("failed");
           setCheckoutError(
-            membershipProductError ?? "当前会员商品或套餐已暂停，暂不能创建新订单。"
+            membershipProductError ??
+              "当前会员商品或套餐已暂停，暂不能创建新订单。"
           );
           toast("会员暂不可购买", {
             description: "已有待支付订单仍可继续完成，新订单需要等待套餐恢复。",
@@ -731,7 +765,7 @@ export default function CourseDetail() {
         metadata,
       }
     );
-    navigate(`/courses/${targetCourse.id}`);
+    navigate(`/courses/${targetCourse.id}?focus=content`);
   };
 
   return (
@@ -849,6 +883,11 @@ export default function CourseDetail() {
               }
               onPrimaryAction={() => handlePrimaryAction("course_detail_panel")}
               onToggleFavorite={handleToggleFavorite}
+              onViewContent={() =>
+                document
+                  .getElementById("course-content")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
               onConsult={() => navigate("/consulting")}
             />
           </div>
@@ -863,6 +902,12 @@ export default function CourseDetail() {
             onCancel={handleCancelPendingCheckout}
           />
         )}
+
+        <CourseDetailAnchorNav
+          locked={locked}
+          primaryActionLabel={effectivePrimaryActionLabel}
+          onPrimaryAction={() => handlePrimaryAction("course_detail_panel")}
+        />
 
         <section className="bg-[#FFFDF8] px-5 py-8 sm:px-8 lg:px-12">
           <div className="mx-auto grid max-w-[1200px] gap-4 md:grid-cols-4">
@@ -889,6 +934,19 @@ export default function CourseDetail() {
           </div>
         </section>
 
+        <CourseContentShowcase
+          course={course}
+          locked={locked}
+          profile={merchandisingProfile}
+          primaryActionLabel={effectivePrimaryActionLabel}
+          onPrimaryAction={() => handlePrimaryAction("course_detail")}
+          onViewCatalog={() =>
+            document
+              .getElementById("course-catalog")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
+        />
+
         <CoursePromotionSection
           disabled={isSyncing}
           locked={locked}
@@ -896,7 +954,7 @@ export default function CourseDetail() {
           onOfferAction={handlePromotionOfferAction}
         />
 
-        <section className="px-5 py-16 sm:px-8 lg:px-12">
+        <section id="course-fit" className="px-5 py-16 sm:px-8 lg:px-12">
           <div className="mx-auto grid max-w-[1200px] gap-12 lg:grid-cols-[0.82fr_1.18fr]">
             <div>
               <p className="text-sm font-semibold text-[#6F8F83]">是否适合你</p>
@@ -1037,7 +1095,10 @@ export default function CourseDetail() {
           </div>
         </section>
 
-        <section className="bg-[#F3EDE4] px-5 py-16 sm:px-8 lg:px-12">
+        <section
+          id="course-catalog"
+          className="bg-[#F3EDE4] px-5 py-16 sm:px-8 lg:px-12"
+        >
           <div className="mx-auto grid max-w-[1200px] gap-12 lg:grid-cols-[1.1fr_0.9fr]">
             <div>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -1125,7 +1186,10 @@ export default function CourseDetail() {
           </div>
         </section>
 
-        <section className="bg-[#FFFDF8] px-5 py-16 sm:px-8 lg:px-12">
+        <section
+          id="course-assurance"
+          className="bg-[#FFFDF8] px-5 py-16 sm:px-8 lg:px-12"
+        >
           <div className="mx-auto grid max-w-[1200px] gap-10 lg:grid-cols-[0.9fr_1.1fr]">
             <div>
               <p className="text-sm font-semibold text-[#6F8F83]">权益与保障</p>
@@ -1328,7 +1392,10 @@ function CoursePromotionSection({
   const appliedLines = promotion.checkoutPromotionLines;
 
   return (
-    <section className="bg-[#FFF8EE] px-5 py-14 sm:px-8 lg:px-12">
+    <section
+      id="course-offers"
+      className="bg-[#FFF8EE] px-5 py-14 sm:px-8 lg:px-12"
+    >
       <div className="mx-auto grid max-w-[1200px] gap-10 lg:grid-cols-[0.78fr_1.22fr] lg:items-start">
         <div>
           <p className="inline-flex items-center text-sm font-semibold text-[#A65F48]">
@@ -1404,6 +1471,164 @@ function CoursePromotionSection({
               </p>
             </div>
           )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CourseDetailAnchorNav({
+  locked,
+  primaryActionLabel,
+  onPrimaryAction,
+}: {
+  locked: boolean;
+  primaryActionLabel: string;
+  onPrimaryAction: () => void;
+}) {
+  const anchors = [
+    { id: "course-content", label: "课程亮点" },
+    { id: "course-offers", label: "优惠方案" },
+    { id: "course-catalog", label: "课程目录" },
+    { id: "course-fit", label: "适合人群" },
+    { id: "course-assurance", label: "权益保障" },
+  ];
+
+  return (
+    <div className="sticky top-0 z-30 border-b border-[#E4DCCF] bg-[#FFFDF8]/94 px-5 py-3 backdrop-blur sm:px-8 lg:px-12">
+      <div className="mx-auto flex max-w-[1200px] items-center gap-3 overflow-x-auto">
+        {anchors.map(anchor => (
+          <button
+            key={anchor.id}
+            onClick={() =>
+              document
+                .getElementById(anchor.id)
+                ?.scrollIntoView({ behavior: "smooth", block: "start" })
+            }
+            className="inline-flex h-9 shrink-0 items-center rounded-full px-3.5 text-xs font-semibold text-[#5F6B64] transition hover:bg-[#EEF4EA] hover:text-[#243B35]"
+          >
+            {anchor.label}
+          </button>
+        ))}
+        <button
+          onClick={onPrimaryAction}
+          className="ml-auto hidden h-9 shrink-0 items-center rounded-full bg-[#243B35] px-4 text-xs font-semibold text-white transition hover:bg-[#315047] sm:inline-flex"
+        >
+          {locked ? primaryActionLabel : "进入学习"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CourseContentShowcase({
+  course,
+  locked,
+  profile,
+  primaryActionLabel,
+  onPrimaryAction,
+  onViewCatalog,
+}: {
+  course: CourseDetailData;
+  locked: boolean;
+  profile: CourseMerchandisingProfile;
+  primaryActionLabel: string;
+  onPrimaryAction: () => void;
+  onViewCatalog: () => void;
+}) {
+  return (
+    <section
+      id="course-content"
+      className="bg-[#F7F1E8] px-5 py-16 sm:px-8 lg:px-12"
+    >
+      <div className="mx-auto grid max-w-[1200px] gap-12 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          className="relative min-h-[460px] overflow-hidden rounded-[30px] bg-[#D8CDBD]"
+        >
+          <img
+            src={profile.showcaseImageUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#13211D]/86 via-[#13211D]/24 to-transparent" />
+          <div className="absolute left-6 right-6 top-6 flex flex-wrap gap-2">
+            <span className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-[#41675A]">
+              {course.category}
+            </span>
+            <span className="rounded-full bg-white/16 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
+              {course.type}
+            </span>
+          </div>
+          <div className="absolute bottom-7 left-6 right-6 text-white">
+            <p className="text-sm font-semibold text-[#DDE8D9]">课程介绍</p>
+            <h2 className="mt-3 max-w-[520px] text-3xl font-semibold leading-tight sm:text-4xl">
+              {profile.promise}
+            </h2>
+            <p className="mt-4 max-w-[520px] text-sm leading-7 text-white/72">
+              {profile.buyerQuestion}
+            </p>
+          </div>
+        </motion.div>
+
+        <div>
+          <p className="text-sm font-semibold text-[#6F8F83]">买前先看清楚</p>
+          <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35] sm:text-4xl">
+            这门课解决什么、怎么学、买后获得什么
+          </h2>
+          <p className="mt-4 text-sm leading-7 text-[#6D746F]">
+            {course.summary}
+          </p>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            {profile.proofPoints.map(item => (
+              <div
+                key={item.label}
+                className="rounded-[22px] border border-[#E4DCCF] bg-[#FFFDF8] p-5"
+              >
+                <p className="text-xs font-semibold text-[#8C6E4A]">
+                  {item.label}
+                </p>
+                <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-snug text-[#243B35]">
+                  {item.value}
+                </h3>
+                <p className="mt-3 text-xs leading-5 text-[#7B817C]">
+                  {item.description}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 divide-y divide-[#E1D7C7] border-y border-[#E1D7C7]">
+            {profile.sellingPoints.map((point, index) => (
+              <div key={point} className="flex items-start gap-4 py-4">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#DDE8D9] text-xs font-semibold text-[#41675A]">
+                  {index + 1}
+                </span>
+                <p className="text-sm leading-7 text-[#394A44]">{point}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={onPrimaryAction}
+              className="inline-flex h-12 items-center justify-center rounded-full bg-[#243B35] px-6 text-sm font-semibold text-white transition hover:bg-[#315047]"
+            >
+              <ShoppingBag className="mr-2 h-4 w-4" />
+              {locked ? primaryActionLabel : "进入学习"}
+            </button>
+            <button
+              onClick={onViewCatalog}
+              className="inline-flex h-12 items-center justify-center rounded-full border border-[#D8CDBD] px-6 text-sm font-semibold text-[#41675A] transition hover:bg-[#FFFDF8]"
+            >
+              查看完整目录
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -1756,6 +1981,7 @@ function CommercePanel({
   onOpenCourseCheckout,
   onPrimaryAction,
   onToggleFavorite,
+  onViewContent,
 }: {
   accessLabel: string;
   course: Course;
@@ -1776,6 +2002,7 @@ function CommercePanel({
   onOpenCourseCheckout: () => void;
   onPrimaryAction: () => void;
   onToggleFavorite: () => void;
+  onViewContent: () => void;
 }) {
   const showCouponPayable =
     !course.isFree && promotionSummary.courseCouponAmount > 0;
@@ -1980,6 +2207,12 @@ function CommercePanel({
       >
         <PrimaryActionIcon className="mr-2 h-4 w-4" />
         {isSyncing ? "同步中" : primaryActionLabel}
+      </button>
+      <button
+        onClick={onViewContent}
+        className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#E6EDDF] text-sm font-semibold text-[#41675A] transition hover:bg-[#DDE8D9]"
+      >
+        先看课程介绍
       </button>
       <button
         onClick={onConsult}

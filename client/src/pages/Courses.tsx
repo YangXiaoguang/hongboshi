@@ -2,9 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
+  BadgePercent,
   BookOpenCheck,
   ClipboardList,
+  Crown,
   HeartHandshake,
+  Search,
+  ShoppingBag,
+  Star,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -27,12 +33,15 @@ import {
   createCourseCheckoutSummary,
   createPendingCourseCheckoutPrompts,
   COURSE_MEMBERSHIP_PAGE_PATH,
+  createCoursePromotionSummary,
   findPendingCourseCheckoutOrder,
   findMembershipCheckoutAnchorCourse,
+  formatCheckoutMoney,
   getCourseDetailPrimaryActionCopy,
   getCourseLearningPath,
   isCourseMembershipCheckoutIntent,
   resolveDefaultCheckoutCouponClaimId,
+  selectFeaturedCourseProducts,
   trackCourseConversionEvent,
   useCourseAccess,
   useCourseCatalog,
@@ -46,6 +55,7 @@ import {
   type CourseConversionEventName,
   type CourseConversionSource,
   type CourseLearningPath,
+  type CourseMarketingRule,
   type CoursePendingCheckoutPrompt,
 } from "@/features/courses";
 import { useCourseMembershipProduct } from "@/features/memberships";
@@ -132,6 +142,10 @@ export default function Courses() {
   const [isCouponSelectionManual, setIsCouponSelectionManual] = useState(false);
   const [checkoutIntentHandled, setCheckoutIntentHandled] = useState(false);
   const selectedPath = getCourseLearningPath(selectedPathId);
+  const featuredProducts = useMemo(
+    () => selectFeaturedCourseProducts(allCourses, 4),
+    [allCourses]
+  );
   const checkoutSummary =
     checkoutCourse && checkoutMode
       ? createCourseCheckoutSummary(checkoutCourse, checkoutMode, {
@@ -457,7 +471,7 @@ export default function Courses() {
     trackCourseConversion("course_detail_click", course, source, {
       position,
     });
-    navigate(`/courses/${course.id}`);
+    navigate(`/courses/${course.id}?focus=content`);
   };
 
   const handleCoursePrimaryAction = (
@@ -515,7 +529,8 @@ export default function Courses() {
         if (checkoutMode === "membership" && !isMembershipProductPurchasable) {
           setCheckoutStatus("failed");
           setCheckoutError(
-            membershipProductError ?? "当前会员商品或套餐已暂停，暂不能创建新订单。"
+            membershipProductError ??
+              "当前会员商品或套餐已暂停，暂不能创建新订单。"
           );
           toast("会员暂不可购买", {
             description: "已有待支付订单仍可继续完成，新订单需要等待套餐恢复。",
@@ -725,35 +740,22 @@ export default function Courses() {
               </div>
             </motion.div>
 
-            <div className="grid gap-4 sm:grid-cols-3 lg:pb-2">
-              {[
-                {
-                  icon: BookOpenCheck,
-                  title: "课程优先",
-                  description: "先看主题与适合人群，再进入详情。",
-                },
-                {
-                  icon: ClipboardList,
-                  title: "测评推荐",
-                  description: "不确定学什么时，用状态测评缩小选择。",
-                },
-                {
-                  icon: HeartHandshake,
-                  title: "咨询补充",
-                  description: "需要更深支持时，再预约一对一咨询。",
-                },
-              ].map(item => (
-                <div key={item.title} className="border-t border-white/24 pt-5">
-                  <item.icon className="h-5 w-5 text-[#DDE8D9]" />
-                  <h2 className="mt-4 text-base font-semibold text-white">
-                    {item.title}
-                  </h2>
-                  <p className="mt-2 text-xs leading-6 text-white/68">
-                    {item.description}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <CourseHeroProductPanel
+              courses={featuredProducts.slice(0, 3)}
+              getCourseAction={getCoursePrimaryAction}
+              marketingRules={marketingRules}
+              onCourseAction={course =>
+                handleCoursePrimaryAction(course, "courses_hero")
+              }
+              onCourseSelect={(course, position) =>
+                handleCourseSelect(course, "courses_hero", position)
+              }
+              onSearchFocus={() =>
+                document
+                  .getElementById("courses")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+            />
           </div>
         </section>
 
@@ -769,6 +771,23 @@ export default function Courses() {
             onCancel={handleCancelPendingCheckout}
           />
         )}
+
+        <CourseMallShelf
+          courses={featuredProducts}
+          getCourseAction={getCoursePrimaryAction}
+          marketingRules={marketingRules}
+          onCourseAction={course =>
+            handleCoursePrimaryAction(course, "course_starter")
+          }
+          onCourseSelect={(course, position) =>
+            handleCourseSelect(course, "course_starter", position)
+          }
+          onViewAll={() =>
+            document
+              .getElementById("courses")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
+        />
 
         <CoursePathSection
           courses={allCourses}
@@ -875,5 +894,291 @@ export default function Courses() {
 
       <AppFooter />
     </div>
+  );
+}
+
+function CourseHeroProductPanel({
+  courses,
+  getCourseAction,
+  marketingRules,
+  onCourseAction,
+  onCourseSelect,
+  onSearchFocus,
+}: {
+  courses: Course[];
+  getCourseAction: (course: Course) => {
+    label: string;
+    description: string;
+    tone: "buy" | "learn" | "member";
+  };
+  marketingRules?: CourseMarketingRule[];
+  onCourseAction: (course: Course) => void;
+  onCourseSelect: (course: Course, position: number) => void;
+  onSearchFocus: () => void;
+}) {
+  const [primaryCourse, ...secondaryCourses] = courses;
+  if (!primaryCourse) return null;
+
+  const primaryPromotion = createCoursePromotionSummary(primaryCourse, {
+    marketingRules,
+  });
+  const primaryAction = getCourseAction(primaryCourse);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.54, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
+      className="rounded-[30px] border border-white/18 bg-[#FFFDF8] p-4 text-[#243B35] shadow-2xl shadow-black/22"
+    >
+      <div className="mb-4 flex items-center justify-between gap-4 px-1">
+        <div>
+          <p className="text-xs font-semibold text-[#6F8F83]">课程商品推荐</p>
+          <h2 className="mt-1 text-xl font-semibold">先看可购买的热门课</h2>
+        </div>
+        <button
+          onClick={onSearchFocus}
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#E6EDDF] text-[#41675A] transition hover:bg-[#DDE8D9]"
+          title="搜索课程"
+        >
+          <Search className="h-4 w-4" />
+        </button>
+      </div>
+
+      <button
+        onClick={() => onCourseSelect(primaryCourse, 0)}
+        className="group relative block w-full overflow-hidden rounded-[24px] text-left"
+      >
+        <img
+          src={primaryCourse.coverUrl}
+          alt=""
+          className="h-56 w-full object-cover transition duration-700 group-hover:scale-105"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#13211D]/82 via-[#13211D]/24 to-transparent" />
+        <div className="absolute left-4 right-4 top-4 flex items-center justify-between gap-3">
+          <span className="inline-flex items-center rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-[#41675A]">
+            <Star className="mr-1.5 h-3.5 w-3.5 fill-current" />
+            热卖课程
+          </span>
+          {primaryCourse.coupon && (
+            <span className="inline-flex items-center rounded-full bg-[#F4E5DE] px-3 py-1.5 text-xs font-semibold text-[#A65F48]">
+              <BadgePercent className="mr-1.5 h-3.5 w-3.5" />
+              {primaryCourse.coupon.label}
+            </span>
+          )}
+        </div>
+        <div className="absolute bottom-4 left-4 right-4 text-white">
+          <p className="text-xs font-semibold text-white/72">
+            {primaryCourse.category} / {primaryCourse.teacher}
+          </p>
+          <h3 className="mt-2 line-clamp-2 text-2xl font-semibold leading-tight">
+            {primaryCourse.title}
+          </h3>
+        </div>
+      </button>
+
+      <div className="mt-4 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold text-[#A65F48]">到手价</p>
+          <p className="mt-1 text-2xl font-semibold text-[#A65F48]">
+            {primaryCourse.isFree
+              ? "免费"
+              : formatCheckoutMoney(primaryPromotion.coursePayableAmount)}
+          </p>
+        </div>
+        <button
+          onClick={() => onCourseAction(primaryCourse)}
+          title={primaryAction.description}
+          className="inline-flex h-11 items-center justify-center rounded-full bg-[#243B35] px-5 text-sm font-semibold text-white transition hover:bg-[#315047]"
+        >
+          {primaryAction.tone === "member" ? (
+            <Crown className="mr-2 h-4 w-4" />
+          ) : primaryAction.tone === "learn" ? (
+            <BookOpenCheck className="mr-2 h-4 w-4" />
+          ) : (
+            <ShoppingBag className="mr-2 h-4 w-4" />
+          )}
+          {primaryAction.label}
+        </button>
+      </div>
+
+      <div className="mt-5 grid gap-3">
+        {secondaryCourses.map((course, index) => {
+          const promotion = createCoursePromotionSummary(course, {
+            marketingRules,
+          });
+          const action = getCourseAction(course);
+
+          return (
+            <div
+              key={course.id}
+              className="grid grid-cols-[64px_1fr_auto] items-center gap-3 border-t border-[#EFE6DA] pt-3"
+            >
+              <button
+                onClick={() => onCourseSelect(course, index + 1)}
+                className="overflow-hidden rounded-[18px]"
+              >
+                <img
+                  src={course.coverUrl}
+                  alt=""
+                  className="h-14 w-16 object-cover transition duration-500 hover:scale-105"
+                />
+              </button>
+              <button
+                onClick={() => onCourseSelect(course, index + 1)}
+                className="min-w-0 text-left"
+              >
+                <span className="line-clamp-1 text-sm font-semibold text-[#243B35]">
+                  {course.title}
+                </span>
+                <span className="mt-1 flex items-center gap-1.5 text-xs text-[#7B817C]">
+                  <Users className="h-3.5 w-3.5" />
+                  {course.learners.toLocaleString("zh-CN")} 人学习
+                </span>
+              </button>
+              <button
+                onClick={() => onCourseAction(course)}
+                title={action.description}
+                className="text-right"
+              >
+                <span className="block text-sm font-semibold text-[#A65F48]">
+                  {course.isFree
+                    ? "免费"
+                    : formatCheckoutMoney(promotion.coursePayableAmount)}
+                </span>
+                <span className="mt-1 block text-[11px] font-semibold text-[#41675A]">
+                  {action.label}
+                </span>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-5 grid grid-cols-3 gap-3 border-t border-[#EFE6DA] pt-4 text-xs font-semibold text-[#6D746F]">
+        {[
+          { icon: BookOpenCheck, label: "看详情" },
+          { icon: ClipboardList, label: "可测评" },
+          { icon: HeartHandshake, label: "可咨询" },
+        ].map(item => (
+          <span key={item.label} className="inline-flex items-center gap-1.5">
+            <item.icon className="h-3.5 w-3.5 text-[#6F8F83]" />
+            {item.label}
+          </span>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+function CourseMallShelf({
+  courses,
+  getCourseAction,
+  marketingRules,
+  onCourseAction,
+  onCourseSelect,
+  onViewAll,
+}: {
+  courses: Course[];
+  getCourseAction: (course: Course) => {
+    label: string;
+    description: string;
+    tone: "buy" | "learn" | "member";
+  };
+  marketingRules?: CourseMarketingRule[];
+  onCourseAction: (course: Course) => void;
+  onCourseSelect: (course: Course, position: number) => void;
+  onViewAll: () => void;
+}) {
+  if (courses.length === 0) return null;
+
+  return (
+    <section className="bg-[#FFFDF8] px-5 py-12 sm:px-8 lg:px-12">
+      <div className="mx-auto max-w-[1200px]">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-[#6F8F83]">课程商品货架</p>
+            <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35]">
+              热门课先摆出来，少走两步再下单
+            </h2>
+          </div>
+          <button
+            onClick={onViewAll}
+            className="inline-flex h-11 items-center justify-center rounded-full border border-[#D8CDBD] px-5 text-sm font-semibold text-[#41675A] transition hover:bg-[#EEF4EA]"
+          >
+            查看全部课程
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {courses.map((course, index) => {
+            const promotion = createCoursePromotionSummary(course, {
+              marketingRules,
+            });
+            const action = getCourseAction(course);
+
+            return (
+              <motion.div
+                key={course.id}
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.35 }}
+                transition={{ duration: 0.38, delay: index * 0.04 }}
+                className="overflow-hidden rounded-[24px] border border-[#E4DCCF] bg-[#F9F5EE]"
+              >
+                <button
+                  onClick={() => onCourseSelect(course, index)}
+                  className="group relative block w-full overflow-hidden text-left"
+                >
+                  <img
+                    src={course.coverUrl}
+                    alt=""
+                    className="h-44 w-full object-cover transition duration-700 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#13211D]/72 via-transparent to-transparent" />
+                  <span className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-[#41675A]">
+                    {course.category}
+                  </span>
+                  <span className="absolute bottom-4 left-4 right-4 line-clamp-2 text-lg font-semibold leading-tight text-white">
+                    {course.title}
+                  </span>
+                </button>
+
+                <div className="p-4">
+                  <div className="flex items-center justify-between gap-3 text-xs text-[#7B817C]">
+                    <span className="truncate">{course.teacher}</span>
+                    <span>{course.learners.toLocaleString("zh-CN")} 人学</span>
+                  </div>
+                  <div className="mt-4 flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-[#8A918B]">
+                        {promotion.courseCouponAmount > 0
+                          ? "券后价"
+                          : course.isVip
+                            ? "会员内容"
+                            : "课程价"}
+                      </p>
+                      <p className="mt-1 text-xl font-semibold text-[#A65F48]">
+                        {course.isFree
+                          ? "免费"
+                          : formatCheckoutMoney(promotion.coursePayableAmount)}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => onCourseAction(course)}
+                      title={action.description}
+                      className="inline-flex h-10 items-center justify-center rounded-full bg-[#243B35] px-4 text-xs font-semibold text-white transition hover:bg-[#315047]"
+                    >
+                      {action.label}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
   );
 }

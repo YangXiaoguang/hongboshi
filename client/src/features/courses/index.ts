@@ -100,6 +100,13 @@ export {
   type CoursePromotionSummary,
 } from "./model/coursePromotion";
 export {
+  createCourseMerchandisingProfile,
+  getCourseMerchandisingImage,
+  selectFeaturedCourseProducts,
+  type CourseMerchandisingProfile,
+  type CourseMerchandisingProof,
+} from "./model/courseMerchandising";
+export {
   createCourseConversionCoursePayload,
   createCourseConversionEvent,
   type CourseConversionCoursePayloadInput,

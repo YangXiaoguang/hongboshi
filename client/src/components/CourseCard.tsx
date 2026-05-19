@@ -107,7 +107,7 @@ export default function CourseCard({
       return;
     }
 
-    navigate(`/courses/${course.id}`);
+    navigate(`/courses/${course.id}?focus=content`);
   };
 
   const handleFavorite = (e: React.MouseEvent) => {
