@@ -32,6 +32,12 @@ const implementationRows = [
   ["M2-G", "内容数据库化", "已完成", "PostgreSQL Store、批量校验和审核前校验"],
   ["M2-H", "权限细化", "已完成", "课程商品资源级权限和素材字段预留"],
   [
+    "UX-Z",
+    "会员商品配置",
+    "已完成",
+    "会员商品、套餐价格、状态生命周期和审计记录",
+  ],
+  [
     "M3-A",
     "用户与会员只读台",
     "已完成",
@@ -86,7 +92,7 @@ export default function AdminHome() {
             业务运营总览
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            当前后台已接入咨询师档案、咨询排班运营、服务记录与履约异常、支付对账、课程商品、用户会员、订单管理、交易退款、财务管理、风险复核、风险
+            当前后台已接入咨询师档案、咨询排班运营、服务记录与履约异常、支付对账、课程商品、会员商品、用户会员、订单管理、交易退款、财务管理、风险复核、风险
             SOP、升级队列、风险持久化和审计中心，后续按统一归档、协作通知和质检继续扩展。
           </p>
         </div>
@@ -201,9 +207,7 @@ export default function AdminHome() {
           <div className="border-b border-[#E8DED0] px-5 py-4">
             <h2 className="text-sm font-semibold">实施路线</h2>
             <p className="mt-1 text-xs text-[#8A8176]">
-              当前连续执行状态已经完成 M9-B
-              审计导出与事件详情追踪基础，下一步进入统一审计 Store
-              方案或风险通知协作。
+              当前连续执行状态已经完成会员商品配置化首个切片，下一步进入用户端会员商品读取服务端快照和结算金额同步。
             </p>
           </div>
           <div className="overflow-x-auto">

@@ -13,10 +13,11 @@
 - 前端使用 React、TypeScript、Vite、Tailwind CSS。
 - 后端使用 Express 模块化 API。
 - `shared/domain` 已承载前后端共享 Zod 契约。
-- 已建立 `visitor`、`member`、`counselor`、`catalog_viewer`、`catalog_operator`、`operator`、`admin` 角色和 `admin:manage`、`counseling:fulfill`、`catalog:*`、`user:read`、`user:membership`、`order:read`、`order:operate`、`transaction:read`、`transaction:operate`、`finance:read`、`finance:manage`、`risk:read`、`risk:review`、`risk:sop`、`audit:read` 等权限能力。
+- 已建立 `visitor`、`member`、`counselor`、`catalog_viewer`、`catalog_operator`、`operator`、`admin` 角色和 `admin:manage`、`counseling:fulfill`、`catalog:*`、`membership_product:*`、`user:read`、`user:membership`、`order:read`、`order:operate`、`transaction:read`、`transaction:operate`、`finance:read`、`finance:manage`、`risk:read`、`risk:review`、`risk:sop`、`audit:read` 等权限能力。
 - 咨询运营配置页面 `/admin/counseling` 已可管理咨询师档案与资质服务状态、咨询排班、服务记录与履约异常、配置取消规则并查看履约审计。
 - 支付对账页面 `/admin/payments` 已可对比支付回调收据、业务订单和咨询预约状态。
 - 课程商品列表 `/admin/courses` 已接入统一后台，可读取课程商品契约、搜索、状态筛选、分类筛选、排序、分页、基础信息编辑、详情内容编辑、内容质量校验、审核动作、上下架、改价、资源级权限和最近审计；状态与详情内容均可写入 JSON Store 或 PostgreSQL，并已联动前台课程列表/详情。
+- 会员商品后台 `/admin/memberships` 已接入统一后台，可读取会员商品配置、维护商品文案、调整套餐价格、暂停/恢复套餐，并写入会员商品操作审计；当前支持开发期 JSON Store。
 - 用户会员后台 `/admin/users` 已接入统一后台，可按关键词、角色和会员状态筛选用户，聚合账号、会员、课程权益、订单、咨询预约和风险摘要，并支持会员开通、延期、到期标记、计划调整和审计追溯。
 - 订单管理后台 `/admin/orders` 已接入统一后台，可按关键词、订单状态和商品类型筛选课程、会员与咨询订单，并展示订单详情、支付回调摘要、关联履约对象、状态时间线、待支付订单关闭、异常标记和操作审计。
 - 交易退款后台 `/admin/transactions` 已接入统一后台，可按关键词、流水类型、渠道、处理状态、业务类型和日期范围筛选支付/退款流水，并展示关联订单、业务对象、异常提示和处理时间线；已支持受控退款申请、交易异常工单和操作审计。
@@ -28,6 +29,7 @@
 主要缺口：
 
 - 课程商品当前仍缺少真实素材文件上传/对象存储和学习资料下载履约，内容运营闭环还需要继续收口。
+- 会员商品后台已具备配置化首个切片，但用户端 `/membership` 与会员 checkout 摘要仍需改为读取服务端会员商品快照，确保后台改价后展示、下单和订单金额完全一致。
 - 订单后台已具备首批受控写动作，交易后台已具备退款申请、退款渠道受理摘要、异常工单动作和 PostgreSQL 持久化；财务只读口径、CSV 导出、账期和手续费规则基础已建立，咨询师档案、服务状态、服务记录与履约异常基础已建立，结算批次、渠道结算单、发票和真实支付渠道适配还需要继续建设。
 - 风险复核台已形成 SOP 模板、升级队列和 PostgreSQL 持久化基础，但通知协作还需要继续建设。
 - 跨模块审计中心已形成只读聚合、导出、详情追踪、统一归档表草案和手动归档试点，但归档后台入口、读取切换、定时归档和长期留存策略还需要继续建设。
@@ -49,6 +51,7 @@
 | M0   | 连续执行基建   | 已完成 | 后台路线图、Codex 执行状态、操作协议                     |
 | M1   | 统一后台框架   | 已完成 | `/admin` shell、导航、权限守卫、现有后台页面接入         |
 | M2   | 课程商品管理   | 已完成 | 课程商品列表、上下架、价格、发布联动、数据库化           |
+| UX-Z | 会员商品配置   | 已完成 | 会员商品、套餐价格、套餐状态生命周期和审计               |
 | M3   | 用户与会员管理 | 已完成 | 用户检索、画像摘要、会员权益、协议与状态                 |
 | M4   | 订单管理       | 已完成 | 订单列表、详情、状态机、课程/咨询订单聚合                |
 | M5   | 交易与退款管理 | 已完成 | 支付流水、退款申请、异常处理、渠道适配预留               |

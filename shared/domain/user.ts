@@ -58,6 +58,8 @@ export const AuthPermissionSchema = z.enum([
   "risk:sop",
   "audit:read",
   "audit:archive",
+  "membership_product:read",
+  "membership_product:manage",
   "catalog:read",
   "catalog:edit",
   "catalog:review",
@@ -76,6 +78,11 @@ export const COURSE_CATALOG_PERMISSIONS = {
 export const USER_ADMIN_PERMISSIONS = {
   read: "user:read",
   membership: "user:membership",
+} satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
+
+export const MEMBERSHIP_PRODUCT_ADMIN_PERMISSIONS = {
+  read: "membership_product:read",
+  manage: "membership_product:manage",
 } satisfies Record<string, z.infer<typeof AuthPermissionSchema>>;
 
 export const ORDER_ADMIN_PERMISSIONS = {
@@ -159,7 +166,12 @@ const RolePermissionMap = {
   visitor: ["course_access:read"],
   member: ["course_access:read", "course:purchase", "membership:activate"],
   counselor: ["course_access:read", "counseling:fulfill"],
-  catalog_viewer: ["course_access:read", "admin:read", "catalog:read"],
+  catalog_viewer: [
+    "course_access:read",
+    "admin:read",
+    "catalog:read",
+    "membership_product:read",
+  ],
   catalog_operator: [
     "course_access:read",
     "admin:read",
@@ -168,6 +180,8 @@ const RolePermissionMap = {
     "catalog:review",
     "catalog:publish",
     "catalog:price",
+    "membership_product:read",
+    "membership_product:manage",
   ],
   operator: [
     "course_access:read",
@@ -186,6 +200,8 @@ const RolePermissionMap = {
     "risk:read",
     "risk:review",
     "audit:read",
+    "membership_product:read",
+    "membership_product:manage",
     "catalog:read",
     "catalog:edit",
     "catalog:review",
@@ -212,6 +228,8 @@ const RolePermissionMap = {
     "risk:sop",
     "audit:read",
     "audit:archive",
+    "membership_product:read",
+    "membership_product:manage",
     "catalog:read",
     "catalog:edit",
     "catalog:review",

@@ -22,6 +22,7 @@ import FinanceManagement from "./pages/admin/FinanceManagement";
 import Home from "./pages/Home";
 import MarketingRules from "./pages/admin/MarketingRules";
 import Membership from "./pages/Membership";
+import MembershipProducts from "./pages/admin/MembershipProducts";
 import MyCourses from "./pages/MyCourses";
 import OrderManagement from "./pages/admin/OrderManagement";
 import PaymentReconciliation from "./pages/PaymentReconciliation";
@@ -60,6 +61,11 @@ function Router() {
       <Route path={"/admin/marketing"}>
         <AdminLayout>
           <MarketingRules />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/memberships"}>
+        <AdminLayout>
+          <MembershipProducts />
         </AdminLayout>
       </Route>
       <Route path={"/admin/users"}>

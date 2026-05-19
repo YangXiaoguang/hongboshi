@@ -14,6 +14,7 @@ import { registerCourseLearningRecordApi } from "./modules/courses/courseLearnin
 import { registerFinanceAdminApi } from "./modules/finance/financeAdminApi";
 import { registerGrowthProfileApi } from "./modules/growth/growthProfileApi";
 import { registerCourseMarketingApi } from "./modules/marketing/courseMarketingApi";
+import { registerCourseMembershipProductApi } from "./modules/memberships/courseMembershipProductApi";
 import {
   capturePaymentWebhookRawBody,
   registerPaymentApi,
@@ -47,6 +48,7 @@ async function startServer() {
   registerCourseApi(app);
   registerCourseLearningRecordApi(app);
   registerCourseMarketingApi(app);
+  registerCourseMembershipProductApi(app);
   registerFinanceAdminApi(app);
   registerGrowthProfileApi(app);
   registerPaymentApi(app);

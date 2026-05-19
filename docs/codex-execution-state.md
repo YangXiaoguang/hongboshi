@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`UX-Y 会员结算服务端去课程锚点与会员套餐订单化`
-- 当前状态：`UX-Y 会员结算服务端去课程锚点与会员套餐订单化` 已完成，会员 checkout 创建已支持 `membershipProductId` / `membershipPlanId`，服务端按会员套餐生成订单、支付后写入会员来源，`/membership` 独立会员页不再需要课程锚点即可创建和继续支付会员订单。
-- 本轮完成后下一步：执行 `UX-Z 会员商品运营后台配置化与套餐生命周期管理`
+- 当前阶段：`UX-Z 会员商品运营后台配置化与套餐生命周期管理`
+- 当前状态：`UX-Z 会员商品运营后台配置化与套餐生命周期管理` 首个稳定切片已完成，会员商品已进入运营后台配置体系，支持资源级权限、内存/JSON Store、后台 API、`/admin/memberships` 页面、商品文案维护、套餐改价、套餐暂停/恢复和操作审计。
+- 本轮完成后下一步：执行 `UX-AA 会员商品用户端服务端快照与结算金额同步`
 
 ## 已完成关键能力
 
@@ -58,6 +58,7 @@
 - 完成会员来源可视化与重新开通直达体验：`/admin/users` 用户详情展示会员来源摘要、来源订单/操作者和更新时间；个人中心已退款会员订单进入 `checkout=membership&intent=renew_membership`，课程列表自动打开会员结算，成长空间登录后承接同一重开意图。
 - 完成会员独立商品化与套餐开通入口：新增 `CourseMembershipProductSchema`、`CourseMembershipPlanSchema` 和默认成长会员年卡，新增 `/membership` 会员商品页，课程中心、个人中心、成长空间、页头页脚和已退款会员订单重开链路均可进入独立会员商品页或会员结算；结算抽屉可在独立会员上下文展示会员订单、会员首图、套餐权益和购买须知。
 - 完成会员结算服务端去课程锚点：`CourseCheckoutCreateRequestSchema` 的 `membership` 模式可直接接收会员商品/套餐 ID；服务端按套餐创建会员订单，支付成功后写入 `checkout_order` 来源；`/membership` 不再依赖 `findMembershipCheckoutAnchorCourse`，待支付会员订单按套餐 ID 召回，个人中心会员待支付会回到会员开通页。
+- 完成会员商品运营后台配置化首个切片：新增 `membership_product:read/manage` 权限、会员商品后台契约、会员商品 Store、后台 API、前端 repository 和 `/admin/memberships` 页面，运营可维护会员商品文案、套餐价格、套餐暂停/恢复，并查看操作审计；用户端读取服务端快照与结算金额同步进入下一步。
 - 完成课程订单状态与支付结果服务端化：新增课程 checkout 共享契约、订单扩展字段、服务端创建/读取/支付/取消 API 和前端 repository/hook，课程权益只在服务端支付成功后交付，重复支付保持幂等。
 - 课程详情页购买抽屉已接入订单状态，支持待创建、待支付、支付中、支付成功、失败重试和取消待支付订单，并展示订单号、支付保留时间、支付渠道和权益交付摘要。
 - TRX-C 浏览器验证已通过：在 `/courses/16` 完成登录、创建订单、模拟支付成功、权益到账和“开始学习”入口切换；`pnpm run ci` 已通过 87 个测试文件 / 411 个测试和生产构建。
@@ -519,41 +520,38 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：UX-Y 会员结算服务端去课程锚点与会员套餐订单化
+### 最近完成阶段：UX-Z 会员商品运营后台配置化与套餐生命周期管理
 
-UX-Y 已交付：
+UX-Z 首个稳定切片已交付：
 
-- `shared/domain/courseAccess.ts`：`CourseCheckoutCreateRequestSchema` 改为区分课程订单和会员订单，课程模式继续要求 `courseId`，会员模式直接接收 `membershipProductId` / `membershipPlanId`。
-- `shared/domain/courseAccess.ts`：新增 `createMembershipCheckoutOrder` 与 `findPendingMembershipCheckoutOrder`，会员订单 item 的 `targetId` 直接记录会员套餐 ID，支付成功后按套餐 planName 写入会员权益来源。
-- `server/modules/courses/courseAccessApi.ts`：会员 checkout 创建不再查询课程商品或课程上下文，服务端按会员套餐创建订单；课程券校验仍只在课程订单路径执行。
-- `client/src/features/courses/api/httpCourseAccessRepository.ts` 与 `useCourseAccess`：会员订单创建改为提交会员商品/套餐 ID，保留课程详情会员 CTA 的展示上下文但不向服务端传课程 ID。
-- `client/src/pages/Membership.tsx`：独立会员页不再使用 `findMembershipCheckoutAnchorCourse`，可直接创建会员订单，也可按套餐 ID 召回待支付会员订单。
-- `client/src/features/courses/model/coursePendingCheckout.ts` 与 `PersonalCenter.tsx`：待支付会员订单按套餐 ID 定位，个人中心继续支付会员订单会回到 `/membership?checkout=membership`。
-- `client/src/features/courses/model/personalOrderDetail.ts`：个人中心订单详情对会员已支付、待支付、退款中、已关闭状态使用会员权益语义，不再误写为课程权益。
-- `docs/domain-contracts.md` 与 `docs/product-engineering-roadmap.md` 已同步会员套餐订单化边界，明确会员商品后台配置化仍是下一阶段。
+- `shared/domain/courseMembershipProduct.ts`：扩展会员商品与套餐契约，新增商品状态、更新时间、后台 console、商品更新请求、套餐更新请求、套餐状态请求、审计事件和 mutation result。
+- `shared/domain/user.ts`：新增 `membership_product:read` 与 `membership_product:manage`，`catalog_viewer` 可只读会员商品，`catalog_operator`、`operator` 与 `admin` 可维护会员商品。
+- `server/modules/memberships/courseMembershipProductStore.ts`：新增会员商品 Store，支持内存/JSON 文件 `.hongboshi-data/course-membership-product.json`，默认从 `defaultCourseMembershipProduct` 初始化，并保存会员商品审计事件。
+- `server/modules/memberships/courseMembershipProductApi.ts`：新增 `/api/memberships/admin/product`、`/api/memberships/admin/plans/:planId` 和 `/api/memberships/admin/plans/:planId/status`，服务端校验权限、参数、价格和操作原因。
+- `client/src/features/memberships/api/httpCourseMembershipProductRepository.ts`：新增前端会员商品后台 repository 和响应解析。
+- `client/src/pages/admin/MembershipProducts.tsx`、后台导航和路由：新增 `/admin/memberships`，展示会员商品状态、套餐价格、权益摘要、商品基础信息表单、改价、套餐暂停/恢复和最近审计。
+- `docs/domain-contracts.md`、`docs/product-engineering-roadmap.md` 和 `docs/admin-management-roadmap.md` 已同步会员商品后台配置化边界。
 
-UX-Y 验收结果：
+UX-Z 验收结果：
 
 - `pnpm exec tsc --noEmit --pretty false` 已通过。
-- 定向测试已通过：`server/modules/courses/courseAccessApi.test.ts`、`client/src/features/courses/model/courseAccess.test.ts`、`client/src/features/courses/model/coursePendingCheckout.test.ts`、`client/src/features/courses/model/courseCheckout.test.ts`、`client/src/features/courses/model/personalOrderDetail.test.ts`、`shared/domain/courseMembershipProduct.test.ts` 和 `client/src/features/courses/api/httpCourseAccessRepository.test.ts` 覆盖会员套餐订单创建、支付交付、待支付召回、独立会员摘要和个人中心会员订单说明。
-- `pnpm run ci` 已通过：类型检查、114 个测试文件 / 536 个测试和生产构建均完成；Vite 仍保留既有大 chunk 提醒。
-- 浏览器已验证 `/membership?checkout=membership`：URL 自动回到 `/membership`，并打开“成长会员年卡”会员订单抽屉，抽屉展示独立会员商品描述和“确认后生成”订单号占位，页面控制台无本地应用错误。
-- 浏览器已验证 `/me?tab=orders`：个人中心订单入口或登录守卫可正常访问，页面控制台无本地应用错误。
+- 定向测试已通过并触发全量 Vitest：117 个测试文件 / 548 个测试均成功，覆盖会员商品契约、Store、API、前端 repository 和后台导航权限。
+- `pnpm run ci` 已通过：类型检查、117 个测试文件 / 548 个测试和生产构建均完成；Vite 仍保留既有大 chunk 提醒。
+- 浏览器已验证 `/admin/memberships`：未登录状态展示统一后台登录守卫，路由可访问且控制台无本地应用错误；授权后台页面由 API、导航和 repository 测试覆盖。
 
-### 用户端待续：UX-Z 会员商品运营后台配置化与套餐生命周期管理
+### 用户端待续：UX-AA 会员商品用户端服务端快照与结算金额同步
 
 业务目标：
 
-UX-Y 已让会员订单按套餐 ID 创建，但会员商品仍是前后端共享默认配置。下一步应把成长会员商品纳入运营后台管理，让运营可以维护会员套餐的上下架、价格、权益说明、购买须知和审计记录，用户端 `/membership` 读取稳定的服务端商品快照。
+UX-Z 已把会员商品纳入后台配置，但用户端 `/membership`、课程结算抽屉中的会员摘要、服务端会员 checkout 创建仍读取共享默认配置。下一步需要让用户端和结算服务统一读取会员商品 Store 快照，保证后台改价、暂停套餐和商品文案调整能实时影响展示与下单。
 
 建议实施范围：
 
-- 建立会员商品后台共享契约，覆盖商品状态、套餐状态、价格、权益、适合人群、保障说明、购买须知、更新时间、操作原因和审计事件。
-- 新增会员商品 Store，开发期支持内存/JSON 文件，后续预留 PostgreSQL 表；默认 seed 从 `defaultCourseMembershipProduct` 初始化。
-- 新增后台 API：读取会员商品、更新商品文案、上下架套餐、调整价格，服务端校验权限和操作原因。
-- 新增 `/admin/memberships` 或接入现有商品后台导航，展示会员商品、套餐价格、状态、最近审计和编辑入口。
-- 用户端 `/membership` 与会员 checkout 摘要优先读取服务端会员商品快照，失败时回退共享默认配置。
-- 补充后台权限、Store、API、用户端读取和会员订单金额一致性测试。
+- 新增公共会员商品快照 API，例如 `GET /api/memberships/product`，只返回前台需要的 active 商品与 active 套餐，不暴露审计和后台字段。
+- 服务端会员 checkout 创建从 `CourseMembershipProductStore` 读取套餐，校验商品/套餐 active 后再创建订单，金额使用 Store 中的 `originalPrice/payablePrice`。
+- 用户端 `/membership`、`createStandaloneMembershipCheckoutSummary`、课程详情/课程列表会员 checkout 摘要读取服务端会员商品快照，失败时回退 `defaultCourseMembershipProduct`。
+- 待支付会员订单召回继续按套餐 ID 定位；如果套餐被暂停，继续支付已有待支付订单的策略需明确为“允许继续支付历史订单”或“要求重新下单”，本任务先在文档中记录并按保守策略实现。
+- 补充测试：公共快照 API、后台改价后 checkout 金额一致、暂停套餐后新订单被拒绝、前端 fallback、个人中心继续支付路径。
 - 更新领域契约、路线图和本执行状态。
 
 ## 执行不变量
@@ -575,4 +573,4 @@ UX-Y 已让会员订单按套餐 ID 创建，但会员商品仍是前后端共�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-Z 会员商品运营后台配置化与套餐生命周期管理，正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 UX-AA 会员商品用户端服务端快照与结算金额同步，正式证书签发审核流需另立任务包。

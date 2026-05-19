@@ -3,47 +3,151 @@ import {
   COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
   COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
 } from "./coursePricing";
-import { EntityIdSchema, MoneyAmountSchema } from "./common";
+import {
+  DateTimeLikeSchema,
+  EntityIdSchema,
+  MoneyAmountSchema,
+} from "./common";
 
 export const COURSE_MEMBERSHIP_PRODUCT_ID = "growth_membership";
 export const COURSE_MEMBERSHIP_YEARLY_PLAN_ID = "growth_membership_yearly";
+export const COURSE_MEMBERSHIP_PRODUCT_CONTRACT_VERSION = "2026.05";
 
 export const CourseMembershipProductStatusSchema = z.enum([
   "active",
   "inactive",
 ]);
 
+export const CourseMembershipProductAdminAuditActionSchema = z.enum([
+  "product_update",
+  "plan_update",
+  "plan_status_update",
+]);
+
+const OptionalBadgeSchema = z.preprocess(value => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : undefined;
+}, z.string().trim().min(1).max(24).optional());
+
+const OperationReasonSchema = z.string().trim().min(4).max(240);
+
 export const CourseMembershipBenefitSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().min(1),
+  title: z.string().trim().min(1).max(40),
+  description: z.string().trim().min(1).max(160),
 });
 
 export const CourseMembershipPlanSchema = z.object({
   id: EntityIdSchema,
   productId: EntityIdSchema,
-  title: z.string().min(1),
-  subtitle: z.string().min(1),
-  planName: z.string().min(1),
-  badge: z.string().min(1).optional(),
-  durationDays: z.number().int().positive(),
+  title: z.string().trim().min(1).max(80),
+  subtitle: z.string().trim().min(1).max(120),
+  planName: z.string().trim().min(1).max(40),
+  badge: OptionalBadgeSchema,
+  durationDays: z.number().int().positive().max(3650),
   originalPrice: MoneyAmountSchema,
   payablePrice: MoneyAmountSchema,
   status: CourseMembershipProductStatusSchema.default("active"),
-  benefits: z.array(CourseMembershipBenefitSchema).min(1),
-  audience: z.array(z.string().min(1)).min(1),
-  protections: z.array(CourseMembershipBenefitSchema).min(1),
-  notices: z.array(z.string().min(1)).min(1),
+  benefits: z.array(CourseMembershipBenefitSchema).min(1).max(8),
+  audience: z.array(z.string().trim().min(1).max(80)).min(1).max(8),
+  protections: z.array(CourseMembershipBenefitSchema).min(1).max(8),
+  notices: z.array(z.string().trim().min(1).max(140)).min(1).max(8),
+  createdAt: DateTimeLikeSchema.optional(),
+  updatedAt: DateTimeLikeSchema.optional(),
 });
 
 export const CourseMembershipProductSchema = z.object({
   id: EntityIdSchema,
-  title: z.string().min(1),
-  subtitle: z.string().min(1),
-  description: z.string().min(1),
-  heroImageUrl: z.string().url(),
-  scopeLabel: z.string().min(1),
+  title: z.string().trim().min(1).max(80),
+  subtitle: z.string().trim().min(1).max(120),
+  description: z.string().trim().min(1).max(240),
+  heroImageUrl: z.string().trim().url(),
+  scopeLabel: z.string().trim().min(1).max(80),
+  status: CourseMembershipProductStatusSchema.default("active"),
   courseScope: z.enum(["vip_courses"]),
   plans: z.array(CourseMembershipPlanSchema).min(1),
+  createdAt: DateTimeLikeSchema.optional(),
+  updatedAt: DateTimeLikeSchema.optional(),
+});
+
+export const CourseMembershipProductUpdateRequestSchema = z.object({
+  title: z.string().trim().min(1).max(80),
+  subtitle: z.string().trim().min(1).max(120),
+  description: z.string().trim().min(1).max(240),
+  heroImageUrl: z.string().trim().url(),
+  scopeLabel: z.string().trim().min(1).max(80),
+  status: CourseMembershipProductStatusSchema,
+  reason: OperationReasonSchema,
+});
+
+export const CourseMembershipPlanUpdateRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(80),
+    subtitle: z.string().trim().min(1).max(120),
+    planName: z.string().trim().min(1).max(40),
+    badge: OptionalBadgeSchema,
+    durationDays: z.number().int().positive().max(3650),
+    originalPrice: MoneyAmountSchema,
+    payablePrice: MoneyAmountSchema,
+    benefits: z.array(CourseMembershipBenefitSchema).min(1).max(8),
+    audience: z.array(z.string().trim().min(1).max(80)).min(1).max(8),
+    protections: z.array(CourseMembershipBenefitSchema).min(1).max(8),
+    notices: z.array(z.string().trim().min(1).max(140)).min(1).max(8),
+    reason: OperationReasonSchema,
+  })
+  .superRefine((value, ctx) => {
+    if (value.payablePrice <= 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["payablePrice"],
+        message: "会员套餐售价必须大于 0",
+      });
+    }
+
+    if (value.originalPrice < value.payablePrice) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["originalPrice"],
+        message: "会员套餐原价不能低于售价",
+      });
+    }
+  });
+
+export const CourseMembershipPlanStatusUpdateRequestSchema = z.object({
+  status: CourseMembershipProductStatusSchema,
+  reason: OperationReasonSchema,
+});
+
+export const CourseMembershipProductAdminAuditEventSchema = z.object({
+  id: EntityIdSchema,
+  productId: EntityIdSchema,
+  productTitle: z.string().trim().min(1).max(80),
+  planId: EntityIdSchema.optional(),
+  planTitle: z.string().trim().min(1).max(80).optional(),
+  actorId: EntityIdSchema,
+  actorRoles: z.array(z.string().min(1)).default([]),
+  action: CourseMembershipProductAdminAuditActionSchema,
+  reason: OperationReasonSchema,
+  before: z.record(z.string(), z.unknown()),
+  after: z.record(z.string(), z.unknown()),
+  createdAt: DateTimeLikeSchema,
+});
+
+export const CourseMembershipProductAdminConsoleSchema = z.object({
+  version: z
+    .literal(COURSE_MEMBERSHIP_PRODUCT_CONTRACT_VERSION)
+    .default(COURSE_MEMBERSHIP_PRODUCT_CONTRACT_VERSION),
+  serverTime: DateTimeLikeSchema,
+  product: CourseMembershipProductSchema,
+  auditEvents: z
+    .array(CourseMembershipProductAdminAuditEventSchema)
+    .default([]),
+});
+
+export const CourseMembershipProductAdminMutationResultSchema = z.object({
+  product: CourseMembershipProductSchema,
+  auditEvent: CourseMembershipProductAdminAuditEventSchema,
+  auditEvents: z.array(CourseMembershipProductAdminAuditEventSchema),
 });
 
 export const defaultCourseMembershipProduct =
@@ -56,7 +160,10 @@ export const defaultCourseMembershipProduct =
     heroImageUrl:
       "https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=1800&q=86",
     scopeLabel: "覆盖平台会员课程",
+    status: "active",
     courseScope: "vip_courses",
+    createdAt: "2026-01-01T00:00:00+08:00",
+    updatedAt: "2026-05-19T00:00:00+08:00",
     plans: [
       {
         id: COURSE_MEMBERSHIP_YEARLY_PLAN_ID,
@@ -107,6 +214,8 @@ export const defaultCourseMembershipProduct =
           "当前为开发期支付确认，确认后会写入会员权益。",
           "正式支付渠道接入后，会员权益将以支付成功回调为准。",
         ],
+        createdAt: "2026-01-01T00:00:00+08:00",
+        updatedAt: "2026-05-19T00:00:00+08:00",
       },
     ],
   });
@@ -121,10 +230,31 @@ export function getPrimaryCourseMembershipPlan(
 export type CourseMembershipProductStatus = z.infer<
   typeof CourseMembershipProductStatusSchema
 >;
+export type CourseMembershipProductAdminAuditAction = z.infer<
+  typeof CourseMembershipProductAdminAuditActionSchema
+>;
 export type CourseMembershipBenefit = z.infer<
   typeof CourseMembershipBenefitSchema
 >;
 export type CourseMembershipPlan = z.infer<typeof CourseMembershipPlanSchema>;
 export type CourseMembershipProduct = z.infer<
   typeof CourseMembershipProductSchema
+>;
+export type CourseMembershipProductUpdateRequest = z.infer<
+  typeof CourseMembershipProductUpdateRequestSchema
+>;
+export type CourseMembershipPlanUpdateRequest = z.infer<
+  typeof CourseMembershipPlanUpdateRequestSchema
+>;
+export type CourseMembershipPlanStatusUpdateRequest = z.infer<
+  typeof CourseMembershipPlanStatusUpdateRequestSchema
+>;
+export type CourseMembershipProductAdminAuditEvent = z.infer<
+  typeof CourseMembershipProductAdminAuditEventSchema
+>;
+export type CourseMembershipProductAdminConsole = z.infer<
+  typeof CourseMembershipProductAdminConsoleSchema
+>;
+export type CourseMembershipProductAdminMutationResult = z.infer<
+  typeof CourseMembershipProductAdminMutationResultSchema
 >;
