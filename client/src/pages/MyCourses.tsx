@@ -65,6 +65,7 @@ import {
   type LearningArchiveItem,
   type LearningPlanCourseItem,
 } from "@/features/courses";
+import { useCourseMembershipProduct } from "@/features/memberships";
 import {
   getTopAssessmentDimensions,
   loadLatestAssessmentResult,
@@ -734,6 +735,8 @@ export default function MyCourses() {
     payCheckoutOrder,
   } = useCourseAccess();
   const { rules: marketingRules } = useCourseMarketingRules();
+  const { product: membershipProduct, primaryPlan: membershipPlan } =
+    useCourseMembershipProduct();
   const {
     claimCoupon,
     couponClaims,
@@ -784,6 +787,7 @@ export default function MyCourses() {
     checkoutCourse && checkoutMode
       ? createCourseCheckoutSummary(checkoutCourse, checkoutMode, {
           marketingRules,
+          membershipProduct,
         })
       : undefined;
   const checkoutCouponOptions = useMemo(
@@ -1014,7 +1018,14 @@ export default function MyCourses() {
         const created = await createCheckoutOrder(
           checkoutCourse,
           checkoutMode,
-          checkoutCouponClaimId
+          checkoutCouponClaimId,
+          checkoutMode === "membership"
+            ? {
+                membershipProduct,
+                membershipProductId: membershipProduct.id,
+                membershipPlanId: membershipPlan.id,
+              }
+            : undefined
         );
         if (created === "auth_required") {
           setCheckoutStatus("idle");

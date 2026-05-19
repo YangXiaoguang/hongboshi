@@ -3,6 +3,7 @@ import { defaultCourseMembershipProduct } from "@shared/domain";
 import {
   parseCourseMembershipProductConsoleResponse,
   parseCourseMembershipProductMutationResponse,
+  parseCourseMembershipProductSnapshotResponse,
 } from "./httpCourseMembershipProductRepository";
 
 describe("http course membership product repository parsers", () => {
@@ -18,6 +19,23 @@ describe("http course membership product repository parsers", () => {
 
     expect(parsed.product.id).toBe(defaultCourseMembershipProduct.id);
     expect(parsed.version).toBe("2026.05");
+  });
+
+  it("parses public membership product snapshots", () => {
+    const parsed = parseCourseMembershipProductSnapshotResponse({
+      ok: true,
+      data: {
+        serverTime: "2026-05-19T10:00:00.000Z",
+        product: {
+          ...defaultCourseMembershipProduct,
+          plans: [defaultCourseMembershipProduct.plans[0]],
+        },
+      },
+    });
+
+    expect(parsed.version).toBe("2026.05");
+    expect(parsed.product.plans).toHaveLength(1);
+    expect(parsed.product.plans[0]?.status).toBe("active");
   });
 
   it("parses mutation responses and surfaces API errors", () => {

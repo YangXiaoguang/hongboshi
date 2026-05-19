@@ -33,6 +33,11 @@ const OrderAfterSalesMutationResponseSchema = ApiResponseSchema(
 const API_BASE = "/api/course-access";
 const ORDER_API_BASE = "/api/orders/me";
 
+interface MembershipCheckoutRequestOptions {
+  membershipProductId?: string;
+  membershipPlanId?: string;
+}
+
 export class CourseAccessRequestError extends Error {
   constructor(
     message: string,
@@ -220,7 +225,8 @@ export const httpCourseAccessRepository = {
     courseId: number,
     mode: CourseCheckoutMode,
     userId = LOCAL_COURSE_ACCESS_USER_ID,
-    couponClaimId?: string
+    couponClaimId?: string,
+    membershipOptions?: MembershipCheckoutRequestOptions
   ): Promise<CourseCheckoutOrderResult> {
     return requestCheckoutOrder(
       "/checkout/orders",
@@ -230,8 +236,12 @@ export const httpCourseAccessRepository = {
           mode === "membership"
             ? {
                 mode,
-                membershipProductId: COURSE_MEMBERSHIP_PRODUCT_ID,
-                membershipPlanId: COURSE_MEMBERSHIP_ORDER_TARGET_ID,
+                membershipProductId:
+                  membershipOptions?.membershipProductId ??
+                  COURSE_MEMBERSHIP_PRODUCT_ID,
+                membershipPlanId:
+                  membershipOptions?.membershipPlanId ??
+                  COURSE_MEMBERSHIP_ORDER_TARGET_ID,
               }
             : { courseId, mode, couponClaimId }
         ),
@@ -242,7 +252,8 @@ export const httpCourseAccessRepository = {
 
   createMembershipCheckoutOrder(
     userId = LOCAL_COURSE_ACCESS_USER_ID,
-    membershipPlanId = COURSE_MEMBERSHIP_ORDER_TARGET_ID
+    membershipPlanId = COURSE_MEMBERSHIP_ORDER_TARGET_ID,
+    membershipProductId = COURSE_MEMBERSHIP_PRODUCT_ID
   ): Promise<CourseCheckoutOrderResult> {
     return requestCheckoutOrder(
       "/checkout/orders",
@@ -250,7 +261,7 @@ export const httpCourseAccessRepository = {
         method: "POST",
         body: JSON.stringify({
           mode: "membership",
-          membershipProductId: COURSE_MEMBERSHIP_PRODUCT_ID,
+          membershipProductId,
           membershipPlanId,
         }),
       },

@@ -3,6 +3,7 @@ import { defaultCourseMembershipProduct } from "../../../shared/domain";
 import {
   courseMembershipProductOperationPermissions,
   getCourseMembershipProductAdminConsolePayload,
+  getCourseMembershipProductSnapshotPayload,
   updateCourseMembershipPlanPayload,
   updateCourseMembershipPlanStatusPayload,
 } from "./courseMembershipProductApi";
@@ -34,6 +35,37 @@ describe("course membership product admin api payloads", () => {
       read: "membership_product:read",
       manage: "membership_product:manage",
     });
+  });
+
+  it("returns a public active membership product snapshot without audit data", async () => {
+    const store = new InMemoryCourseMembershipProductStore({
+      ...defaultCourseMembershipProduct,
+      plans: [
+        {
+          ...defaultCourseMembershipProduct.plans[0]!,
+          originalPrice: 999,
+          payablePrice: 599,
+        },
+        {
+          ...defaultCourseMembershipProduct.plans[0]!,
+          id: "growth_membership_archived",
+          title: "旧会员套餐",
+          status: "inactive",
+        },
+      ],
+    });
+
+    const payload = await getCourseMembershipProductSnapshotPayload(
+      store,
+      "2026-05-19T10:30:00.000Z"
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (!payload.body.ok) return;
+    expect(payload.body.data.product.plans).toHaveLength(1);
+    expect(payload.body.data.product.plans[0]?.payablePrice).toBe(599);
+    expect("auditEvents" in payload.body.data).toBe(false);
   });
 
   it("allows operators to update plan price and records audit", async () => {

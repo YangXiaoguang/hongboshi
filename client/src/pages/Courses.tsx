@@ -48,6 +48,7 @@ import {
   type CourseLearningPath,
   type CoursePendingCheckoutPrompt,
 } from "@/features/courses";
+import { useCourseMembershipProduct } from "@/features/memberships";
 
 const courseHeroImage =
   "https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1800&q=86";
@@ -98,6 +99,8 @@ export default function Courses() {
     payCheckoutOrder,
   } = useCourseAccess();
   const { rules: marketingRules } = useCourseMarketingRules();
+  const { product: membershipProduct, primaryPlan: membershipPlan } =
+    useCourseMembershipProduct();
   const {
     claimCoupon,
     couponClaims,
@@ -129,6 +132,7 @@ export default function Courses() {
     checkoutCourse && checkoutMode
       ? createCourseCheckoutSummary(checkoutCourse, checkoutMode, {
           marketingRules,
+          membershipProduct,
         })
       : undefined;
   const checkoutCouponOptions = useMemo(
@@ -170,7 +174,10 @@ export default function Courses() {
   ) => {
     const path = options.path ?? selectedPath;
     const summary = options.mode
-      ? createCourseCheckoutSummary(course, options.mode, { marketingRules })
+      ? createCourseCheckoutSummary(course, options.mode, {
+          marketingRules,
+          membershipProduct,
+        })
       : undefined;
 
     void trackCourseConversionEvent(
@@ -489,7 +496,14 @@ export default function Courses() {
         const created = await createCheckoutOrder(
           checkoutCourse,
           checkoutMode,
-          checkoutCouponClaimId
+          checkoutCouponClaimId,
+          checkoutMode === "membership"
+            ? {
+                membershipProduct,
+                membershipProductId: membershipProduct.id,
+                membershipPlanId: membershipPlan.id,
+              }
+            : undefined
         );
         if (created === "auth_required") {
           setCheckoutStatus("idle");

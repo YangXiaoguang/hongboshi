@@ -8,8 +8,10 @@ import {
   CourseMembershipPlanUpdateRequestSchema,
   CourseMembershipProductAdminConsoleSchema,
   CourseMembershipProductAdminMutationResultSchema,
+  CourseMembershipProductSnapshotSchema,
   CourseMembershipProductUpdateRequestSchema,
   MEMBERSHIP_PRODUCT_ADMIN_PERMISSIONS,
+  createCourseMembershipProductSnapshot,
   userCan,
   type AuthPermission,
   type LoginSession,
@@ -26,6 +28,9 @@ import {
 const CourseMembershipProductConsoleResponseSchema = ApiResponseSchema(
   CourseMembershipProductAdminConsoleSchema
 );
+const CourseMembershipProductSnapshotResponseSchema = ApiResponseSchema(
+  CourseMembershipProductSnapshotSchema
+);
 const CourseMembershipProductMutationResponseSchema = ApiResponseSchema(
   CourseMembershipProductAdminMutationResultSchema
 );
@@ -40,6 +45,7 @@ type CourseMembershipProductApiErrorCode =
   | "INTERNAL_ERROR";
 type CourseMembershipProductApiBody =
   | z.infer<typeof CourseMembershipProductConsoleResponseSchema>
+  | z.infer<typeof CourseMembershipProductSnapshotResponseSchema>
   | z.infer<typeof CourseMembershipProductMutationResponseSchema>;
 type CourseMembershipProductApiPayload = {
   status: number;
@@ -118,6 +124,26 @@ export async function getCourseMembershipProductAdminConsolePayload(
       },
     }),
   };
+}
+
+export async function getCourseMembershipProductSnapshotPayload(
+  store: CourseMembershipProductStore = getCourseMembershipProductStore(),
+  now = new Date().toISOString()
+): Promise<CourseMembershipProductApiPayload> {
+  try {
+    return {
+      status: 200,
+      body: CourseMembershipProductSnapshotResponseSchema.parse({
+        ok: true,
+        data: createCourseMembershipProductSnapshot(
+          await store.getProduct(),
+          now
+        ),
+      }),
+    };
+  } catch (err) {
+    return courseMembershipProductSnapshotFailure(err);
+  }
 }
 
 export async function updateCourseMembershipProductPayload(
@@ -248,6 +274,19 @@ export async function updateCourseMembershipPlanStatusPayload(
 }
 
 export function registerCourseMembershipProductApi(app: Express) {
+  app.get("/api/memberships/product", async (_req: Request, res: Response) => {
+    try {
+      const payload = await getCourseMembershipProductSnapshotPayload();
+      sendJson(res, payload.status, payload.body);
+    } catch {
+      sendJson(
+        res,
+        500,
+        errorPayload("INTERNAL_ERROR", "会员商品暂时不可用")
+      );
+    }
+  });
+
   app.get(
     "/api/memberships/admin/product",
     async (req: Request, res: Response) => {
@@ -333,6 +372,24 @@ export function handleCourseMembershipProductApiRequest(
   const url = new URL(req.url ?? "/", "http://localhost");
 
   if (!url.pathname.startsWith("/api/memberships")) return false;
+
+  if (url.pathname === "/api/memberships/product") {
+    if (req.method !== "GET") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+      return true;
+    }
+
+    void getCourseMembershipProductSnapshotPayload()
+      .then(payload => sendJson(res, payload.status, payload.body))
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "会员商品暂时不可用")
+        )
+      );
+    return true;
+  }
 
   if (url.pathname === "/api/memberships/admin/product") {
     if (req.method !== "GET" && req.method !== "PATCH") {
@@ -435,6 +492,27 @@ export function handleCourseMembershipProductApiRequest(
 
   sendJson(res, 404, errorPayload("NOT_FOUND", "会员商品接口不存在"));
   return true;
+}
+
+function courseMembershipProductSnapshotFailure(
+  err: unknown
+): CourseMembershipProductApiPayload {
+  const message = err instanceof Error ? err.message : "";
+
+  if (
+    message === "MEMBERSHIP_PRODUCT_NOT_AVAILABLE" ||
+    message === "MEMBERSHIP_PLAN_NOT_AVAILABLE"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "会员商品暂不可用"),
+    };
+  }
+
+  return {
+    status: 500,
+    body: errorPayload("INTERNAL_ERROR", "会员商品暂时不可用"),
+  };
 }
 
 function courseMembershipProductActionFailure(

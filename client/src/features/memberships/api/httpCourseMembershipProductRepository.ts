@@ -2,21 +2,27 @@ import {
   ApiResponseSchema,
   CourseMembershipProductAdminConsoleSchema,
   CourseMembershipProductAdminMutationResultSchema,
+  CourseMembershipProductSnapshotSchema,
   type CourseMembershipPlanStatusUpdateRequest,
   type CourseMembershipPlanUpdateRequest,
   type CourseMembershipProductAdminConsole,
   type CourseMembershipProductAdminMutationResult,
+  type CourseMembershipProductSnapshot,
   type CourseMembershipProductUpdateRequest,
 } from "@shared/domain";
 
 const CourseMembershipProductConsoleResponseSchema = ApiResponseSchema(
   CourseMembershipProductAdminConsoleSchema
 );
+const CourseMembershipProductSnapshotResponseSchema = ApiResponseSchema(
+  CourseMembershipProductSnapshotSchema
+);
 const CourseMembershipProductMutationResponseSchema = ApiResponseSchema(
   CourseMembershipProductAdminMutationResultSchema
 );
 
 const API_BASE = "/api/memberships/admin";
+const PUBLIC_API_BASE = "/api/memberships";
 
 async function readJson(response: Response): Promise<unknown> {
   try {
@@ -34,6 +40,14 @@ export function parseCourseMembershipProductConsoleResponse(
   return parsed.data;
 }
 
+export function parseCourseMembershipProductSnapshotResponse(
+  payload: unknown
+): CourseMembershipProductSnapshot {
+  const parsed = CourseMembershipProductSnapshotResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 export function parseCourseMembershipProductMutationResponse(
   payload: unknown
 ): CourseMembershipProductAdminMutationResult {
@@ -43,6 +57,12 @@ export function parseCourseMembershipProductMutationResponse(
 }
 
 function extractErrorMessage(payload: unknown, fallback: string) {
+  const snapshotParsed =
+    CourseMembershipProductSnapshotResponseSchema.safeParse(payload);
+  if (snapshotParsed.success && !snapshotParsed.data.ok) {
+    return snapshotParsed.data.error.message;
+  }
+
   const consoleParsed =
     CourseMembershipProductConsoleResponseSchema.safeParse(payload);
   if (consoleParsed.success && !consoleParsed.data.ok) {
@@ -59,6 +79,21 @@ function extractErrorMessage(payload: unknown, fallback: string) {
 }
 
 export const httpCourseMembershipProductRepository = {
+  async loadPublicSnapshot(): Promise<CourseMembershipProductSnapshot> {
+    const response = await fetch(`${PUBLIC_API_BASE}/product`, {
+      headers: {
+        Accept: "application/json",
+      },
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "会员商品暂时不可用"));
+    }
+    return parseCourseMembershipProductSnapshotResponse(payload);
+  },
+
   async loadAdminConsole(): Promise<CourseMembershipProductAdminConsole> {
     const response = await fetch(`${API_BASE}/product`, {
       headers: {

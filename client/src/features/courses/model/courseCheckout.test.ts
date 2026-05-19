@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Course } from "@shared/domain";
+import { defaultCourseMembershipProduct, type Course } from "@shared/domain";
 import {
   COURSE_MEMBERSHIP_CHECKOUT_PRICE,
   createCourseCheckoutSummary,
@@ -86,6 +86,27 @@ describe("course checkout summary", () => {
     expect(summary.productTitle).toBe("成长会员年卡");
     expect(summary.productSubtitle).not.toContain(course.title);
     expect(summary.productSubtitle).toContain("持续学习心理课程");
+  });
+
+  it("uses the provided membership product snapshot for membership checkout", () => {
+    const product = {
+      ...defaultCourseMembershipProduct,
+      description: "后台实时会员商品说明",
+      plans: [
+        {
+          ...defaultCourseMembershipProduct.plans[0]!,
+          title: "家庭成长会员",
+          originalPrice: 1299,
+          payablePrice: 699,
+        },
+      ],
+    };
+    const summary = createStandaloneMembershipCheckoutSummary(product);
+
+    expect(summary.productTitle).toBe("家庭成长会员");
+    expect(summary.productSubtitle).toBe("后台实时会员商品说明");
+    expect(summary.originalPrice).toBe(1299);
+    expect(summary.payableAmount).toBe(699);
   });
 
   it("formats checkout money without noisy decimals", () => {

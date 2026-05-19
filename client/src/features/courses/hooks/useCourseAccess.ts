@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   Course,
+  CourseMembershipProduct,
   OrderAfterSalesCreateRequest,
   OrderAfterSalesListResult,
   OrderAfterSalesMutationResult,
@@ -30,6 +31,12 @@ type CourseCheckoutActionResult = {
   syncMode: "api" | "fallback";
   checkout: CourseCheckoutOrderResult;
 };
+
+interface MembershipCheckoutOptions {
+  membershipProductId?: string;
+  membershipPlanId?: string;
+  membershipProduct?: CourseMembershipProduct;
+}
 
 export function useCourseAccess() {
   const { user, openLoginModal } = useAuth();
@@ -111,7 +118,8 @@ export function useCourseAccess() {
     async (
       course: Course,
       mode: CourseCheckoutMode,
-      couponClaimId?: string
+      couponClaimId?: string,
+      membershipOptions?: MembershipCheckoutOptions
     ): Promise<CourseCheckoutActionResult | "auth_required"> => {
       if (!user) return requireLoggedInAccess();
 
@@ -120,7 +128,9 @@ export function useCourseAccess() {
         const checkout =
           mode === "membership"
             ? await httpCourseAccessRepository.createMembershipCheckoutOrder(
-                accessUserId
+                accessUserId,
+                membershipOptions?.membershipPlanId,
+                membershipOptions?.membershipProductId
               )
             : await httpCourseAccessRepository.createCheckoutOrder(
                 course.id,
@@ -148,7 +158,10 @@ export function useCourseAccess() {
             ? createMembershipCheckoutOrderModel(
                 localCourseAccessRepository.load(accessUserId),
                 undefined,
-                accessUserId
+                accessUserId,
+                membershipOptions?.membershipPlanId,
+                membershipOptions?.membershipProductId,
+                membershipOptions?.membershipProduct
               )
             : createCourseCheckoutOrder(
                 localCourseAccessRepository.load(accessUserId),
@@ -169,16 +182,18 @@ export function useCourseAccess() {
     [accessUserId, openLoginModal, persist, requireLoggedInAccess, user]
   );
 
-  const createMembershipCheckoutOrder = useCallback(async (): Promise<
-    CourseCheckoutActionResult | "auth_required"
-  > => {
+  const createMembershipCheckoutOrder = useCallback(async (
+    membershipOptions?: MembershipCheckoutOptions
+  ): Promise<CourseCheckoutActionResult | "auth_required"> => {
     if (!user) return requireLoggedInAccess();
 
     setIsSyncing(true);
     try {
       const checkout =
         await httpCourseAccessRepository.createMembershipCheckoutOrder(
-          accessUserId
+          accessUserId,
+          membershipOptions?.membershipPlanId,
+          membershipOptions?.membershipProductId
         );
       setState(persist(checkout.accessState));
       setAccessError(undefined);
@@ -198,7 +213,10 @@ export function useCourseAccess() {
       const checkout = createMembershipCheckoutOrderModel(
         localCourseAccessRepository.load(accessUserId),
         undefined,
-        accessUserId
+        accessUserId,
+        membershipOptions?.membershipPlanId,
+        membershipOptions?.membershipProductId,
+        membershipOptions?.membershipProduct
       );
       setState(persist(checkout.accessState));
       setAccessError(

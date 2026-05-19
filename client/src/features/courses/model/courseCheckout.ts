@@ -1,11 +1,12 @@
 import {
   COURSE_MEMBERSHIP_ORDER_ORIGINAL_PRICE,
   COURSE_MEMBERSHIP_ORDER_PAYABLE_PRICE,
-  calculateMembershipPricing,
   defaultCourseMembershipProduct,
   getPrimaryCourseMembershipPlan,
   type Course,
   type CourseMarketingRule,
+  type CourseMembershipPlan,
+  type CourseMembershipProduct,
   type PaymentChannel,
 } from "@shared/domain";
 import {
@@ -52,6 +53,7 @@ export interface CoursePaymentMethod {
 interface CreateCourseCheckoutSummaryOptions {
   marketingRules?: CourseMarketingRule[];
   membershipContext?: "course" | "standalone";
+  membershipProduct?: CourseMembershipProduct;
 }
 
 export const COURSE_MEMBERSHIP_CHECKOUT_PRICE =
@@ -97,9 +99,25 @@ function createCoursePromotionItems(
   }));
 }
 
-function createMembershipPromotionItems(): CourseCheckoutPromotionItem[] {
-  const pricing = calculateMembershipPricing();
-  const plan = getPrimaryCourseMembershipPlan();
+function calculateMembershipPlanPricing(plan: CourseMembershipPlan) {
+  const listPrice = Math.max(0, plan.originalPrice);
+  const payableAmount = Math.max(0, plan.payablePrice);
+  const discountAmount = Math.max(0, listPrice - payableAmount);
+
+  return {
+    listPrice,
+    originalPrice: listPrice,
+    discountAmount,
+    payableAmount,
+    savingsAmount: discountAmount,
+  };
+}
+
+function createMembershipPromotionItems(
+  product: CourseMembershipProduct = defaultCourseMembershipProduct
+): CourseCheckoutPromotionItem[] {
+  const plan = getPrimaryCourseMembershipPlan(product);
+  const pricing = calculateMembershipPlanPricing(plan);
 
   return [
     {
@@ -130,21 +148,23 @@ function createProtectionItems(course: Course): CourseCheckoutLineItem[] {
   ];
 }
 
-export function createStandaloneMembershipCheckoutSummary(): CourseCheckoutSummary {
-  const pricing = calculateMembershipPricing();
-  const plan = getPrimaryCourseMembershipPlan();
+export function createStandaloneMembershipCheckoutSummary(
+  product: CourseMembershipProduct = defaultCourseMembershipProduct
+): CourseCheckoutSummary {
+  const plan = getPrimaryCourseMembershipPlan(product);
+  const pricing = calculateMembershipPlanPricing(plan);
 
   return {
     mode: "membership",
     productTitle: plan.title,
-    productSubtitle: defaultCourseMembershipProduct.description,
+    productSubtitle: product.description,
     listPrice: pricing.listPrice,
     originalPrice: pricing.originalPrice,
     discountAmount: pricing.discountAmount,
     payableAmount: pricing.payableAmount,
     savingsAmount: pricing.savingsAmount,
     accessLabel: "开通后会员课可直接学习",
-    promotionItems: createMembershipPromotionItems(),
+    promotionItems: createMembershipPromotionItems(product),
     deliveryItems: plan.benefits.map(benefit => ({
       label: benefit.title,
       value: benefit.description,
@@ -164,7 +184,9 @@ export function createCourseCheckoutSummary(
 ): CourseCheckoutSummary {
   if (mode === "membership") {
     const standalone = options.membershipContext === "standalone";
-    const summary = createStandaloneMembershipCheckoutSummary();
+    const summary = createStandaloneMembershipCheckoutSummary(
+      options.membershipProduct
+    );
 
     return standalone
       ? summary

@@ -51,6 +51,10 @@ import {
   type CourseMarketingRuleStore,
 } from "../marketing/courseMarketingRuleStore";
 import {
+  getCourseMembershipProductStore,
+  type CourseMembershipProductStore,
+} from "../memberships/courseMembershipProductStore";
+import {
   loadUserPreferenceForUser,
   saveUserPreferenceForUser,
 } from "../users/userPreferenceApi";
@@ -202,11 +206,16 @@ function checkoutActionFailure(err: unknown, fallbackMessage: string) {
   const isCouponConflict =
     message.startsWith("USER_COUPON") ||
     message === "COURSE_COUPON_NOT_APPLICABLE";
+  const isMembershipConflict =
+    message === "MEMBERSHIP_NOT_PURCHASABLE" ||
+    message === "MEMBERSHIP_PRODUCT_NOT_AVAILABLE" ||
+    message === "MEMBERSHIP_PLAN_NOT_AVAILABLE";
   if (
     [
       "COURSE_IS_FREE",
       "COURSE_NOT_PURCHASABLE",
       "MEMBERSHIP_NOT_PURCHASABLE",
+      "MEMBERSHIP_PRODUCT_NOT_AVAILABLE",
       "MEMBERSHIP_PLAN_NOT_AVAILABLE",
       "CHECKOUT_ORDER_NOT_PAYABLE",
       "SIMULATED_PAYMENT_FAILED",
@@ -225,6 +234,8 @@ function checkoutActionFailure(err: unknown, fallbackMessage: string) {
           ? "模拟支付失败，订单仍可继续支付"
           : isCouponConflict
             ? "当前优惠券状态不支持这笔订单"
+            : isMembershipConflict
+              ? "会员商品或套餐暂不可购买"
             : "当前订单状态不支持此操作"
       ),
     } as const;
@@ -481,7 +492,11 @@ export async function createCourseCheckoutOrderPayload(
   marketingRuleStore: Pick<
     CourseMarketingRuleStore,
     "getRule"
-  > = getCourseMarketingRuleStore()
+  > = getCourseMarketingRuleStore(),
+  membershipProductStore: Pick<
+    CourseMembershipProductStore,
+    "getProduct"
+  > = getCourseMembershipProductStore()
 ) {
   const parsed = CourseCheckoutCreateRequestSchema.safeParse(body);
   if (!parsed.success) {
@@ -495,12 +510,14 @@ export async function createCourseCheckoutOrderPayload(
     const request = parsed.data;
     const currentState = await courseAccessStore.load(userId);
     if (request.mode === "membership") {
+      const membershipProduct = await membershipProductStore.getProduct();
       const checkout = createMembershipCheckoutOrder(
         currentState,
         now,
         userId,
         request.membershipPlanId,
-        request.membershipProductId
+        request.membershipProductId,
+        membershipProduct
       );
       await courseAccessStore.save(userId, checkout.accessState);
 

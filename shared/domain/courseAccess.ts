@@ -19,6 +19,7 @@ import {
   COURSE_MEMBERSHIP_PRODUCT_ID,
   defaultCourseMembershipProduct,
   type CourseMembershipPlan,
+  type CourseMembershipProduct,
 } from "./courseMembershipProduct";
 import {
   OrderSchema,
@@ -217,17 +218,21 @@ function findPendingCheckoutOrder(
 function resolveMembershipPlan({
   membershipPlanId = COURSE_MEMBERSHIP_ORDER_TARGET_ID,
   membershipProductId = COURSE_MEMBERSHIP_PRODUCT_ID,
+  membershipProduct = defaultCourseMembershipProduct,
 }: {
   membershipPlanId?: string;
   membershipProductId?: string;
+  membershipProduct?: CourseMembershipProduct;
 } = {}): CourseMembershipPlan {
-  if (membershipProductId !== defaultCourseMembershipProduct.id) {
+  if (membershipProductId !== membershipProduct.id) {
     throw new Error("MEMBERSHIP_PRODUCT_NOT_FOUND");
   }
 
-  const plan = defaultCourseMembershipProduct.plans.find(
-    item => item.id === membershipPlanId
-  );
+  if (membershipProduct.status !== "active") {
+    throw new Error("MEMBERSHIP_PRODUCT_NOT_AVAILABLE");
+  }
+
+  const plan = membershipProduct.plans.find(item => item.id === membershipPlanId);
   if (!plan) throw new Error("MEMBERSHIP_PLAN_NOT_FOUND");
   if (plan.status !== "active")
     throw new Error("MEMBERSHIP_PLAN_NOT_AVAILABLE");
@@ -517,21 +522,18 @@ export function createMembershipCheckoutOrder(
   now = new Date().toISOString(),
   userId = LOCAL_COURSE_ACCESS_USER_ID,
   membershipPlanId = COURSE_MEMBERSHIP_ORDER_TARGET_ID,
-  membershipProductId = COURSE_MEMBERSHIP_PRODUCT_ID
+  membershipProductId = COURSE_MEMBERSHIP_PRODUCT_ID,
+  membershipProduct: CourseMembershipProduct = defaultCourseMembershipProduct
 ): CourseCheckoutOrderResult {
   const normalized = normalizeCourseAccessState(state);
   if (hasActiveCourseMembership(normalized.membership, now)) {
     throw new Error("MEMBERSHIP_NOT_PURCHASABLE");
   }
 
-  const plan = resolveMembershipPlan({
-    membershipPlanId,
-    membershipProductId,
-  });
   const existingOrder = findPendingCheckoutOrder(
     normalized,
     "membership",
-    plan.id
+    membershipPlanId
   );
   if (existingOrder) {
     return createCourseCheckoutOrderResult({
@@ -540,6 +542,11 @@ export function createMembershipCheckoutOrder(
     });
   }
 
+  const plan = resolveMembershipPlan({
+    membershipPlanId,
+    membershipProductId,
+    membershipProduct,
+  });
   const amount = calculateMembershipPlanPricing(plan);
   const order = OrderSchema.parse({
     id: createCourseCheckoutOrderId({

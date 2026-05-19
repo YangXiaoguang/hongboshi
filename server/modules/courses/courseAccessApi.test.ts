@@ -12,12 +12,16 @@ import {
   InMemoryCourseProductStore,
   seedProducts,
 } from "../catalog/courseProductStore";
-import { CourseMarketingRuleSchema } from "../../../shared/domain";
+import {
+  CourseMarketingRuleSchema,
+  defaultCourseMembershipProduct,
+} from "../../../shared/domain";
 import {
   claimUserCouponPayload,
   getUserPreferencePayload,
   resetUserPreferenceStore,
 } from "../users/userPreferenceApi";
+import { InMemoryCourseMembershipProductStore } from "../memberships/courseMembershipProductStore";
 
 const activeCourseCouponRule = CourseMarketingRuleSchema.parse({
   id: "course_16_coupon_20",
@@ -150,6 +154,95 @@ describe("course access API payloads", () => {
       sourceType: "checkout_order",
       sourceOrderId: created.body.data.order.id,
     });
+  });
+
+  it("uses membership product store prices when creating membership checkout", async () => {
+    const membershipStore = new InMemoryCourseMembershipProductStore({
+      ...defaultCourseMembershipProduct,
+      plans: [
+        {
+          ...defaultCourseMembershipProduct.plans[0]!,
+          originalPrice: 988,
+          payablePrice: 588,
+        },
+      ],
+    });
+
+    const created = await createCourseCheckoutOrderPayload(
+      { mode: "membership", membershipPlanId: "growth_membership_yearly" },
+      "u_member_price",
+      "2026-05-09T10:00:00.000Z",
+      undefined,
+      undefined,
+      membershipStore
+    );
+
+    expect(created.status).toBe(200);
+    expect(created.body.ok).toBe(true);
+    if (!created.body.ok) return;
+    expect(created.body.data.order.subtotal).toBe(988);
+    expect(created.body.data.order.discountAmount).toBe(400);
+    expect(created.body.data.order.payableAmount).toBe(588);
+  });
+
+  it("rejects new membership checkout when the selected plan is paused", async () => {
+    const membershipStore = new InMemoryCourseMembershipProductStore({
+      ...defaultCourseMembershipProduct,
+      plans: [
+        {
+          ...defaultCourseMembershipProduct.plans[0]!,
+          status: "inactive",
+        },
+      ],
+    });
+
+    const payload = await createCourseCheckoutOrderPayload(
+      { mode: "membership", membershipPlanId: "growth_membership_yearly" },
+      "u_member_paused",
+      "2026-05-09T10:00:00.000Z",
+      undefined,
+      undefined,
+      membershipStore
+    );
+
+    expect(payload.status).toBe(409);
+    expect(payload.body.ok).toBe(false);
+  });
+
+  it("allows continuing an existing pending membership order after a plan pause", async () => {
+    const activeStore = new InMemoryCourseMembershipProductStore();
+    const created = await createCourseCheckoutOrderPayload(
+      { mode: "membership", membershipPlanId: "growth_membership_yearly" },
+      "u_member_pending",
+      "2026-05-09T10:00:00.000Z",
+      undefined,
+      undefined,
+      activeStore
+    );
+    if (!created.body.ok) throw new Error("expected created checkout");
+
+    const pausedStore = new InMemoryCourseMembershipProductStore({
+      ...defaultCourseMembershipProduct,
+      plans: [
+        {
+          ...defaultCourseMembershipProduct.plans[0]!,
+          status: "inactive",
+        },
+      ],
+    });
+    const resumed = await createCourseCheckoutOrderPayload(
+      { mode: "membership", membershipPlanId: "growth_membership_yearly" },
+      "u_member_pending",
+      "2026-05-09T10:05:00.000Z",
+      undefined,
+      undefined,
+      pausedStore
+    );
+
+    expect(resumed.status).toBe(200);
+    expect(resumed.body.ok).toBe(true);
+    if (!resumed.body.ok) return;
+    expect(resumed.body.data.order.id).toBe(created.body.data.order.id);
   });
 
   it("records claimed coupon on checkout and marks it used after payment", async () => {

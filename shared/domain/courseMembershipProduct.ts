@@ -144,6 +144,14 @@ export const CourseMembershipProductAdminConsoleSchema = z.object({
     .default([]),
 });
 
+export const CourseMembershipProductSnapshotSchema = z.object({
+  version: z
+    .literal(COURSE_MEMBERSHIP_PRODUCT_CONTRACT_VERSION)
+    .default(COURSE_MEMBERSHIP_PRODUCT_CONTRACT_VERSION),
+  serverTime: DateTimeLikeSchema,
+  product: CourseMembershipProductSchema,
+});
+
 export const CourseMembershipProductAdminMutationResultSchema = z.object({
   product: CourseMembershipProductSchema,
   auditEvent: CourseMembershipProductAdminAuditEventSchema,
@@ -227,6 +235,29 @@ export function getPrimaryCourseMembershipPlan(
   return activePlan ?? product.plans[0];
 }
 
+export function createCourseMembershipProductSnapshot(
+  product: CourseMembershipProduct = defaultCourseMembershipProduct,
+  serverTime = new Date().toISOString()
+): CourseMembershipProductSnapshot {
+  if (product.status !== "active") {
+    throw new Error("MEMBERSHIP_PRODUCT_NOT_AVAILABLE");
+  }
+
+  const activePlans = product.plans.filter(plan => plan.status === "active");
+  if (activePlans.length === 0) {
+    throw new Error("MEMBERSHIP_PLAN_NOT_AVAILABLE");
+  }
+
+  return CourseMembershipProductSnapshotSchema.parse({
+    version: COURSE_MEMBERSHIP_PRODUCT_CONTRACT_VERSION,
+    serverTime,
+    product: {
+      ...product,
+      plans: activePlans,
+    },
+  });
+}
+
 export type CourseMembershipProductStatus = z.infer<
   typeof CourseMembershipProductStatusSchema
 >;
@@ -254,6 +285,9 @@ export type CourseMembershipProductAdminAuditEvent = z.infer<
 >;
 export type CourseMembershipProductAdminConsole = z.infer<
   typeof CourseMembershipProductAdminConsoleSchema
+>;
+export type CourseMembershipProductSnapshot = z.infer<
+  typeof CourseMembershipProductSnapshotSchema
 >;
 export type CourseMembershipProductAdminMutationResult = z.infer<
   typeof CourseMembershipProductAdminMutationResultSchema

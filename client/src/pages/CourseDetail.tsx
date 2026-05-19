@@ -74,6 +74,7 @@ import {
   type CoursePromotionSummary,
   type CourseTrustProfile,
 } from "@/features/courses";
+import { useCourseMembershipProduct } from "@/features/memberships";
 
 function formatLearners(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
@@ -116,6 +117,8 @@ export default function CourseDetail() {
     isSyncing,
     payCheckoutOrder,
   } = useCourseAccess();
+  const { product: membershipProduct, primaryPlan: membershipPlan } =
+    useCourseMembershipProduct();
   const {
     getProgress,
     getProgressPercent,
@@ -221,7 +224,10 @@ export default function CourseDetail() {
         : "学习中"
       : "未开始";
   const checkoutSummary = checkoutMode
-    ? createCourseCheckoutSummary(course, checkoutMode, { marketingRules })
+    ? createCourseCheckoutSummary(course, checkoutMode, {
+        marketingRules,
+        membershipProduct,
+      })
     : undefined;
   const checkoutCouponOptions = useMemo(
     () =>
@@ -285,6 +291,7 @@ export default function CourseDetail() {
     const summary = options.mode
       ? createCourseCheckoutSummary(targetCourse, options.mode, {
           marketingRules,
+          membershipProduct,
         })
       : undefined;
 
@@ -554,7 +561,14 @@ export default function CourseDetail() {
         const created = await createCheckoutOrder(
           course,
           checkoutMode,
-          checkoutCouponClaimId
+          checkoutCouponClaimId,
+          checkoutMode === "membership"
+            ? {
+                membershipProduct,
+                membershipProductId: membershipProduct.id,
+                membershipPlanId: membershipPlan.id,
+              }
+            : undefined
         );
         if (created === "auth_required") {
           setCheckoutStatus("idle");

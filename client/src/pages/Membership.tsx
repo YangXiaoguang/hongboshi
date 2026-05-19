@@ -22,10 +22,6 @@ import CourseCheckoutDrawer, {
 import CoursePendingCheckoutBanner from "@/components/CoursePendingCheckoutBanner";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  defaultCourseMembershipProduct,
-  getPrimaryCourseMembershipPlan,
-} from "@shared/domain";
-import {
   createPendingCourseCheckoutPrompts,
   createStandaloneMembershipCheckoutSummary,
   findPendingMembershipCheckoutOrder,
@@ -37,6 +33,7 @@ import {
   type CourseCheckoutPaymentChannel,
   type CoursePendingCheckoutPrompt,
 } from "@/features/courses";
+import { useCourseMembershipProduct } from "@/features/memberships";
 
 function formatDate(value?: string): string {
   if (!value) return "未记录";
@@ -64,8 +61,12 @@ export default function Membership() {
     membership,
     payCheckoutOrder,
   } = useCourseAccess();
-  const product = defaultCourseMembershipProduct;
-  const plan = getPrimaryCourseMembershipPlan(product);
+  const {
+    product,
+    primaryPlan: plan,
+    error: membershipProductError,
+    isFallback: isMembershipProductFallback,
+  } = useCourseMembershipProduct();
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutStatus, setCheckoutStatus] =
     useState<CourseCheckoutStatus>("idle");
@@ -78,7 +79,7 @@ export default function Membership() {
     useState<CourseCheckoutPaymentChannel>("wechat_pay");
   const [checkoutIntentHandled, setCheckoutIntentHandled] = useState(false);
   const checkoutSummary = isCheckoutOpen
-    ? createStandaloneMembershipCheckoutSummary()
+    ? createStandaloneMembershipCheckoutSummary(product)
     : undefined;
   const vipCourses = useMemo(
     () => allCourses.filter(course => course.isVip).slice(0, 4),
@@ -154,7 +155,11 @@ export default function Membership() {
       let pendingCheckout = checkoutOrder;
       if (pendingCheckout?.order.status !== "pending_payment") {
         setCheckoutStatus("creating");
-        const created = await createMembershipCheckoutOrder();
+        const created = await createMembershipCheckoutOrder({
+          membershipProduct: product,
+          membershipProductId: product.id,
+          membershipPlanId: plan.id,
+        });
         if (created === "auth_required") {
           setCheckoutStatus("idle");
           openLoginModal();
@@ -350,6 +355,11 @@ export default function Membership() {
               {hasActiveMembership && (
                 <p className="mt-5 rounded-lg bg-[#E7EFE8] px-4 py-3 text-sm font-semibold text-[#41675A]">
                   当前会员有效期至 {formatDate(membership.expiresAt)}
+                </p>
+              )}
+              {isMembershipProductFallback && membershipProductError && (
+                <p className="mt-4 rounded-lg bg-[#FFF4DE] px-4 py-3 text-sm text-[#8A6534]">
+                  当前正在使用本地会员套餐兜底展示：{membershipProductError}
                 </p>
               )}
             </motion.div>
