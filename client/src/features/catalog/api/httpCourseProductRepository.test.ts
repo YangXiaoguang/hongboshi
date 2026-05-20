@@ -234,6 +234,18 @@ describe("http course product repository parsing", () => {
     expect(parsed.items[0]?.issueTypes).toContain("pending_compliance");
   });
 
+  it("throws course product asset governance API errors", () => {
+    expect(() =>
+      parseCourseProductAssetGovernanceResponse({
+        ok: false,
+        error: {
+          code: "FORBIDDEN",
+          message: "当前账号暂无课程素材治理读取权限",
+        },
+      })
+    ).toThrow("当前账号暂无课程素材治理读取权限");
+  });
+
   it("parses course product mutation responses", () => {
     const parsed = parseCourseProductMutationResponse({
       ok: true,

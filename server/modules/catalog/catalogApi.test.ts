@@ -654,6 +654,17 @@ describe("catalog admin api payloads", () => {
     });
     expect(anonymous.status).toBe(401);
 
+    const member = await getCourseProductAssetGovernancePayload(
+      { id: "member_1", roles: ["member"] },
+      {
+        productStore: new InMemoryCourseProductStore([products[0]]),
+        contentStore: buildBackfillContentStore(),
+        assetStore: buildBackfillSourceAssetStore(),
+        now: "2026-05-21T09:00:00.000Z",
+      }
+    );
+    expect(member.status).toBe(403);
+
     const payload = await getCourseProductAssetGovernancePayload(
       { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
       {

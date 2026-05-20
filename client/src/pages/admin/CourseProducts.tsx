@@ -40,6 +40,10 @@ import {
   evaluateCourseProductContentQuality,
   type CourseCategory,
   type CourseProductAsset,
+  type CourseProductAssetGovernanceIssueType,
+  type CourseProductAssetGovernanceItem,
+  type CourseProductAssetGovernanceReferenceSource,
+  type CourseProductAssetGovernanceResult,
   type CourseProductAssetKind,
   type CourseProductAuditEvent,
   type CourseProductContentAssetReviewStatus,
@@ -145,6 +149,10 @@ type AssetFormState = {
   note: string;
   reason: string;
 };
+type AssetGovernanceFilter =
+  | "all"
+  | "compliance_status"
+  | CourseProductAssetGovernanceIssueType;
 
 const statusFilters: {
   value: CourseProductStatusFilter;
@@ -224,6 +232,35 @@ const merchandisingAssetUsageCopy = {
   proof: "证明图",
   gallery: "详情图",
 } satisfies Record<CourseProductMerchandisingAssetUsage, string>;
+
+const assetGovernanceIssueCopy = {
+  missing_product: "缺失商品",
+  unreferenced: "未引用",
+  duplicate_content_hash: "重复内容",
+  pending_compliance: "待审核",
+  rejected_compliance: "已驳回",
+  download_disabled_material: "下载关闭",
+  soft_delete_candidate: "软删候选",
+} satisfies Record<CourseProductAssetGovernanceIssueType, string>;
+
+const assetGovernanceReferenceSourceCopy = {
+  reference_table: "引用表",
+  content_material_placeholders: "章节占位推导",
+  none: "暂无引用来源",
+} satisfies Record<CourseProductAssetGovernanceReferenceSource, string>;
+
+const assetGovernanceFilters: {
+  value: AssetGovernanceFilter;
+  label: string;
+}[] = [
+  { value: "all", label: "全部问题" },
+  { value: "unreferenced", label: "未引用" },
+  { value: "duplicate_content_hash", label: "重复内容" },
+  { value: "compliance_status", label: "待审/驳回" },
+  { value: "download_disabled_material", label: "下载关闭" },
+  { value: "missing_product", label: "缺失商品" },
+  { value: "soft_delete_candidate", label: "软删候选" },
+];
 
 function formatMoney(item: CourseProductListItem) {
   if (item.price.isFree) return "免费";
@@ -364,6 +401,106 @@ function metricItems(data?: CourseProductListResult) {
       icon: UsersRound,
     },
   ];
+}
+
+function assetGovernanceMetricItems(
+  governance?: CourseProductAssetGovernanceResult
+) {
+  const summary = governance?.summary;
+  return [
+    {
+      label: "总素材",
+      value: summary?.totalAssetCount ?? 0,
+    },
+    {
+      label: "未引用",
+      value: summary?.unreferencedAssetCount ?? 0,
+    },
+    {
+      label: "重复 hash",
+      value: summary?.duplicateContentHashAssetCount ?? 0,
+    },
+    {
+      label: "待审核",
+      value: summary?.pendingComplianceCount ?? 0,
+    },
+    {
+      label: "已驳回",
+      value: summary?.rejectedComplianceCount ?? 0,
+    },
+    {
+      label: "下载关闭",
+      value: summary?.downloadDisabledMaterialCount ?? 0,
+    },
+    {
+      label: "软删候选",
+      value: summary?.softDeleteCandidateCount ?? 0,
+    },
+    {
+      label: "引用来源",
+      value: summary
+        ? assetGovernanceReferenceSourceCopy[summary.referenceSource]
+        : "未读取",
+    },
+  ];
+}
+
+function hasAssetGovernanceIssue(
+  item: CourseProductAssetGovernanceItem,
+  issueType: CourseProductAssetGovernanceIssueType
+) {
+  return item.issueTypes.includes(issueType);
+}
+
+export function filterCourseProductAssetGovernanceItems(
+  items: CourseProductAssetGovernanceItem[],
+  filter: AssetGovernanceFilter
+) {
+  if (filter === "all") {
+    return items.filter(item => item.issueTypes.length > 0);
+  }
+
+  if (filter === "compliance_status") {
+    return items.filter(
+      item =>
+        hasAssetGovernanceIssue(item, "pending_compliance") ||
+        hasAssetGovernanceIssue(item, "rejected_compliance")
+    );
+  }
+
+  return items.filter(item => hasAssetGovernanceIssue(item, filter));
+}
+
+function primaryAssetGovernanceIssue(item: CourseProductAssetGovernanceItem) {
+  const issueType = item.issueTypes[0];
+  return issueType ? assetGovernanceIssueCopy[issueType] : "正常";
+}
+
+export function courseProductAssetGovernanceSuggestion(
+  item: CourseProductAssetGovernanceItem
+) {
+  if (hasAssetGovernanceIssue(item, "missing_product")) {
+    return "先核对素材归属，必要时从 Store 中迁移或清理异常 productId。";
+  }
+  if (hasAssetGovernanceIssue(item, "pending_compliance")) {
+    return "进入素材队列完成合规审核，再决定是否用于详情图文或资料下载。";
+  }
+  if (hasAssetGovernanceIssue(item, "rejected_compliance")) {
+    return "替换素材或补充来源说明，避免驳回素材继续出现在运营配置中。";
+  }
+  if (hasAssetGovernanceIssue(item, "download_disabled_material")) {
+    return "确认资料合规后开启下载，或从章节资料中解绑该素材。";
+  }
+  if (hasAssetGovernanceIssue(item, "duplicate_content_hash")) {
+    return "保留主素材，合并重复引用后再考虑软删冗余对象。";
+  }
+  if (hasAssetGovernanceIssue(item, "soft_delete_candidate")) {
+    return "确认无前台引用后进入后续软删治理，不在本面板直接删除。";
+  }
+  if (hasAssetGovernanceIssue(item, "unreferenced")) {
+    return "补充到课程详情或章节资料，若长期不用再进入软删流程。";
+  }
+  return "当前素材未发现治理问题，保持定期复核。";
 }
 
 function reviewActionsForItem(item: CourseProductListItem) {
@@ -697,6 +834,225 @@ function AuditTrail({ events }: { events: CourseProductAuditEvent[] }) {
   );
 }
 
+function CourseProductAssetGovernancePanel({
+  governance,
+  filter,
+  canEdit,
+  onFilterChange,
+  onLocateAsset,
+}: {
+  governance?: CourseProductAssetGovernanceResult;
+  filter: AssetGovernanceFilter;
+  canEdit: boolean;
+  onFilterChange: (filter: AssetGovernanceFilter) => void;
+  onLocateAsset: (item: CourseProductAssetGovernanceItem) => void;
+}) {
+  const issueItems = filterCourseProductAssetGovernanceItems(
+    governance?.items ?? [],
+    filter
+  );
+  const visibleItems = issueItems.slice(0, 8);
+  const issueCount =
+    governance?.items.filter(item => item.issueTypes.length > 0).length ?? 0;
+
+  return (
+    <section className="mt-6 overflow-hidden rounded-lg border border-[#D9D1C4] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
+      <div className="flex flex-col gap-3 border-b border-[#E8DED0] px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-[#243B35]">素材治理</p>
+            <span className="inline-flex h-6 items-center rounded-full bg-[#F1E8DC] px-2.5 text-xs font-semibold text-[#756B60]">
+              只读
+            </span>
+            <span className="inline-flex h-6 items-center rounded-full bg-[#EEF6ED] px-2.5 text-xs font-semibold text-[#41675A]">
+              {issueCount} 个待处理
+            </span>
+          </div>
+          <p className="mt-2 max-w-[760px] text-sm leading-6 text-[#6F7771]">
+            汇总课程素材的引用、重复内容、合规和下载状态，帮助运营先定位问题，再进入已有内容与素材队列处理。
+          </p>
+        </div>
+        <p className="text-xs leading-5 text-[#8A8176]">
+          生成时间{" "}
+          {governance?.generatedAt ? formatDate(governance.generatedAt) : "待读取"}
+        </p>
+      </div>
+
+      <div className="grid border-b border-[#E8DED0] bg-[#FBF7EF] sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+        {assetGovernanceMetricItems(governance).map(item => (
+          <div
+            key={item.label}
+            className="min-h-[76px] border-b border-r border-[#E8DED0] px-4 py-3 last:border-r-0"
+          >
+            <p className="text-xs text-[#8A8176]">{item.label}</p>
+            <p className="mt-2 truncate text-lg font-semibold text-[#243B35]">
+              {item.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {governance?.notes.length ? (
+        <div className="border-b border-[#E8DED0] px-5 py-3">
+          <div className="flex flex-wrap gap-2">
+            {governance.notes.map(note => (
+              <span
+                key={note}
+                className="inline-flex min-h-7 items-center rounded-full bg-[#FFF7E5] px-3 text-xs font-semibold text-[#8F6B1C]"
+              >
+                {note}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex gap-2 overflow-x-auto border-b border-[#E8DED0] px-5 py-3">
+        {assetGovernanceFilters.map(option => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onFilterChange(option.value)}
+            className={`h-8 shrink-0 rounded-lg px-3 text-xs font-semibold transition ${
+              filter === option.value
+                ? "bg-[#243B35] text-white"
+                : "border border-[#D8CEC0] bg-white text-[#41524B] hover:border-[#9FB3A9]"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {visibleItems.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] text-left">
+            <thead className="bg-[#F8F3EA] text-xs text-[#8A8176]">
+              <tr>
+                <th className="px-5 py-3 font-semibold">课程商品</th>
+                <th className="px-5 py-3 font-semibold">素材</th>
+                <th className="px-5 py-3 font-semibold">合规</th>
+                <th className="px-5 py-3 font-semibold">引用</th>
+                <th className="px-5 py-3 font-semibold">重复对象</th>
+                <th className="px-5 py-3 font-semibold">更新时间</th>
+                <th className="px-5 py-3 font-semibold">建议处理</th>
+                <th className="px-5 py-3 font-semibold">定位</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleItems.map(item => (
+                <tr
+                  key={item.asset.id}
+                  className="border-b border-[#E8DED0] last:border-b-0 hover:bg-[#FBF7EF]"
+                >
+                  <td className="px-5 py-4">
+                    <div className="min-w-[190px]">
+                      <p className="truncate text-sm font-semibold text-[#243B35]">
+                        {item.product?.title ?? "商品不存在"}
+                      </p>
+                      <p className="mt-1 text-xs text-[#8A8176]">
+                        {item.product
+                          ? `ID ${item.product.courseId} · ${reviewCopy[item.product.reviewStatus]}`
+                          : item.asset.productId}
+                      </p>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4">
+                    <div className="min-w-[190px]">
+                      <p className="truncate text-sm font-semibold text-[#243B35]">
+                        {item.asset.title}
+                      </p>
+                      <p className="mt-1 text-xs text-[#8A8176]">
+                        {courseProductAssetKindCopy[item.asset.kind]} ·{" "}
+                        {item.asset.fileName}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-[#A65F48]">
+                        {primaryAssetGovernanceIssue(item)}
+                      </p>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4">
+                    <span
+                      className={`inline-flex h-7 items-center rounded-full px-2.5 text-xs font-semibold ${
+                        item.asset.complianceStatus === "approved"
+                          ? "bg-[#E7EFE8] text-[#41675A]"
+                          : item.asset.complianceStatus === "rejected"
+                            ? "bg-[#FFF0EA] text-[#AD503A]"
+                            : item.asset.complianceStatus === "pending"
+                              ? "bg-[#FFF7E5] text-[#8F6B1C]"
+                              : "bg-[#F1E8DC] text-[#7B817C]"
+                      }`}
+                    >
+                      {assetReviewStatusCopy[item.asset.complianceStatus]}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4 text-sm text-[#5F6B64]">
+                    <div className="min-w-[108px]">
+                      <p>{item.referenceCount} 处引用</p>
+                      <p className="mt-1 text-xs text-[#8A8176]">
+                        {assetGovernanceReferenceSourceCopy[item.referenceSource]}
+                      </p>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 text-sm text-[#5F6B64]">
+                    <div className="min-w-[132px]">
+                      {item.duplicateContentHashAssetIds.length > 0 ? (
+                        <>
+                          <p>
+                            {item.duplicateContentHashAssetIds.length} 个重复
+                          </p>
+                          <p className="mt-1 truncate text-xs text-[#8A8176]">
+                            {item.duplicateContentHashAssetIds.join("、")}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-[#8A8176]">无重复对象</p>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 text-sm text-[#5F6B64]">
+                    <div className="min-w-[100px]">
+                      {formatDate(item.asset.updatedAt)}
+                    </div>
+                  </td>
+                  <td className="px-5 py-4">
+                    <p className="min-w-[240px] max-w-[300px] text-xs leading-5 text-[#6F7771]">
+                      {courseProductAssetGovernanceSuggestion(item)}
+                    </p>
+                  </td>
+                  <td className="px-5 py-4">
+                    <button
+                      type="button"
+                      onClick={() => onLocateAsset(item)}
+                      disabled={!item.product}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <FilePenLine className="h-3.5 w-3.5" />
+                      {canEdit ? "打开素材" : "定位课程"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="flex min-h-[160px] flex-col items-center justify-center px-6 text-center">
+          <BadgeCheck className="h-8 w-8 text-[#7C9288]" />
+          <h2 className="mt-3 text-base font-semibold">
+            {governance ? "当前筛选下暂无素材问题" : "素材治理待读取"}
+          </h2>
+          <p className="mt-2 max-w-[460px] text-sm leading-6 text-[#6F7771]">
+            {governance
+              ? "可以切换筛选条件继续检查，或在课程内容面板中维护素材队列。"
+              : "刷新后会读取素材引用、合规和重复内容摘要。"}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function CourseProductRow({
   item,
   index,
@@ -916,6 +1272,10 @@ function CourseProductRow({
 export default function CourseProducts() {
   const { user, isLoggedIn, isAuthSyncing } = useAuth();
   const [data, setData] = useState<CourseProductListResult>();
+  const [assetGovernance, setAssetGovernance] =
+    useState<CourseProductAssetGovernanceResult>();
+  const [assetGovernanceFilter, setAssetGovernanceFilter] =
+    useState<AssetGovernanceFilter>("all");
   const [contentQualityByProductId, setContentQualityByProductId] = useState<
     Record<string, CourseProductContentQualityResult>
   >({});
@@ -985,11 +1345,13 @@ export default function CourseProducts() {
     setIsLoading(true);
     setError(undefined);
     try {
-      const [products, contentQuality] = await Promise.all([
+      const [products, contentQuality, governance] = await Promise.all([
         httpCourseProductRepository.loadCourseProducts(query),
         httpCourseProductRepository.loadCourseProductContentQuality(),
+        httpCourseProductRepository.loadCourseProductAssetGovernance(),
       ]);
       setData(products);
+      setAssetGovernance(governance);
       setContentQualityByProductId(
         Object.fromEntries(
           contentQuality.items.map(item => [item.productId, item.quality])
@@ -1656,6 +2018,35 @@ export default function CourseProducts() {
     []
   );
   const items = data?.items ?? [];
+  const locateGovernanceAsset = useCallback(
+    (item: CourseProductAssetGovernanceItem) => {
+      setActionError(undefined);
+      setActionMessage(undefined);
+
+      if (!item.product) {
+        setActionError("该素材指向的课程商品不存在，请先核对素材归属数据。");
+        return;
+      }
+
+      const localProduct = items.find(product => product.id === item.product?.id);
+      if (catalogPermissions.canEdit && localProduct) {
+        void openContentEditor(localProduct);
+        return;
+      }
+
+      const keyword = item.product.title;
+      setKeywordDraft(keyword);
+      setQuery(current => ({
+        ...current,
+        keyword,
+        page: 1,
+      }));
+      setActionMessage(
+        `已按「${keyword}」定位课程商品；如需管理素材，请打开该商品内容面板。`
+      );
+    },
+    [catalogPermissions.canEdit, items, openContentEditor]
+  );
   const meta = data?.meta;
   const auditEvents = data?.auditEvents ?? [];
   const rejectedReviewReasons = useMemo(() => {
@@ -1755,6 +2146,14 @@ export default function CourseProducts() {
       </motion.section>
 
       <AuditTrail events={auditEvents} />
+
+      <CourseProductAssetGovernancePanel
+        governance={assetGovernance}
+        filter={assetGovernanceFilter}
+        canEdit={catalogPermissions.canEdit}
+        onFilterChange={setAssetGovernanceFilter}
+        onLocateAsset={locateGovernanceAsset}
+      />
 
       <section className="mt-6 overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
         <form

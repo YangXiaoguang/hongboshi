@@ -15,6 +15,19 @@ describe("course product admin permissions", () => {
     });
   });
 
+  it("keeps ordinary members out of the course product console", () => {
+    expect(getCourseProductAdminPermissions({ roles: ["member"] })).toMatchObject(
+      {
+        canRead: false,
+        canEdit: false,
+        canReview: false,
+        canPublish: false,
+        canPrice: false,
+        canMutate: false,
+      }
+    );
+  });
+
   it("lets catalog operators manage course products without global admin", () => {
     expect(
       getCourseProductAdminPermissions({ roles: ["catalog_operator"] })
