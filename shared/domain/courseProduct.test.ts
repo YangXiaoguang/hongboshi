@@ -4,8 +4,12 @@ import {
   ALL_COURSE_PRODUCT_STATUS,
   CourseProductPriceUpdateRequestSchema,
   CourseProductAssetComplianceUpdateRequestSchema,
+  CourseProductAssetBackfillPlanSchema,
   CourseProductAssetFileUploadRequestSchema,
   CourseProductAssetListResultSchema,
+  CourseProductAssetObjectDescriptorSchema,
+  CourseProductAssetReferenceSchema,
+  CourseProductAssetSignedReadUrlSchema,
   CourseProductAssetUploadRequestSchema,
   CourseProductBasicInfoUpdateRequestSchema,
   CourseProductContentUpdateRequestSchema,
@@ -223,6 +227,57 @@ describe("course product domain contract", () => {
 
     expect(parsed.items[0]?.complianceStatus).toBe("pending");
     expect(parsed.summary.pendingCount).toBe(1);
+  });
+
+  it("validates formal asset object storage and backfill contracts", () => {
+    const object = CourseProductAssetObjectDescriptorSchema.parse({
+      objectKey:
+        "course-assets/course_product_1/asset_1/9b6f0c37f2ad-worksheet.pdf",
+      provider: "oss",
+      bucket: "hongboshi-course-assets",
+      region: "cn-shanghai",
+      mimeType: "application/pdf",
+      sizeBytes: 188000,
+      contentHash:
+        "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+      originalFileName: "worksheet.pdf",
+      createdBy: "operator_1",
+      createdAt: "2026-05-20T09:00:00+08:00",
+    });
+
+    expect(object.provider).toBe("oss");
+    expect(
+      CourseProductAssetSignedReadUrlSchema.parse({
+        objectKey: object.objectKey,
+        url: "/api/course-assets/local-signed/course-assets%2Fcourse_product_1",
+        expiresAt: "2026-05-20T09:10:00+08:00",
+      }).method
+    ).toBe("GET");
+
+    const reference = CourseProductAssetReferenceSchema.parse({
+      id: "asset_ref_1",
+      assetId: "asset_1",
+      productId: "course_product_1",
+      courseId: 1,
+      chapterId: "chapter_1",
+      referenceType: "chapter_exercise",
+      materialPlaceholderId: "material_1",
+      materialPlaceholderIndex: 0,
+      createdBy: "operator_1",
+      createdAt: "2026-05-20T09:00:00+08:00",
+    });
+    expect(reference.referenceType).toBe("chapter_exercise");
+
+    const backfillPlan = CourseProductAssetBackfillPlanSchema.parse({
+      id: "asset_backfill_20260520",
+      source: "content_material_placeholders",
+      scannedCount: 24,
+      assetCount: 18,
+      referenceCount: 20,
+      skippedCount: 4,
+      startedAt: "2026-05-20T09:00:00+08:00",
+    });
+    expect(backfillPlan.dryRun).toBe(true);
   });
 
   it("validates the first course detail content contract", () => {

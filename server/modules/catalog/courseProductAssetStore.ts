@@ -24,6 +24,10 @@ import {
   getCourseProductStore,
   type CourseProductStore,
 } from "./courseProductStore";
+import {
+  buildCourseProductAssetObjectKey,
+  calculateCourseProductAssetContentHash,
+} from "./courseProductAssetObjectStorage";
 
 const CourseProductAssetStoreFileSchema = z.object({
   version: z.literal(1),
@@ -48,6 +52,7 @@ export interface CourseProductAssetStoredFile {
 export interface CourseProductAssetFileStorage {
   saveFile(input: CourseProductAssetStoredFile): Promise<void>;
   readFile(storageKey: string): Promise<Buffer | undefined>;
+  deleteFile?(storageKey: string): Promise<void>;
 }
 
 export class InMemoryCourseProductAssetFileStorage implements CourseProductAssetFileStorage {
@@ -60,6 +65,10 @@ export class InMemoryCourseProductAssetFileStorage implements CourseProductAsset
   async readFile(storageKey: string) {
     const bytes = this.files.get(storageKey);
     return bytes ? Buffer.from(bytes) : undefined;
+  }
+
+  async deleteFile(storageKey: string) {
+    this.files.delete(storageKey);
   }
 }
 
@@ -80,6 +89,13 @@ export class LocalCourseProductAssetFileStorage implements CourseProductAssetFil
     const filePath = this.resolveStoragePath(storageKey);
     if (!fs.existsSync(filePath)) return undefined;
     return fs.readFileSync(filePath);
+  }
+
+  async deleteFile(storageKey: string) {
+    const filePath = this.resolveStoragePath(storageKey);
+    if (fs.existsSync(filePath)) {
+      fs.rmSync(filePath);
+    }
   }
 
   private resolveStoragePath(storageKey: string) {
@@ -357,7 +373,13 @@ export async function uploadCourseProductAssetFile({
 
   const id = createAssetId(productId, parsed.kind, now);
   const fileName = sanitizeFileName(parsed.fileName);
-  const storageKey = `course-assets/${productId}/${id}/${fileName}`;
+  const contentHash = calculateCourseProductAssetContentHash(bytes);
+  const storageKey = buildCourseProductAssetObjectKey({
+    productId,
+    assetId: id,
+    fileName,
+    contentHash,
+  });
   await fileStorage.saveFile({
     storageKey,
     bytes,
@@ -374,6 +396,8 @@ export async function uploadCourseProductAssetFile({
     sizeBytes: bytes.length,
     sourceType: "object_storage",
     storageKey,
+    objectKey: storageKey,
+    contentHash,
     publicUrl: isImageKind(parsed.kind)
       ? `/api/courses/${product.courseId}/assets/${id}/view`
       : undefined,

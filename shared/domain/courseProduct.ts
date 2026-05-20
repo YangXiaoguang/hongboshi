@@ -93,6 +93,28 @@ export const COURSE_PRODUCT_ASSET_SOURCE_TYPES = [
   "object_storage",
 ] as const;
 
+export const COURSE_PRODUCT_ASSET_STORAGE_PROVIDERS = [
+  "local",
+  "s3",
+  "oss",
+  "cos",
+] as const;
+
+export const COURSE_PRODUCT_ASSET_REFERENCE_TYPES = [
+  "merchandising_showcase",
+  "merchandising_proof",
+  "merchandising_gallery",
+  "chapter_material",
+  "chapter_exercise",
+  "chapter_audio",
+  "chapter_video",
+] as const;
+
+export const COURSE_PRODUCT_ASSET_BACKFILL_SOURCES = [
+  "json_asset_store",
+  "content_material_placeholders",
+] as const;
+
 export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
   "showcase",
   "proof",
@@ -153,6 +175,18 @@ export const CourseProductAssetKindSchema = z.enum(COURSE_PRODUCT_ASSET_KINDS);
 
 export const CourseProductAssetSourceTypeSchema = z.enum(
   COURSE_PRODUCT_ASSET_SOURCE_TYPES
+);
+
+export const CourseProductAssetStorageProviderSchema = z.enum(
+  COURSE_PRODUCT_ASSET_STORAGE_PROVIDERS
+);
+
+export const CourseProductAssetReferenceTypeSchema = z.enum(
+  COURSE_PRODUCT_ASSET_REFERENCE_TYPES
+);
+
+export const CourseProductAssetBackfillSourceSchema = z.enum(
+  COURSE_PRODUCT_ASSET_BACKFILL_SOURCES
 );
 
 export const CourseProductMerchandisingAssetUsageSchema = z.enum(
@@ -239,6 +273,46 @@ export const CourseProductAssetUrlSchema = z.union([
   z.string().trim().startsWith("/api/"),
 ]);
 
+export const CourseProductAssetContentHashSchema = z
+  .string()
+  .trim()
+  .regex(/^sha256:[a-f0-9]{64}$/);
+
+export const CourseProductAssetObjectKeySchema = z
+  .string()
+  .trim()
+  .min(4)
+  .max(320);
+
+export const CourseProductAssetObjectDescriptorSchema = z.object({
+  objectKey: CourseProductAssetObjectKeySchema,
+  provider: CourseProductAssetStorageProviderSchema.default("local"),
+  bucket: z.string().trim().min(1).max(120).optional(),
+  region: z.string().trim().min(1).max(80).optional(),
+  mimeType: z.string().trim().min(3).max(120),
+  sizeBytes: z.number().int().min(0).max(COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES),
+  contentHash: CourseProductAssetContentHashSchema,
+  originalFileName: z.string().trim().min(2).max(160),
+  createdBy: EntityIdSchema,
+  createdAt: DateTimeLikeSchema,
+  deletedAt: DateTimeLikeSchema.optional(),
+});
+
+export const CourseProductAssetSignedReadUrlSchema = z.object({
+  objectKey: CourseProductAssetObjectKeySchema,
+  url: z.string().trim().min(1),
+  method: z.literal("GET").default("GET"),
+  expiresAt: DateTimeLikeSchema,
+  headers: z.record(z.string(), z.string()).default({}),
+});
+
+export const CourseProductAssetObjectDeleteResultSchema = z.object({
+  objectKey: CourseProductAssetObjectKeySchema,
+  deletedBy: EntityIdSchema,
+  deletedAt: DateTimeLikeSchema,
+  mode: z.enum(["soft_delete", "physical_delete"]).default("soft_delete"),
+});
+
 export const CourseProductAssetSchema = z.object({
   id: EntityIdSchema,
   productId: EntityIdSchema,
@@ -250,6 +324,8 @@ export const CourseProductAssetSchema = z.object({
   sizeBytes: z.number().int().min(0).max(COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES),
   sourceType: CourseProductAssetSourceTypeSchema,
   storageKey: z.string().trim().min(4).max(260).optional(),
+  objectKey: CourseProductAssetObjectKeySchema.optional(),
+  contentHash: CourseProductAssetContentHashSchema.optional(),
   publicUrl: CourseProductAssetUrlSchema.optional(),
   usage: CourseProductMerchandisingAssetUsageSchema.optional(),
   altText: z.string().trim().max(120).optional(),
@@ -257,11 +333,40 @@ export const CourseProductAssetSchema = z.object({
   complianceStatus:
     CourseProductContentAssetReviewStatusSchema.default("pending"),
   downloadEnabled: z.boolean().default(false),
+  referenceCount: z.number().int().nonnegative().default(0),
   uploadedBy: EntityIdSchema,
   uploadedAt: DateTimeLikeSchema,
   reviewedBy: EntityIdSchema.optional(),
   reviewedAt: DateTimeLikeSchema.optional(),
+  deletedAt: DateTimeLikeSchema.optional(),
   updatedAt: DateTimeLikeSchema,
+});
+
+export const CourseProductAssetReferenceSchema = z.object({
+  id: EntityIdSchema,
+  assetId: EntityIdSchema,
+  productId: EntityIdSchema,
+  courseId: LegacyNumericIdSchema,
+  chapterId: EntityIdSchema.optional(),
+  referenceType: CourseProductAssetReferenceTypeSchema,
+  materialPlaceholderId: EntityIdSchema.optional(),
+  materialPlaceholderIndex: z.number().int().nonnegative().optional(),
+  createdBy: EntityIdSchema,
+  createdAt: DateTimeLikeSchema,
+  deletedAt: DateTimeLikeSchema.optional(),
+});
+
+export const CourseProductAssetBackfillPlanSchema = z.object({
+  id: EntityIdSchema,
+  source: CourseProductAssetBackfillSourceSchema,
+  dryRun: z.boolean().default(true),
+  scannedCount: z.number().int().nonnegative(),
+  assetCount: z.number().int().nonnegative(),
+  referenceCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  startedAt: DateTimeLikeSchema,
+  finishedAt: DateTimeLikeSchema.optional(),
+  notes: z.array(z.string().trim().min(1).max(240)).default([]),
 });
 
 export const CourseProductAssetUploadRequestSchema = z
@@ -735,7 +840,31 @@ export type CourseProductAssetKind = z.infer<
 export type CourseProductAssetSourceType = z.infer<
   typeof CourseProductAssetSourceTypeSchema
 >;
+export type CourseProductAssetStorageProvider = z.infer<
+  typeof CourseProductAssetStorageProviderSchema
+>;
+export type CourseProductAssetReferenceType = z.infer<
+  typeof CourseProductAssetReferenceTypeSchema
+>;
+export type CourseProductAssetBackfillSource = z.infer<
+  typeof CourseProductAssetBackfillSourceSchema
+>;
+export type CourseProductAssetObjectDescriptor = z.infer<
+  typeof CourseProductAssetObjectDescriptorSchema
+>;
+export type CourseProductAssetSignedReadUrl = z.infer<
+  typeof CourseProductAssetSignedReadUrlSchema
+>;
+export type CourseProductAssetObjectDeleteResult = z.infer<
+  typeof CourseProductAssetObjectDeleteResultSchema
+>;
 export type CourseProductAsset = z.infer<typeof CourseProductAssetSchema>;
+export type CourseProductAssetReference = z.infer<
+  typeof CourseProductAssetReferenceSchema
+>;
+export type CourseProductAssetBackfillPlan = z.infer<
+  typeof CourseProductAssetBackfillPlanSchema
+>;
 export type CourseProductAssetUploadRequest = z.infer<
   typeof CourseProductAssetUploadRequestSchema
 >;

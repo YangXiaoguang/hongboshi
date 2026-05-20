@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`CUX-I-B-B-B 学习页资料区绑定后台已通过素材与下载入口体验` 已完成，后台可把已通过且开启下载的学习资料绑定到章节占位，学习页仅展示已开放资料并通过课程权益接口下载。
-- 本轮完成后下一步：执行 `CUX-I-B-B-C 课程素材正式对象存储与素材专表设计准备`
+- 当前状态：`CUX-I-B-B-C 课程素材正式对象存储与素材专表设计准备` 已完成，课程素材对象存储 adapter、`objectKey/contentHash`、素材对象/元数据/引用表迁移草案和回填方案已落地，现有 JSON Store 与本地文件运行路径保持不变。
+- 本轮完成后下一步：执行 `CUX-I-B-B-D 课程素材 PostgreSQL Store 与回填 dry-run 基础`
 
 ## 已完成关键能力
 
@@ -42,6 +42,7 @@
 - 完成课程交易界面商品化优化：新增课程商品陈列模型，首页首屏直接展示可购买课程商品，课程中心首屏提供热门课程商品推荐和独立货架，课程卡片默认进入详情页课程介绍区，详情页新增粘性锚点、图文课程亮点区、内容规模/适合状态/核心收获证明点和就近购买动作，降低用户找课与购买路径成本。
 - 完成课程详情成交图文素材后台化：`CourseProductDetailContentSchema` 新增 `merchandising` 成交素材契约，后台 `/admin/courses` 可维护主视觉、成交卖点和图文资产，前台课程详情优先使用运营素材，PostgreSQL `course_product_contents.sales_assets` 可保存同一份内容。
 - 完成课程素材资产登记、真实文件上传、受控读取与学习页资料绑定基础：新增 `CourseProductAsset*` 共享契约、开发期 JSON Store、本地文件存储 adapter、后台素材读取/URL 登记/文件上传/合规处理 API、审计动作、公开已审核图片读取、章节资料绑定和已解锁课程资料下载入口。
+- 完成课程素材正式存储设计准备：新增素材对象/短期读取 URL/删除结果/引用关系/回填计划共享契约，服务端对象存储 adapter 接口和本地兼容实现，文件上传写入 `objectKey` 与 sha256 `contentHash`，并落下素材对象表、素材元数据表和素材引用表迁移草案。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -216,6 +217,21 @@
 - `/admin/audit` 管理员归档控制台已加入“归档检索预览”，按当前筛选读取归档表前 5 条摘要行；归档预览为空或失败不影响主审计列表、导出、详情、归档和校验。
 
 ## 最近完成阶段
+
+CUX-I-B-B-C 课程素材正式对象存储与素材专表设计准备已交付：
+
+- `shared/domain/courseProduct.ts`：新增素材对象存储 provider、对象描述、短期读取 URL、删除结果、素材引用关系和回填计划契约；`CourseProductAssetSchema` 补充 `objectKey`、`contentHash`、`referenceCount` 和 `deletedAt`，现有 payload 向前兼容。
+- `server/modules/catalog/courseProductAssetObjectStorage.ts`：新增正式对象存储 adapter 接口，覆盖 `putObject`、`readObject`、`createSignedReadUrl` 和 `deleteObject`；本地实现复用现有文件存储，生成 `course-assets/{productId}/{assetId}/{sha256前缀}-{fileName}` 对象 key，并计算 sha256 内容指纹。
+- `server/modules/catalog/courseProductAssetStore.ts`：真实文件上传继续走现有 JSON Store 和本地文件读取路径，但会同步保存 `objectKey` 与 `contentHash`，为后续 PostgreSQL Store 和对象存储 provider 切换预埋字段。
+- `server/db/migrations/0019_course_product_asset_tables.sql` 与 `server/db/schema.ts`：新增 `course_product_asset_objects`、`course_product_assets` 和 `course_product_asset_references` 表草案及索引，覆盖对象 key、provider、MIME、大小、hash、合规状态、下载开关、引用计数和软删除。
+- `docs/course-asset-storage-architecture.md`：沉淀正式对象存储、素材专表、章节素材引用和 `.hongboshi-data/course-product-assets.json` / `materialPlaceholders` 回填方案；数据库、领域契约、产品路线和后台路线图已同步。
+
+CUX-I-B-B-C 验收结果：
+
+- `pnpm run check` 已通过。
+- `pnpm test -- shared/domain/courseProduct.test.ts server/modules/catalog/courseProductAssetObjectStorage.test.ts server/modules/catalog/courseProductAssetStore.test.ts server/db/schema.test.ts` 已通过。
+- `pnpm run ci` 已通过：类型检查、测试和生产构建均通过，Vite 仍保留大 chunk 体积提示。
+- 本轮是工程基建与数据库/Store 边界设计切片，没有引入新用户端页面；因此未新增浏览器自动化验证。
 
 CUX-I-B-B-B 学习页资料区绑定后台已通过素材与下载入口体验已交付：
 
@@ -601,29 +617,29 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：CUX-I-B-B-B 学习页资料区绑定后台已通过素材与下载入口体验
+### 最近完成阶段：CUX-I-B-B-C 课程素材正式对象存储与素材专表设计准备
 
-CUX-I-B-B-B 稳定切片已交付：
+CUX-I-B-B-C 稳定切片已交付：
 
-- 章节素材占位已允许保存同源 `/api/` 受控下载地址。
-- 后台内容编辑器可从已通过且开启下载的章节资料、练习表、音频和视频中一键绑定到具体章节占位，并写入素材 ID、下载地址、上传人、上传时间、合规状态和下载开关。
-- 学习页资料区优先消费后台详情内容，只展示 `ready + approved/not_required + downloadEnabled` 的资料入口；待审、驳回或下载关闭素材不暴露 URL。
-- 前端新增课程资料下载 repository/helper，点击下载时走课程权益下载接口，并保留未登录、未解锁或下载失败的反馈。
-- 本地练习记录、章节进度和课程完成反馈逻辑保持独立，不把资料下载与练习完成状态耦合。
+- 共享契约已补充正式对象存储、短期读取 URL、素材引用关系和回填计划。
+- 服务端已新增对象存储 adapter 接口与本地兼容实现，现有文件上传会保存 `objectKey` 与 sha256 `contentHash`。
+- 数据库迁移草案已新增素材对象表、素材元数据表和素材引用表，并加入核心 schema 测试约束。
+- 回填方案已写入 `docs/course-asset-storage-architecture.md`，明确从开发期 JSON Store 与章节 `materialPlaceholders` 干跑、回填和保持 API 兼容的步骤。
+- 现有 JSON Store、本地文件目录、后台下载和学习页受控下载运行路径保持不变。
 
-### 用户端待续：CUX-I-B-B-C 课程素材正式对象存储与素材专表设计准备
+### 用户端待续：CUX-I-B-B-D 课程素材 PostgreSQL Store 与回填 dry-run 基础
 
 业务目标：
 
-CUX-I-B-B-A/B 已经把“真实文件上传 -> 本地对象存储 -> 合规状态 -> 章节资料绑定 -> 学习页受控下载”打通。下一步要为长期运营做工程准备：把当前 JSON Store + 本地对象目录的开发期方案梳理成正式对象存储、素材专表、素材关联表和迁移计划，避免后续素材规模增长后难以检索、审计、复用和清理。
+CUX-I-B-B-C 已经把正式表结构、对象存储 adapter 和回填方案准备好。下一步要进入可运行的最小 PostgreSQL Store 与 dry-run 回填能力：在不强制切换生产路径的前提下，让素材列表/读取/保存具备 PostgreSQL 实现，并先提供只读 dry-run 方式检查从 JSON Store 与内容 JSONB 回填到专表的可行性。
 
 建议实施范围：
 
-- 设计课程素材专表、素材文件表或对象表、章节素材关联表和必要索引，覆盖课程商品、课程 ID、章节 ID、素材类型、合规状态、下载开关、上传人、对象 key、MIME、大小、hash、引用计数和删除状态。
-- 明确正式对象存储 adapter 接口：上传、读取、短期签名 URL、受控下载、删除/软删、对象 key 生成、hash 校验和本地开发 adapter 的兼容边界。
-- 编写迁移/回填方案：如何从 `.hongboshi-data/course-product-assets.json` 和课程详情内容 JSONB 的 `materialPlaceholders` 回填到素材专表，同时保证现有 API payload 和学习页读取不破坏。
-- 补充数据库文档、领域契约注释和执行状态；如范围可控，可先落下 SQL 草案和 Store 接口，不急于切换运行时真相源。
-- 保留当前 JSON Store 与本地对象存储运行路径，避免在设计切片里引入破坏性迁移。
+- 新增 `PostgresCourseProductAssetStore`，实现 `listAssets(productId?)`、`getAsset(assetId)`、`saveAsset(asset)`，映射 `course_product_assets` 表并继续通过 `CourseProductAssetSchema` 校验。
+- 扩展运行时配置，使 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres` 在配置 `DATABASE_URL` 时可用；默认开发路径仍保持 `file`。
+- 设计并实现素材回填 dry-run service：读取 JSON Store 与课程详情内容 Store，输出扫描数、可回填素材数、引用数、跳过数和原因，不写库。
+- 补充 PostgreSQL Store 映射测试和回填 dry-run 测试，覆盖 objectKey/contentHash、章节引用和外部 URL 素材不强制对象化。
+- 更新数据库文档、领域契约和执行状态；如果运行时切换范围过大，先完成 Store 与 dry-run，不改后台 API 默认实现。
 
 ## 执行不变量
 
@@ -644,4 +660,4 @@ CUX-I-B-B-A/B 已经把“真实文件上传 -> 本地对象存储 -> 合规状�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 CUX-I-B-B-C 课程素材正式对象存储与素材专表设计准备，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 CUX-I-B-B-D 课程素材 PostgreSQL Store 与回填 dry-run 基础，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

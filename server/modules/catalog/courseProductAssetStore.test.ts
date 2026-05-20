@@ -150,6 +150,8 @@ describe("course product asset store", () => {
       sizeBytes: 16,
       complianceStatus: "pending",
     });
+    expect(uploaded.asset.objectKey).toBe(uploaded.asset.storageKey);
+    expect(uploaded.asset.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(uploaded.asset.publicUrl).toBeUndefined();
     await expect(
       getCourseProductAssetDownloadFile({
