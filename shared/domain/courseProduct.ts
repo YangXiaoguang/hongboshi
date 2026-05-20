@@ -121,6 +121,22 @@ export const COURSE_PRODUCT_ASSET_BACKFILL_ACTIONS = [
   "commit",
 ] as const;
 
+export const COURSE_PRODUCT_ASSET_GOVERNANCE_ISSUE_TYPES = [
+  "missing_product",
+  "unreferenced",
+  "duplicate_content_hash",
+  "pending_compliance",
+  "rejected_compliance",
+  "download_disabled_material",
+  "soft_delete_candidate",
+] as const;
+
+export const COURSE_PRODUCT_ASSET_GOVERNANCE_REFERENCE_SOURCES = [
+  "reference_table",
+  "content_material_placeholders",
+  "none",
+] as const;
+
 export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
   "showcase",
   "proof",
@@ -197,6 +213,14 @@ export const CourseProductAssetBackfillSourceSchema = z.enum(
 
 export const CourseProductAssetBackfillActionSchema = z.enum(
   COURSE_PRODUCT_ASSET_BACKFILL_ACTIONS
+);
+
+export const CourseProductAssetGovernanceIssueTypeSchema = z.enum(
+  COURSE_PRODUCT_ASSET_GOVERNANCE_ISSUE_TYPES
+);
+
+export const CourseProductAssetGovernanceReferenceSourceSchema = z.enum(
+  COURSE_PRODUCT_ASSET_GOVERNANCE_REFERENCE_SOURCES
 );
 
 export const CourseProductMerchandisingAssetUsageSchema = z.enum(
@@ -414,6 +438,50 @@ export const CourseProductAssetBackfillMutationResultSchema = z.object({
   confirmedBy: EntityIdSchema.optional(),
   reason: z.string().trim().min(4).max(240).optional(),
   createdAt: DateTimeLikeSchema,
+});
+
+export const CourseProductAssetGovernanceProductSummarySchema = z.object({
+  id: EntityIdSchema,
+  courseId: LegacyNumericIdSchema,
+  title: z.string().trim().min(2),
+  status: CourseProductStatusSchema,
+  reviewStatus: CourseProductReviewStatusSchema,
+});
+
+export const CourseProductAssetGovernanceItemSchema = z.object({
+  asset: CourseProductAssetSchema,
+  product: CourseProductAssetGovernanceProductSummarySchema.optional(),
+  referenceCount: z.number().int().nonnegative(),
+  persistedReferenceCount: z.number().int().nonnegative().optional(),
+  inferredReferenceCount: z.number().int().nonnegative().optional(),
+  referenceSource: CourseProductAssetGovernanceReferenceSourceSchema,
+  references: z.array(CourseProductAssetReferenceSchema).default([]),
+  duplicateContentHashAssetIds: z.array(EntityIdSchema).default([]),
+  issueTypes: z.array(CourseProductAssetGovernanceIssueTypeSchema).default([]),
+  softDeleteCandidate: z.boolean().default(false),
+});
+
+export const CourseProductAssetGovernanceSummarySchema = z.object({
+  totalAssetCount: z.number().int().nonnegative(),
+  activeAssetCount: z.number().int().nonnegative(),
+  referencedAssetCount: z.number().int().nonnegative(),
+  unreferencedAssetCount: z.number().int().nonnegative(),
+  duplicateContentHashGroupCount: z.number().int().nonnegative(),
+  duplicateContentHashAssetCount: z.number().int().nonnegative(),
+  pendingComplianceCount: z.number().int().nonnegative(),
+  rejectedComplianceCount: z.number().int().nonnegative(),
+  downloadDisabledMaterialCount: z.number().int().nonnegative(),
+  softDeleteCandidateCount: z.number().int().nonnegative(),
+  missingProductAssetCount: z.number().int().nonnegative(),
+  referenceCount: z.number().int().nonnegative(),
+  referenceSource: CourseProductAssetGovernanceReferenceSourceSchema,
+});
+
+export const CourseProductAssetGovernanceResultSchema = z.object({
+  generatedAt: DateTimeLikeSchema,
+  summary: CourseProductAssetGovernanceSummarySchema,
+  items: z.array(CourseProductAssetGovernanceItemSchema),
+  notes: z.array(z.string().trim().min(1).max(240)).default([]),
 });
 
 export const CourseProductAssetUploadRequestSchema = z
@@ -899,6 +967,12 @@ export type CourseProductAssetBackfillSource = z.infer<
 export type CourseProductAssetBackfillAction = z.infer<
   typeof CourseProductAssetBackfillActionSchema
 >;
+export type CourseProductAssetGovernanceIssueType = z.infer<
+  typeof CourseProductAssetGovernanceIssueTypeSchema
+>;
+export type CourseProductAssetGovernanceReferenceSource = z.infer<
+  typeof CourseProductAssetGovernanceReferenceSourceSchema
+>;
 export type CourseProductAssetObjectDescriptor = z.infer<
   typeof CourseProductAssetObjectDescriptorSchema
 >;
@@ -920,6 +994,18 @@ export type CourseProductAssetBackfillRequest = z.infer<
 >;
 export type CourseProductAssetBackfillMutationResult = z.infer<
   typeof CourseProductAssetBackfillMutationResultSchema
+>;
+export type CourseProductAssetGovernanceProductSummary = z.infer<
+  typeof CourseProductAssetGovernanceProductSummarySchema
+>;
+export type CourseProductAssetGovernanceItem = z.infer<
+  typeof CourseProductAssetGovernanceItemSchema
+>;
+export type CourseProductAssetGovernanceSummary = z.infer<
+  typeof CourseProductAssetGovernanceSummarySchema
+>;
+export type CourseProductAssetGovernanceResult = z.infer<
+  typeof CourseProductAssetGovernanceResultSchema
 >;
 export type CourseProductAssetUploadRequest = z.infer<
   typeof CourseProductAssetUploadRequestSchema

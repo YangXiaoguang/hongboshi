@@ -57,9 +57,19 @@
 - 当前不允许前端直接修改合规状态、下载开关或对象 key。
 - 当前不自动把开发期 JSON Store 切换为 PostgreSQL；管理员应先查看 backfill 预检结果，再通过受控写入入口回填。
 
+## 素材治理只读基线
+
+`server/modules/catalog/courseProductAssetGovernance.ts` 已建立只读治理 service，聚合课程商品、课程详情内容、素材 Store 和可选引用表，输出 `CourseProductAssetGovernanceResultSchema`：
+
+- 识别未引用素材、重复 `contentHash`、待审核素材、驳回素材、下载关闭的学习资料、疑似可软删素材和缺失课程商品的孤立素材。
+- 当素材 Store 支持 `listAssetReferences` 时，引用数量优先来自 `course_product_asset_references`；开发期 JSON/内存 Store 不支持引用表时，会从 `course_product_contents.chapters[].materialPlaceholders[]` 兼容推导，并在结果中标记 `referenceSource=content_material_placeholders`。
+- `GET /api/catalog/admin/course-products/assets/governance` 由 `catalog:read` 权限控制，只返回治理摘要和只读素材列表，不执行删除、批量审核、自动清理或下载开关修改。
+- 前端 `httpCourseProductRepository.loadCourseProductAssetGovernance` 已可读取同一契约，为下一步 `/admin/courses` 治理面板接入准备。
+
 ## 后续切片
 
 - `CUX-I-B-B-D`：已实现 `PostgresCourseProductAssetStore`，让素材列表、上传登记、合规审核和后台下载可显式切换 PostgreSQL；已实现素材回填 dry-run service，可扫描 JSON Store 与章节素材占位并输出扫描数、可回填素材数、引用数、跳过数和原因。
 - `CUX-I-B-B-E`：已实现素材回填写入 service、PostgreSQL 引用 upsert 和后台 backfill API，允许管理员在 dry-run 结果确认后把对象素材、素材元数据和章节引用关系写入 PostgreSQL。
 - `CUX-I-B-B-F`：已接入对象存储 provider 配置解析、local/s3/oss/cos 边界、远端公开域名短期 HMAC 签名 URL、上传/读取路径 object storage adapter 化和 provider 级测试。真实云 SDK、STS 临时凭证和 CDN 回源策略仍属于上线前集成任务。
-- `CUX-I-B-B-G`：增加素材治理后台，包括未引用素材、重复内容 hash、待审队列、过期软删和引用报表。
+- `CUX-I-B-B-G`：已完成素材治理共享契约、只读 service、后台 API 和前端 repository 基础，覆盖未引用素材、重复内容 hash、待审/驳回素材、下载关闭资料、软删候选和引用数量。
+- `CUX-I-B-B-H`：在 `/admin/courses` 接入素材治理面板，展示治理摘要、问题筛选、引用来源提示和素材详情跳转；继续保持只读，不引入批量删除。

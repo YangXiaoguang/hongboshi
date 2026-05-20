@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入` 已完成，课程素材对象存储具备 local/s3/oss/cos provider 配置边界、远端 provider 配置校验、HMAC 短期读取 URL、上传/读取路径 object storage adapter 化和 provider 级测试。
-- 本轮完成后下一步：执行 `CUX-I-B-B-G 课程素材治理后台与引用报表基础`
+- 当前状态：`CUX-I-B-B-G 课程素材治理后台与引用报表基础` 已完成，课程素材治理具备共享契约、只读 service、后台 API、前端 repository、JSON/内存占位推导和 PostgreSQL 引用表读取双路径。
+- 本轮完成后下一步：执行 `CUX-I-B-B-H /admin/courses 素材治理面板接入`
 
 ## 已完成关键能力
 
@@ -46,6 +46,7 @@
 - 完成课程素材 PostgreSQL Store 与回填 dry-run 基础：新增 `PostgresCourseProductAssetStore`、显式 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres` 切换、对象素材表同步和 `dryRunCourseProductAssetBackfill`，可检查 JSON Store 与章节占位回填到专表前的素材数、引用数和跳过原因。
 - 完成课程素材回填写入任务与运营确认入口准备：新增 backfill 请求/结果契约、受控 commit service、PostgreSQL 引用 upsert、后台 `GET/POST /api/catalog/admin/course-products/assets/backfill` 和前端 repository 入口，管理员可先预检再确认写入对象素材、素材元数据和章节引用关系。
 - 完成课程素材正式对象存储 provider 与短期读取 URL 接入：新增 local/s3/oss/cos provider 配置解析、远端配置校验、HMAC 短期读取 URL、`.env.example` provider 环境变量、上传/读取路径 object storage adapter 化和课程 API payload 签名 URL 生成，HTTP 路由仍保持服务端权限/合规校验后返回文件流。
+- 完成课程素材治理后台与引用报表基础：新增 `CourseProductAssetGovernance*` 共享契约、只读治理 service、`GET /api/catalog/admin/course-products/assets/governance`、前端 repository 读取方法和测试，支持未引用素材、重复 contentHash、待审/驳回、下载关闭资料、软删候选、缺失商品和引用来源识别。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -220,6 +221,22 @@
 - `/admin/audit` 管理员归档控制台已加入“归档检索预览”，按当前筛选读取归档表前 5 条摘要行；归档预览为空或失败不影响主审计列表、导出、详情、归档和校验。
 
 ## 最近完成阶段
+
+CUX-I-B-B-G 课程素材治理后台与引用报表基础已交付：
+
+- `shared/domain/courseProduct.ts`：新增 `CourseProductAssetGovernanceIssueTypeSchema`、`CourseProductAssetGovernanceResultSchema`、治理 item/summary/product summary 契约和引用来源枚举，统一描述未引用、重复 hash、合规状态、下载关闭、软删候选和引用来源。
+- `server/modules/catalog/courseProductAssetGovernance.ts`：新增只读治理 service，聚合素材 Store、课程商品 Store、课程详情内容 Store 和可选引用表；PostgreSQL Store 支持时读取 `listAssetReferences`，JSON/内存 Store 不支持引用表时从章节 `materialPlaceholders` 推导引用关系。
+- `server/modules/catalog/catalogApi.ts`：新增 `GET /api/catalog/admin/course-products/assets/governance`，绑定 `catalog:read`，只返回治理摘要和只读素材列表，不执行删除、批量审核、自动清理或下载开关修改。
+- `client/src/features/catalog/api/httpCourseProductRepository.ts`：新增 `parseCourseProductAssetGovernanceResponse` 和 `loadCourseProductAssetGovernance`，为下一步 `/admin/courses` 治理面板接入准备。
+- 测试新增/更新 `shared/domain/courseProduct.test.ts`、`server/modules/catalog/courseProductAssetGovernance.test.ts`、`server/modules/catalog/catalogApi.test.ts` 和 `client/src/features/catalog/api/httpCourseProductRepository.test.ts`，覆盖治理契约、JSON fallback 引用推导、引用表优先、权限失败和前端仓储解析。
+- `docs/course-asset-storage-architecture.md`、`docs/domain-contracts.md`、`docs/database-schema.md`、`docs/admin-management-roadmap.md` 与 `docs/product-engineering-roadmap.md` 已同步治理只读边界和下一步后台面板方向。
+
+CUX-I-B-B-G 验收结果：
+
+- `pnpm run check` 已通过。
+- `pnpm test -- shared/domain/courseProduct.test.ts server/modules/catalog/courseProductAssetGovernance.test.ts server/modules/catalog/catalogApi.test.ts client/src/features/catalog/api/httpCourseProductRepository.test.ts` 实际执行全量 125 个测试文件 / 605 个测试并通过。
+- 本轮新增后端 API 与前端 repository，没有新增页面；浏览器验证不适用。
+- `pnpm run ci` 已通过：类型检查、125 个测试文件 / 605 个测试和生产构建均通过，Vite 仍保留既有大 chunk 提醒。
 
 CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入已交付：
 
@@ -667,30 +684,30 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入
+### 最近完成阶段：CUX-I-B-B-G 课程素材治理后台与引用报表基础
 
-CUX-I-B-B-F 稳定切片已交付：
+CUX-I-B-B-G 稳定切片已交付：
 
-- 已新增对象存储 provider 配置解析，默认 `local`，支持 `s3/oss/cos` 远端 provider 占位和缺失配置错误提示。
-- 已新增 HMAC 短期读取 URL 生成能力，支持本地受控路由和远端公开基础域名对象路径。
-- 课程素材文件上传、后台下载、公开图片查看和已解锁课程资料下载均已通过 `CourseProductAssetObjectStorage` 读写对象。
-- 课程 API payload 已具备 `signedReadUrl`，但 HTTP 路由仍保持服务端登录、权益、合规和下载开关校验后返回文件流。
-- `.env.example`、数据库说明、素材架构、领域契约、后台路线图和产品工程路线已同步 provider 变量与边界。
+- 已新增课程素材治理共享契约，稳定描述治理摘要、素材行、问题类型和引用来源。
+- 已新增只读治理 service，可聚合素材、课程商品、课程详情内容和可选引用表。
+- PostgreSQL Store 支持引用表读取时优先使用 `course_product_asset_references`；JSON/内存 Store 不支持引用表时从章节素材占位推导引用。
+- 已新增 `GET /api/catalog/admin/course-products/assets/governance`，绑定 `catalog:read`，只返回只读治理数据。
+- 前端 catalog repository 已能解析和加载治理结果，为后台页面接入准备。
 
-### 用户端待续：CUX-I-B-B-G 课程素材治理后台与引用报表基础
+### 后台待续：CUX-I-B-B-H /admin/courses 素材治理面板接入
 
 业务目标：
 
-CUX-I-B-B-F 已经把素材文件读写从本地目录提升到 provider-aware object storage 边界。下一步应把课程素材从“能上传/能回填/能下载”推进到“可治理、可排查、可清理、可运营”：在后台建立素材治理的只读基础，帮助运营识别未引用素材、重复内容 hash、待合规处理素材、软删除候选和章节引用关系，为后续批量清理与学习资料报表做准备。
+CUX-I-B-B-G 已经具备素材治理只读 API 和前端 repository。下一步应把治理结果接入 `/admin/courses`，让运营在课程商品后台中看到素材治理摘要、问题列表、引用来源和可定位的素材详情，帮助运营优先处理待审、重复、未引用和下载关闭的学习资料。
 
 建议实施范围：
 
-- 新增课程素材治理只读 service，聚合素材 Store、课程详情内容 Store、课程商品 Store 和引用表能力，输出治理摘要。
-- 首批治理维度包含：未引用素材、重复 `contentHash`、待审核/驳回素材、`downloadEnabled=false` 的学习资料、疑似可软删素材和章节引用数量。
-- 若当前 Store 不支持引用表读取，使用章节 `materialPlaceholders` 做兼容推导，并在结果中标记来源，保持 JSON Store 和 PostgreSQL Store 双路径可用。
-- 新增后台 API，例如 `GET /api/catalog/admin/course-products/assets/governance`，绑定 `catalog:read`，只返回摘要和只读列表，不做删除、批量审核或自动清理。
-- 增加 service/API 测试，覆盖 JSON fallback、PostgreSQL 引用读取能力、重复 hash、未引用素材、权限失败和空态。
-- 更新素材架构、领域契约、数据库说明和本执行状态；如果 UI 超出单轮范围，本轮先完成后端治理 API 和前端 repository，为下一轮 `/admin/courses` 治理面板接入做准备。
+- 在 `/admin/courses` 页面增加素材治理只读区域，可从课程素材区附近进入，避免打断现有商品列表、内容编辑和素材队列流程。
+- 展示治理摘要：总素材、未引用、重复 hash、待审、驳回、下载关闭、软删候选、引用来源。
+- 增加问题筛选或分组：未引用、重复内容、待审/驳回、学习资料下载关闭、缺失课程商品。
+- 治理行展示课程商品、素材标题、类型、合规状态、引用数、重复对象、最近更新时间和建议处理方向；点击可定位到对应课程商品素材队列或打开已有素材管理弹窗。
+- 保持只读，不做批量删除、批量审核、自动软删；这些动作需要另立 CUX-I-B-B-I 并补审计设计。
+- 增加页面/repository 测试，覆盖加载成功、空态、错误态、只读账号可看、普通会员不可看和筛选交互。
 
 ## 执行不变量
 
@@ -711,4 +728,4 @@ CUX-I-B-B-F 已经把素材文件读写从本地目录提升到 provider-aware o
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 CUX-I-B-B-G 课程素材治理后台与引用报表基础，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 CUX-I-B-B-H /admin/courses 素材治理面板接入，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

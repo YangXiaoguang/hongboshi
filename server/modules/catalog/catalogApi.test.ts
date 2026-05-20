@@ -13,6 +13,7 @@ import {
   getCourseProductAdminListPayload,
   getCourseProductAssetBackfillPayload,
   getCourseProductAssetDownloadPayload,
+  getCourseProductAssetGovernancePayload,
   getCourseProductAssetsPayload,
   getCourseProductContentQualityPayload,
   getCourseProductContentPayload,
@@ -86,6 +87,7 @@ describe("catalog admin api payloads", () => {
       assetReview: "catalog:review",
       assetBackfillRead: "catalog:read",
       assetBackfillWrite: "catalog:review",
+      assetGovernanceRead: "catalog:read",
       basicInfoUpdate: "catalog:edit",
       contentUpdate: "catalog:edit",
       reviewUpdate: "catalog:review",
@@ -638,6 +640,38 @@ describe("catalog admin api payloads", () => {
         plan: {
           assetCount: 1,
           dryRun: true,
+        },
+      },
+    });
+  });
+
+  it("allows catalog viewers to read course asset governance summaries", async () => {
+    const anonymous = await getCourseProductAssetGovernancePayload(null, {
+      productStore: new InMemoryCourseProductStore([products[0]]),
+      contentStore: buildBackfillContentStore(),
+      assetStore: buildBackfillSourceAssetStore(),
+      now: "2026-05-21T09:00:00.000Z",
+    });
+    expect(anonymous.status).toBe(401);
+
+    const payload = await getCourseProductAssetGovernancePayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      {
+        productStore: new InMemoryCourseProductStore([products[0]]),
+        contentStore: buildBackfillContentStore(),
+        assetStore: buildBackfillSourceAssetStore(),
+        now: "2026-05-21T09:00:00.000Z",
+      }
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body).toMatchObject({
+      ok: true,
+      data: {
+        summary: {
+          totalAssetCount: 1,
+          referencedAssetCount: 1,
+          referenceSource: "content_material_placeholders",
         },
       },
     });

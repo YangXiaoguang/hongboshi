@@ -8,6 +8,7 @@ import {
   CourseProductAssetBackfillPlanSchema,
   CourseProductAssetBackfillRequestSchema,
   CourseProductAssetFileUploadRequestSchema,
+  CourseProductAssetGovernanceResultSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetObjectDescriptorSchema,
   CourseProductAssetReferenceSchema,
@@ -310,6 +311,86 @@ describe("course product domain contract", () => {
         createdAt: "2026-05-20T09:10:00+08:00",
       });
     expect(backfillResult.writtenReferenceCount).toBe(20);
+  });
+
+  it("validates course product asset governance contracts", () => {
+    const parsed = CourseProductAssetGovernanceResultSchema.parse({
+      generatedAt: "2026-05-21T09:00:00.000Z",
+      summary: {
+        totalAssetCount: 2,
+        activeAssetCount: 2,
+        referencedAssetCount: 1,
+        unreferencedAssetCount: 1,
+        duplicateContentHashGroupCount: 1,
+        duplicateContentHashAssetCount: 2,
+        pendingComplianceCount: 1,
+        rejectedComplianceCount: 0,
+        downloadDisabledMaterialCount: 1,
+        softDeleteCandidateCount: 0,
+        missingProductAssetCount: 0,
+        referenceCount: 1,
+        referenceSource: "content_material_placeholders",
+      },
+      items: [
+        {
+          asset: {
+            id: "asset_worksheet_1",
+            productId: "course_product_1",
+            chapterId: "chapter_1",
+            kind: "worksheet",
+            title: "课后练习表",
+            fileName: "worksheet.pdf",
+            mimeType: "application/pdf",
+            sizeBytes: 188000,
+            sourceType: "object_storage",
+            objectKey: "course-assets/course_product_1/asset_worksheet_1/file.pdf",
+            contentHash:
+              "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+            complianceStatus: "pending",
+            downloadEnabled: false,
+            uploadedBy: "operator_1",
+            uploadedAt: "2026-05-20T09:00:00.000Z",
+            updatedAt: "2026-05-20T09:00:00.000Z",
+          },
+          product: {
+            id: "course_product_1",
+            courseId: 1,
+            title: "情绪管理入门",
+            status: "published",
+            reviewStatus: "approved",
+          },
+          referenceCount: 1,
+          inferredReferenceCount: 1,
+          referenceSource: "content_material_placeholders",
+          references: [
+            {
+              id: "asset_ref_1",
+              assetId: "asset_worksheet_1",
+              productId: "course_product_1",
+              courseId: 1,
+              chapterId: "chapter_1",
+              referenceType: "chapter_exercise",
+              materialPlaceholderId: "material_1",
+              materialPlaceholderIndex: 0,
+              createdBy: "system_asset_governance",
+              createdAt: "2026-05-21T09:00:00.000Z",
+            },
+          ],
+          duplicateContentHashAssetIds: ["asset_worksheet_2"],
+          issueTypes: [
+            "duplicate_content_hash",
+            "pending_compliance",
+            "download_disabled_material",
+          ],
+        },
+      ],
+      notes: ["当前素材 Store 不支持引用表读取，引用数量由课程章节素材占位推导"],
+    });
+
+    expect(parsed.summary.referenceSource).toBe(
+      "content_material_placeholders"
+    );
+    expect(parsed.items[0]?.issueTypes).toContain("pending_compliance");
   });
 
   it("validates the first course detail content contract", () => {

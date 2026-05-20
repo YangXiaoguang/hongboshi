@@ -28,7 +28,7 @@
 
 主要缺口：
 
-- 课程商品已具备成交图文 URL 资产管理、素材资产登记、真实文件上传、本地对象存储、合规队列、学习页资料区绑定、正式对象存储 adapter 接口、素材专表/引用表迁移草案、PostgreSQL 素材 Store、回填 dry-run/受控写入、provider 配置边界和短期签名 URL；批量素材治理、真实云 SDK adapter 和学习资料运营报表还需要继续建设。
+- 课程商品已具备成交图文 URL 资产管理、素材资产登记、真实文件上传、本地对象存储、合规队列、学习页资料区绑定、正式对象存储 adapter 接口、素材专表/引用表迁移草案、PostgreSQL 素材 Store、回填 dry-run/受控写入、provider 配置边界、短期签名 URL 和素材治理只读 API；`/admin/courses` 治理面板、批量素材治理、真实云 SDK adapter 和学习资料运营报表还需要继续建设。
 - 会员商品后台已具备配置化、公共快照同步、可用性体验和售卖状态回归，用户端 `/membership`、课程/成长空间会员 checkout 摘要和服务端会员 checkout 已读取同一会员商品 Store；后续需要继续建设会员待支付订单过期状态机、真实支付渠道金额校验和历史待支付订单的受控关闭动作。
 - 订单后台已具备首批受控写动作，交易后台已具备退款申请、退款渠道受理摘要、异常工单动作和 PostgreSQL 持久化；财务只读口径、CSV 导出、账期和手续费规则基础已建立，咨询师档案、服务状态、服务记录与履约异常基础已建立，结算批次、渠道结算单、发票和真实支付渠道适配还需要继续建设。
 - 风险复核台已形成 SOP 模板、升级队列和 PostgreSQL 持久化基础，但通知协作还需要继续建设。
@@ -96,7 +96,7 @@
 - 后台课程商品列表 `/admin/courses` 支持搜索、分类、状态筛选、排序和分页。
 - 课程商品支持基础信息编辑、详情内容编辑、成交图文素材维护、素材资产登记、真实文件上传、合规处理、审核动作、价格编辑、上下架动作和审计记录。
 - 前台课程读取已从课程商品 Store 读取 `published + approved` 商品，并同步价格和会员权益。
-- 下一步进入素材治理后台和学习资料运营报表，用户与会员管理主链路已完成首轮后台化。
+- 下一步进入 `/admin/courses` 素材治理面板和学习资料运营报表，用户与会员管理主链路已完成首轮后台化。
 
 验收标准：
 
@@ -122,6 +122,7 @@
 - M2-N 已完成：课程素材 PostgreSQL Store、显式 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres` 切换、对象素材映射和素材回填 dry-run service。
 - M2-O 已完成：课程素材回填写入任务、后台 backfill API、PostgreSQL 引用 upsert 和前端 repository 入口。
 - M2-P 已完成：课程素材对象存储 provider 配置解析、local/s3/oss/cos provider 边界、短期签名 URL、上传和受控读取路径 object storage adapter 化。
+- M2-Q 已完成：课程素材治理共享契约、只读 service、`GET /api/catalog/admin/course-products/assets/governance` 和前端 repository 基础，支持未引用、重复 hash、待审/驳回、下载关闭、软删候选和引用来源识别。
 
 ## M3: 用户与会员管理
 

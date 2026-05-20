@@ -9,6 +9,7 @@ import {
   CourseProductAssetBackfillRequestSchema,
   CourseProductAssetComplianceUpdateRequestSchema,
   CourseProductAssetFileUploadRequestSchema,
+  CourseProductAssetGovernanceResultSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetMutationResultSchema,
   CourseProductAssetUploadRequestSchema,
@@ -61,6 +62,7 @@ import {
   createDefaultCourseProductAssetBackfillSourceStore,
   previewCourseProductAssetBackfill,
 } from "./courseProductAssetBackfill";
+import { getCourseProductAssetGovernance } from "./courseProductAssetGovernance";
 
 const CourseProductAdminListResponseSchema = ApiResponseSchema(
   CourseProductListResultSchema
@@ -86,6 +88,9 @@ const CourseProductAssetMutationResponseSchema = ApiResponseSchema(
 const CourseProductAssetBackfillResponseSchema = ApiResponseSchema(
   CourseProductAssetBackfillMutationResultSchema
 );
+const CourseProductAssetGovernanceResponseSchema = ApiResponseSchema(
+  CourseProductAssetGovernanceResultSchema
+);
 
 type CatalogApiErrorCode =
   | "BAD_REQUEST"
@@ -103,7 +108,8 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductContentMutationResponseSchema>
   | z.infer<typeof CourseProductAssetListResponseSchema>
   | z.infer<typeof CourseProductAssetMutationResponseSchema>
-  | z.infer<typeof CourseProductAssetBackfillResponseSchema>;
+  | z.infer<typeof CourseProductAssetBackfillResponseSchema>
+  | z.infer<typeof CourseProductAssetGovernanceResponseSchema>;
 type CatalogApiPayload = {
   status: number;
   body: CatalogApiBody;
@@ -132,6 +138,7 @@ export const catalogOperationPermissions = {
   assetReview: COURSE_CATALOG_PERMISSIONS.review,
   assetBackfillRead: COURSE_CATALOG_PERMISSIONS.read,
   assetBackfillWrite: COURSE_CATALOG_PERMISSIONS.review,
+  assetGovernanceRead: COURSE_CATALOG_PERMISSIONS.read,
   basicInfoUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   contentUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   reviewUpdate: COURSE_CATALOG_PERMISSIONS.review,
@@ -504,6 +511,44 @@ export async function getCourseProductAssetBackfillPayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程素材回填预检失败");
+  }
+}
+
+export async function getCourseProductAssetGovernancePayload(
+  actor: CatalogOperationsActor | null | undefined,
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    assetStore = getCourseProductAssetStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    assetStore?: CourseProductAssetStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetGovernanceRead
+  );
+  if (denied) return denied;
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetGovernanceResponseSchema.parse({
+        ok: true,
+        data: await getCourseProductAssetGovernance({
+          assetStore,
+          contentStore,
+          productStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材治理读取失败");
   }
 }
 
@@ -965,6 +1010,25 @@ export function registerCatalogApi(app: Express) {
     }
   );
 
+  app.get(
+    "/api/catalog/admin/course-products/assets/governance",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await getCourseProductAssetGovernancePayload(
+          session?.user
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材治理读取失败")
+        );
+      }
+    }
+  );
+
   app.post(
     "/api/catalog/admin/course-products/assets/backfill",
     async (req, res) => {
@@ -1182,6 +1246,25 @@ export function handleCatalogApiRequest(
           res,
           500,
           errorPayload("INTERNAL_ERROR", "课程素材回填写入失败")
+        )
+      );
+    return true;
+  }
+
+  if (url.pathname === "/api/catalog/admin/course-products/assets/governance") {
+    if (req.method !== "GET") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+      return true;
+    }
+
+    void getLoginSessionFromRequest(req)
+      .then(session => getCourseProductAssetGovernancePayload(session?.user))
+      .then(payload => sendJson(res, payload.status, payload.body))
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材治理读取失败")
         )
       );
     return true;

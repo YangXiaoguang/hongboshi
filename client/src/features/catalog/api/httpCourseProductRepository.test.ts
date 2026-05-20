@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   httpCourseProductRepository,
   parseCourseProductAssetBackfillResponse,
+  parseCourseProductAssetGovernanceResponse,
   parseCourseProductAssetListResponse,
   parseCourseProductAssetMutationResponse,
   parseCourseProductContentResponse,
@@ -171,6 +172,66 @@ describe("http course product repository parsing", () => {
 
     expect(parsed.mode).toBe("dry_run");
     expect(parsed.plan.referenceCount).toBe(1);
+  });
+
+  it("parses course product asset governance responses", () => {
+    const parsed = parseCourseProductAssetGovernanceResponse({
+      ok: true,
+      data: {
+        generatedAt: "2026-05-21T09:00:00.000Z",
+        summary: {
+          totalAssetCount: 1,
+          activeAssetCount: 1,
+          referencedAssetCount: 0,
+          unreferencedAssetCount: 1,
+          duplicateContentHashGroupCount: 0,
+          duplicateContentHashAssetCount: 0,
+          pendingComplianceCount: 1,
+          rejectedComplianceCount: 0,
+          downloadDisabledMaterialCount: 0,
+          softDeleteCandidateCount: 0,
+          missingProductAssetCount: 0,
+          referenceCount: 0,
+          referenceSource: "content_material_placeholders",
+        },
+        items: [
+          {
+            asset: {
+              id: "asset_course_product_1_detail_image_20260521",
+              productId: "course_product_1",
+              kind: "detail_image",
+              title: "课程详情主视觉",
+              fileName: "detail.jpg",
+              mimeType: "image/jpeg",
+              sizeBytes: 188000,
+              sourceType: "external_url",
+              publicUrl: "https://cdn.example.com/detail.jpg",
+              complianceStatus: "pending",
+              downloadEnabled: false,
+              uploadedBy: "operator_1",
+              uploadedAt: "2026-05-21T09:00:00.000Z",
+              updatedAt: "2026-05-21T09:00:00.000Z",
+            },
+            product: {
+              id: "course_product_1",
+              courseId: 1,
+              title: "情绪管理入门",
+              status: "published",
+              reviewStatus: "approved",
+            },
+            referenceCount: 0,
+            inferredReferenceCount: 0,
+            referenceSource: "content_material_placeholders",
+            references: [],
+            issueTypes: ["unreferenced", "pending_compliance"],
+          },
+        ],
+        notes: ["当前素材 Store 不支持引用表读取，引用数量由课程章节素材占位推导"],
+      },
+    });
+
+    expect(parsed.summary.unreferencedAssetCount).toBe(1);
+    expect(parsed.items[0]?.issueTypes).toContain("pending_compliance");
   });
 
   it("parses course product mutation responses", () => {
@@ -517,6 +578,46 @@ describe("http course product repository parsing", () => {
       expect.objectContaining({
         method: "POST",
         body: expect.stringContaining("confirmWrite"),
+      })
+    );
+  });
+
+  it("loads course product asset governance summaries", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        generatedAt: "2026-05-21T09:00:00.000Z",
+        summary: {
+          totalAssetCount: 0,
+          activeAssetCount: 0,
+          referencedAssetCount: 0,
+          unreferencedAssetCount: 0,
+          duplicateContentHashGroupCount: 0,
+          duplicateContentHashAssetCount: 0,
+          pendingComplianceCount: 0,
+          rejectedComplianceCount: 0,
+          downloadDisabledMaterialCount: 0,
+          softDeleteCandidateCount: 0,
+          missingProductAssetCount: 0,
+          referenceCount: 0,
+          referenceSource: "content_material_placeholders",
+        },
+        items: [],
+        notes: [],
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.loadCourseProductAssetGovernance();
+
+    expect(result.summary.totalAssetCount).toBe(0);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance",
+      expect.objectContaining({
+        credentials: "same-origin",
       })
     );
   });
