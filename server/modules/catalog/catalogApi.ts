@@ -5,6 +5,10 @@ import { z } from "zod";
 import {
   ApiResponseSchema,
   COURSE_CATALOG_PERMISSIONS,
+  CourseProductAssetComplianceUpdateRequestSchema,
+  CourseProductAssetListResultSchema,
+  CourseProductAssetMutationResultSchema,
+  CourseProductAssetUploadRequestSchema,
   CourseProductBasicInfoUpdateRequestSchema,
   CourseProductContentMutationResultSchema,
   CourseProductContentQualityBatchResultSchema,
@@ -38,6 +42,13 @@ import {
   updateCourseProductContent,
   type CourseProductContentStore,
 } from "./courseProductContentStore";
+import {
+  getCourseProductAssetStore,
+  listCourseProductAssets,
+  updateCourseProductAssetCompliance,
+  uploadCourseProductAsset,
+  type CourseProductAssetStore,
+} from "./courseProductAssetStore";
 
 const CourseProductAdminListResponseSchema = ApiResponseSchema(
   CourseProductListResultSchema
@@ -54,6 +65,12 @@ const CourseProductContentQualityResponseSchema = ApiResponseSchema(
 const CourseProductContentMutationResponseSchema = ApiResponseSchema(
   CourseProductContentMutationResultSchema
 );
+const CourseProductAssetListResponseSchema = ApiResponseSchema(
+  CourseProductAssetListResultSchema
+);
+const CourseProductAssetMutationResponseSchema = ApiResponseSchema(
+  CourseProductAssetMutationResultSchema
+);
 
 type CatalogApiErrorCode =
   | "BAD_REQUEST"
@@ -68,7 +85,9 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductMutationResponseSchema>
   | z.infer<typeof CourseProductContentResponseSchema>
   | z.infer<typeof CourseProductContentQualityResponseSchema>
-  | z.infer<typeof CourseProductContentMutationResponseSchema>;
+  | z.infer<typeof CourseProductContentMutationResponseSchema>
+  | z.infer<typeof CourseProductAssetListResponseSchema>
+  | z.infer<typeof CourseProductAssetMutationResponseSchema>;
 type CatalogApiPayload = {
   status: number;
   body: CatalogApiBody;
@@ -78,6 +97,9 @@ export const catalogOperationPermissions = {
   list: COURSE_CATALOG_PERMISSIONS.read,
   contentRead: COURSE_CATALOG_PERMISSIONS.read,
   contentQualityRead: COURSE_CATALOG_PERMISSIONS.read,
+  assetRead: COURSE_CATALOG_PERMISSIONS.read,
+  assetUpload: COURSE_CATALOG_PERMISSIONS.edit,
+  assetReview: COURSE_CATALOG_PERMISSIONS.review,
   basicInfoUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   contentUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   reviewUpdate: COURSE_CATALOG_PERMISSIONS.review,
@@ -371,6 +393,122 @@ export async function getCourseProductContentQualityPayload(
   }
 }
 
+export async function getCourseProductAssetsPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  productId: string,
+  productStore: CourseProductStore = getCourseProductStore(),
+  assetStore: CourseProductAssetStore = getCourseProductAssetStore()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetRead
+  );
+  if (denied) return denied;
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetListResponseSchema.parse({
+        ok: true,
+        data: await listCourseProductAssets({
+          productId,
+          productStore,
+          assetStore,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材资产读取失败");
+  }
+}
+
+export async function uploadCourseProductAssetPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  productId: string,
+  body: unknown,
+  productStore: CourseProductStore = getCourseProductStore(),
+  assetStore: CourseProductAssetStore = getCourseProductAssetStore(),
+  now = new Date().toISOString()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetUpload
+  );
+  if (denied) return denied;
+
+  const parsed = CourseProductAssetUploadRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程素材上传参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetMutationResponseSchema.parse({
+        ok: true,
+        data: await uploadCourseProductAsset({
+          productId,
+          request: parsed.data,
+          actorId: actor!.id,
+          productStore,
+          assetStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材上传失败");
+  }
+}
+
+export async function updateCourseProductAssetCompliancePayload(
+  actor: CatalogOperationsActor | null | undefined,
+  productId: string,
+  assetId: string,
+  body: unknown,
+  productStore: CourseProductStore = getCourseProductStore(),
+  assetStore: CourseProductAssetStore = getCourseProductAssetStore(),
+  now = new Date().toISOString()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetReview
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductAssetComplianceUpdateRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程素材合规处理参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetMutationResponseSchema.parse({
+        ok: true,
+        data: await updateCourseProductAssetCompliance({
+          productId,
+          assetId,
+          request: parsed.data,
+          actorId: actor!.id,
+          productStore,
+          assetStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材合规处理失败");
+  }
+}
+
 export async function updateCourseProductContentPayload(
   actor: CatalogOperationsActor | null | undefined,
   productId: string,
@@ -574,6 +712,65 @@ export function registerCatalogApi(app: Express) {
       }
     }
   );
+
+  app.get(
+    "/api/catalog/admin/course-products/:productId/assets",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await getCourseProductAssetsPayload(
+          session?.user,
+          req.params.productId
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材资产读取失败")
+        );
+      }
+    }
+  );
+
+  app.post(
+    "/api/catalog/admin/course-products/:productId/assets",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await uploadCourseProductAssetPayload(
+          session?.user,
+          req.params.productId,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程素材上传失败"));
+      }
+    }
+  );
+
+  app.patch(
+    "/api/catalog/admin/course-products/:productId/assets/:assetId/compliance",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await updateCourseProductAssetCompliancePayload(
+          session?.user,
+          req.params.productId,
+          req.params.assetId,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材合规处理失败")
+        );
+      }
+    }
+  );
 }
 
 export function handleCatalogApiRequest(
@@ -626,6 +823,84 @@ export function handleCatalogApiRequest(
         )
       );
 
+    return true;
+  }
+
+  const assetListMatch = url.pathname.match(
+    /^\/api\/catalog\/admin\/course-products\/([^/]+)\/assets$/
+  );
+  if (assetListMatch?.[1]) {
+    if (req.method !== "GET" && req.method !== "POST") {
+      sendJson(
+        res,
+        405,
+        errorPayload("BAD_REQUEST", "接口仅支持 GET/POST 请求")
+      );
+      return true;
+    }
+
+    if (req.method === "GET") {
+      void getLoginSessionFromRequest(req)
+        .then(session =>
+          getCourseProductAssetsPayload(
+            session?.user,
+            decodeURIComponent(assetListMatch[1])
+          )
+        )
+        .then(payload => sendJson(res, payload.status, payload.body))
+        .catch(() =>
+          sendJson(
+            res,
+            500,
+            errorPayload("INTERNAL_ERROR", "课程素材资产读取失败")
+          )
+        );
+      return true;
+    }
+
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await uploadCourseProductAssetPayload(
+          session?.user,
+          decodeURIComponent(assetListMatch[1]),
+          body
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程素材上传失败"))
+      );
+    return true;
+  }
+
+  const assetComplianceMatch = url.pathname.match(
+    /^\/api\/catalog\/admin\/course-products\/([^/]+)\/assets\/([^/]+)\/compliance$/
+  );
+  if (assetComplianceMatch?.[1] && assetComplianceMatch[2]) {
+    if (req.method !== "PATCH") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 PATCH 请求"));
+      return true;
+    }
+
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await updateCourseProductAssetCompliancePayload(
+          session?.user,
+          decodeURIComponent(assetComplianceMatch[1]),
+          decodeURIComponent(assetComplianceMatch[2]),
+          body
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材合规处理失败")
+        )
+      );
     return true;
   }
 
@@ -831,6 +1106,16 @@ function courseProductActionFailure(
     return {
       status: 404,
       body: errorPayload("NOT_FOUND", "课程商品不存在"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_NOT_FOUND"
+  ) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "课程素材不存在"),
     };
   }
 

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   httpCourseProductRepository,
+  parseCourseProductAssetListResponse,
+  parseCourseProductAssetMutationResponse,
   parseCourseProductContentResponse,
   parseCourseProductListResponse,
   parseCourseProductMutationResponse,
@@ -79,6 +81,66 @@ describe("http course product repository parsing", () => {
         },
       })
     ).toThrow("当前账号暂无课程商品管理权限");
+  });
+
+  it("parses course product asset responses", () => {
+    const list = parseCourseProductAssetListResponse({
+      ok: true,
+      data: {
+        productId: "course_product_1",
+        items: [
+          {
+            id: "asset_course_product_1_detail_image_20260520",
+            productId: "course_product_1",
+            kind: "detail_image",
+            title: "课程详情主视觉",
+            fileName: "detail.jpg",
+            mimeType: "image/jpeg",
+            sizeBytes: 188000,
+            sourceType: "external_url",
+            publicUrl: "https://cdn.example.com/detail.jpg",
+            usage: "showcase",
+            complianceStatus: "pending",
+            downloadEnabled: false,
+            uploadedBy: "operator_1",
+            uploadedAt: "2026-05-20T09:00:00+08:00",
+            updatedAt: "2026-05-20T09:00:00+08:00",
+          },
+        ],
+        summary: {
+          totalCount: 1,
+          pendingCount: 1,
+          approvedCount: 0,
+          rejectedCount: 0,
+        },
+      },
+    });
+
+    expect(list.summary.pendingCount).toBe(1);
+
+    const mutation = parseCourseProductAssetMutationResponse({
+      ok: true,
+      data: {
+        asset: list.items[0],
+        assets: list.items,
+        auditEvent: {
+          id: "audit_asset_upload_course_product_1",
+          productId: "course_product_1",
+          productTitle: "情绪管理入门",
+          actorId: "operator_1",
+          action: "asset_upload",
+          reason: "新增课程详情主视觉",
+          before: {},
+          after: {
+            id: "asset_course_product_1_detail_image_20260520",
+          },
+          createdAt: "2026-05-20T09:00:00+08:00",
+        },
+        auditEvents: [],
+      },
+    });
+
+    expect(mutation.auditEvent.action).toBe("asset_upload");
   });
 
   it("parses course product mutation responses", () => {

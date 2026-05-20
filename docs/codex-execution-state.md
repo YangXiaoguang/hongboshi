@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`CUX-I-A 课程详情成交图文素材后台化` 已完成，后台可维护课程详情成交标题、副标题、主视觉、卖点和图文资产，前台详情页会优先消费后台素材并过滤待审/驳回图文资产。
-- 本轮完成后下一步：执行 `CUX-I-B 课程素材文件上传、对象存储与合规审核队列`
+- 当前状态：`CUX-I-B-A 课程素材资产登记与合规队列基础` 已完成，后台可登记详情图、证明图、章节资料、练习表、音频和视频资产，并通过合规动作将可用素材引用到课程详情成交图文。
+- 本轮完成后下一步：执行 `CUX-I-B-B 课程素材真实文件上传、本地对象存储适配与受控下载`
 
 ## 已完成关键能力
 
@@ -41,6 +41,7 @@
 - 完成课程优惠与组合购：新增共享 `coursePricing` 和前端 `coursePromotion` 纯模型，课程卡片、快速开始区、详情页和结算抽屉统一展示券后价、本单优惠、会员替代和路径组合预览。
 - 完成课程交易界面商品化优化：新增课程商品陈列模型，首页首屏直接展示可购买课程商品，课程中心首屏提供热门课程商品推荐和独立货架，课程卡片默认进入详情页课程介绍区，详情页新增粘性锚点、图文课程亮点区、内容规模/适合状态/核心收获证明点和就近购买动作，降低用户找课与购买路径成本。
 - 完成课程详情成交图文素材后台化：`CourseProductDetailContentSchema` 新增 `merchandising` 成交素材契约，后台 `/admin/courses` 可维护主视觉、成交卖点和图文资产，前台课程详情优先使用运营素材，PostgreSQL `course_product_contents.sales_assets` 可保存同一份内容。
+- 完成课程素材资产登记与合规队列基础：新增 `CourseProductAsset*` 共享契约、开发期 JSON Store、后台素材读取/登记/合规处理 API、审计动作和 `/admin/courses` 素材资产库入口。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -215,6 +216,22 @@
 - `/admin/audit` 管理员归档控制台已加入“归档检索预览”，按当前筛选读取归档表前 5 条摘要行；归档预览为空或失败不影响主审计列表、导出、详情、归档和校验。
 
 ## 最近完成阶段
+
+CUX-I-B-A 课程素材资产登记与合规队列基础已交付：
+
+- `shared/domain/courseProduct.ts`：新增 `CourseProductAssetSchema`、素材类型、来源类型、上传请求、合规处理请求、列表结果和变更结果契约，统一描述详情图、证明图、章节资料、练习表、音频和视频资产。
+- `server/modules/catalog/courseProductAssetStore.ts`：新增课程素材资产 Store，开发期支持内存和 JSON 文件 `.hongboshi-data/course-product-assets.json`，上传登记会写入 `asset_upload` 课程商品审计，合规处理会写入 `asset_review` 审计。
+- `server/modules/catalog/catalogApi.ts`：新增 `GET/POST /api/catalog/admin/course-products/:productId/assets` 和 `PATCH /api/catalog/admin/course-products/:productId/assets/:assetId/compliance`，分别绑定 `catalog:read`、`catalog:edit` 和 `catalog:review` 权限。
+- `client/src/features/catalog/api/httpCourseProductRepository.ts` 与 `client/src/pages/admin/CourseProducts.tsx`：后台课程详情编辑器新增“素材资产库”，可登记素材 URL、查看素材状态、合规通过/驳回，并将已通过素材一键设为成交主视觉或加入成交图文。
+- `server/db/runtimeConfig.ts` 与 `server/db/migrations/0018_course_product_asset_audit_actions.sql`：运行时配置新增 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=memory/file`，数据库迁移扩展课程商品审计动作约束，允许记录素材登记和合规处理。
+- `docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和 `docs/database-schema.md` 已同步 CUX-I-B-A 的契约、后台边界、Store 配置和下一步对象存储边界。
+
+CUX-I-B-A 验收结果：
+
+- `pnpm run check` 已通过。
+- `pnpm test -- shared/domain/courseProduct.test.ts server/modules/catalog/courseProductAssetStore.test.ts server/modules/catalog/catalogApi.test.ts client/src/features/catalog/api/httpCourseProductRepository.test.ts server/db/runtimeConfig.test.ts` 实际执行全量 120 个测试文件 / 570 个测试并通过。
+- 浏览器验证已通过：未登录访问 `/admin/courses` 可稳定进入后台登录提示态，用户端 `/courses/17?focus=content` 可正常渲染课程详情主视觉和课程亮点区，无横向溢出、无业务相关 console error。
+- `pnpm run ci` 已通过：类型检查、120 个测试文件 / 570 个测试和生产构建均成功；Vite 仍保留既有大 chunk 提醒。
 
 CUX-I-A 课程详情成交图文素材后台化已交付：
 
@@ -553,28 +570,30 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：CUX-I-A 课程详情成交图文素材后台化
+### 最近完成阶段：CUX-I-B-A 课程素材资产登记与合规队列基础
 
-CUX-I-A 稳定切片已交付：
+CUX-I-B-A 稳定切片已交付：
 
-- 课程详情内容契约新增 `merchandising`，覆盖成交标题、副标题、主视觉、卖点、图文资产用途和合规状态。
-- 后台课程商品详情编辑器已可维护成交图文素材，并将素材质量提醒纳入内容校验。
-- 前台课程详情页优先展示后台维护的成交主视觉、卖点和已审核图文资产，缺省时继续使用本地商品化素材 fallback。
-- `course_product_contents` 已新增 `sales_assets` JSONB 字段，PostgreSQL Store 和 schema 测试同步覆盖。
+- 课程素材共享契约已建立，覆盖资产类型、来源类型、文件元数据、用途、章节归属、上传者、合规状态和下载开关。
+- 服务端新增课程素材资产 Store，开发期使用 `.hongboshi-data/course-product-assets.json` 保存素材元数据，素材登记和合规处理均写入课程商品审计。
+- 后台 API 已支持素材读取、登记和合规处理，并按 `catalog:read`、`catalog:edit`、`catalog:review` 拆分权限。
+- `/admin/courses` 详情编辑器已加入素材资产库，运营可登记素材 URL、审核通过/驳回，并把已通过图片引用为成交主视觉或成交图文资产。
+- 数据库准备层已扩展课程商品审计动作约束，运行时配置新增 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=memory/file`。
 
-### 用户端待续：CUX-I-B 课程素材文件上传、对象存储与合规审核队列
+### 用户端待续：CUX-I-B-B 课程素材真实文件上传、本地对象存储适配与受控下载
 
 业务目标：
 
-CUX-I-A 先用 URL 字段打通“后台维护 -> Store 持久化 -> 前台展示”的稳定链路。下一步要把真实课程素材从手填 URL 升级为受控上传资产：运营可上传主视觉、详情图、练习资料或讲义文件，素材进入合规状态机，通过后才能进入前台详情展示或学习页下载。
+CUX-I-B-A 先把“素材元数据 -> 合规状态机 -> 后台可引用 -> 审计可追踪”打通。下一步要把当前手填 URL 的登记方式升级为真实文件上传和受控分发：运营上传主视觉、详情图、讲义、练习表、音频或视频后进入本地对象存储适配，合规通过后才能被课程详情展示或学习页资料下载消费。
 
 建议实施范围：
 
-- 建立课程素材共享契约，区分 `detail_image`、`proof_image`、`chapter_material`、`worksheet`、`audio`、`video` 等资产类型，保存文件名、MIME、大小、用途、课程/章节归属、合规状态和上传者。
-- 服务端新增素材 Store 与开发期本地文件/JSON 实现，先保留对象存储适配接口；后台上传接口只允许运营/管理员调用，并校验文件类型、大小和课程归属。
-- `/admin/courses` 详情编辑器从“图片 URL”升级为可选择已上传素材，素材上传后默认 `pending`，通过合规确认后才能被前台 `CourseDetail` 和学习页资料下载消费。
-- 前台课程详情只展示 `approved/not_required` 的详情图文资产；学习页资料下载只对已解锁课程开放，并由服务端返回受控下载 URL 或开发期文件流。
-- 补充测试覆盖上传参数校验、权限失败、素材状态机、前台过滤待审素材、未解锁课程不能下载章节资料；更新数据库准备文档和连续执行状态。
+- 新增课程素材文件上传接口，支持 `multipart/form-data` 或明确的开发期文件适配层，校验文件类型、大小、课程归属、章节归属和操作者权限。
+- 建立本地对象存储 adapter，把文件写入 `.hongboshi-data/course-product-assets/files` 或同级受控目录，素材 Store 只保存 `storageKey`、文件元数据和合规状态，不把二进制内容写进 JSON。
+- 后台 `/admin/courses` 素材资产库从“素材 URL”升级为真实文件选择与上传进度；上传后默认 `pending`，合规通过后才允许引用到详情成交图文或开启学习资料下载。
+- 新增受控下载接口：学习页章节资料仅对已登录且已解锁课程用户开放，服务端校验课程权益、素材合规状态、下载开关和章节归属后返回开发期文件流或短期下载 URL。
+- 前台课程详情继续只展示已写入详情内容且 `approved/not_required` 的图片资产；学习页资料区改为优先读取后台已通过素材，待审、驳回或未解锁状态不暴露下载地址。
+- 补充测试覆盖文件类型/大小校验、权限失败、上传状态机、合规过滤、未解锁下载拦截、已解锁下载成功和 JSON Store 与本地文件 adapter 的错误恢复；更新数据库准备文档和连续执行状态。
 
 ## 执行不变量
 
@@ -595,4 +614,4 @@ CUX-I-A 先用 URL 字段打通“后台维护 -> Store 持久化 -> 前台展�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 CUX-I-B 课程素材文件上传、对象存储与合规审核队列，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 CUX-I-B-B 课程素材真实文件上传、本地对象存储适配与受控下载，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

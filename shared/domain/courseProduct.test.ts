@@ -3,6 +3,9 @@ import {
   ALL_COURSE_PRODUCT_CATEGORY,
   ALL_COURSE_PRODUCT_STATUS,
   CourseProductPriceUpdateRequestSchema,
+  CourseProductAssetComplianceUpdateRequestSchema,
+  CourseProductAssetListResultSchema,
+  CourseProductAssetUploadRequestSchema,
   CourseProductBasicInfoUpdateRequestSchema,
   CourseProductContentUpdateRequestSchema,
   CourseProductDetailContentSchema,
@@ -133,6 +136,71 @@ describe("course product domain contract", () => {
         reason: "短",
       }).success
     ).toBe(false);
+  });
+
+  it("validates course product asset upload and compliance contracts", () => {
+    const uploadRequest = CourseProductAssetUploadRequestSchema.parse({
+      kind: "detail_image",
+      title: "课程详情主视觉",
+      sourceUrl: "https://cdn.example.com/course/detail.jpg",
+      fileName: "detail.jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 188000,
+      usage: "showcase",
+      altText: "课程详情图",
+      reason: "新增课程详情成交主视觉",
+    });
+
+    expect(uploadRequest.usage).toBe("showcase");
+    expect(
+      CourseProductAssetUploadRequestSchema.safeParse({
+        ...uploadRequest,
+        mimeType: "application/pdf",
+      }).success
+    ).toBe(false);
+
+    const compliance = CourseProductAssetComplianceUpdateRequestSchema.parse({
+      complianceStatus: "approved",
+      downloadEnabled: false,
+      reason: "图片来源和内容已完成合规确认",
+    });
+
+    expect(compliance.complianceStatus).toBe("approved");
+  });
+
+  it("validates course product asset list summaries", () => {
+    const parsed = CourseProductAssetListResultSchema.parse({
+      productId: "course_product_1",
+      items: [
+        {
+          id: "asset_course_product_1_detail_image_20260520",
+          productId: "course_product_1",
+          kind: "detail_image",
+          title: "课程详情主视觉",
+          fileName: "detail.jpg",
+          mimeType: "image/jpeg",
+          sizeBytes: 188000,
+          sourceType: "external_url",
+          storageKey: "course-assets/course_product_1/detail.jpg",
+          publicUrl: "https://cdn.example.com/course/detail.jpg",
+          usage: "showcase",
+          complianceStatus: "pending",
+          downloadEnabled: false,
+          uploadedBy: "operator_1",
+          uploadedAt: "2026-05-20T09:00:00+08:00",
+          updatedAt: "2026-05-20T09:00:00+08:00",
+        },
+      ],
+      summary: {
+        totalCount: 1,
+        pendingCount: 1,
+        approvedCount: 0,
+        rejectedCount: 0,
+      },
+    });
+
+    expect(parsed.items[0]?.complianceStatus).toBe("pending");
+    expect(parsed.summary.pendingCount).toBe(1);
   });
 
   it("validates the first course detail content contract", () => {

@@ -19,6 +19,7 @@ describe("database runtime persistence config", () => {
       HONGBOSHI_COURSE_ACCESS_STORE: "file",
       HONGBOSHI_COURSE_PRODUCT_STORE: "file",
       HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE: "file",
+      HONGBOSHI_COURSE_PRODUCT_ASSET_STORE: "file",
       HONGBOSHI_RISK_EVENT_STORE: "memory",
       HONGBOSHI_RISK_REVIEW_STORE: "file",
       HONGBOSHI_RISK_SOP_STORE: "file",
@@ -45,6 +46,11 @@ describe("database runtime persistence config", () => {
         store => store.envName === "HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE"
       )?.mode
     ).toBe("postgres");
+    expect(
+      config.stores.find(
+        store => store.envName === "HONGBOSHI_COURSE_PRODUCT_ASSET_STORE"
+      )?.mode
+    ).toBe("file");
     expect(
       config.stores.find(
         store => store.envName === "HONGBOSHI_FINANCE_RULE_STORE"

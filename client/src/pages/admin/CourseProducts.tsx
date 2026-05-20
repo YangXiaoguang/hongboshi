@@ -28,6 +28,7 @@ import {
   ALL_COURSE_PRODUCT_CATEGORY,
   ALL_COURSE_PRODUCT_STATUS,
   COURSE_CATEGORIES,
+  COURSE_PRODUCT_ASSET_KINDS,
   COURSE_PRODUCT_PAGE_SIZE,
   COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES,
   COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES,
@@ -37,6 +38,8 @@ import {
   CourseProductDetailContentSchema,
   evaluateCourseProductContentQuality,
   type CourseCategory,
+  type CourseProductAsset,
+  type CourseProductAssetKind,
   type CourseProductAuditEvent,
   type CourseProductContentAssetReviewStatus,
   type CourseProductBasicInfoUpdateRequest,
@@ -129,6 +132,16 @@ type ContentFormState = {
   chapters: ContentChapterFormState[];
   reason: string;
 };
+type AssetFormState = {
+  title: string;
+  kind: CourseProductAssetKind;
+  sourceUrl: string;
+  mimeType: string;
+  sizeBytes: string;
+  altText: string;
+  note: string;
+  reason: string;
+};
 
 const statusFilters: {
   value: CourseProductStatusFilter;
@@ -193,6 +206,15 @@ const assetReviewStatusCopy = {
   approved: "已通过",
   rejected: "已驳回",
 } satisfies Record<CourseProductContentAssetReviewStatus, string>;
+
+const courseProductAssetKindCopy = {
+  detail_image: "详情主图",
+  proof_image: "证明图片",
+  chapter_material: "章节资料",
+  worksheet: "练习表",
+  audio: "音频",
+  video: "视频",
+} satisfies Record<CourseProductAssetKind, string>;
 
 const merchandisingAssetUsageCopy = {
   showcase: "主视觉",
@@ -563,6 +585,27 @@ function createMerchandisingAsset(
   };
 }
 
+function createAssetFormState(): AssetFormState {
+  return {
+    title: "",
+    kind: "detail_image",
+    sourceUrl: "",
+    mimeType: "image/jpeg",
+    sizeBytes: "",
+    altText: "",
+    note: "",
+    reason: "新增课程素材资产",
+  };
+}
+
+function isImageCourseAsset(asset: CourseProductAsset) {
+  return asset.kind === "detail_image" || asset.kind === "proof_image";
+}
+
+function isUsableAssetUrl(value: string | undefined) {
+  return Boolean(value && /^https?:\/\//i.test(value));
+}
+
 function AuditTrail({ events }: { events: CourseProductAuditEvent[] }) {
   const recentEvents = events.slice(0, 5);
 
@@ -866,6 +909,10 @@ export default function CourseProducts() {
   });
   const [contentEditor, setContentEditor] = useState<CourseProductListItem>();
   const [isContentLoading, setIsContentLoading] = useState(false);
+  const [contentAssets, setContentAssets] = useState<CourseProductAsset[]>([]);
+  const [mutatingAssetId, setMutatingAssetId] = useState<string>();
+  const [assetForm, setAssetForm] =
+    useState<AssetFormState>(createAssetFormState);
   const [contentForm, setContentForm] = useState<ContentFormState>({
     summary: "",
     targetAudienceText: "",
@@ -945,11 +992,16 @@ export default function CourseProducts() {
       setActionError(undefined);
       setActionMessage(undefined);
       setContentEditor(item);
+      setContentAssets([]);
+      setAssetForm(createAssetFormState());
       setIsContentLoading(true);
       try {
-        const content =
-          await httpCourseProductRepository.loadCourseProductContent(item.id);
+        const [content, assets] = await Promise.all([
+          httpCourseProductRepository.loadCourseProductContent(item.id),
+          httpCourseProductRepository.loadCourseProductAssets(item.id),
+        ]);
         setContentForm(contentFormFromDetail(content));
+        setContentAssets(assets.items);
       } catch (err) {
         setActionError(
           err instanceof Error ? err.message : "课程商品详情内容读取失败"
@@ -1214,6 +1266,148 @@ export default function CourseProducts() {
       },
     }));
   }, []);
+
+  const applyAssetToMerchandising = useCallback(
+    (
+      asset: CourseProductAsset,
+      usage: CourseProductMerchandisingAssetUsage
+    ) => {
+      if (!isUsableAssetUrl(asset.publicUrl)) {
+        setActionError("当前详情图文只支持 http(s) 素材地址");
+        return;
+      }
+
+      setActionError(undefined);
+      setContentForm(current => {
+        if (usage === "showcase") {
+          return {
+            ...current,
+            merchandising: {
+              ...current.merchandising,
+              showcaseImageUrl: asset.publicUrl ?? "",
+              showcaseImageAlt:
+                asset.altText || current.merchandising.showcaseImageAlt,
+            },
+          };
+        }
+
+        const nextAsset: ContentMerchandisingAssetFormState = {
+          id: asset.id,
+          title: asset.title,
+          imageUrl: asset.publicUrl ?? "",
+          altText: asset.altText ?? "",
+          usage,
+          complianceStatus: asset.complianceStatus,
+          note: asset.note ?? "",
+        };
+
+        return {
+          ...current,
+          merchandising: {
+            ...current.merchandising,
+            imageAssets: [
+              ...current.merchandising.imageAssets.filter(
+                item => item.id !== asset.id
+              ),
+              nextAsset,
+            ],
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const submitAssetUpload = useCallback(async () => {
+    if (!contentEditor) return;
+    if (!catalogPermissions.canEdit) {
+      setActionError("当前账号暂无课程商品编辑权限");
+      return;
+    }
+
+    const sizeBytes = assetForm.sizeBytes.trim()
+      ? Number(assetForm.sizeBytes)
+      : undefined;
+    if (
+      sizeBytes !== undefined &&
+      (!Number.isInteger(sizeBytes) || sizeBytes < 0)
+    ) {
+      setActionError("请填写有效的素材大小");
+      return;
+    }
+
+    setMutatingAssetId("upload");
+    setActionError(undefined);
+    setActionMessage(undefined);
+
+    try {
+      const result = await httpCourseProductRepository.uploadCourseProductAsset(
+        contentEditor.id,
+        {
+          title: assetForm.title,
+          kind: assetForm.kind,
+          sourceUrl: assetForm.sourceUrl,
+          mimeType: assetForm.mimeType,
+          sizeBytes,
+          altText: assetForm.altText.trim() ? assetForm.altText : undefined,
+          note: assetForm.note.trim() ? assetForm.note : undefined,
+          reason: assetForm.reason,
+        }
+      );
+      setContentAssets(result.assets);
+      setAssetForm(createAssetFormState());
+      setActionMessage("课程素材已登记，待合规确认后可用于前台展示");
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "课程素材上传失败");
+    } finally {
+      setMutatingAssetId(undefined);
+    }
+  }, [assetForm, catalogPermissions.canEdit, contentEditor]);
+
+  const updateAssetCompliance = useCallback(
+    async (
+      asset: CourseProductAsset,
+      complianceStatus: "approved" | "rejected"
+    ) => {
+      if (!contentEditor) return;
+      if (!catalogPermissions.canReview) {
+        setActionError("当前账号暂无课程商品审核权限");
+        return;
+      }
+
+      setMutatingAssetId(asset.id);
+      setActionError(undefined);
+      setActionMessage(undefined);
+
+      try {
+        const result =
+          await httpCourseProductRepository.updateCourseProductAssetCompliance(
+            contentEditor.id,
+            asset.id,
+            {
+              complianceStatus,
+              reason:
+                complianceStatus === "approved"
+                  ? "素材来源和内容已完成合规确认"
+                  : "素材未通过合规检查",
+            }
+          );
+        setContentAssets(result.assets);
+        setActionMessage(
+          complianceStatus === "approved"
+            ? "课程素材已通过合规确认"
+            : "课程素材已标记为驳回"
+        );
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程素材合规处理失败"
+        );
+      } finally {
+        setMutatingAssetId(undefined);
+      }
+    },
+    [catalogPermissions.canReview, contentEditor]
+  );
 
   const addContentChapter = useCallback(() => {
     if (!contentEditor) return;
@@ -2026,6 +2220,219 @@ export default function CourseProducts() {
                       <Plus className="h-4 w-4" />
                       添加图文资产
                     </button>
+                  </div>
+
+                  <div className="mt-4 rounded-lg border border-[#E8DED0] bg-[#FBF7EF] p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-[#41524B]">
+                          素材资产库
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                          先登记课程素材，合规通过后可一键引用到详情页成交图文。
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#7D746B]">
+                        {contentAssets.length} 个素材
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 lg:grid-cols-[0.8fr_130px_minmax(0,1fr)]">
+                      <input
+                        value={assetForm.title}
+                        onChange={event =>
+                          setAssetForm(current => ({
+                            ...current,
+                            title: event.target.value,
+                          }))
+                        }
+                        placeholder="素材标题"
+                        className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                      />
+                      <select
+                        value={assetForm.kind}
+                        onChange={event =>
+                          setAssetForm(current => ({
+                            ...current,
+                            kind: event.target.value as CourseProductAssetKind,
+                            mimeType:
+                              event.target.value === "detail_image" ||
+                              event.target.value === "proof_image"
+                                ? "image/jpeg"
+                                : "application/pdf",
+                          }))
+                        }
+                        className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                      >
+                        {COURSE_PRODUCT_ASSET_KINDS.map(kind => (
+                          <option key={kind} value={kind}>
+                            {courseProductAssetKindCopy[kind]}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={assetForm.sourceUrl}
+                        onChange={event =>
+                          setAssetForm(current => ({
+                            ...current,
+                            sourceUrl: event.target.value,
+                          }))
+                        }
+                        placeholder="素材 URL，下一步接入真实文件上传"
+                        className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                      />
+                    </div>
+
+                    <div className="mt-3 grid gap-3 lg:grid-cols-[150px_130px_1fr_auto]">
+                      <input
+                        value={assetForm.mimeType}
+                        onChange={event =>
+                          setAssetForm(current => ({
+                            ...current,
+                            mimeType: event.target.value,
+                          }))
+                        }
+                        placeholder="MIME"
+                        className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                      />
+                      <input
+                        value={assetForm.sizeBytes}
+                        onChange={event =>
+                          setAssetForm(current => ({
+                            ...current,
+                            sizeBytes: event.target.value,
+                          }))
+                        }
+                        placeholder="大小 bytes"
+                        className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                      />
+                      <input
+                        value={assetForm.reason}
+                        onChange={event =>
+                          setAssetForm(current => ({
+                            ...current,
+                            reason: event.target.value,
+                          }))
+                        }
+                        placeholder="登记原因"
+                        className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void submitAssetUpload()}
+                        disabled={
+                          assetForm.title.trim().length < 2 ||
+                          assetForm.sourceUrl.trim().length < 8 ||
+                          assetForm.reason.trim().length < 4 ||
+                          Boolean(mutatingAssetId)
+                        }
+                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-3 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {mutatingAssetId === "upload" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Plus className="h-4 w-4" />
+                        )}
+                        登记
+                      </button>
+                    </div>
+
+                    {contentAssets.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {contentAssets.slice(0, 5).map(asset => (
+                          <div
+                            key={asset.id}
+                            className="grid gap-3 rounded-lg bg-white px-3 py-3 text-xs text-[#7D746B] lg:grid-cols-[minmax(0,1fr)_120px_auto] lg:items-center"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#243B35]">
+                                {asset.title}
+                              </p>
+                              <p className="mt-1 truncate">
+                                {courseProductAssetKindCopy[asset.kind]} ·{" "}
+                                {asset.fileName} ·{" "}
+                                {assetReviewStatusCopy[asset.complianceStatus]}
+                              </p>
+                            </div>
+                            <span
+                              className={`w-fit rounded-full px-2.5 py-1 font-semibold ${
+                                asset.complianceStatus === "approved"
+                                  ? "bg-[#EDF5EF] text-[#41675A]"
+                                  : asset.complianceStatus === "rejected"
+                                    ? "bg-[#FFF0EA] text-[#AD503A]"
+                                    : "bg-[#F3E9D8] text-[#8C6E4A]"
+                              }`}
+                            >
+                              {assetReviewStatusCopy[asset.complianceStatus]}
+                            </span>
+                            <div className="flex flex-wrap gap-2 lg:justify-end">
+                              {isImageCourseAsset(asset) &&
+                                isUsableAssetUrl(asset.publicUrl) && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        applyAssetToMerchandising(
+                                          asset,
+                                          "showcase"
+                                        )
+                                      }
+                                      className="h-8 rounded-lg border border-[#D8CEC0] px-2.5 font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                                    >
+                                      设主视觉
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        applyAssetToMerchandising(
+                                          asset,
+                                          asset.kind === "proof_image"
+                                            ? "proof"
+                                            : "gallery"
+                                        )
+                                      }
+                                      className="h-8 rounded-lg border border-[#D8CEC0] px-2.5 font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                                    >
+                                      加入成交图
+                                    </button>
+                                  </>
+                                )}
+                              {catalogPermissions.canReview &&
+                                asset.complianceStatus === "pending" && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void updateAssetCompliance(
+                                          asset,
+                                          "approved"
+                                        )
+                                      }
+                                      disabled={mutatingAssetId === asset.id}
+                                      className="h-8 rounded-lg bg-[#41675A] px-2.5 font-semibold text-white transition hover:bg-[#315047] disabled:opacity-50"
+                                    >
+                                      通过
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void updateAssetCompliance(
+                                          asset,
+                                          "rejected"
+                                        )
+                                      }
+                                      disabled={mutatingAssetId === asset.id}
+                                      className="h-8 rounded-lg bg-[#FFF0EA] px-2.5 font-semibold text-[#AD503A] transition hover:bg-[#FFE8DE] disabled:opacity-50"
+                                    >
+                                      驳回
+                                    </button>
+                                  </>
+                                )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">

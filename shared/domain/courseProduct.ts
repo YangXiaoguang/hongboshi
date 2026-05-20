@@ -46,6 +46,8 @@ export const COURSE_PRODUCT_AUDIT_ACTIONS = [
   "info_update",
   "review_update",
   "content_update",
+  "asset_upload",
+  "asset_review",
 ] as const;
 
 export const COURSE_PRODUCT_REVIEW_ACTIONS = [
@@ -76,11 +78,28 @@ export const COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES = [
   "rejected",
 ] as const;
 
+export const COURSE_PRODUCT_ASSET_KINDS = [
+  "detail_image",
+  "proof_image",
+  "chapter_material",
+  "worksheet",
+  "audio",
+  "video",
+] as const;
+
+export const COURSE_PRODUCT_ASSET_SOURCE_TYPES = [
+  "external_url",
+  "inline_upload",
+  "object_storage",
+] as const;
+
 export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
   "showcase",
   "proof",
   "gallery",
 ] as const;
+
+export const COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES = 20 * 1024 * 1024;
 
 export const COURSE_PRODUCT_CONTENT_QUALITY_ISSUE_CODES = [
   "schema_invalid",
@@ -128,6 +147,12 @@ export const CourseProductContentMaterialStatusSchema = z.enum(
 
 export const CourseProductContentAssetReviewStatusSchema = z.enum(
   COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES
+);
+
+export const CourseProductAssetKindSchema = z.enum(COURSE_PRODUCT_ASSET_KINDS);
+
+export const CourseProductAssetSourceTypeSchema = z.enum(
+  COURSE_PRODUCT_ASSET_SOURCE_TYPES
 );
 
 export const CourseProductMerchandisingAssetUsageSchema = z.enum(
@@ -206,6 +231,94 @@ export const CourseProductFilterOptionsSchema = z.object({
   categories: z.array(CourseCategorySchema),
   types: z.array(CourseTypeSchema),
   statuses: z.array(CourseProductStatusSchema),
+});
+
+export const CourseProductAssetUrlSchema = z.union([
+  z.string().trim().url(),
+  z.string().trim().startsWith("data:"),
+]);
+
+export const CourseProductAssetSchema = z.object({
+  id: EntityIdSchema,
+  productId: EntityIdSchema,
+  chapterId: EntityIdSchema.optional(),
+  kind: CourseProductAssetKindSchema,
+  title: z.string().trim().min(2).max(100),
+  fileName: z.string().trim().min(2).max(160),
+  mimeType: z.string().trim().min(3).max(120),
+  sizeBytes: z.number().int().min(0).max(COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES),
+  sourceType: CourseProductAssetSourceTypeSchema,
+  storageKey: z.string().trim().min(4).max(260).optional(),
+  publicUrl: CourseProductAssetUrlSchema.optional(),
+  usage: CourseProductMerchandisingAssetUsageSchema.optional(),
+  altText: z.string().trim().max(120).optional(),
+  note: z.string().trim().max(240).optional(),
+  complianceStatus:
+    CourseProductContentAssetReviewStatusSchema.default("pending"),
+  downloadEnabled: z.boolean().default(false),
+  uploadedBy: EntityIdSchema,
+  uploadedAt: DateTimeLikeSchema,
+  reviewedBy: EntityIdSchema.optional(),
+  reviewedAt: DateTimeLikeSchema.optional(),
+  updatedAt: DateTimeLikeSchema,
+});
+
+export const CourseProductAssetUploadRequestSchema = z
+  .object({
+    kind: CourseProductAssetKindSchema,
+    title: z.string().trim().min(2).max(100),
+    sourceUrl: CourseProductAssetUrlSchema,
+    fileName: z.string().trim().min(2).max(160).optional(),
+    mimeType: z.string().trim().min(3).max(120).optional(),
+    sizeBytes: z
+      .number()
+      .int()
+      .min(0)
+      .max(COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES)
+      .optional(),
+    usage: CourseProductMerchandisingAssetUsageSchema.optional(),
+    chapterId: EntityIdSchema.optional(),
+    altText: z.string().trim().max(120).optional(),
+    note: z.string().trim().max(240).optional(),
+    reason: z.string().trim().min(4).max(240),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      (value.kind === "detail_image" || value.kind === "proof_image") &&
+      !value.mimeType?.startsWith("image/") &&
+      !value.sourceUrl.startsWith("data:image/")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["mimeType"],
+        message: "详情图文素材必须是图片类型",
+      });
+    }
+  });
+
+export const CourseProductAssetComplianceUpdateRequestSchema = z.object({
+  complianceStatus: z.enum(["not_required", "approved", "rejected"]),
+  downloadEnabled: z.boolean().optional(),
+  note: z.string().trim().max(240).optional(),
+  reason: z.string().trim().min(4).max(240),
+});
+
+export const CourseProductAssetListResultSchema = z.object({
+  productId: EntityIdSchema,
+  items: z.array(CourseProductAssetSchema),
+  summary: z.object({
+    totalCount: z.number().int().nonnegative(),
+    pendingCount: z.number().int().nonnegative(),
+    approvedCount: z.number().int().nonnegative(),
+    rejectedCount: z.number().int().nonnegative(),
+  }),
+});
+
+export const CourseProductAssetMutationResultSchema = z.object({
+  asset: CourseProductAssetSchema,
+  assets: z.array(CourseProductAssetSchema),
+  auditEvent: CourseProductAuditEventSchema,
+  auditEvents: z.array(CourseProductAuditEventSchema),
 });
 
 export const CourseProductListResultSchema = z.object({
@@ -570,6 +683,25 @@ export type CourseProductContentMaterialStatus = z.infer<
 >;
 export type CourseProductContentAssetReviewStatus = z.infer<
   typeof CourseProductContentAssetReviewStatusSchema
+>;
+export type CourseProductAssetKind = z.infer<
+  typeof CourseProductAssetKindSchema
+>;
+export type CourseProductAssetSourceType = z.infer<
+  typeof CourseProductAssetSourceTypeSchema
+>;
+export type CourseProductAsset = z.infer<typeof CourseProductAssetSchema>;
+export type CourseProductAssetUploadRequest = z.infer<
+  typeof CourseProductAssetUploadRequestSchema
+>;
+export type CourseProductAssetComplianceUpdateRequest = z.infer<
+  typeof CourseProductAssetComplianceUpdateRequestSchema
+>;
+export type CourseProductAssetListResult = z.infer<
+  typeof CourseProductAssetListResultSchema
+>;
+export type CourseProductAssetMutationResult = z.infer<
+  typeof CourseProductAssetMutationResultSchema
 >;
 export type CourseProductMerchandisingAssetUsage = z.infer<
   typeof CourseProductMerchandisingAssetUsageSchema

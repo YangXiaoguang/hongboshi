@@ -7,15 +7,19 @@ import {
 import {
   catalogOperationPermissions,
   getCourseProductAdminListPayload,
+  getCourseProductAssetsPayload,
   getCourseProductContentQualityPayload,
   getCourseProductContentPayload,
+  updateCourseProductAssetCompliancePayload,
   updateCourseProductBasicInfoPayload,
   updateCourseProductContentPayload,
   updateCourseProductPricePayload,
   updateCourseProductReviewPayload,
   updateCourseProductStatusPayload,
+  uploadCourseProductAssetPayload,
 } from "./catalogApi";
 import { InMemoryCourseProductContentStore } from "./courseProductContentStore";
+import { InMemoryCourseProductAssetStore } from "./courseProductAssetStore";
 
 const products = courses.slice(0, 4).map(courseProductFromCourse);
 const createStore = () => new InMemoryCourseProductStore(products);
@@ -46,6 +50,9 @@ describe("catalog admin api payloads", () => {
       list: "catalog:read",
       contentRead: "catalog:read",
       contentQualityRead: "catalog:read",
+      assetRead: "catalog:read",
+      assetUpload: "catalog:edit",
+      assetReview: "catalog:review",
       basicInfoUpdate: "catalog:edit",
       contentUpdate: "catalog:edit",
       reviewUpdate: "catalog:review",
@@ -81,9 +88,16 @@ describe("catalog admin api payloads", () => {
   it("allows read-only catalog actors to inspect but not mutate products", async () => {
     const productStore = createStore();
     const contentStore = new InMemoryCourseProductContentStore();
-    const actor = { id: "catalog_viewer_1", roles: ["catalog_viewer" as const] };
+    const actor = {
+      id: "catalog_viewer_1",
+      roles: ["catalog_viewer" as const],
+    };
 
-    const list = await getCourseProductAdminListPayload(actor, {}, productStore);
+    const list = await getCourseProductAdminListPayload(
+      actor,
+      {},
+      productStore
+    );
     const content = await getCourseProductContentPayload(
       actor,
       products[0].id,
@@ -383,6 +397,84 @@ describe("catalog admin api payloads", () => {
     if (payload.body.ok) {
       expect(payload.body.data.summary.totalCount).toBe(products.length);
       expect(payload.body.data.items[0]?.quality.ready).toBe(true);
+    }
+  });
+
+  it("manages product asset upload and compliance review with permissions", async () => {
+    const productStore = createStore();
+    const assetStore = new InMemoryCourseProductAssetStore();
+
+    const anonymous = await getCourseProductAssetsPayload(
+      null,
+      products[0].id,
+      productStore,
+      assetStore
+    );
+    expect(anonymous.status).toBe(401);
+
+    const uploaded = await uploadCourseProductAssetPayload(
+      { id: "operator_1", roles: ["operator"] },
+      products[0].id,
+      {
+        kind: "detail_image",
+        title: "详情主视觉",
+        sourceUrl: "https://cdn.example.com/course/detail.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 188000,
+        usage: "showcase",
+        reason: "新增课程详情主视觉",
+      },
+      productStore,
+      assetStore,
+      "2026-05-20T09:00:00.000Z"
+    );
+
+    expect(uploaded.status).toBe(200);
+    expect(uploaded.body.ok).toBe(true);
+    if (!uploaded.body.ok) return;
+    expect(uploaded.body.data.asset.complianceStatus).toBe("pending");
+    expect(uploaded.body.data.auditEvent.action).toBe("asset_upload");
+
+    const list = await getCourseProductAssetsPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      products[0].id,
+      productStore,
+      assetStore
+    );
+    expect(list.status).toBe(200);
+    expect(list.body.ok && list.body.data.summary.pendingCount).toBe(1);
+
+    const deniedReview = await updateCourseProductAssetCompliancePayload(
+      { id: "member_1", roles: ["member"] },
+      products[0].id,
+      uploaded.body.data.asset.id,
+      {
+        complianceStatus: "approved",
+        reason: "只读审核权限不足",
+      },
+      productStore,
+      assetStore
+    );
+    expect(deniedReview.status).toBe(403);
+
+    const reviewed = await updateCourseProductAssetCompliancePayload(
+      { id: "operator_2", roles: ["operator"] },
+      products[0].id,
+      uploaded.body.data.asset.id,
+      {
+        complianceStatus: "approved",
+        reason: "图片来源和内容已完成合规确认",
+      },
+      productStore,
+      assetStore,
+      "2026-05-20T10:00:00.000Z"
+    );
+
+    expect(reviewed.status).toBe(200);
+    expect(reviewed.body.ok).toBe(true);
+    if (reviewed.body.ok) {
+      expect(reviewed.body.data.asset.complianceStatus).toBe("approved");
+      expect(reviewed.body.data.auditEvent.action).toBe("asset_review");
     }
   });
 
