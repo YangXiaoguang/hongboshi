@@ -113,6 +113,7 @@ export const COURSE_PRODUCT_ASSET_REFERENCE_TYPES = [
 export const COURSE_PRODUCT_ASSET_BACKFILL_SOURCES = [
   "json_asset_store",
   "content_material_placeholders",
+  "json_asset_store_and_content_placeholders",
 ] as const;
 
 export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [

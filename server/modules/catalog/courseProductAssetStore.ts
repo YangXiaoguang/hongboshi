@@ -20,6 +20,7 @@ import {
   type CourseProductAuditEvent,
   type CourseProductListItem,
 } from "../../../shared/domain";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
 import {
   getCourseProductStore,
   type CourseProductStore,
@@ -28,6 +29,7 @@ import {
   buildCourseProductAssetObjectKey,
   calculateCourseProductAssetContentHash,
 } from "./courseProductAssetObjectStorage";
+import { PostgresCourseProductAssetStore } from "./postgresCourseProductAssetStore";
 
 const CourseProductAssetStoreFileSchema = z.object({
   version: z.literal(1),
@@ -227,6 +229,15 @@ export function createDefaultCourseProductAssetStore(): CourseProductAssetStore 
     process.env.HONGBOSHI_COURSE_PRODUCT_ASSET_STORE === "memory"
   ) {
     return new InMemoryCourseProductAssetStore();
+  }
+
+  if (process.env.HONGBOSHI_COURSE_PRODUCT_ASSET_STORE === "postgres") {
+    if (!getDatabaseUrl()) {
+      throw new Error(
+        "HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres requires DATABASE_URL"
+      );
+    }
+    return new PostgresCourseProductAssetStore(getSharedPostgresPool());
   }
 
   return new JsonFileCourseProductAssetStore();

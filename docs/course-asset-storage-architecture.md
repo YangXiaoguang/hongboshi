@@ -46,13 +46,13 @@
 ## 兼容边界
 
 - 当前不删除 `.hongboshi-data/course-product-assets.json`。
-- 当前不强制开启 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres`。
+- 当前支持显式开启 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres`，但默认开发路径仍保持 JSON 文件 Store，避免在未回填时误切换。
 - 当前不把学习页下载改为签名 URL 直连对象存储，仍走 `/api/courses/:courseId/assets/:assetId/download` 做登录、权益、合规和下载开关校验。
 - 当前不允许前端直接修改合规状态、下载开关或对象 key。
 
 ## 后续切片
 
-- `CUX-I-B-B-D`：实现 `PostgresCourseProductAssetStore`，让素材列表、上传登记、合规审核和后台下载可切换 PostgreSQL。
-- `CUX-I-B-B-E`：实现素材回填脚本，先 dry-run，再允许管理员确认写库。
+- `CUX-I-B-B-D`：已实现 `PostgresCourseProductAssetStore`，让素材列表、上传登记、合规审核和后台下载可显式切换 PostgreSQL；已实现素材回填 dry-run service，可扫描 JSON Store 与章节素材占位并输出扫描数、可回填素材数、引用数、跳过数和原因。
+- `CUX-I-B-B-E`：实现素材回填写入任务，允许管理员在 dry-run 结果确认后把素材对象、素材元数据和引用关系写入 PostgreSQL。
 - `CUX-I-B-B-F`：接入正式对象存储 provider，并把本地签名 URL 替换为真实短期签名 URL。
 - `CUX-I-B-B-G`：增加素材治理后台，包括未引用素材、重复内容 hash、待审队列、过期软删和引用报表。

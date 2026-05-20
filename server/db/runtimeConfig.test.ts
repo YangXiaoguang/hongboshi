@@ -90,4 +90,18 @@ describe("database runtime persistence config", () => {
       } as NodeJS.ProcessEnv)
     ).toThrow("持久化配置不合法");
   });
+
+  it("allows explicit postgres course asset store when a database url is set", () => {
+    const config = resolvePersistenceConfig({
+      DATABASE_URL: "postgres://localhost/hongboshi",
+      HONGBOSHI_COURSE_PRODUCT_ASSET_STORE: "postgres",
+    } as NodeJS.ProcessEnv);
+
+    expect(config.issues).toEqual([]);
+    expect(
+      config.stores.find(
+        store => store.envName === "HONGBOSHI_COURSE_PRODUCT_ASSET_STORE"
+      )?.mode
+    ).toBe("postgres");
+  });
 });
