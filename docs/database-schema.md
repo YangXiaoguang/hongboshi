@@ -1,6 +1,6 @@
 # 数据库 Schema 准备说明
 
-本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。课程详情内容表已补充 `sales_assets`，用于承载课程详情页成交主视觉、成交卖点和运营图文资产；课程素材资产已先使用独立 JSON Store 保存资产元数据和合规状态，文件二进制由本地对象存储 adapter 写入 `.hongboshi-data/course-product-assets/files`，后续再补素材专表和正式对象存储适配。会员权益表已补充来源字段，用于区分会员 checkout 订单、后台人工会员动作和旧的直接开通来源，支撑会员退款后的安全权益回收。课程学习记录已新增独立内存/JSON Store，先保存章节进度、练习记录、完成快照和阶段证明预览准备字段，后续再补专用 PostgreSQL 表。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。M9-A/M9-B 审计中心仍是只读聚合模型，列表、详情和 CSV 导出直接消费各业务 Store/表中的既有审计事实。M9-C 新增统一审计 Store 方案与 `audit_center_archived_events` 只追加归档表草案；M9-D 新增 Archive Store 和手动归档任务；M9-E 新增归档后台入口和只读校验接口，但当前仍不把业务写动作或审计真相源切换到该表。
+本项目下一阶段目标是把开发期 JSON/内存 Store 逐步替换为 PostgreSQL。当前已经先落下数据库准备层，避免后续在接入 ORM 或迁移工具时重新讨论核心业务表；课程商品、课程详情内容、会员权益操作审计、订单操作审计、交易操作审计、风险复核记录、风险 SOP 模板和风险升级队列均已完成开发期 Store、专用 PostgreSQL 表与 Store。课程详情内容表已补充 `sales_assets`，用于承载课程详情页成交主视觉、成交卖点和运营图文资产；章节 `materialPlaceholders` 当前继续保存在课程详情内容 JSONB 中，可记录绑定素材的 `assetId`、同源受控下载 URL、上传人、上传时间、合规状态和下载开关。课程素材资产已先使用独立 JSON Store 保存资产元数据和合规状态，文件二进制由本地对象存储 adapter 写入 `.hongboshi-data/course-product-assets/files`，后续再补素材专表和正式对象存储适配。会员权益表已补充来源字段，用于区分会员 checkout 订单、后台人工会员动作和旧的直接开通来源，支撑会员退款后的安全权益回收。课程学习记录已新增独立内存/JSON Store，先保存章节进度、练习记录、完成快照和阶段证明预览准备字段，后续再补专用 PostgreSQL 表。M5-A 交易流水只读台没有新增数据库表，读取现有 `payment_webhook_events`、`orders`、`order_items`、`order_admin_exception_flags` 等表/Store 投影。M5-C 已把交易退款动作产生的异常工单、操作审计和退款渠道受理摘要纳入独立持久化边界。M8-C 已把风险复核处理记录、SOP 模板和升级队列推进到 PostgreSQL 边界，并预留 M9 审计中心可消费的 actor/resource/action/before/after 投影字段。M9-A/M9-B 审计中心仍是只读聚合模型，列表、详情和 CSV 导出直接消费各业务 Store/表中的既有审计事实。M9-C 新增统一审计 Store 方案与 `audit_center_archived_events` 只追加归档表草案；M9-D 新增 Archive Store 和手动归档任务；M9-E 新增归档后台入口和只读校验接口，但当前仍不把业务写动作或审计真相源切换到该表。
 
 ## 文件位置
 
@@ -98,9 +98,9 @@
 
 `server/modules/catalog/postgresCourseProductStore.ts` 已实现 `course_products` 与 `course_product_audit_events` 的保存、读取、初始化 seed、基础信息/价格/审核/状态更新承载和审计事件读取能力。当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_STORE=postgres` 时，课程商品会写入 PostgreSQL。
 
-`server/modules/catalog/courseProductContentStore.ts` 已实现课程详情内容的内存 Store、JSON 文件 Store 和批量内容质量校验。开发期默认使用 `.hongboshi-data/course-product-content.json` 保存详情摘要、适合人群、章节和素材占位；当设置 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 时可临时切回内存。
+`server/modules/catalog/courseProductContentStore.ts` 已实现课程详情内容的内存 Store、JSON 文件 Store 和批量内容质量校验。开发期默认使用 `.hongboshi-data/course-product-content.json` 保存详情摘要、适合人群、章节和素材占位；素材占位可保存学习页消费的受控下载 URL，但文件事实仍在课程素材资产 Store 与对象存储目录中。当设置 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=memory` 时可临时切回内存。
 
-`server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节、素材占位和 `sales_assets` 成交图文素材；当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
+`server/modules/catalog/postgresCourseProductContentStore.ts` 已实现 `course_product_contents` 的读取、保存和清空能力。表内以 `JSONB` 保存适合人群、章节、素材占位和 `sales_assets` 成交图文素材；章节素材绑定仍作为内容 JSONB 的一部分保存，后续如需素材报表、批量治理或跨课程复用，再拆出素材专表与关联表。当配置 `DATABASE_URL`，且 `HONGBOSHI_COURSE_PRODUCT_CONTENT_STORE=postgres` 时，课程详情内容会写入 PostgreSQL。内容更新会写入课程商品审计事件，并把需要复审的商品回退到未提交审核。
 
 `server/modules/catalog/courseProductAssetStore.ts` 已实现课程素材资产的内存 Store 与 JSON 文件 Store。开发期默认使用 `.hongboshi-data/course-product-assets.json` 保存课程详情主图、证明图片、章节资料、练习表、音频和视频等资产元数据、来源 URL 或 `storageKey`、合规状态、上传人和更新时间；当设置 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=memory` 时可临时切回内存。真实文件上传第一版通过 `LocalCourseProductAssetFileStorage` 写入 `.hongboshi-data/course-product-assets/files`，也可用 `HONGBOSHI_COURSE_PRODUCT_ASSET_FILE_ROOT` 指定受控目录；素材登记、文件上传和合规动作先通过课程商品审计事件落库，后续应新增素材专表、正式对象存储和短期签名 URL。
 

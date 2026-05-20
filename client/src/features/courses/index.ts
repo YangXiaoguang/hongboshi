@@ -3,6 +3,13 @@ export {
   type CourseRepository,
 } from "./api/mockCourseRepository";
 export { httpCourseAccessRepository } from "./api/httpCourseAccessRepository";
+export {
+  CourseAssetDownloadError,
+  getCourseAssetDownloadUrl,
+  getFileNameFromContentDisposition,
+  httpCourseAssetRepository,
+  readCourseAssetDownloadError,
+} from "./api/httpCourseAssetRepository";
 export { httpCourseLearningRecordRepository } from "./api/httpCourseLearningRecordRepository";
 export { httpCourseMarketingRepository } from "./api/httpCourseMarketingRepository";
 export { httpCourseRepository } from "./api/httpCourseRepository";
@@ -182,6 +189,7 @@ export {
   normalizeCoursePracticeState,
   saveCoursePracticeDraft,
   setCoursePracticeCompleted,
+  type CourseChapterMaterialDownload,
   type CourseChapterMaterial,
   type CoursePracticeRecord,
   type CoursePracticeState,

@@ -136,6 +136,7 @@ type ContentFormState = {
 type AssetFormState = {
   title: string;
   kind: CourseProductAssetKind;
+  chapterId: string;
   file?: File;
   sourceUrl: string;
   mimeType: string;
@@ -591,6 +592,7 @@ function createAssetFormState(): AssetFormState {
   return {
     title: "",
     kind: "detail_image",
+    chapterId: "",
     sourceUrl: "",
     mimeType: "image/jpeg",
     sizeBytes: "",
@@ -602,6 +604,40 @@ function createAssetFormState(): AssetFormState {
 
 function isImageCourseAsset(asset: CourseProductAsset) {
   return asset.kind === "detail_image" || asset.kind === "proof_image";
+}
+
+function isDownloadableCourseAsset(asset: CourseProductAsset) {
+  return ["chapter_material", "worksheet", "audio", "video"].includes(
+    asset.kind
+  );
+}
+
+function isApprovedCourseAsset(asset: CourseProductAsset) {
+  return (
+    asset.complianceStatus === "approved" ||
+    asset.complianceStatus === "not_required"
+  );
+}
+
+function isBindableLearningAsset(asset: CourseProductAsset) {
+  return (
+    isDownloadableCourseAsset(asset) &&
+    isApprovedCourseAsset(asset) &&
+    asset.downloadEnabled
+  );
+}
+
+function materialTypeFromAssetKind(
+  kind: CourseProductAssetKind
+): CourseProductContentMaterialType {
+  if (kind === "worksheet") return "exercise";
+  if (kind === "audio") return "audio";
+  if (kind === "video") return "video";
+  return "document";
+}
+
+function courseAssetDownloadUrl(courseId: number, assetId: string) {
+  return `/api/courses/${courseId}/assets/${encodeURIComponent(assetId)}/download`;
 }
 
 function isUsableAssetUrl(value: string | undefined) {
@@ -1211,6 +1247,30 @@ export default function CourseProducts() {
     []
   );
 
+  const applyAssetToContentMaterial = useCallback(
+    (
+      chapterIndex: number,
+      materialIndex: number,
+      asset: CourseProductAsset
+    ) => {
+      if (!contentEditor || !isBindableLearningAsset(asset)) return;
+
+      updateContentMaterial(chapterIndex, materialIndex, {
+        title: asset.title,
+        type: materialTypeFromAssetKind(asset.kind),
+        status: "ready",
+        assetId: asset.id,
+        assetUrl: courseAssetDownloadUrl(contentEditor.courseId, asset.id),
+        uploadedBy: asset.uploadedBy,
+        uploadedAt: asset.uploadedAt,
+        complianceStatus: asset.complianceStatus,
+        downloadEnabled: asset.downloadEnabled,
+        note: asset.note ?? "",
+      });
+    },
+    [contentEditor, updateContentMaterial]
+  );
+
   const updateMerchandising = useCallback(
     (patch: Partial<Omit<ContentMerchandisingFormState, "imageAssets">>) => {
       setContentForm(current => ({
@@ -1277,7 +1337,7 @@ export default function CourseProducts() {
       usage: CourseProductMerchandisingAssetUsage
     ) => {
       if (!isUsableAssetUrl(asset.publicUrl)) {
-        setActionError("当前详情图文只支持 http(s) 素材地址");
+        setActionError("当前详情图文只支持 http(s) 或同源 API 素材地址");
         return;
       }
 
@@ -1352,6 +1412,7 @@ export default function CourseProducts() {
         kind: assetForm.kind,
         mimeType: assetForm.mimeType,
         sizeBytes,
+        chapterId: assetForm.chapterId.trim() || undefined,
         altText: assetForm.altText.trim() ? assetForm.altText : undefined,
         note: assetForm.note.trim() ? assetForm.note : undefined,
         reason: assetForm.reason,
@@ -1404,6 +1465,9 @@ export default function CourseProducts() {
             asset.id,
             {
               complianceStatus,
+              downloadEnabled:
+                complianceStatus === "approved" &&
+                isDownloadableCourseAsset(asset),
               reason:
                 complianceStatus === "approved"
                   ? "素材来源和内容已完成合规确认"
@@ -2255,7 +2319,7 @@ export default function CourseProducts() {
                       </span>
                     </div>
 
-                    <div className="mt-3 grid gap-3 lg:grid-cols-[0.8fr_130px_minmax(0,1fr)]">
+                    <div className="mt-3 grid gap-3 lg:grid-cols-[0.8fr_130px_150px_minmax(0,1fr)]">
                       <input
                         value={assetForm.title}
                         onChange={event =>
@@ -2286,6 +2350,23 @@ export default function CourseProducts() {
                         {COURSE_PRODUCT_ASSET_KINDS.map(kind => (
                           <option key={kind} value={kind}>
                             {courseProductAssetKindCopy[kind]}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={assetForm.chapterId}
+                        onChange={event =>
+                          setAssetForm(current => ({
+                            ...current,
+                            chapterId: event.target.value,
+                          }))
+                        }
+                        className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                      >
+                        <option value="">不绑定章节</option>
+                        {contentForm.chapters.map(chapter => (
+                          <option key={chapter.id} value={chapter.id}>
+                            {chapter.title || "未命名章节"}
                           </option>
                         ))}
                       </select>
@@ -2948,6 +3029,46 @@ export default function CourseProducts() {
                                   />
                                   下载
                                 </label>
+                              </div>
+                              <div className="mt-3 rounded-lg border border-[#E1D7C8] bg-white px-3 py-3">
+                                <p className="text-xs font-semibold text-[#7D746B]">
+                                  绑定已通过资料素材
+                                </p>
+                                <select
+                                  value=""
+                                  onChange={event => {
+                                    const selectedAsset = contentAssets.find(
+                                      asset => asset.id === event.target.value
+                                    );
+                                    if (!selectedAsset) return;
+                                    applyAssetToContentMaterial(
+                                      chapterIndex,
+                                      materialIndex,
+                                      selectedAsset
+                                    );
+                                  }}
+                                  disabled={
+                                    !contentAssets.some(isBindableLearningAsset)
+                                  }
+                                  className="mt-2 h-9 w-full rounded-lg border border-[#D8CEC0] bg-[#FFFDF8] px-3 text-sm outline-none transition focus:border-[#6F8F83] disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <option value="">
+                                    {contentAssets.some(isBindableLearningAsset)
+                                      ? "选择一个已通过且开启下载的素材"
+                                      : "暂无可绑定素材"}
+                                  </option>
+                                  {contentAssets
+                                    .filter(isBindableLearningAsset)
+                                    .map(asset => (
+                                      <option key={asset.id} value={asset.id}>
+                                        {asset.title} ·{" "}
+                                        {courseProductAssetKindCopy[asset.kind]}
+                                      </option>
+                                    ))}
+                                </select>
+                                <p className="mt-2 text-xs leading-5 text-[#8A8176]">
+                                  绑定后会自动写入受控下载地址、上传人与合规状态；保存内容后，重新审核上架即可进入学习页。
+                                </p>
                               </div>
                             </div>
                           )

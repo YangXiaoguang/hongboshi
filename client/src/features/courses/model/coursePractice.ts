@@ -1,5 +1,10 @@
 import { z } from "zod";
-import type { CourseChapter, CourseDetail } from "@shared/domain";
+import type {
+  CourseChapter,
+  CourseDetail,
+  CourseProductContentMaterialType,
+  CourseProductDetailContent,
+} from "@shared/domain";
 
 export const CoursePracticeRecordSchema = z.object({
   courseId: z.number().int().positive(),
@@ -28,6 +33,18 @@ export interface CourseChapterMaterial {
   keyPoints: string[];
   sourceLabel: string;
   materialStatus: "ready" | "placeholder";
+  downloads: CourseChapterMaterialDownload[];
+  hiddenCount: number;
+}
+
+export interface CourseChapterMaterialDownload {
+  id: string;
+  title: string;
+  type: CourseProductContentMaterialType;
+  downloadUrl: string;
+  assetId: string;
+  uploadedAt?: string;
+  note?: string;
 }
 
 export interface CoursePracticeSummary {
@@ -200,21 +217,73 @@ export function setCoursePracticeCompleted(
 
 export function createCourseChapterMaterial(
   course: CourseDetail,
-  chapter: CourseChapter
+  chapter: CourseChapter,
+  content?: CourseProductDetailContent
 ): CourseChapterMaterial {
+  const contentChapter = content?.chapters.find(item => item.id === chapter.id);
+  const readyDownloads =
+    contentChapter?.materialPlaceholders.flatMap(material => {
+      if (!isReadyLearningMaterial(material)) return [];
+      const assetId = material.assetId;
+      if (!assetId) return [];
+
+      return [
+        {
+          id: material.id,
+          title: material.title,
+          type: material.type,
+          downloadUrl:
+            material.assetUrl ??
+            `/api/courses/${course.id}/assets/${encodeURIComponent(
+              assetId
+            )}/download`,
+          assetId,
+          uploadedAt: material.uploadedAt,
+          note: material.note,
+        },
+      ];
+    }) ?? [];
+  const hiddenCount =
+    contentChapter?.materialPlaceholders.length === undefined
+      ? 0
+      : contentChapter.materialPlaceholders.length - readyDownloads.length;
   const keyPoints = [
     chapter.description,
+    readyDownloads.length > 0
+      ? `本章已开放 ${readyDownloads.length} 个配套资料下载。`
+      : undefined,
     course.outcomes[0] ?? course.summary,
     course.supportPath,
-  ].filter((item, index, items) => item && items.indexOf(item) === index);
+  ].filter(
+    (item, index, items): item is string =>
+      Boolean(item) && items.indexOf(item) === index
+  );
 
   return {
-    title: `${chapter.title}讲义`,
+    title: readyDownloads[0]?.title ?? `${chapter.title}讲义`,
     summary: chapter.description,
     keyPoints: keyPoints.slice(0, 3),
-    sourceLabel: "课程详情内容",
-    materialStatus: "placeholder",
+    sourceLabel: readyDownloads.length > 0 ? "后台资料库" : "课程详情内容",
+    materialStatus: readyDownloads.length > 0 ? "ready" : "placeholder",
+    downloads: readyDownloads,
+    hiddenCount: Math.max(0, hiddenCount),
   };
+}
+
+function isReadyLearningMaterial(
+  material: CourseProductDetailContent["chapters"][number]["materialPlaceholders"][number]
+) {
+  const approved =
+    material.complianceStatus === "approved" ||
+    material.complianceStatus === "not_required";
+
+  return Boolean(
+    material.status === "ready" &&
+    approved &&
+    material.downloadEnabled &&
+    material.assetId &&
+    (material.assetUrl || material.assetId)
+  );
 }
 
 export function getCoursePracticeSummary(

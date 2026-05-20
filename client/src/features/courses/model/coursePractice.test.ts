@@ -141,7 +141,62 @@ describe("course practice model", () => {
       summary: "包含课前自评表等素材。",
       sourceLabel: "课程详情内容",
       materialStatus: "placeholder",
+      downloads: [],
     });
     expect(material.keyPoints.length).toBeGreaterThan(1);
+  });
+
+  it("exposes only approved and download-enabled backend materials", () => {
+    const material = createCourseChapterMaterial(course, course.chapters[0], {
+      productId: "course_product_3",
+      summary: "这门课程帮助学习者把情绪困扰拆成可以执行的观察和练习步骤。",
+      targetAudience: ["希望理解情绪的学习者", "需要配套资料的人"],
+      merchandising: {
+        sellingPoints: [],
+        imageAssets: [],
+      },
+      chapters: [
+        {
+          id: "3-chapter-1",
+          title: "看见当下困扰",
+          durationMinutes: 38,
+          materialPlaceholders: [
+            {
+              id: "material_ready",
+              title: "课前自评表",
+              type: "exercise",
+              status: "ready",
+              assetId: "asset_ready",
+              assetUrl: "/api/courses/3/assets/asset_ready/download",
+              complianceStatus: "approved",
+              downloadEnabled: true,
+              uploadedAt: "2026-05-20T10:00:00+08:00",
+            },
+            {
+              id: "material_pending",
+              title: "待审讲义",
+              type: "document",
+              status: "ready",
+              assetId: "asset_pending",
+              complianceStatus: "pending",
+              downloadEnabled: true,
+            },
+          ],
+        },
+      ],
+      updatedAt: "2026-05-20T10:00:00+08:00",
+    });
+
+    expect(material.materialStatus).toBe("ready");
+    expect(material.sourceLabel).toBe("后台资料库");
+    expect(material.hiddenCount).toBe(1);
+    expect(material.downloads).toEqual([
+      expect.objectContaining({
+        id: "material_ready",
+        title: "课前自评表",
+        assetId: "asset_ready",
+        downloadUrl: "/api/courses/3/assets/asset_ready/download",
+      }),
+    ]);
   });
 });

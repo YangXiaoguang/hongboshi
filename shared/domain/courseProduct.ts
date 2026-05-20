@@ -438,7 +438,7 @@ export const CourseProductContentMaterialSchema = z.object({
   type: CourseProductContentMaterialTypeSchema,
   status: CourseProductContentMaterialStatusSchema.default("pending"),
   assetId: z.string().trim().min(1).max(120).optional(),
-  assetUrl: z.string().trim().url().optional(),
+  assetUrl: CourseProductAssetUrlSchema.optional(),
   uploadedBy: EntityIdSchema.optional(),
   uploadedAt: DateTimeLikeSchema.optional(),
   complianceStatus:

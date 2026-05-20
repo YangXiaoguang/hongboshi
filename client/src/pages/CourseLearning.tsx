@@ -12,6 +12,7 @@ import {
   Circle,
   Clock3,
   Compass,
+  Download,
   FileText,
   HeartHandshake,
   ListChecks,
@@ -35,6 +36,7 @@ import {
   getCourseAccessDescription,
   getLearningPathForCourse,
   getNextCoursesInLearningPath,
+  httpCourseAssetRepository,
   useCourseAccess,
   useCourseDetail,
   useCourseEngagement,
@@ -361,6 +363,7 @@ function PracticeWorkspacePanel({
   onDraftChange,
   onSaveDraft,
   onToggleCompleted,
+  onDownloadMaterial,
 }: {
   chapter: CourseChapter;
   stepNumber: number;
@@ -371,6 +374,9 @@ function PracticeWorkspacePanel({
   onDraftChange: (value: string) => void;
   onSaveDraft: () => void;
   onToggleCompleted: (isCompleted: boolean) => void;
+  onDownloadMaterial: (
+    material: CourseChapterMaterial["downloads"][number]
+  ) => void;
 }) {
   const isCompleted = record?.isPracticeCompleted ?? false;
 
@@ -424,6 +430,38 @@ function PracticeWorkspacePanel({
             </p>
           ))}
         </div>
+
+        <div className="mt-4 space-y-2">
+          {material.downloads.length > 0 ? (
+            material.downloads.map(download => (
+              <div
+                key={download.id}
+                className="flex flex-col gap-3 rounded-[16px] border border-[#E4DCCF] bg-[#FFFDF8] px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#243B35]">
+                    {download.title}
+                  </p>
+                  <p className="mt-1 text-xs text-[#7B817C]">
+                    {download.note || "已通过合规确认，可在本章学习时下载。"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onDownloadMaterial(download)}
+                  className="inline-flex h-9 shrink-0 items-center justify-center rounded-full bg-[#41675A] px-4 text-xs font-semibold text-white transition hover:bg-[#315047]"
+                >
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  下载资料
+                </button>
+              </div>
+            ))
+          ) : (
+            <p className="rounded-[16px] bg-[#FFFDF8] px-3 py-3 text-xs leading-5 text-[#8A8176]">
+              后台资料正在整理或合规确认中，暂不暴露下载入口。
+            </p>
+          )}
+        </div>
       </section>
 
       <section className="mt-5">
@@ -464,8 +502,21 @@ function PracticeWorkspacePanel({
       </section>
 
       <div className="mt-5 rounded-[18px] bg-[#F9F5EE] px-4 py-3">
-        <PracticeStatusRow label="素材状态" value="占位待接真实文件" />
+        <PracticeStatusRow
+          label="素材状态"
+          value={
+            material.materialStatus === "ready"
+              ? `已开放 ${material.downloads.length} 个资料`
+              : "资料待开放"
+          }
+        />
         <PracticeStatusRow label="讲义来源" value={material.sourceLabel} />
+        {material.hiddenCount > 0 && (
+          <PracticeStatusRow
+            label="待开放"
+            value={`${material.hiddenCount} 个素材仍在审核或下载未开启`}
+          />
+        )}
         <PracticeStatusRow
           label="保存状态"
           value={record ? practiceSyncStatusCopy[record.syncStatus] : "未保存"}
@@ -703,7 +754,7 @@ export default function CourseLearning() {
   const { user, isLoggedIn } = useAuth();
   const remoteUserId = isLoggedIn ? user?.id : undefined;
   const courseId = Number(params?.courseId);
-  const { course, allCourses, isLoading } = useCourseDetail(
+  const { course, detailContent, allCourses, isLoading } = useCourseDetail(
     Number.isInteger(courseId) ? courseId : undefined
   );
   const { getCourseAccess, isSyncing: isAccessSyncing } = useCourseAccess();
@@ -861,7 +912,11 @@ export default function CourseLearning() {
     session.chapterItems.find(item => item.chapter.id === activeChapter.id) ??
     currentStep;
   const activePracticeRecord = getRecord(course.id, activeChapter.id);
-  const activeMaterial = materialForChapter(course, activeChapter);
+  const activeMaterial = materialForChapter(
+    course,
+    activeChapter,
+    detailContent
+  );
   const practiceSummary = getSummary(course);
   const currentIndex = session.chapterItems.findIndex(item => item.isCurrent);
   const nextOrderedChapter =
@@ -926,6 +981,30 @@ export default function CourseLearning() {
     toast(isPracticeCompleted ? "练习已标记完成" : "已取消练习完成", {
       description: `「${activeChapter.title}」的练习状态已更新。`,
     });
+  };
+
+  const handleDownloadMaterial = (
+    material: CourseChapterMaterial["downloads"][number]
+  ) => {
+    void httpCourseAssetRepository
+      .downloadMaterial({
+        courseId: course.id,
+        assetId: material.assetId,
+        fallbackFileName: material.title,
+      })
+      .then(() => {
+        toast("资料下载已开始", {
+          description: `「${material.title}」会通过课程权益接口下载。`,
+        });
+      })
+      .catch(err => {
+        toast("资料下载失败", {
+          description:
+            err instanceof Error
+              ? err.message
+              : "请确认已登录并解锁课程后再试。",
+        });
+      });
   };
 
   const handleReviewCourse = () => {
@@ -1138,6 +1217,7 @@ export default function CourseLearning() {
                 onDraftChange={setPracticeDraft}
                 onSaveDraft={handleSavePracticeDraft}
                 onToggleCompleted={handleTogglePracticeCompleted}
+                onDownloadMaterial={handleDownloadMaterial}
               />
 
               <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-6 shadow-sm shadow-[#243B35]/5">
