@@ -6,10 +6,19 @@ import {
 } from "../catalog/courseProductStore";
 import { InMemoryCourseProductContentStore } from "../catalog/courseProductContentStore";
 import {
+  getCourseAssetDownloadPayload,
+  getCourseAssetViewPayload,
   getCourseDetailContentPayload,
   getCoursePayload,
   listCoursesPayload,
 } from "./courseApi";
+import {
+  InMemoryCourseProductAssetFileStorage,
+  InMemoryCourseProductAssetStore,
+  updateCourseProductAssetCompliance,
+  uploadCourseProductAssetFile,
+} from "../catalog/courseProductAssetStore";
+import { createEmptyCourseAccessState } from "../../../shared/domain";
 
 describe("course API payloads", () => {
   it("filters and paginates course list payloads", async () => {
@@ -111,5 +120,113 @@ describe("course API payloads", () => {
       expect(contentPayload.body.data.chapters.length).toBeGreaterThan(0);
     }
     expect(hiddenPayload.status).toBe(404);
+  });
+
+  it("serves approved image assets publicly and gates downloads by course access", async () => {
+    const first = courseProductFromCourse(
+      courses.find(course => !course.isFree) ?? courses[0]!
+    );
+    const productStore = new InMemoryCourseProductStore([first]);
+    const assetStore = new InMemoryCourseProductAssetStore();
+    const fileStorage = new InMemoryCourseProductAssetFileStorage();
+
+    const image = await uploadCourseProductAssetFile({
+      productId: first.id,
+      actorId: "operator_1",
+      productStore,
+      assetStore,
+      fileStorage,
+      now: "2026-05-20T09:00:00.000Z",
+      request: {
+        kind: "detail_image",
+        title: "详情主视觉",
+        fileName: "detail.jpg",
+        mimeType: "image/jpeg",
+        fileBase64: Buffer.from("image bytes").toString("base64"),
+        reason: "上传课程详情主视觉",
+      },
+    });
+    const worksheet = await uploadCourseProductAssetFile({
+      productId: first.id,
+      actorId: "operator_1",
+      productStore,
+      assetStore,
+      fileStorage,
+      now: "2026-05-20T09:01:00.000Z",
+      request: {
+        kind: "worksheet",
+        title: "课后练习表",
+        fileName: "worksheet.pdf",
+        mimeType: "application/pdf",
+        fileBase64: Buffer.from("course worksheet").toString("base64"),
+        reason: "上传课程练习资料",
+      },
+    });
+
+    await updateCourseProductAssetCompliance({
+      productId: first.id,
+      assetId: image.asset.id,
+      actorId: "operator_2",
+      productStore,
+      assetStore,
+      request: {
+        complianceStatus: "approved",
+        reason: "图片来源和内容已完成合规确认",
+      },
+    });
+    await updateCourseProductAssetCompliance({
+      productId: first.id,
+      assetId: worksheet.asset.id,
+      actorId: "operator_2",
+      productStore,
+      assetStore,
+      request: {
+        complianceStatus: "approved",
+        reason: "资料来源和内容已完成合规确认",
+      },
+    });
+
+    const publicView = await getCourseAssetViewPayload(
+      first.courseId,
+      image.asset.id,
+      productStore,
+      assetStore,
+      fileStorage
+    );
+    expect(publicView.status).toBe(200);
+    if ("file" in publicView) {
+      expect(publicView.file.mimeType).toBe("image/jpeg");
+    }
+
+    const lockedDownload = await getCourseAssetDownloadPayload(
+      first.courseId,
+      worksheet.asset.id,
+      "user_locked",
+      productStore,
+      assetStore,
+      fileStorage,
+      async () => createEmptyCourseAccessState()
+    );
+    expect(lockedDownload.status).toBe(403);
+
+    const unlockedDownload = await getCourseAssetDownloadPayload(
+      first.courseId,
+      worksheet.asset.id,
+      "user_owned",
+      productStore,
+      assetStore,
+      fileStorage,
+      async () => ({
+        ...createEmptyCourseAccessState(),
+        ownedCourseIds: [first.courseId],
+      })
+    );
+
+    expect(unlockedDownload.status).toBe(200);
+    if ("file" in unlockedDownload) {
+      expect(unlockedDownload.file.bytes.toString("utf8")).toBe(
+        "course worksheet"
+      );
+    }
   });
 });

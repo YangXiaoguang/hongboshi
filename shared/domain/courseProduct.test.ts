@@ -4,6 +4,7 @@ import {
   ALL_COURSE_PRODUCT_STATUS,
   CourseProductPriceUpdateRequestSchema,
   CourseProductAssetComplianceUpdateRequestSchema,
+  CourseProductAssetFileUploadRequestSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetUploadRequestSchema,
   CourseProductBasicInfoUpdateRequestSchema,
@@ -166,6 +167,27 @@ describe("course product domain contract", () => {
     });
 
     expect(compliance.complianceStatus).toBe("approved");
+  });
+
+  it("validates course product asset file upload contracts", () => {
+    const fileRequest = CourseProductAssetFileUploadRequestSchema.parse({
+      kind: "worksheet",
+      title: "课后练习表",
+      fileName: "worksheet.pdf",
+      mimeType: "application/pdf",
+      fileBase64: Buffer.from("course worksheet").toString("base64"),
+      sizeBytes: 16,
+      reason: "上传课程练习资料",
+    });
+
+    expect(fileRequest.fileName).toBe("worksheet.pdf");
+    expect(
+      CourseProductAssetFileUploadRequestSchema.safeParse({
+        ...fileRequest,
+        kind: "detail_image",
+        mimeType: "application/pdf",
+      }).success
+    ).toBe(false);
   });
 
   it("validates course product asset list summaries", () => {

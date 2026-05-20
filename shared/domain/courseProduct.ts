@@ -236,6 +236,7 @@ export const CourseProductFilterOptionsSchema = z.object({
 export const CourseProductAssetUrlSchema = z.union([
   z.string().trim().url(),
   z.string().trim().startsWith("data:"),
+  z.string().trim().startsWith("/api/"),
 ]);
 
 export const CourseProductAssetSchema = z.object({
@@ -292,6 +293,50 @@ export const CourseProductAssetUploadRequestSchema = z
         code: "custom",
         path: ["mimeType"],
         message: "详情图文素材必须是图片类型",
+      });
+    }
+  });
+
+export const CourseProductAssetFileUploadRequestSchema = z
+  .object({
+    kind: CourseProductAssetKindSchema,
+    title: z.string().trim().min(2).max(100),
+    fileName: z.string().trim().min(2).max(160),
+    mimeType: z.string().trim().min(3).max(120),
+    fileBase64: z.string().trim().min(4),
+    sizeBytes: z
+      .number()
+      .int()
+      .min(0)
+      .max(COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES)
+      .optional(),
+    usage: CourseProductMerchandisingAssetUsageSchema.optional(),
+    chapterId: EntityIdSchema.optional(),
+    altText: z.string().trim().max(120).optional(),
+    note: z.string().trim().max(240).optional(),
+    reason: z.string().trim().min(4).max(240),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      (value.kind === "detail_image" || value.kind === "proof_image") &&
+      !value.mimeType.startsWith("image/")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["mimeType"],
+        message: "详情图文素材必须是图片类型",
+      });
+    }
+
+    const base64Payload = value.fileBase64.includes(",")
+      ? (value.fileBase64.split(",", 2)[1] ?? "")
+      : value.fileBase64;
+    const estimatedSize = Math.floor((base64Payload.length * 3) / 4);
+    if (estimatedSize > COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["fileBase64"],
+        message: "素材文件大小超过限制",
       });
     }
   });
@@ -415,7 +460,7 @@ export const CourseProductContentChapterSchema = z.object({
 export const CourseProductMerchandisingAssetSchema = z.object({
   id: EntityIdSchema,
   title: z.string().trim().min(2).max(80),
-  imageUrl: z.string().trim().url(),
+  imageUrl: CourseProductAssetUrlSchema,
   altText: z.string().trim().max(120).optional(),
   usage: CourseProductMerchandisingAssetUsageSchema.default("gallery"),
   complianceStatus:
@@ -427,7 +472,7 @@ export const CourseProductMerchandisingContentSchema = z
   .object({
     headline: z.string().trim().min(6).max(100).optional(),
     subheadline: z.string().trim().min(10).max(240).optional(),
-    showcaseImageUrl: z.string().trim().url().optional(),
+    showcaseImageUrl: CourseProductAssetUrlSchema.optional(),
     showcaseImageAlt: z.string().trim().max(120).optional(),
     sellingPoints: z
       .array(z.string().trim().min(4).max(120))
@@ -693,6 +738,9 @@ export type CourseProductAssetSourceType = z.infer<
 export type CourseProductAsset = z.infer<typeof CourseProductAssetSchema>;
 export type CourseProductAssetUploadRequest = z.infer<
   typeof CourseProductAssetUploadRequestSchema
+>;
+export type CourseProductAssetFileUploadRequest = z.infer<
+  typeof CourseProductAssetFileUploadRequestSchema
 >;
 export type CourseProductAssetComplianceUpdateRequest = z.infer<
   typeof CourseProductAssetComplianceUpdateRequestSchema

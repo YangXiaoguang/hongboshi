@@ -21,6 +21,7 @@ import {
   Search,
   ShieldCheck,
   Trash2,
+  Upload,
   X,
   UsersRound,
 } from "lucide-react";
@@ -135,6 +136,7 @@ type ContentFormState = {
 type AssetFormState = {
   title: string;
   kind: CourseProductAssetKind;
+  file?: File;
   sourceUrl: string;
   mimeType: string;
   sizeBytes: string;
@@ -603,7 +605,9 @@ function isImageCourseAsset(asset: CourseProductAsset) {
 }
 
 function isUsableAssetUrl(value: string | undefined) {
-  return Boolean(value && /^https?:\/\//i.test(value));
+  return Boolean(
+    value && (/^https?:\/\//i.test(value) || value.startsWith("/api/"))
+  );
 }
 
 function AuditTrail({ events }: { events: CourseProductAuditEvent[] }) {
@@ -1325,9 +1329,11 @@ export default function CourseProducts() {
       return;
     }
 
-    const sizeBytes = assetForm.sizeBytes.trim()
-      ? Number(assetForm.sizeBytes)
-      : undefined;
+    const sizeBytes = assetForm.file
+      ? assetForm.file.size
+      : assetForm.sizeBytes.trim()
+        ? Number(assetForm.sizeBytes)
+        : undefined;
     if (
       sizeBytes !== undefined &&
       (!Number.isInteger(sizeBytes) || sizeBytes < 0)
@@ -1341,22 +1347,34 @@ export default function CourseProducts() {
     setActionMessage(undefined);
 
     try {
-      const result = await httpCourseProductRepository.uploadCourseProductAsset(
-        contentEditor.id,
-        {
-          title: assetForm.title,
-          kind: assetForm.kind,
-          sourceUrl: assetForm.sourceUrl,
-          mimeType: assetForm.mimeType,
-          sizeBytes,
-          altText: assetForm.altText.trim() ? assetForm.altText : undefined,
-          note: assetForm.note.trim() ? assetForm.note : undefined,
-          reason: assetForm.reason,
-        }
-      );
+      const commonRequest = {
+        title: assetForm.title,
+        kind: assetForm.kind,
+        mimeType: assetForm.mimeType,
+        sizeBytes,
+        altText: assetForm.altText.trim() ? assetForm.altText : undefined,
+        note: assetForm.note.trim() ? assetForm.note : undefined,
+        reason: assetForm.reason,
+      };
+      const result = assetForm.file
+        ? await httpCourseProductRepository.uploadCourseProductAssetFile(
+            contentEditor.id,
+            {
+              ...commonRequest,
+              fileName: assetForm.file.name,
+              file: assetForm.file,
+            }
+          )
+        : await httpCourseProductRepository.uploadCourseProductAsset(
+            contentEditor.id,
+            {
+              ...commonRequest,
+              sourceUrl: assetForm.sourceUrl,
+            }
+          );
       setContentAssets(result.assets);
       setAssetForm(createAssetFormState());
-      setActionMessage("课程素材已登记，待合规确认后可用于前台展示");
+      setActionMessage("课程素材已上传登记，待合规确认后可用于前台展示或下载");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "课程素材上传失败");
     } finally {
@@ -2256,10 +2274,11 @@ export default function CourseProducts() {
                             ...current,
                             kind: event.target.value as CourseProductAssetKind,
                             mimeType:
-                              event.target.value === "detail_image" ||
+                              current.file?.type ||
+                              (event.target.value === "detail_image" ||
                               event.target.value === "proof_image"
                                 ? "image/jpeg"
-                                : "application/pdf",
+                                : "application/pdf"),
                           }))
                         }
                         className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
@@ -2276,12 +2295,48 @@ export default function CourseProducts() {
                           setAssetForm(current => ({
                             ...current,
                             sourceUrl: event.target.value,
+                            file: undefined,
                           }))
                         }
-                        placeholder="素材 URL，下一步接入真实文件上传"
+                        placeholder="素材 URL，或选择下方本地文件上传"
                         className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
                       />
                     </div>
+
+                    <label className="mt-3 flex min-h-[44px] cursor-pointer flex-col justify-center gap-1 rounded-lg border border-dashed border-[#CDBFAE] bg-white px-3 py-2 text-sm text-[#5B6B63] transition hover:border-[#9FB3A9] sm:flex-row sm:items-center sm:justify-between">
+                      <span className="inline-flex items-center gap-2 font-semibold">
+                        <Upload className="h-4 w-4" />
+                        {assetForm.file
+                          ? assetForm.file.name
+                          : "选择本地素材文件"}
+                      </span>
+                      <span className="text-xs text-[#8A8176]">
+                        文件会写入本地受控素材目录，合规通过后再开放展示或下载
+                      </span>
+                      <input
+                        type="file"
+                        className="sr-only"
+                        onChange={event => {
+                          const file = event.currentTarget.files?.[0];
+                          if (!file) return;
+                          setAssetForm(current => ({
+                            ...current,
+                            file,
+                            title:
+                              current.title.trim() ||
+                              file.name.replace(/\.[^.]+$/, ""),
+                            sourceUrl: "",
+                            mimeType:
+                              file.type ||
+                              (current.kind === "detail_image" ||
+                              current.kind === "proof_image"
+                                ? "image/jpeg"
+                                : "application/octet-stream"),
+                            sizeBytes: String(file.size),
+                          }));
+                        }}
+                      />
+                    </label>
 
                     <div className="mt-3 grid gap-3 lg:grid-cols-[150px_130px_1fr_auto]">
                       <input
@@ -2322,7 +2377,8 @@ export default function CourseProducts() {
                         onClick={() => void submitAssetUpload()}
                         disabled={
                           assetForm.title.trim().length < 2 ||
-                          assetForm.sourceUrl.trim().length < 8 ||
+                          (!assetForm.file &&
+                            assetForm.sourceUrl.trim().length < 8) ||
                           assetForm.reason.trim().length < 4 ||
                           Boolean(mutatingAssetId)
                         }
@@ -2333,7 +2389,7 @@ export default function CourseProducts() {
                         ) : (
                           <Plus className="h-4 w-4" />
                         )}
-                        登记
+                        {assetForm.file ? "上传" : "登记"}
                       </button>
                     </div>
 
@@ -2351,6 +2407,10 @@ export default function CourseProducts() {
                               <p className="mt-1 truncate">
                                 {courseProductAssetKindCopy[asset.kind]} ·{" "}
                                 {asset.fileName} ·{" "}
+                                {asset.sourceType === "object_storage"
+                                  ? "本地文件"
+                                  : "外部链接"}{" "}
+                                ·{" "}
                                 {assetReviewStatusCopy[asset.complianceStatus]}
                               </p>
                             </div>
@@ -2366,6 +2426,16 @@ export default function CourseProducts() {
                               {assetReviewStatusCopy[asset.complianceStatus]}
                             </span>
                             <div className="flex flex-wrap gap-2 lg:justify-end">
+                              {asset.sourceType === "object_storage" && (
+                                <a
+                                  href={`/api/catalog/admin/course-products/${encodeURIComponent(
+                                    asset.productId
+                                  )}/assets/${encodeURIComponent(asset.id)}/download`}
+                                  className="inline-flex h-8 items-center rounded-lg border border-[#D8CEC0] px-2.5 font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                                >
+                                  下载
+                                </a>
+                              )}
                               {isImageCourseAsset(asset) &&
                                 isUsableAssetUrl(asset.publicUrl) && (
                                   <>

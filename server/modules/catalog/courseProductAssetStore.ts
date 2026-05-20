@@ -1,8 +1,11 @@
 import fs from "fs";
 import path from "path";
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import {
+  COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES,
   CourseProductAssetComplianceUpdateRequestSchema,
+  CourseProductAssetFileUploadRequestSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetMutationResultSchema,
   CourseProductAssetSchema,
@@ -10,6 +13,7 @@ import {
   CourseProductAuditEventSchema,
   type CourseProductAsset,
   type CourseProductAssetComplianceUpdateRequest,
+  type CourseProductAssetFileUploadRequest,
   type CourseProductAssetListResult,
   type CourseProductAssetMutationResult,
   type CourseProductAssetUploadRequest,
@@ -34,6 +38,61 @@ export interface CourseProductAssetStore {
   listAssets(productId?: string): Promise<CourseProductAsset[]>;
   getAsset(assetId: string): Promise<CourseProductAsset | undefined>;
   saveAsset(asset: CourseProductAsset): Promise<CourseProductAsset>;
+}
+
+export interface CourseProductAssetStoredFile {
+  storageKey: string;
+  bytes: Buffer;
+}
+
+export interface CourseProductAssetFileStorage {
+  saveFile(input: CourseProductAssetStoredFile): Promise<void>;
+  readFile(storageKey: string): Promise<Buffer | undefined>;
+}
+
+export class InMemoryCourseProductAssetFileStorage implements CourseProductAssetFileStorage {
+  private files = new Map<string, Buffer>();
+
+  async saveFile(input: CourseProductAssetStoredFile) {
+    this.files.set(input.storageKey, Buffer.from(input.bytes));
+  }
+
+  async readFile(storageKey: string) {
+    const bytes = this.files.get(storageKey);
+    return bytes ? Buffer.from(bytes) : undefined;
+  }
+}
+
+export class LocalCourseProductAssetFileStorage implements CourseProductAssetFileStorage {
+  constructor(
+    private readonly rootPath = resolveCourseProductAssetFileRootPath()
+  ) {}
+
+  async saveFile(input: CourseProductAssetStoredFile) {
+    const filePath = this.resolveStoragePath(input.storageKey);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const tmpPath = `${filePath}.tmp`;
+    fs.writeFileSync(tmpPath, input.bytes);
+    fs.renameSync(tmpPath, filePath);
+  }
+
+  async readFile(storageKey: string) {
+    const filePath = this.resolveStoragePath(storageKey);
+    if (!fs.existsSync(filePath)) return undefined;
+    return fs.readFileSync(filePath);
+  }
+
+  private resolveStoragePath(storageKey: string) {
+    const root = path.resolve(this.rootPath);
+    const target = path.resolve(root, storageKey);
+    const rootWithSeparator = root.endsWith(path.sep)
+      ? root
+      : `${root}${path.sep}`;
+    if (target !== root && !target.startsWith(rootWithSeparator)) {
+      throw new Error("COURSE_PRODUCT_ASSET_FILE_NOT_FOUND");
+    }
+    return target;
+  }
 }
 
 export class InMemoryCourseProductAssetStore implements CourseProductAssetStore {
@@ -123,6 +182,7 @@ export class JsonFileCourseProductAssetStore implements CourseProductAssetStore 
 }
 
 let defaultStore: CourseProductAssetStore | undefined;
+let defaultFileStorage: CourseProductAssetFileStorage | undefined;
 
 export function getCourseProductAssetStore() {
   defaultStore ??= createDefaultCourseProductAssetStore();
@@ -131,6 +191,17 @@ export function getCourseProductAssetStore() {
 
 export function setCourseProductAssetStore(store: CourseProductAssetStore) {
   defaultStore = store;
+}
+
+export function getCourseProductAssetFileStorage() {
+  defaultFileStorage ??= createDefaultCourseProductAssetFileStorage();
+  return defaultFileStorage;
+}
+
+export function setCourseProductAssetFileStorage(
+  storage: CourseProductAssetFileStorage
+) {
+  defaultFileStorage = storage;
 }
 
 export function createDefaultCourseProductAssetStore(): CourseProductAssetStore {
@@ -145,11 +216,31 @@ export function createDefaultCourseProductAssetStore(): CourseProductAssetStore 
   return new JsonFileCourseProductAssetStore();
 }
 
+export function createDefaultCourseProductAssetFileStorage(): CourseProductAssetFileStorage {
+  if (
+    process.env.NODE_ENV === "test" ||
+    process.env.VITEST ||
+    process.env.HONGBOSHI_COURSE_PRODUCT_ASSET_FILE_STORAGE === "memory"
+  ) {
+    return new InMemoryCourseProductAssetFileStorage();
+  }
+
+  return new LocalCourseProductAssetFileStorage();
+}
+
 export function resolveCourseProductAssetStorePath() {
   return path.resolve(
     process.cwd(),
     process.env.HONGBOSHI_COURSE_PRODUCT_ASSET_FILE ??
       ".hongboshi-data/course-product-assets.json"
+  );
+}
+
+export function resolveCourseProductAssetFileRootPath() {
+  return path.resolve(
+    process.cwd(),
+    process.env.HONGBOSHI_COURSE_PRODUCT_ASSET_FILE_ROOT ??
+      ".hongboshi-data/course-product-assets/files"
   );
 }
 
@@ -204,6 +295,88 @@ export async function uploadCourseProductAsset({
       : "external_url",
     storageKey: `course-assets/${productId}/${id}`,
     publicUrl: parsed.sourceUrl,
+    usage: parsed.usage ?? defaultUsageForAssetKind(parsed.kind),
+    altText: parsed.altText,
+    note: parsed.note,
+    complianceStatus: "pending",
+    downloadEnabled: false,
+    uploadedBy: actorId,
+    uploadedAt: now,
+    updatedAt: now,
+  });
+
+  const saved = await assetStore.saveAsset(asset);
+  const auditEvent = await productStore.appendAuditEvent(
+    createAssetAuditEvent({
+      product,
+      action: "asset_upload",
+      actorId,
+      reason: parsed.reason,
+      before: {},
+      after: pickAssetAuditFields(saved),
+      now,
+    })
+  );
+
+  return CourseProductAssetMutationResultSchema.parse({
+    asset: saved,
+    assets: await assetStore.listAssets(productId),
+    auditEvent,
+    auditEvents: await productStore.listAuditEvents(productId),
+  });
+}
+
+export async function uploadCourseProductAssetFile({
+  productId,
+  request,
+  actorId,
+  productStore = getCourseProductStore(),
+  assetStore = getCourseProductAssetStore(),
+  fileStorage = getCourseProductAssetFileStorage(),
+  now = new Date().toISOString(),
+}: {
+  productId: string;
+  request: CourseProductAssetFileUploadRequest;
+  actorId: string;
+  productStore?: CourseProductStore;
+  assetStore?: CourseProductAssetStore;
+  fileStorage?: CourseProductAssetFileStorage;
+  now?: string;
+}): Promise<CourseProductAssetMutationResult> {
+  const product = await productStore.getProduct(productId);
+  if (!product) throw new Error("COURSE_PRODUCT_NOT_FOUND");
+
+  const parsed = CourseProductAssetFileUploadRequestSchema.parse(request);
+  const bytes = decodeAssetFileBase64(parsed.fileBase64);
+  if (bytes.length > COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES) {
+    throw new Error("COURSE_PRODUCT_ASSET_FILE_TOO_LARGE");
+  }
+  if (parsed.sizeBytes !== undefined && parsed.sizeBytes !== bytes.length) {
+    throw new Error("COURSE_PRODUCT_ASSET_SIZE_MISMATCH");
+  }
+
+  const id = createAssetId(productId, parsed.kind, now);
+  const fileName = sanitizeFileName(parsed.fileName);
+  const storageKey = `course-assets/${productId}/${id}/${fileName}`;
+  await fileStorage.saveFile({
+    storageKey,
+    bytes,
+  });
+
+  const asset = CourseProductAssetSchema.parse({
+    id,
+    productId,
+    chapterId: parsed.chapterId,
+    kind: parsed.kind,
+    title: parsed.title,
+    fileName,
+    mimeType: parsed.mimeType,
+    sizeBytes: bytes.length,
+    sourceType: "object_storage",
+    storageKey,
+    publicUrl: isImageKind(parsed.kind)
+      ? `/api/courses/${product.courseId}/assets/${id}/view`
+      : undefined,
     usage: parsed.usage ?? defaultUsageForAssetKind(parsed.kind),
     altText: parsed.altText,
     note: parsed.note,
@@ -294,6 +467,71 @@ export async function updateCourseProductAssetCompliance({
   });
 }
 
+export async function getCourseProductAssetStoredFile({
+  productId,
+  assetId,
+  assetStore = getCourseProductAssetStore(),
+  fileStorage = getCourseProductAssetFileStorage(),
+}: {
+  productId: string;
+  assetId: string;
+  assetStore?: CourseProductAssetStore;
+  fileStorage?: CourseProductAssetFileStorage;
+}) {
+  const asset = await assetStore.getAsset(assetId);
+  if (!asset || asset.productId !== productId) {
+    throw new Error("COURSE_PRODUCT_ASSET_NOT_FOUND");
+  }
+  if (asset.sourceType !== "object_storage" || !asset.storageKey) {
+    throw new Error("COURSE_PRODUCT_ASSET_FILE_NOT_FOUND");
+  }
+
+  const bytes = await fileStorage.readFile(asset.storageKey);
+  if (!bytes) throw new Error("COURSE_PRODUCT_ASSET_FILE_NOT_FOUND");
+
+  return {
+    asset,
+    file: {
+      bytes,
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+      sizeBytes: bytes.length,
+    },
+  };
+}
+
+export async function getCourseProductAssetPublicViewFile(options: {
+  productId: string;
+  assetId: string;
+  assetStore?: CourseProductAssetStore;
+  fileStorage?: CourseProductAssetFileStorage;
+}) {
+  const result = await getCourseProductAssetStoredFile(options);
+  if (!isImageKind(result.asset.kind)) {
+    throw new Error("COURSE_PRODUCT_ASSET_FILE_NOT_FOUND");
+  }
+  if (!isApprovedForUse(result.asset)) {
+    throw new Error("COURSE_PRODUCT_ASSET_NOT_APPROVED");
+  }
+  return result;
+}
+
+export async function getCourseProductAssetDownloadFile(options: {
+  productId: string;
+  assetId: string;
+  assetStore?: CourseProductAssetStore;
+  fileStorage?: CourseProductAssetFileStorage;
+}) {
+  const result = await getCourseProductAssetStoredFile(options);
+  if (!isDownloadableKind(result.asset) || !result.asset.downloadEnabled) {
+    throw new Error("COURSE_PRODUCT_ASSET_DOWNLOAD_DISABLED");
+  }
+  if (!isApprovedForUse(result.asset)) {
+    throw new Error("COURSE_PRODUCT_ASSET_NOT_APPROVED");
+  }
+  return result;
+}
+
 function buildAssetListResult(
   productId: string,
   assets: CourseProductAsset[]
@@ -365,10 +603,39 @@ function defaultUsageForAssetKind(
   return undefined;
 }
 
+function isImageKind(kind: CourseProductAsset["kind"]) {
+  return kind === "detail_image" || kind === "proof_image";
+}
+
+function isApprovedForUse(asset: CourseProductAsset) {
+  return (
+    asset.complianceStatus === "approved" ||
+    asset.complianceStatus === "not_required"
+  );
+}
+
 function isDownloadableKind(asset: CourseProductAsset) {
   return ["chapter_material", "worksheet", "audio", "video"].includes(
     asset.kind
   );
+}
+
+function decodeAssetFileBase64(value: string) {
+  const payload = value.includes(",") ? (value.split(",", 2)[1] ?? "") : value;
+  try {
+    return Buffer.from(payload, "base64");
+  } catch {
+    throw new Error("COURSE_PRODUCT_ASSET_FILE_INVALID");
+  }
+}
+
+function sanitizeFileName(value: string) {
+  const sanitized = value
+    .trim()
+    .replace(/[/\\?%*:|"<>]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 140);
+  return sanitized || "course-asset.bin";
 }
 
 function fileNameFromSource(sourceUrl: string, fallbackId: string) {
@@ -404,7 +671,7 @@ function estimateSizeBytes(sourceUrl: string) {
 }
 
 function createAssetId(productId: string, kind: string, now: string) {
-  return `asset_${productId}_${kind}_${safeTimeId(now)}`;
+  return `asset_${productId}_${kind}_${safeTimeId(now)}_${randomUUID().slice(0, 8)}`;
 }
 
 function safeTimeId(value: string) {

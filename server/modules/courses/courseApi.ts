@@ -5,22 +5,36 @@ import {
   ApiResponseSchema,
   CourseCatalogResultSchema,
   CourseProductDetailContentSchema,
+  CourseAccessStateSchema,
   CourseListQuerySchema,
   CourseSchema,
   LegacyNumericIdSchema,
   listCoursesByQuery,
+  resolveCourseAccess,
+  type CourseAccessState,
   type CourseCatalogQuery,
 } from "../../../shared/domain";
+import { authorizeRequest } from "../auth/authorization";
 import {
   coursesFromPublishedProducts,
+  courseFromCourseProduct,
   getCourseProductStore,
   type CourseProductStore,
 } from "../catalog/courseProductStore";
+import {
+  getCourseProductAssetDownloadFile,
+  getCourseProductAssetFileStorage,
+  getCourseProductAssetPublicViewFile,
+  getCourseProductAssetStore,
+  type CourseProductAssetFileStorage,
+  type CourseProductAssetStore,
+} from "../catalog/courseProductAssetStore";
 import {
   getCourseProductContentForProduct,
   getCourseProductContentStore,
   type CourseProductContentStore,
 } from "../catalog/courseProductContentStore";
+import { loadCourseAccessState } from "./courseAccessApi";
 
 const CourseListResponseSchema = ApiResponseSchema(CourseCatalogResultSchema);
 const CourseResponseSchema = ApiResponseSchema(CourseSchema);
@@ -36,6 +50,26 @@ function sendJson(
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload));
+}
+
+function sendCourseAssetFile(
+  res: Response | ServerResponse,
+  file: {
+    bytes: Buffer;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+  },
+  disposition: "inline" | "attachment"
+) {
+  res.statusCode = 200;
+  res.setHeader("Content-Type", file.mimeType);
+  res.setHeader("Content-Length", String(file.sizeBytes));
+  res.setHeader(
+    "Content-Disposition",
+    `${disposition}; filename="${encodeURIComponent(file.fileName)}"`
+  );
+  res.end(file.bytes);
 }
 
 async function publishedCourses(
@@ -112,6 +146,141 @@ export async function getCourseDetailContentPayload(
   } as const;
 }
 
+async function findPublishedProductByCourseId(
+  courseId: number,
+  productStore: CourseProductStore
+) {
+  return (await productStore.listProducts()).find(
+    item =>
+      item.courseId === courseId &&
+      item.status === "published" &&
+      item.reviewStatus === "approved"
+  );
+}
+
+function courseAssetErrorPayload(
+  status: 400 | 401 | 403 | 404 | 500,
+  code:
+    | "BAD_REQUEST"
+    | "UNAUTHORIZED"
+    | "FORBIDDEN"
+    | "NOT_FOUND"
+    | "INTERNAL_ERROR",
+  message: string
+) {
+  return {
+    status,
+    body: {
+      ok: false,
+      error: {
+        code,
+        message,
+      },
+    },
+  } as const;
+}
+
+function courseAssetFailure(err: unknown, fallbackMessage: string) {
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_NOT_FOUND"
+  ) {
+    return courseAssetErrorPayload(404, "NOT_FOUND", "课程素材不存在");
+  }
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_FILE_NOT_FOUND"
+  ) {
+    return courseAssetErrorPayload(404, "NOT_FOUND", "课程素材文件不存在");
+  }
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_NOT_APPROVED"
+  ) {
+    return courseAssetErrorPayload(404, "NOT_FOUND", "课程素材暂不可用");
+  }
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_DOWNLOAD_DISABLED"
+  ) {
+    return courseAssetErrorPayload(403, "FORBIDDEN", "课程素材暂未开启下载");
+  }
+
+  return courseAssetErrorPayload(500, "INTERNAL_ERROR", fallbackMessage);
+}
+
+export async function getCourseAssetViewPayload(
+  courseId: number,
+  assetId: string,
+  productStore: CourseProductStore = getCourseProductStore(),
+  assetStore: CourseProductAssetStore = getCourseProductAssetStore(),
+  fileStorage: CourseProductAssetFileStorage = getCourseProductAssetFileStorage()
+) {
+  const product = await findPublishedProductByCourseId(courseId, productStore);
+  if (!product) {
+    return courseAssetErrorPayload(404, "NOT_FOUND", "课程素材不存在");
+  }
+
+  try {
+    const result = await getCourseProductAssetPublicViewFile({
+      productId: product.id,
+      assetId,
+      assetStore,
+      fileStorage,
+    });
+    return {
+      status: 200,
+      file: result.file,
+    } as const;
+  } catch (err) {
+    return courseAssetFailure(err, "课程素材读取失败");
+  }
+}
+
+export async function getCourseAssetDownloadPayload(
+  courseId: number,
+  assetId: string,
+  userId: string,
+  productStore: CourseProductStore = getCourseProductStore(),
+  assetStore: CourseProductAssetStore = getCourseProductAssetStore(),
+  fileStorage: CourseProductAssetFileStorage = getCourseProductAssetFileStorage(),
+  loadAccessStateForUser: (
+    userId: string
+  ) => Promise<CourseAccessState> = loadCourseAccessState
+) {
+  const product = await findPublishedProductByCourseId(courseId, productStore);
+  if (!product) {
+    return courseAssetErrorPayload(404, "NOT_FOUND", "课程素材不存在");
+  }
+
+  const course = CourseSchema.parse(courseFromCourseProduct(product));
+  const accessState = CourseAccessStateSchema.parse(
+    await loadAccessStateForUser(userId)
+  );
+  if (!resolveCourseAccess(accessState, course).canStart) {
+    return courseAssetErrorPayload(
+      403,
+      "FORBIDDEN",
+      "请先解锁课程后再下载资料"
+    );
+  }
+
+  try {
+    const result = await getCourseProductAssetDownloadFile({
+      productId: product.id,
+      assetId,
+      assetStore,
+      fileStorage,
+    });
+    return {
+      status: 200,
+      file: result.file,
+    } as const;
+  } catch (err) {
+    return courseAssetFailure(err, "课程素材下载失败");
+  }
+}
+
 function queryFromSearchParams(searchParams: URLSearchParams): unknown {
   const rawPage = searchParams.get("page");
   const rawPageSize = searchParams.get("pageSize");
@@ -177,6 +346,78 @@ export function registerCourseApi(app: Express) {
       });
     }
   });
+
+  app.get(
+    "/api/courses/:courseId/assets/:assetId/view",
+    async (req: Request, res: Response) => {
+      const parsedCourseId = LegacyNumericIdSchema.safeParse(
+        Number(req.params.courseId)
+      );
+      if (!parsedCourseId.success) {
+        sendBadRequest(res, "课程 ID 不合法");
+        return;
+      }
+
+      try {
+        const payload = await getCourseAssetViewPayload(
+          parsedCourseId.data,
+          req.params.assetId
+        );
+        if ("file" in payload) {
+          sendCourseAssetFile(res, payload.file, "inline");
+          return;
+        }
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(res, 500, {
+          ok: false,
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "课程素材读取失败",
+          },
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/courses/:courseId/assets/:assetId/download",
+    async (req: Request, res: Response) => {
+      const parsedCourseId = LegacyNumericIdSchema.safeParse(
+        Number(req.params.courseId)
+      );
+      if (!parsedCourseId.success) {
+        sendBadRequest(res, "课程 ID 不合法");
+        return;
+      }
+
+      try {
+        const auth = await authorizeRequest(req, "course_access:read");
+        if (!auth.ok) {
+          sendJson(res, auth.status, auth.body);
+          return;
+        }
+        const payload = await getCourseAssetDownloadPayload(
+          parsedCourseId.data,
+          req.params.assetId,
+          auth.session.user.id
+        );
+        if ("file" in payload) {
+          sendCourseAssetFile(res, payload.file, "attachment");
+          return;
+        }
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(res, 500, {
+          ok: false,
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "课程素材下载失败",
+          },
+        });
+      }
+    }
+  );
 
   app.get("/api/courses/:courseId", async (req: Request, res: Response) => {
     const parsedCourseId = LegacyNumericIdSchema.safeParse(
@@ -269,6 +510,81 @@ export function handleCourseApiRequest(
           },
         })
       );
+    return true;
+  }
+
+  const assetViewMatch = url.pathname.match(
+    /^\/api\/courses\/(\d+)\/assets\/([^/]+)\/view$/
+  );
+  if (assetViewMatch?.[1] && assetViewMatch[2]) {
+    const parsedCourseId = LegacyNumericIdSchema.safeParse(
+      Number(assetViewMatch[1])
+    );
+    if (!parsedCourseId.success) {
+      sendBadRequest(res, "课程 ID 不合法");
+      return true;
+    }
+
+    void getCourseAssetViewPayload(
+      parsedCourseId.data,
+      decodeURIComponent(assetViewMatch[2])
+    )
+      .then(payload => {
+        if ("file" in payload) {
+          sendCourseAssetFile(res, payload.file, "inline");
+          return;
+        }
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(res, 500, {
+          ok: false,
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "课程素材读取失败",
+          },
+        })
+      );
+    return true;
+  }
+
+  const assetDownloadMatch = url.pathname.match(
+    /^\/api\/courses\/(\d+)\/assets\/([^/]+)\/download$/
+  );
+  if (assetDownloadMatch?.[1] && assetDownloadMatch[2]) {
+    const parsedCourseId = LegacyNumericIdSchema.safeParse(
+      Number(assetDownloadMatch[1])
+    );
+    if (!parsedCourseId.success) {
+      sendBadRequest(res, "课程 ID 不合法");
+      return true;
+    }
+
+    void (async () => {
+      const auth = await authorizeRequest(req, "course_access:read");
+      if (!auth.ok) {
+        sendJson(res, auth.status, auth.body);
+        return;
+      }
+      const payload = await getCourseAssetDownloadPayload(
+        parsedCourseId.data,
+        decodeURIComponent(assetDownloadMatch[2]),
+        auth.session.user.id
+      );
+      if ("file" in payload) {
+        sendCourseAssetFile(res, payload.file, "attachment");
+        return;
+      }
+      sendJson(res, payload.status, payload.body);
+    })().catch(() =>
+      sendJson(res, 500, {
+        ok: false,
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "课程素材下载失败",
+        },
+      })
+    );
     return true;
   }
 

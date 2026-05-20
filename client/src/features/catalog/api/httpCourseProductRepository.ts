@@ -10,6 +10,7 @@ import {
   type CourseProductContentMutationResult,
   type CourseProductContentQualityBatchResult,
   type CourseProductAssetComplianceUpdateRequest,
+  type CourseProductAssetFileUploadRequest,
   type CourseProductAssetListResult,
   type CourseProductAssetMutationResult,
   type CourseProductAssetUploadRequest,
@@ -338,6 +339,45 @@ export const httpCourseProductRepository = {
     return parseCourseProductAssetMutationResponse(payload);
   },
 
+  async uploadCourseProductAssetFile(
+    productId: string,
+    request: Omit<CourseProductAssetFileUploadRequest, "fileBase64"> & {
+      file: File;
+    }
+  ): Promise<CourseProductAssetMutationResult> {
+    const fileBase64 = await fileToBase64(request.file);
+    const response = await fetch(
+      `${API_BASE}/course-products/${encodeURIComponent(productId)}/assets/files`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify({
+          kind: request.kind,
+          title: request.title,
+          fileName: request.fileName,
+          mimeType: request.mimeType,
+          sizeBytes: request.sizeBytes,
+          fileBase64,
+          usage: request.usage,
+          chapterId: request.chapterId,
+          altText: request.altText,
+          note: request.note,
+          reason: request.reason,
+        } satisfies CourseProductAssetFileUploadRequest),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "课程素材文件上传失败"));
+    }
+    return parseCourseProductAssetMutationResponse(payload);
+  },
+
   async updateCourseProductAssetCompliance(
     productId: string,
     assetId: string,
@@ -363,6 +403,22 @@ export const httpCourseProductRepository = {
     return parseCourseProductAssetMutationResponse(payload);
   },
 };
+
+function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("素材文件读取失败"));
+        return;
+      }
+      const encoded = reader.result.split(",", 2)[1] ?? "";
+      resolve(encoded);
+    };
+    reader.onerror = () => reject(new Error("素材文件读取失败"));
+    reader.readAsDataURL(file);
+  });
+}
 
 async function requestCourseProductMutation(
   url: string,

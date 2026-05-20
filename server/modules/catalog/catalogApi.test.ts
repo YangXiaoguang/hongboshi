@@ -7,6 +7,7 @@ import {
 import {
   catalogOperationPermissions,
   getCourseProductAdminListPayload,
+  getCourseProductAssetDownloadPayload,
   getCourseProductAssetsPayload,
   getCourseProductContentQualityPayload,
   getCourseProductContentPayload,
@@ -16,10 +17,14 @@ import {
   updateCourseProductPricePayload,
   updateCourseProductReviewPayload,
   updateCourseProductStatusPayload,
+  uploadCourseProductAssetFilePayload,
   uploadCourseProductAssetPayload,
 } from "./catalogApi";
 import { InMemoryCourseProductContentStore } from "./courseProductContentStore";
-import { InMemoryCourseProductAssetStore } from "./courseProductAssetStore";
+import {
+  InMemoryCourseProductAssetFileStorage,
+  InMemoryCourseProductAssetStore,
+} from "./courseProductAssetStore";
 
 const products = courses.slice(0, 4).map(courseProductFromCourse);
 const createStore = () => new InMemoryCourseProductStore(products);
@@ -475,6 +480,59 @@ describe("catalog admin api payloads", () => {
     if (reviewed.body.ok) {
       expect(reviewed.body.data.asset.complianceStatus).toBe("approved");
       expect(reviewed.body.data.auditEvent.action).toBe("asset_review");
+    }
+  });
+
+  it("uploads object-storage asset files and serves them to catalog readers", async () => {
+    const productStore = createStore();
+    const assetStore = new InMemoryCourseProductAssetStore();
+    const fileStorage = new InMemoryCourseProductAssetFileStorage();
+
+    const uploaded = await uploadCourseProductAssetFilePayload(
+      { id: "operator_1", roles: ["operator"] },
+      products[0].id,
+      {
+        kind: "worksheet",
+        title: "课后练习表",
+        fileName: "worksheet.pdf",
+        mimeType: "application/pdf",
+        fileBase64: Buffer.from("course worksheet").toString("base64"),
+        sizeBytes: 16,
+        reason: "上传课程练习资料",
+      },
+      productStore,
+      assetStore,
+      fileStorage,
+      "2026-05-20T09:00:00.000Z"
+    );
+
+    expect(uploaded.status).toBe(200);
+    expect(uploaded.body.ok).toBe(true);
+    if (!uploaded.body.ok) return;
+    expect(uploaded.body.data.asset.sourceType).toBe("object_storage");
+
+    const deniedDownload = await getCourseProductAssetDownloadPayload(
+      { id: "member_1", roles: ["member"] },
+      products[0].id,
+      uploaded.body.data.asset.id,
+      productStore,
+      assetStore,
+      fileStorage
+    );
+    expect(deniedDownload.status).toBe(403);
+
+    const downloaded = await getCourseProductAssetDownloadPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      products[0].id,
+      uploaded.body.data.asset.id,
+      productStore,
+      assetStore,
+      fileStorage
+    );
+
+    expect(downloaded.status).toBe(200);
+    if ("file" in downloaded) {
+      expect(downloaded.file.bytes.toString("utf8")).toBe("course worksheet");
     }
   });
 
