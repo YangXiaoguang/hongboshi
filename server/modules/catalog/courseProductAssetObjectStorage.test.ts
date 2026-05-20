@@ -4,6 +4,8 @@ import {
   LocalCourseProductAssetObjectStorage,
   buildCourseProductAssetObjectKey,
   calculateCourseProductAssetContentHash,
+  createCourseProductAssetObjectStorage,
+  resolveCourseProductAssetObjectStorageConfig,
 } from "./courseProductAssetObjectStorage";
 
 describe("course product asset object storage", () => {
@@ -68,5 +70,82 @@ describe("course product asset object storage", () => {
     await expect(
       objectStorage.readObject(descriptor.objectKey)
     ).resolves.toBeUndefined();
+  });
+
+  it("resolves remote provider configuration for signed read urls", async () => {
+    const config = resolveCourseProductAssetObjectStorageConfig({
+      HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PROVIDER: "oss",
+      HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_BUCKET: "hongboshi-course-assets",
+      HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_REGION: "cn-shanghai",
+      HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PUBLIC_BASE_URL:
+        "https://assets.example.com/private",
+      HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_SIGNING_SECRET: "test-secret",
+      HONGBOSHI_COURSE_PRODUCT_ASSET_SIGNED_URL_TTL_SECONDS: "90",
+    });
+    expect(config.issues).toEqual([]);
+    expect(config.provider).toBe("oss");
+    expect(config.defaultSignedReadUrlTtlSeconds).toBe(90);
+
+    const objectStorage = createCourseProductAssetObjectStorage({
+      byteStorage: new InMemoryCourseProductAssetFileStorage(),
+      env: {
+        HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PROVIDER: "oss",
+        HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_BUCKET:
+          "hongboshi-course-assets",
+        HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_REGION: "cn-shanghai",
+        HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PUBLIC_BASE_URL:
+          "https://assets.example.com/private",
+        HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_SIGNING_SECRET: "test-secret",
+        HONGBOSHI_COURSE_PRODUCT_ASSET_SIGNED_URL_TTL_SECONDS: "90",
+      },
+    });
+
+    const descriptor = await objectStorage.putObject({
+      productId: "course_product_1",
+      assetId: "asset_course_product_1_worksheet",
+      fileName: "worksheet.pdf",
+      mimeType: "application/pdf",
+      bytes: Buffer.from("course worksheet"),
+      createdBy: "operator_1",
+      createdAt: "2026-05-20T09:00:00.000Z",
+    });
+    const signed = await objectStorage.createSignedReadUrl({
+      objectKey: descriptor.objectKey,
+      now: "2026-05-20T09:00:00.000Z",
+    });
+
+    expect(descriptor).toMatchObject({
+      provider: "oss",
+      bucket: "hongboshi-course-assets",
+      region: "cn-shanghai",
+    });
+    expect(signed.url).toMatch(
+      /^https:\/\/assets\.example\.com\/private\/course-assets\/course_product_1\//
+    );
+    expect(signed.url).toContain("provider=oss");
+    expect(signed.expiresAt).toBe("2026-05-20T09:01:30.000Z");
+  });
+
+  it("reports missing remote provider settings before creating storage", () => {
+    const config = resolveCourseProductAssetObjectStorageConfig({
+      HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PROVIDER: "s3",
+    });
+
+    expect(config.issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("PUBLIC_BASE_URL"),
+        expect.stringContaining("OBJECT_BUCKET"),
+        expect.stringContaining("OBJECT_REGION"),
+        expect.stringContaining("SIGNING_SECRET"),
+      ])
+    );
+    expect(() =>
+      createCourseProductAssetObjectStorage({
+        byteStorage: new InMemoryCourseProductAssetFileStorage(),
+        env: {
+          HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PROVIDER: "s3",
+        },
+      })
+    ).toThrow("COURSE_PRODUCT_ASSET_OBJECT_STORAGE_CONFIG_INVALID");
   });
 });

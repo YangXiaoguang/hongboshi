@@ -1,5 +1,6 @@
-import { createHash } from "crypto";
+import { createHash, createHmac } from "crypto";
 import {
+  CourseProductAssetStorageProviderSchema,
   CourseProductAssetObjectDeleteResultSchema,
   CourseProductAssetObjectDescriptorSchema,
   CourseProductAssetSignedReadUrlSchema,
@@ -10,6 +11,17 @@ import {
 } from "../../../shared/domain";
 
 export const COURSE_PRODUCT_ASSET_SIGNED_READ_URL_TTL_SECONDS = 10 * 60;
+const COURSE_PRODUCT_ASSET_OBJECT_SIGNING_SECRET_FALLBACK = "local-dev";
+
+export type CourseProductAssetObjectStorageConfig = {
+  provider: CourseProductAssetStorageProvider;
+  bucket?: string;
+  region?: string;
+  publicBaseUrl?: string;
+  signingSecret: string;
+  defaultSignedReadUrlTtlSeconds: number;
+  issues: string[];
+};
 
 export interface CourseProductAssetObjectPutInput {
   productId: string;
@@ -59,6 +71,9 @@ export class LocalCourseProductAssetObjectStorage implements CourseProductAssetO
       provider?: CourseProductAssetStorageProvider;
       bucket?: string;
       region?: string;
+      publicBaseUrl?: string;
+      signingSecret?: string;
+      defaultSignedReadUrlTtlSeconds?: number;
     } = {}
   ) {}
 
@@ -103,7 +118,8 @@ export class LocalCourseProductAssetObjectStorage implements CourseProductAssetO
   async createSignedReadUrl({
     objectKey,
     now = new Date().toISOString(),
-    expiresInSeconds = COURSE_PRODUCT_ASSET_SIGNED_READ_URL_TTL_SECONDS,
+    expiresInSeconds = this.options.defaultSignedReadUrlTtlSeconds ??
+      COURSE_PRODUCT_ASSET_SIGNED_READ_URL_TTL_SECONDS,
   }: {
     objectKey: string;
     now?: string;
@@ -112,16 +128,31 @@ export class LocalCourseProductAssetObjectStorage implements CourseProductAssetO
     const expiresAt = new Date(
       new Date(now).getTime() + Math.max(1, expiresInSeconds) * 1000
     ).toISOString();
-    const signature = createHash("sha256")
-      .update(`${objectKey}:${expiresAt}:local-dev`)
-      .digest("hex")
-      .slice(0, 32);
+    const signature = signCourseProductAssetObjectReadUrl({
+      objectKey,
+      expiresAt,
+      provider: this.options.provider ?? "local",
+      secret:
+        this.options.signingSecret ??
+        COURSE_PRODUCT_ASSET_OBJECT_SIGNING_SECRET_FALLBACK,
+    });
+    const url = this.options.publicBaseUrl
+      ? buildRemoteSignedReadUrl({
+          baseUrl: this.options.publicBaseUrl,
+          objectKey,
+          expiresAt,
+          signature,
+          provider: this.options.provider ?? "local",
+        })
+      : buildLocalSignedReadUrl({
+          objectKey,
+          expiresAt,
+          signature,
+        });
 
     return CourseProductAssetSignedReadUrlSchema.parse({
       objectKey,
-      url: `/api/course-assets/local-signed/${encodeURIComponent(
-        objectKey
-      )}?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}`,
+      url,
       expiresAt,
       headers: {
         "Cache-Control": "private, max-age=0",
@@ -153,8 +184,127 @@ export class LocalCourseProductAssetObjectStorage implements CourseProductAssetO
   }
 }
 
+export function resolveCourseProductAssetObjectStorageConfig(
+  env: NodeJS.ProcessEnv = process.env
+): CourseProductAssetObjectStorageConfig {
+  const parsedProvider = CourseProductAssetStorageProviderSchema.safeParse(
+    normalizeEnvValue(env.HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PROVIDER) ??
+      "local"
+  );
+  const provider = parsedProvider.success ? parsedProvider.data : "local";
+  const rawTtl = normalizeEnvValue(
+    env.HONGBOSHI_COURSE_PRODUCT_ASSET_SIGNED_URL_TTL_SECONDS
+  );
+  const ttl = rawTtl ? Number(rawTtl) : undefined;
+  const config = {
+    provider,
+    bucket: normalizeEnvValue(
+      env.HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_BUCKET
+    ),
+    region: normalizeEnvValue(
+      env.HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_REGION
+    ),
+    publicBaseUrl: normalizeEnvValue(
+      env.HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PUBLIC_BASE_URL
+    ),
+    signingSecret:
+      normalizeEnvValue(
+        env.HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_SIGNING_SECRET
+      ) ?? COURSE_PRODUCT_ASSET_OBJECT_SIGNING_SECRET_FALLBACK,
+    defaultSignedReadUrlTtlSeconds:
+      ttl && Number.isFinite(ttl)
+        ? Math.max(1, Math.floor(ttl))
+        : COURSE_PRODUCT_ASSET_SIGNED_READ_URL_TTL_SECONDS,
+    issues: [] as string[],
+  };
+
+  if (!parsedProvider.success) {
+    config.issues.push(
+      "HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PROVIDER 仅支持 local/s3/oss/cos"
+    );
+  }
+
+  if (rawTtl && (!ttl || !Number.isFinite(ttl) || ttl <= 0)) {
+    config.issues.push(
+      "HONGBOSHI_COURSE_PRODUCT_ASSET_SIGNED_URL_TTL_SECONDS 必须是正整数秒"
+    );
+  }
+
+  if (config.provider !== "local") {
+    if (!config.publicBaseUrl) {
+      config.issues.push(
+        "远端课程素材对象存储需要配置 HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PUBLIC_BASE_URL"
+      );
+    }
+    if (!config.bucket) {
+      config.issues.push(
+        "远端课程素材对象存储需要配置 HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_BUCKET"
+      );
+    }
+    if (!config.region) {
+      config.issues.push(
+        "远端课程素材对象存储需要配置 HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_REGION"
+      );
+    }
+    if (
+      config.signingSecret ===
+      COURSE_PRODUCT_ASSET_OBJECT_SIGNING_SECRET_FALLBACK
+    ) {
+      config.issues.push(
+        "远端课程素材对象存储需要配置 HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_SIGNING_SECRET"
+      );
+    }
+  }
+
+  return config;
+}
+
+export function createCourseProductAssetObjectStorage({
+  byteStorage,
+  env = process.env,
+}: {
+  byteStorage: CourseProductAssetObjectByteStorage;
+  env?: NodeJS.ProcessEnv;
+}) {
+  const config = resolveCourseProductAssetObjectStorageConfig(env);
+  if (config.issues.length > 0) {
+    throw new Error(
+      [
+        "COURSE_PRODUCT_ASSET_OBJECT_STORAGE_CONFIG_INVALID",
+        ...config.issues,
+      ].join("\n")
+    );
+  }
+
+  return new LocalCourseProductAssetObjectStorage(byteStorage, {
+    provider: config.provider,
+    bucket: config.bucket,
+    region: config.region,
+    publicBaseUrl: config.publicBaseUrl,
+    signingSecret: config.signingSecret,
+    defaultSignedReadUrlTtlSeconds: config.defaultSignedReadUrlTtlSeconds,
+  });
+}
+
 export function calculateCourseProductAssetContentHash(bytes: Buffer) {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+export function signCourseProductAssetObjectReadUrl({
+  objectKey,
+  expiresAt,
+  provider,
+  secret,
+}: {
+  objectKey: string;
+  expiresAt: string;
+  provider: CourseProductAssetStorageProvider;
+  secret: string;
+}) {
+  return createHmac("sha256", secret)
+    .update(`${provider}:${objectKey}:${expiresAt}`)
+    .digest("hex")
+    .slice(0, 40);
 }
 
 export function buildCourseProductAssetObjectKey({
@@ -192,4 +342,46 @@ function sanitizeObjectFileName(value: string) {
     .replace(/\s+/g, "_")
     .slice(0, 140);
   return sanitized || "course-asset.bin";
+}
+
+function normalizeEnvValue(value: string | undefined) {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function buildLocalSignedReadUrl({
+  objectKey,
+  expiresAt,
+  signature,
+}: {
+  objectKey: string;
+  expiresAt: string;
+  signature: string;
+}) {
+  return `/api/course-assets/local-signed/${encodeURIComponent(
+    objectKey
+  )}?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}`;
+}
+
+function buildRemoteSignedReadUrl({
+  baseUrl,
+  objectKey,
+  expiresAt,
+  signature,
+  provider,
+}: {
+  baseUrl: string;
+  objectKey: string;
+  expiresAt: string;
+  signature: string;
+  provider: CourseProductAssetStorageProvider;
+}) {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
+  const encodedObjectPath = objectKey
+    .split("/")
+    .map(segment => encodeURIComponent(segment))
+    .join("/");
+  return `${normalizedBaseUrl}/${encodedObjectPath}?expiresAt=${encodeURIComponent(
+    expiresAt
+  )}&signature=${signature}&provider=${provider}`;
 }

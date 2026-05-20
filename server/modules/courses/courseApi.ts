@@ -29,6 +29,7 @@ import {
   type CourseProductAssetFileStorage,
   type CourseProductAssetStore,
 } from "../catalog/courseProductAssetStore";
+import type { CourseProductAssetObjectStorage } from "../catalog/courseProductAssetObjectStorage";
 import {
   getCourseProductContentForProduct,
   getCourseProductContentStore,
@@ -214,7 +215,8 @@ export async function getCourseAssetViewPayload(
   assetId: string,
   productStore: CourseProductStore = getCourseProductStore(),
   assetStore: CourseProductAssetStore = getCourseProductAssetStore(),
-  fileStorage: CourseProductAssetFileStorage = getCourseProductAssetFileStorage()
+  fileStorage: CourseProductAssetFileStorage = getCourseProductAssetFileStorage(),
+  objectStorage?: CourseProductAssetObjectStorage
 ) {
   const product = await findPublishedProductByCourseId(courseId, productStore);
   if (!product) {
@@ -227,10 +229,12 @@ export async function getCourseAssetViewPayload(
       assetId,
       assetStore,
       fileStorage,
+      objectStorage,
     });
     return {
       status: 200,
       file: result.file,
+      signedReadUrl: result.signedReadUrl,
     } as const;
   } catch (err) {
     return courseAssetFailure(err, "课程素材读取失败");
@@ -246,7 +250,8 @@ export async function getCourseAssetDownloadPayload(
   fileStorage: CourseProductAssetFileStorage = getCourseProductAssetFileStorage(),
   loadAccessStateForUser: (
     userId: string
-  ) => Promise<CourseAccessState> = loadCourseAccessState
+  ) => Promise<CourseAccessState> = loadCourseAccessState,
+  objectStorage?: CourseProductAssetObjectStorage
 ) {
   const product = await findPublishedProductByCourseId(courseId, productStore);
   if (!product) {
@@ -271,10 +276,12 @@ export async function getCourseAssetDownloadPayload(
       assetId,
       assetStore,
       fileStorage,
+      objectStorage,
     });
     return {
       status: 200,
       file: result.file,
+      signedReadUrl: result.signedReadUrl,
     } as const;
   } catch (err) {
     return courseAssetFailure(err, "课程素材下载失败");

@@ -196,6 +196,9 @@ describe("course API payloads", () => {
     expect(publicView.status).toBe(200);
     if ("file" in publicView) {
       expect(publicView.file.mimeType).toBe("image/jpeg");
+      expect(publicView.signedReadUrl.url).toContain(
+        encodeURIComponent(image.asset.objectKey ?? image.asset.storageKey!)
+      );
     }
 
     const lockedDownload = await getCourseAssetDownloadPayload(
@@ -226,6 +229,9 @@ describe("course API payloads", () => {
     if ("file" in unlockedDownload) {
       expect(unlockedDownload.file.bytes.toString("utf8")).toBe(
         "course worksheet"
+      );
+      expect(unlockedDownload.signedReadUrl.expiresAt).toMatch(
+        /^20\d{2}-\d{2}-\d{2}T/
       );
     }
   });

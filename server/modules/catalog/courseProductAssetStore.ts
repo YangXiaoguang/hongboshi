@@ -27,8 +27,8 @@ import {
   type CourseProductStore,
 } from "./courseProductStore";
 import {
-  buildCourseProductAssetObjectKey,
-  calculateCourseProductAssetContentHash,
+  createCourseProductAssetObjectStorage,
+  type CourseProductAssetObjectStorage,
 } from "./courseProductAssetObjectStorage";
 import { PostgresCourseProductAssetStore } from "./postgresCourseProductAssetStore";
 
@@ -368,6 +368,7 @@ export async function uploadCourseProductAssetFile({
   productStore = getCourseProductStore(),
   assetStore = getCourseProductAssetStore(),
   fileStorage = getCourseProductAssetFileStorage(),
+  objectStorage,
   now = new Date().toISOString(),
 }: {
   productId: string;
@@ -376,6 +377,7 @@ export async function uploadCourseProductAssetFile({
   productStore?: CourseProductStore;
   assetStore?: CourseProductAssetStore;
   fileStorage?: CourseProductAssetFileStorage;
+  objectStorage?: CourseProductAssetObjectStorage;
   now?: string;
 }): Promise<CourseProductAssetMutationResult> {
   const product = await productStore.getProduct(productId);
@@ -392,16 +394,19 @@ export async function uploadCourseProductAssetFile({
 
   const id = createAssetId(productId, parsed.kind, now);
   const fileName = sanitizeFileName(parsed.fileName);
-  const contentHash = calculateCourseProductAssetContentHash(bytes);
-  const storageKey = buildCourseProductAssetObjectKey({
+  const resolvedObjectStorage =
+    objectStorage ??
+    createCourseProductAssetObjectStorage({
+      byteStorage: fileStorage,
+    });
+  const object = await resolvedObjectStorage.putObject({
     productId,
     assetId: id,
     fileName,
-    contentHash,
-  });
-  await fileStorage.saveFile({
-    storageKey,
+    mimeType: parsed.mimeType,
     bytes,
+    createdBy: actorId,
+    createdAt: now,
   });
 
   const asset = CourseProductAssetSchema.parse({
@@ -414,9 +419,9 @@ export async function uploadCourseProductAssetFile({
     mimeType: parsed.mimeType,
     sizeBytes: bytes.length,
     sourceType: "object_storage",
-    storageKey,
-    objectKey: storageKey,
-    contentHash,
+    storageKey: object.objectKey,
+    objectKey: object.objectKey,
+    contentHash: object.contentHash,
     publicUrl: isImageKind(parsed.kind)
       ? `/api/courses/${product.courseId}/assets/${id}/view`
       : undefined,
@@ -515,30 +520,42 @@ export async function getCourseProductAssetStoredFile({
   assetId,
   assetStore = getCourseProductAssetStore(),
   fileStorage = getCourseProductAssetFileStorage(),
+  objectStorage,
 }: {
   productId: string;
   assetId: string;
   assetStore?: CourseProductAssetStore;
   fileStorage?: CourseProductAssetFileStorage;
+  objectStorage?: CourseProductAssetObjectStorage;
 }) {
   const asset = await assetStore.getAsset(assetId);
   if (!asset || asset.productId !== productId) {
     throw new Error("COURSE_PRODUCT_ASSET_NOT_FOUND");
   }
-  if (asset.sourceType !== "object_storage" || !asset.storageKey) {
+  const objectKey = asset.objectKey ?? asset.storageKey;
+  if (asset.sourceType !== "object_storage" || !objectKey) {
     throw new Error("COURSE_PRODUCT_ASSET_FILE_NOT_FOUND");
   }
 
-  const bytes = await fileStorage.readFile(asset.storageKey);
-  if (!bytes) throw new Error("COURSE_PRODUCT_ASSET_FILE_NOT_FOUND");
+  const resolvedObjectStorage =
+    objectStorage ??
+    createCourseProductAssetObjectStorage({
+      byteStorage: fileStorage,
+    });
+  const object = await resolvedObjectStorage.readObject(objectKey);
+  if (!object) throw new Error("COURSE_PRODUCT_ASSET_FILE_NOT_FOUND");
+  const signedReadUrl = await resolvedObjectStorage.createSignedReadUrl({
+    objectKey,
+  });
 
   return {
     asset,
+    signedReadUrl,
     file: {
-      bytes,
+      bytes: object.bytes,
       fileName: asset.fileName,
       mimeType: asset.mimeType,
-      sizeBytes: bytes.length,
+      sizeBytes: object.bytes.length,
     },
   };
 }
@@ -548,6 +565,7 @@ export async function getCourseProductAssetPublicViewFile(options: {
   assetId: string;
   assetStore?: CourseProductAssetStore;
   fileStorage?: CourseProductAssetFileStorage;
+  objectStorage?: CourseProductAssetObjectStorage;
 }) {
   const result = await getCourseProductAssetStoredFile(options);
   if (!isImageKind(result.asset.kind)) {
@@ -564,6 +582,7 @@ export async function getCourseProductAssetDownloadFile(options: {
   assetId: string;
   assetStore?: CourseProductAssetStore;
   fileStorage?: CourseProductAssetFileStorage;
+  objectStorage?: CourseProductAssetObjectStorage;
 }) {
   const result = await getCourseProductAssetStoredFile(options);
   if (!isDownloadableKind(result.asset) || !result.asset.downloadEnabled) {

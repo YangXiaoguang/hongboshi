@@ -4,13 +4,13 @@
 
 ## 当前指针
 
-- 最后更新时间：2026-05-20 Asia/Shanghai
+- 最后更新时间：2026-05-21 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`CUX-I-B-B-E 课程素材回填写入任务与运营确认入口准备` 已完成，素材回填具备 dry-run 预检、受控 commit 写入、PostgreSQL 引用 upsert 和后台 API 入口。
-- 本轮完成后下一步：执行 `CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入`
+- 当前状态：`CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入` 已完成，课程素材对象存储具备 local/s3/oss/cos provider 配置边界、远端 provider 配置校验、HMAC 短期读取 URL、上传/读取路径 object storage adapter 化和 provider 级测试。
+- 本轮完成后下一步：执行 `CUX-I-B-B-G 课程素材治理后台与引用报表基础`
 
 ## 已完成关键能力
 
@@ -45,6 +45,7 @@
 - 完成课程素材正式存储设计准备：新增素材对象/短期读取 URL/删除结果/引用关系/回填计划共享契约，服务端对象存储 adapter 接口和本地兼容实现，文件上传写入 `objectKey` 与 sha256 `contentHash`，并落下素材对象表、素材元数据表和素材引用表迁移草案。
 - 完成课程素材 PostgreSQL Store 与回填 dry-run 基础：新增 `PostgresCourseProductAssetStore`、显式 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres` 切换、对象素材表同步和 `dryRunCourseProductAssetBackfill`，可检查 JSON Store 与章节占位回填到专表前的素材数、引用数和跳过原因。
 - 完成课程素材回填写入任务与运营确认入口准备：新增 backfill 请求/结果契约、受控 commit service、PostgreSQL 引用 upsert、后台 `GET/POST /api/catalog/admin/course-products/assets/backfill` 和前端 repository 入口，管理员可先预检再确认写入对象素材、素材元数据和章节引用关系。
+- 完成课程素材正式对象存储 provider 与短期读取 URL 接入：新增 local/s3/oss/cos provider 配置解析、远端配置校验、HMAC 短期读取 URL、`.env.example` provider 环境变量、上传/读取路径 object storage adapter 化和课程 API payload 签名 URL 生成，HTTP 路由仍保持服务端权限/合规校验后返回文件流。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -219,6 +220,23 @@
 - `/admin/audit` 管理员归档控制台已加入“归档检索预览”，按当前筛选读取归档表前 5 条摘要行；归档预览为空或失败不影响主审计列表、导出、详情、归档和校验。
 
 ## 最近完成阶段
+
+CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入已交付：
+
+- `server/modules/catalog/courseProductAssetObjectStorage.ts`：新增 `resolveCourseProductAssetObjectStorageConfig` 与 `createCourseProductAssetObjectStorage`，支持 `local/s3/oss/cos` provider 配置、远端 provider 必填项校验、默认 600 秒短期读取 URL TTL 和 HMAC 签名。
+- `LocalCourseProductAssetObjectStorage`：保留本地 byte storage 兼容实现，但 descriptor 已可写入 provider/bucket/region；配置 `HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PUBLIC_BASE_URL` 时会生成远端对象路径短期 URL，否则生成本地受控读取 URL。
+- `server/modules/catalog/courseProductAssetStore.ts`：真实文件上传改为通过 `CourseProductAssetObjectStorage.putObject` 写入对象并保存 `objectKey/contentHash`；后台下载、公开图片查看和已解锁课程资料下载改为通过 object storage adapter 读取对象，历史 `storageKey` 继续作为兼容 fallback。
+- `server/modules/courses/courseApi.ts`：课程素材公开查看和下载 payload 已携带 `signedReadUrl`，HTTP 路由当前仍在服务端完成登录、权益、合规和下载开关校验后返回文件流，避免前端绕过业务边界。
+- `.env.example`：新增课程素材 Store、文件存储根目录、对象 provider、bucket、region、公开基础域名、签名密钥和签名 URL TTL 配置项。
+- `server/modules/catalog/courseProductAssetObjectStorage.test.ts` 与 `server/modules/courses/courseApi.test.ts`：覆盖远端 provider 配置解析、缺少配置错误、provider 元数据写入、签名 URL 过期时间和课程 API 签名 URL 生成。
+- `docs/course-asset-storage-architecture.md`、`docs/domain-contracts.md`、`docs/database-schema.md`、`docs/admin-management-roadmap.md` 与 `docs/product-engineering-roadmap.md` 已同步 provider 边界、短期 URL、HTTP 受控读取和下一步素材治理方向。
+
+CUX-I-B-B-F 验收结果：
+
+- `pnpm run check` 已通过。
+- `pnpm test -- server/modules/catalog/courseProductAssetObjectStorage.test.ts server/modules/catalog/courseProductAssetStore.test.ts server/modules/courses/courseApi.test.ts shared/domain/courseProduct.test.ts` 实际执行全量 124 个测试文件 / 599 个测试并通过。
+- 本轮是服务端存储 adapter、配置和契约基建，没有新增用户端页面；浏览器验证不适用。
+- `pnpm run ci` 已通过：类型检查、124 个测试文件 / 599 个测试和生产构建均通过，Vite 仍保留既有大 chunk 提醒。
 
 CUX-I-B-B-E 课程素材回填写入任务与运营确认入口准备已交付：
 
@@ -649,29 +667,30 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：CUX-I-B-B-E 课程素材回填写入任务与运营确认入口准备
+### 最近完成阶段：CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入
 
-CUX-I-B-B-E 稳定切片已交付：
+CUX-I-B-B-F 稳定切片已交付：
 
-- 已新增 backfill 请求/结果契约，保留 `dry_run` 预检与 `commit` 写入模式。
-- 已新增受控 commit service，写入前校验显式确认、操作原因和目标 Store 引用写入能力。
-- `PostgresCourseProductAssetStore` 已支持素材引用关系幂等 upsert 与读取，回填可写对象素材、素材元数据和章节引用关系。
-- 已新增后台 API `GET/POST /api/catalog/admin/course-products/assets/backfill`，预检绑定 `catalog:read`，确认写入绑定 `catalog:review`。
-- 前端 catalog repository 已有 backfill 解析和请求方法，为后续运营后台 UI 接入准备。
+- 已新增对象存储 provider 配置解析，默认 `local`，支持 `s3/oss/cos` 远端 provider 占位和缺失配置错误提示。
+- 已新增 HMAC 短期读取 URL 生成能力，支持本地受控路由和远端公开基础域名对象路径。
+- 课程素材文件上传、后台下载、公开图片查看和已解锁课程资料下载均已通过 `CourseProductAssetObjectStorage` 读写对象。
+- 课程 API payload 已具备 `signedReadUrl`，但 HTTP 路由仍保持服务端登录、权益、合规和下载开关校验后返回文件流。
+- `.env.example`、数据库说明、素材架构、领域契约、后台路线图和产品工程路线已同步 provider 变量与边界。
 
-### 用户端待续：CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入
+### 用户端待续：CUX-I-B-B-G 课程素材治理后台与引用报表基础
 
 业务目标：
 
-CUX-I-B-B-E 已经把开发期素材回填推进到受控 API。下一步应把对象存储 adapter 从本地兼容实现推进到正式 provider 边界：保持现有后台上传、合规、学习页受控下载不变，新增可替换的 OSS/COS/S3 provider 配置、短期读取 URL 能力和 provider 级测试，让后续真实素材文件可以脱离本地文件目录。
+CUX-I-B-B-F 已经把素材文件读写从本地目录提升到 provider-aware object storage 边界。下一步应把课程素材从“能上传/能回填/能下载”推进到“可治理、可排查、可清理、可运营”：在后台建立素材治理的只读基础，帮助运营识别未引用素材、重复内容 hash、待合规处理素材、软删除候选和章节引用关系，为后续批量清理与学习资料报表做准备。
 
 建议实施范围：
 
-- 抽象正式对象存储 provider 配置解析，支持 `local` 默认和至少一个远端 provider 的接口占位，不要求本轮接真实云密钥。
-- 将 `CourseProductAssetObjectStorage` 的 `createSignedReadUrl` 接入服务端受控读取路径或后台预览路径，继续由 API 做登录、权益、合规和下载开关校验。
-- 增加 provider 级单元测试：对象 key 生成、contentHash、签名 URL 到期时间、缺少配置错误和本地 fallback。
-- 更新 `.env.example`/数据库说明/素材架构文档，明确真实 provider 所需环境变量、上线前密钥与 bucket 决策点。
-- 不改用户端购买、学习页资料展示和后台素材编辑主流程；只替换底层对象读取能力。
+- 新增课程素材治理只读 service，聚合素材 Store、课程详情内容 Store、课程商品 Store 和引用表能力，输出治理摘要。
+- 首批治理维度包含：未引用素材、重复 `contentHash`、待审核/驳回素材、`downloadEnabled=false` 的学习资料、疑似可软删素材和章节引用数量。
+- 若当前 Store 不支持引用表读取，使用章节 `materialPlaceholders` 做兼容推导，并在结果中标记来源，保持 JSON Store 和 PostgreSQL Store 双路径可用。
+- 新增后台 API，例如 `GET /api/catalog/admin/course-products/assets/governance`，绑定 `catalog:read`，只返回摘要和只读列表，不做删除、批量审核或自动清理。
+- 增加 service/API 测试，覆盖 JSON fallback、PostgreSQL 引用读取能力、重复 hash、未引用素材、权限失败和空态。
+- 更新素材架构、领域契约、数据库说明和本执行状态；如果 UI 超出单轮范围，本轮先完成后端治理 API 和前端 repository，为下一轮 `/admin/courses` 治理面板接入做准备。
 
 ## 执行不变量
 
@@ -692,4 +711,4 @@ CUX-I-B-B-E 已经把开发期素材回填推进到受控 API。下一步应把�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 CUX-I-B-B-G 课程素材治理后台与引用报表基础，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

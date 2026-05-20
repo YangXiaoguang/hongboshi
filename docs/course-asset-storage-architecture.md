@@ -18,14 +18,18 @@
 
 ## 对象存储 Adapter
 
-`server/modules/catalog/courseProductAssetObjectStorage.ts` 定义正式对象存储接口：
+`server/modules/catalog/courseProductAssetObjectStorage.ts` 定义正式对象存储接口和 provider 配置边界：
 
 - `putObject`：写入对象，返回 `objectKey`、`provider`、`mimeType`、`sizeBytes`、`contentHash`、原文件名和创建人。
 - `readObject`：按 `objectKey` 读取对象，供后台下载和受控下载接口复用。
-- `createSignedReadUrl`：生成短期读取 URL，后续对接 OSS/COS/S3 时替换为真实签名 URL。
+- `createSignedReadUrl`：按 provider、对象 key、过期时间和签名密钥生成短期读取 URL；本地模式生成服务端本地读取路由，远端 provider 通过公开基础域名生成对象路径 URL。
 - `deleteObject`：支持软删与物理删除两种语义，默认软删，避免误删仍被引用的学习资料。
 
-本地实现 `LocalCourseProductAssetObjectStorage` 复用现有 `CourseProductAssetFileStorage`，生成 `course-assets/{productId}/{assetId}/{sha256前缀}-{fileName}` 形式的对象 key，并计算 `sha256:*` 内容指纹。现有 `uploadCourseProductAssetFile` 已开始写入 `objectKey` 与 `contentHash`，但仍用原有 `storageKey` 读取，保证运行路径兼容。
+`resolveCourseProductAssetObjectStorageConfig` 读取 `HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PROVIDER`，默认 `local`，并支持 `s3`、`oss`、`cos` 三类远端 provider 占位。远端 provider 必须提供 `HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_PUBLIC_BASE_URL`、`HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_BUCKET`、`HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_REGION` 和 `HONGBOSHI_COURSE_PRODUCT_ASSET_OBJECT_SIGNING_SECRET`；`HONGBOSHI_COURSE_PRODUCT_ASSET_SIGNED_URL_TTL_SECONDS` 控制默认短期读取 URL 有效期，默认 600 秒。
+
+当前远端 provider 先落稳定工程边界：`createCourseProductAssetObjectStorage` 会按配置返回 provider-aware adapter，descriptor 会记录 provider/bucket/region，短期 URL 会走对应公开域名与 HMAC 签名；对象字节仍复用注入的 `CourseProductAssetFileStorage`，后续接入真实 SDK adapter 时替换 byte storage/putObject/readObject 实现即可，不需要改 API payload、素材 Store 或前台学习页。
+
+本地实现 `LocalCourseProductAssetObjectStorage` 复用现有 `CourseProductAssetFileStorage`，生成 `course-assets/{productId}/{assetId}/{sha256前缀}-{fileName}` 形式的对象 key，并计算 `sha256:*` 内容指纹。现有 `uploadCourseProductAssetFile` 已改为通过 `CourseProductAssetObjectStorage.putObject` 写入文件对象并保存 `objectKey` 与 `contentHash`；后台下载、公开图片查看和已解锁课程资料下载会通过 object storage adapter 读取对象，历史 `storageKey` 仍作为兼容 fallback。
 
 ## 回填计划
 
@@ -49,7 +53,7 @@
 
 - 当前不删除 `.hongboshi-data/course-product-assets.json`。
 - 当前支持显式开启 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres`，但默认开发路径仍保持 JSON 文件 Store，避免在未回填时误切换。
-- 当前不把学习页下载改为签名 URL 直连对象存储，仍走 `/api/courses/:courseId/assets/:assetId/download` 做登录、权益、合规和下载开关校验。
+- 当前不把学习页下载改为签名 URL 直连对象存储，仍走 `/api/courses/:courseId/assets/:assetId/download` 做登录、权益、合规和下载开关校验；服务端读取 payload 内部可取得 `signedReadUrl`，HTTP 路由当前继续返回文件流，避免绕过课程权益和合规边界。
 - 当前不允许前端直接修改合规状态、下载开关或对象 key。
 - 当前不自动把开发期 JSON Store 切换为 PostgreSQL；管理员应先查看 backfill 预检结果，再通过受控写入入口回填。
 
@@ -57,5 +61,5 @@
 
 - `CUX-I-B-B-D`：已实现 `PostgresCourseProductAssetStore`，让素材列表、上传登记、合规审核和后台下载可显式切换 PostgreSQL；已实现素材回填 dry-run service，可扫描 JSON Store 与章节素材占位并输出扫描数、可回填素材数、引用数、跳过数和原因。
 - `CUX-I-B-B-E`：已实现素材回填写入 service、PostgreSQL 引用 upsert 和后台 backfill API，允许管理员在 dry-run 结果确认后把对象素材、素材元数据和章节引用关系写入 PostgreSQL。
-- `CUX-I-B-B-F`：接入正式对象存储 provider，并把本地签名 URL 替换为真实短期签名 URL。
+- `CUX-I-B-B-F`：已接入对象存储 provider 配置解析、local/s3/oss/cos 边界、远端公开域名短期 HMAC 签名 URL、上传/读取路径 object storage adapter 化和 provider 级测试。真实云 SDK、STS 临时凭证和 CDN 回源策略仍属于上线前集成任务。
 - `CUX-I-B-B-G`：增加素材治理后台，包括未引用素材、重复内容 hash、待审队列、过期软删和引用报表。
