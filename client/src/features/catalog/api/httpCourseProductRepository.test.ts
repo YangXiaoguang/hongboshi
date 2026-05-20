@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   httpCourseProductRepository,
+  parseCourseProductAssetBackfillResponse,
   parseCourseProductAssetListResponse,
   parseCourseProductAssetMutationResponse,
   parseCourseProductContentResponse,
@@ -141,6 +142,35 @@ describe("http course product repository parsing", () => {
     });
 
     expect(mutation.auditEvent.action).toBe("asset_upload");
+  });
+
+  it("parses course product asset backfill responses", () => {
+    const parsed = parseCourseProductAssetBackfillResponse({
+      ok: true,
+      data: {
+        mode: "dry_run",
+        plan: {
+          id: "asset_backfill_dry_run_20260520T110000000Z",
+          source: "json_asset_store_and_content_placeholders",
+          dryRun: true,
+          scannedCount: 2,
+          assetCount: 1,
+          referenceCount: 1,
+          skippedCount: 0,
+          startedAt: "2026-05-20T11:00:00.000Z",
+          finishedAt: "2026-05-20T11:00:00.000Z",
+          notes: [],
+        },
+        writtenAssetCount: 0,
+        writtenObjectCount: 0,
+        writtenReferenceCount: 0,
+        confirmedBy: "operator_1",
+        createdAt: "2026-05-20T11:00:00.000Z",
+      },
+    });
+
+    expect(parsed.mode).toBe("dry_run");
+    expect(parsed.plan.referenceCount).toBe(1);
   });
 
   it("parses course product mutation responses", () => {
@@ -441,6 +471,52 @@ describe("http course product repository parsing", () => {
       expect.objectContaining({
         method: "PATCH",
         body: expect.stringContaining("认识情绪反应"),
+      })
+    );
+  });
+
+  it("sends asset backfill commit requests to the admin endpoint", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        mode: "commit",
+        plan: {
+          id: "asset_backfill_commit_20260520T110000000Z",
+          source: "json_asset_store_and_content_placeholders",
+          dryRun: false,
+          scannedCount: 2,
+          assetCount: 1,
+          referenceCount: 1,
+          skippedCount: 0,
+          startedAt: "2026-05-20T11:00:00.000Z",
+          finishedAt: "2026-05-20T11:00:00.000Z",
+          notes: [],
+        },
+        writtenAssetCount: 1,
+        writtenObjectCount: 1,
+        writtenReferenceCount: 1,
+        confirmedBy: "operator_1",
+        reason: "运营确认课程素材回填",
+        createdAt: "2026-05-20T11:00:00.000Z",
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.runCourseProductAssetBackfill({
+        action: "commit",
+        confirmWrite: true,
+        reason: "运营确认课程素材回填",
+      });
+
+    expect(result.writtenReferenceCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/backfill",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("confirmWrite"),
       })
     );
   });

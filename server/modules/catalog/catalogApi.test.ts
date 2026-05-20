@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { courses } from "../../../shared/data/mockCourses";
 import {
+  CourseProductAssetReferenceSchema,
+  type CourseProductAssetReference,
+} from "../../../shared/domain";
+import {
   InMemoryCourseProductStore,
   courseProductFromCourse,
 } from "./courseProductStore";
 import {
   catalogOperationPermissions,
   getCourseProductAdminListPayload,
+  getCourseProductAssetBackfillPayload,
   getCourseProductAssetDownloadPayload,
   getCourseProductAssetsPayload,
   getCourseProductContentQualityPayload,
   getCourseProductContentPayload,
+  runCourseProductAssetBackfillPayload,
   updateCourseProductAssetCompliancePayload,
   updateCourseProductBasicInfoPayload,
   updateCourseProductContentPayload,
@@ -24,10 +30,30 @@ import { InMemoryCourseProductContentStore } from "./courseProductContentStore";
 import {
   InMemoryCourseProductAssetFileStorage,
   InMemoryCourseProductAssetStore,
+  type CourseProductAssetReferenceStore,
 } from "./courseProductAssetStore";
 
 const products = courses.slice(0, 4).map(courseProductFromCourse);
 const createStore = () => new InMemoryCourseProductStore(products);
+
+class InMemoryBackfillTarget
+  extends InMemoryCourseProductAssetStore
+  implements CourseProductAssetReferenceStore
+{
+  private readonly references = new Map<string, CourseProductAssetReference>();
+
+  async listAssetReferences(assetId?: string) {
+    return Array.from(this.references.values()).filter(
+      reference => !assetId || reference.assetId === assetId
+    );
+  }
+
+  async saveAssetReference(reference: CourseProductAssetReference) {
+    const parsed = CourseProductAssetReferenceSchema.parse(reference);
+    this.references.set(parsed.id, parsed);
+    return parsed;
+  }
+}
 
 describe("catalog admin api payloads", () => {
   it("requires catalog read permission", async () => {
@@ -58,6 +84,8 @@ describe("catalog admin api payloads", () => {
       assetRead: "catalog:read",
       assetUpload: "catalog:edit",
       assetReview: "catalog:review",
+      assetBackfillRead: "catalog:read",
+      assetBackfillWrite: "catalog:review",
       basicInfoUpdate: "catalog:edit",
       contentUpdate: "catalog:edit",
       reviewUpdate: "catalog:review",
@@ -590,6 +618,92 @@ describe("catalog admin api payloads", () => {
     }
   });
 
+  it("allows catalog viewers to read a course asset backfill preview", async () => {
+    const payload = await getCourseProductAssetBackfillPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      {
+        productStore: new InMemoryCourseProductStore([products[0]]),
+        contentStore: new InMemoryCourseProductContentStore(),
+        sourceAssetStore: buildBackfillSourceAssetStore(),
+        now: "2026-05-20T11:00:00.000Z",
+      }
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body).toMatchObject({
+      ok: true,
+      data: {
+        mode: "dry_run",
+        writtenAssetCount: 0,
+        plan: {
+          assetCount: 1,
+          dryRun: true,
+        },
+      },
+    });
+  });
+
+  it("requires review permission before committing course asset backfill writes", async () => {
+    const payload = await runCourseProductAssetBackfillPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      {
+        action: "commit",
+        confirmWrite: true,
+        reason: "运营确认课程素材回填",
+      },
+      {
+        productStore: new InMemoryCourseProductStore([products[0]]),
+        contentStore: buildBackfillContentStore(),
+        sourceAssetStore: buildBackfillSourceAssetStore(),
+        targetAssetStore: new InMemoryBackfillTarget(),
+        now: "2026-05-20T11:00:00.000Z",
+      }
+    );
+
+    expect(payload.status).toBe(403);
+    expect(payload.body).toMatchObject({
+      ok: false,
+      error: {
+        code: "FORBIDDEN",
+      },
+    });
+  });
+
+  it("commits course asset backfill assets and references for catalog operators", async () => {
+    const targetAssetStore = new InMemoryBackfillTarget();
+    const payload = await runCourseProductAssetBackfillPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      {
+        action: "commit",
+        confirmWrite: true,
+        reason: "运营确认课程素材回填",
+      },
+      {
+        productStore: new InMemoryCourseProductStore([products[0]]),
+        contentStore: buildBackfillContentStore(),
+        sourceAssetStore: buildBackfillSourceAssetStore(),
+        targetAssetStore,
+        now: "2026-05-20T11:00:00.000Z",
+      }
+    );
+
+    const references = await targetAssetStore.listAssetReferences(
+      "asset_worksheet_1"
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body).toMatchObject({
+      ok: true,
+      data: {
+        mode: "commit",
+        writtenAssetCount: 1,
+        writtenReferenceCount: 1,
+        confirmedBy: "catalog_operator_1",
+      },
+    });
+    expect(references).toHaveLength(1);
+  });
+
   it("rejects invalid status transitions and invalid price payloads", async () => {
     const store = createStore();
     const unchanged = await updateCourseProductStatusPayload(
@@ -628,3 +742,59 @@ describe("catalog admin api payloads", () => {
     expect(invalidReview.status).toBe(409);
   });
 });
+
+function buildBackfillSourceAssetStore() {
+  const product = products[0];
+  return new InMemoryCourseProductAssetStore([
+    {
+      id: "asset_worksheet_1",
+      productId: product.id,
+      chapterId: "chapter_1",
+      kind: "worksheet",
+      title: "课后练习表",
+      fileName: "worksheet.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 16,
+      sourceType: "object_storage",
+      storageKey:
+        "course-assets/course_product_1/asset_worksheet_1/hash-worksheet.pdf",
+      objectKey:
+        "course-assets/course_product_1/asset_worksheet_1/hash-worksheet.pdf",
+      contentHash:
+        "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+      complianceStatus: "approved",
+      downloadEnabled: true,
+      uploadedBy: "operator_1",
+      uploadedAt: "2026-05-20T09:00:00.000Z",
+      updatedAt: "2026-05-20T09:00:00.000Z",
+    },
+  ]);
+}
+
+function buildBackfillContentStore() {
+  const product = products[0];
+  return new InMemoryCourseProductContentStore([
+    {
+      productId: product.id,
+      summary: "这门课程帮助学习者识别压力来源，并通过练习建立稳定行动。",
+      targetAudience: ["希望提升情绪稳定性的学习者"],
+      chapters: [
+        {
+          id: "chapter_1",
+          title: "识别压力反应",
+          durationMinutes: 30,
+          materialPlaceholders: [
+            {
+              id: "material_1",
+              title: "课后练习表",
+              type: "exercise",
+              status: "ready",
+              assetId: "asset_worksheet_1",
+            },
+          ],
+        },
+      ],
+      updatedAt: "2026-05-20T09:00:00.000Z",
+    },
+  ]);
+}

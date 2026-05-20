@@ -1,9 +1,14 @@
 import {
+  CourseProductAssetReferenceSchema,
   CourseProductAssetSchema,
   type CourseProductAsset,
+  type CourseProductAssetReference,
 } from "../../../shared/domain";
 import type { DatabaseQueryExecutor } from "../../db/postgres";
-import type { CourseProductAssetStore } from "./courseProductAssetStore";
+import type {
+  CourseProductAssetReferenceStore,
+  CourseProductAssetStore,
+} from "./courseProductAssetStore";
 
 type CourseProductAssetRow = {
   id: string;
@@ -36,6 +41,20 @@ type CourseProductAssetRow = {
 
 type CourseProductCourseIdRow = {
   course_id: number;
+};
+
+type CourseProductAssetReferenceRow = {
+  id: string;
+  asset_id: string;
+  product_id: string;
+  course_id: number;
+  chapter_id: string | null;
+  reference_type: CourseProductAssetReference["referenceType"];
+  material_placeholder_id: string | null;
+  material_placeholder_index: number | null;
+  created_by: string;
+  created_at: string | Date;
+  deleted_at: string | Date | null;
 };
 
 function toDateTimeLike(value: string | Date | null | undefined) {
@@ -77,7 +96,27 @@ export function courseProductAssetRowToDomain(
   });
 }
 
-export class PostgresCourseProductAssetStore implements CourseProductAssetStore {
+export function courseProductAssetReferenceRowToDomain(
+  row: CourseProductAssetReferenceRow
+): CourseProductAssetReference {
+  return CourseProductAssetReferenceSchema.parse({
+    id: row.id,
+    assetId: row.asset_id,
+    productId: row.product_id,
+    courseId: row.course_id,
+    chapterId: row.chapter_id ?? undefined,
+    referenceType: row.reference_type,
+    materialPlaceholderId: row.material_placeholder_id ?? undefined,
+    materialPlaceholderIndex: row.material_placeholder_index ?? undefined,
+    createdBy: row.created_by,
+    createdAt: toDateTimeLike(row.created_at) ?? new Date(0).toISOString(),
+    deletedAt: toDateTimeLike(row.deleted_at),
+  });
+}
+
+export class PostgresCourseProductAssetStore
+  implements CourseProductAssetStore, CourseProductAssetReferenceStore
+{
   constructor(private readonly db: DatabaseQueryExecutor) {}
 
   async listAssets(productId?: string) {
@@ -329,6 +368,91 @@ export class PostgresCourseProductAssetStore implements CourseProductAssetStore 
     const row = result.rows[0];
     if (!row) throw new Error("COURSE_PRODUCT_ASSET_NOT_FOUND");
     return courseProductAssetRowToDomain(row);
+  }
+
+  async listAssetReferences(assetId?: string) {
+    const result = await this.db.query<CourseProductAssetReferenceRow>(
+      `
+        SELECT
+          id,
+          asset_id,
+          product_id,
+          course_id,
+          chapter_id,
+          reference_type,
+          material_placeholder_id,
+          material_placeholder_index,
+          created_by,
+          created_at,
+          deleted_at
+        FROM course_product_asset_references
+        ${assetId ? "WHERE asset_id = $1" : ""}
+        ORDER BY created_at DESC, id ASC
+      `,
+      assetId ? [assetId] : undefined
+    );
+
+    return result.rows.map(courseProductAssetReferenceRowToDomain);
+  }
+
+  async saveAssetReference(reference: CourseProductAssetReference) {
+    const normalized = CourseProductAssetReferenceSchema.parse(reference);
+    const result = await this.db.query<CourseProductAssetReferenceRow>(
+      `
+        INSERT INTO course_product_asset_references (
+          id,
+          asset_id,
+          product_id,
+          course_id,
+          chapter_id,
+          reference_type,
+          material_placeholder_id,
+          material_placeholder_index,
+          created_by,
+          created_at,
+          deleted_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT (id) DO UPDATE SET
+          asset_id = EXCLUDED.asset_id,
+          product_id = EXCLUDED.product_id,
+          course_id = EXCLUDED.course_id,
+          chapter_id = EXCLUDED.chapter_id,
+          reference_type = EXCLUDED.reference_type,
+          material_placeholder_id = EXCLUDED.material_placeholder_id,
+          material_placeholder_index = EXCLUDED.material_placeholder_index,
+          deleted_at = EXCLUDED.deleted_at
+        RETURNING
+          id,
+          asset_id,
+          product_id,
+          course_id,
+          chapter_id,
+          reference_type,
+          material_placeholder_id,
+          material_placeholder_index,
+          created_by,
+          created_at,
+          deleted_at
+      `,
+      [
+        normalized.id,
+        normalized.assetId,
+        normalized.productId,
+        normalized.courseId,
+        normalized.chapterId ?? null,
+        normalized.referenceType,
+        normalized.materialPlaceholderId ?? null,
+        normalized.materialPlaceholderIndex ?? null,
+        normalized.createdBy,
+        normalized.createdAt,
+        normalized.deletedAt ?? null,
+      ]
+    );
+
+    const row = result.rows[0];
+    if (!row) throw new Error("COURSE_PRODUCT_ASSET_REFERENCE_NOT_FOUND");
+    return courseProductAssetReferenceRowToDomain(row);
   }
 
   async clear() {

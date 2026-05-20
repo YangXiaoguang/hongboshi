@@ -116,6 +116,11 @@ export const COURSE_PRODUCT_ASSET_BACKFILL_SOURCES = [
   "json_asset_store_and_content_placeholders",
 ] as const;
 
+export const COURSE_PRODUCT_ASSET_BACKFILL_ACTIONS = [
+  "dry_run",
+  "commit",
+] as const;
+
 export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
   "showcase",
   "proof",
@@ -188,6 +193,10 @@ export const CourseProductAssetReferenceTypeSchema = z.enum(
 
 export const CourseProductAssetBackfillSourceSchema = z.enum(
   COURSE_PRODUCT_ASSET_BACKFILL_SOURCES
+);
+
+export const CourseProductAssetBackfillActionSchema = z.enum(
+  COURSE_PRODUCT_ASSET_BACKFILL_ACTIONS
 );
 
 export const CourseProductMerchandisingAssetUsageSchema = z.enum(
@@ -368,6 +377,43 @@ export const CourseProductAssetBackfillPlanSchema = z.object({
   startedAt: DateTimeLikeSchema,
   finishedAt: DateTimeLikeSchema.optional(),
   notes: z.array(z.string().trim().min(1).max(240)).default([]),
+});
+
+export const CourseProductAssetBackfillRequestSchema = z
+  .object({
+    action: CourseProductAssetBackfillActionSchema.default("dry_run"),
+    confirmWrite: z.boolean().default(false),
+    reason: z.string().trim().min(4).max(240).optional(),
+  })
+  .superRefine((request, ctx) => {
+    if (request.action !== "commit") return;
+
+    if (!request.confirmWrite) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmWrite"],
+        message: "commit requires explicit write confirmation",
+      });
+    }
+
+    if (!request.reason) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reason"],
+        message: "commit requires an operation reason",
+      });
+    }
+  });
+
+export const CourseProductAssetBackfillMutationResultSchema = z.object({
+  mode: CourseProductAssetBackfillActionSchema,
+  plan: CourseProductAssetBackfillPlanSchema,
+  writtenAssetCount: z.number().int().nonnegative(),
+  writtenObjectCount: z.number().int().nonnegative(),
+  writtenReferenceCount: z.number().int().nonnegative(),
+  confirmedBy: EntityIdSchema.optional(),
+  reason: z.string().trim().min(4).max(240).optional(),
+  createdAt: DateTimeLikeSchema,
 });
 
 export const CourseProductAssetUploadRequestSchema = z
@@ -850,6 +896,9 @@ export type CourseProductAssetReferenceType = z.infer<
 export type CourseProductAssetBackfillSource = z.infer<
   typeof CourseProductAssetBackfillSourceSchema
 >;
+export type CourseProductAssetBackfillAction = z.infer<
+  typeof CourseProductAssetBackfillActionSchema
+>;
 export type CourseProductAssetObjectDescriptor = z.infer<
   typeof CourseProductAssetObjectDescriptorSchema
 >;
@@ -865,6 +914,12 @@ export type CourseProductAssetReference = z.infer<
 >;
 export type CourseProductAssetBackfillPlan = z.infer<
   typeof CourseProductAssetBackfillPlanSchema
+>;
+export type CourseProductAssetBackfillRequest = z.infer<
+  typeof CourseProductAssetBackfillRequestSchema
+>;
+export type CourseProductAssetBackfillMutationResult = z.infer<
+  typeof CourseProductAssetBackfillMutationResultSchema
 >;
 export type CourseProductAssetUploadRequest = z.infer<
   typeof CourseProductAssetUploadRequestSchema

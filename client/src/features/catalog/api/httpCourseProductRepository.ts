@@ -1,5 +1,6 @@
 import {
   ApiResponseSchema,
+  CourseProductAssetBackfillMutationResultSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetMutationResultSchema,
   CourseProductContentMutationResultSchema,
@@ -9,6 +10,8 @@ import {
   CourseProductMutationResultSchema,
   type CourseProductContentMutationResult,
   type CourseProductContentQualityBatchResult,
+  type CourseProductAssetBackfillMutationResult,
+  type CourseProductAssetBackfillRequest,
   type CourseProductAssetComplianceUpdateRequest,
   type CourseProductAssetFileUploadRequest,
   type CourseProductAssetListResult,
@@ -45,6 +48,9 @@ const CourseProductAssetListResponseSchema = ApiResponseSchema(
 );
 const CourseProductAssetMutationResponseSchema = ApiResponseSchema(
   CourseProductAssetMutationResultSchema
+);
+const CourseProductAssetBackfillResponseSchema = ApiResponseSchema(
+  CourseProductAssetBackfillMutationResultSchema
 );
 
 const API_BASE = "/api/catalog/admin";
@@ -113,6 +119,14 @@ export function parseCourseProductAssetMutationResponse(
   return parsed.data;
 }
 
+export function parseCourseProductAssetBackfillResponse(
+  payload: unknown
+): CourseProductAssetBackfillMutationResult {
+  const parsed = CourseProductAssetBackfillResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = CourseProductListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -151,6 +165,12 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     CourseProductAssetMutationResponseSchema.safeParse(payload);
   if (assetMutationParsed.success && !assetMutationParsed.data.ok) {
     return assetMutationParsed.data.error.message;
+  }
+
+  const assetBackfillParsed =
+    CourseProductAssetBackfillResponseSchema.safeParse(payload);
+  if (assetBackfillParsed.success && !assetBackfillParsed.data.ok) {
+    return assetBackfillParsed.data.error.message;
   }
 
   return fallback;
@@ -313,6 +333,47 @@ export const httpCourseProductRepository = {
       throw new Error(extractErrorMessage(payload, "课程素材资产读取失败"));
     }
     return parseCourseProductAssetListResponse(payload);
+  },
+
+  async loadCourseProductAssetBackfill(): Promise<CourseProductAssetBackfillMutationResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/backfill`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "课程素材回填预检失败"));
+    }
+    return parseCourseProductAssetBackfillResponse(payload);
+  },
+
+  async runCourseProductAssetBackfill(
+    request: CourseProductAssetBackfillRequest
+  ): Promise<CourseProductAssetBackfillMutationResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/backfill`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify(request),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "课程素材回填写入失败"));
+    }
+    return parseCourseProductAssetBackfillResponse(payload);
   },
 
   async uploadCourseProductAsset(

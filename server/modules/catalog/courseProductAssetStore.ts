@@ -16,6 +16,7 @@ import {
   type CourseProductAssetFileUploadRequest,
   type CourseProductAssetListResult,
   type CourseProductAssetMutationResult,
+  type CourseProductAssetReference,
   type CourseProductAssetUploadRequest,
   type CourseProductAuditEvent,
   type CourseProductListItem,
@@ -44,6 +45,13 @@ export interface CourseProductAssetStore {
   listAssets(productId?: string): Promise<CourseProductAsset[]>;
   getAsset(assetId: string): Promise<CourseProductAsset | undefined>;
   saveAsset(asset: CourseProductAsset): Promise<CourseProductAsset>;
+}
+
+export interface CourseProductAssetReferenceStore {
+  listAssetReferences(assetId?: string): Promise<CourseProductAssetReference[]>;
+  saveAssetReference(
+    reference: CourseProductAssetReference
+  ): Promise<CourseProductAssetReference>;
 }
 
 export interface CourseProductAssetStoredFile {

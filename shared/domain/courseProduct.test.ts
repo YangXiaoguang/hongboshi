@@ -4,7 +4,9 @@ import {
   ALL_COURSE_PRODUCT_STATUS,
   CourseProductPriceUpdateRequestSchema,
   CourseProductAssetComplianceUpdateRequestSchema,
+  CourseProductAssetBackfillMutationResultSchema,
   CourseProductAssetBackfillPlanSchema,
+  CourseProductAssetBackfillRequestSchema,
   CourseProductAssetFileUploadRequestSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetObjectDescriptorSchema,
@@ -278,6 +280,36 @@ describe("course product domain contract", () => {
       startedAt: "2026-05-20T09:00:00+08:00",
     });
     expect(backfillPlan.dryRun).toBe(true);
+
+    expect(
+      CourseProductAssetBackfillRequestSchema.safeParse({
+        action: "commit",
+        reason: "运营确认课程素材回填",
+      }).success
+    ).toBe(false);
+
+    const commitRequest = CourseProductAssetBackfillRequestSchema.parse({
+      action: "commit",
+      confirmWrite: true,
+      reason: "运营确认课程素材回填",
+    });
+    expect(commitRequest.action).toBe("commit");
+
+    const backfillResult =
+      CourseProductAssetBackfillMutationResultSchema.parse({
+        mode: "commit",
+        plan: {
+          ...backfillPlan,
+          dryRun: false,
+        },
+        writtenAssetCount: 18,
+        writtenObjectCount: 12,
+        writtenReferenceCount: 20,
+        confirmedBy: "operator_1",
+        reason: "运营确认课程素材回填",
+        createdAt: "2026-05-20T09:10:00+08:00",
+      });
+    expect(backfillResult.writtenReferenceCount).toBe(20);
   });
 
   it("validates the first course detail content contract", () => {

@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`CUX-I-B-B-D 课程素材 PostgreSQL Store 与回填 dry-run 基础` 已完成，素材资产可显式切换 PostgreSQL Store，素材对象会同步对象表，回填 dry-run 可扫描开发期素材与章节占位并输出差异摘要。
-- 本轮完成后下一步：执行 `CUX-I-B-B-E 课程素材回填写入任务与运营确认入口准备`
+- 当前状态：`CUX-I-B-B-E 课程素材回填写入任务与运营确认入口准备` 已完成，素材回填具备 dry-run 预检、受控 commit 写入、PostgreSQL 引用 upsert 和后台 API 入口。
+- 本轮完成后下一步：执行 `CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入`
 
 ## 已完成关键能力
 
@@ -44,6 +44,7 @@
 - 完成课程素材资产登记、真实文件上传、受控读取与学习页资料绑定基础：新增 `CourseProductAsset*` 共享契约、开发期 JSON Store、本地文件存储 adapter、后台素材读取/URL 登记/文件上传/合规处理 API、审计动作、公开已审核图片读取、章节资料绑定和已解锁课程资料下载入口。
 - 完成课程素材正式存储设计准备：新增素材对象/短期读取 URL/删除结果/引用关系/回填计划共享契约，服务端对象存储 adapter 接口和本地兼容实现，文件上传写入 `objectKey` 与 sha256 `contentHash`，并落下素材对象表、素材元数据表和素材引用表迁移草案。
 - 完成课程素材 PostgreSQL Store 与回填 dry-run 基础：新增 `PostgresCourseProductAssetStore`、显式 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres` 切换、对象素材表同步和 `dryRunCourseProductAssetBackfill`，可检查 JSON Store 与章节占位回填到专表前的素材数、引用数和跳过原因。
+- 完成课程素材回填写入任务与运营确认入口准备：新增 backfill 请求/结果契约、受控 commit service、PostgreSQL 引用 upsert、后台 `GET/POST /api/catalog/admin/course-products/assets/backfill` 和前端 repository 入口，管理员可先预检再确认写入对象素材、素材元数据和章节引用关系。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -218,6 +219,22 @@
 - `/admin/audit` 管理员归档控制台已加入“归档检索预览”，按当前筛选读取归档表前 5 条摘要行；归档预览为空或失败不影响主审计列表、导出、详情、归档和校验。
 
 ## 最近完成阶段
+
+CUX-I-B-B-E 课程素材回填写入任务与运营确认入口准备已交付：
+
+- `shared/domain/courseProduct.ts`：新增 `CourseProductAssetBackfillRequestSchema`、`CourseProductAssetBackfillMutationResultSchema` 和回填动作契约，区分 `dry_run` 与 `commit`，`commit` 必须显式确认并填写操作原因。
+- `server/modules/catalog/courseProductAssetBackfill.ts`：在 dry-run 扫描基础上新增受控 commit service，共用候选收集逻辑，写入前校验确认状态和目标 Store 引用写入能力；章节素材引用 ID 由课程商品、章节、素材占位和素材 ID 组成，重复执行保持幂等。
+- `server/modules/catalog/postgresCourseProductAssetStore.ts`：新增 `course_product_asset_references` 的 `saveAssetReference` 与 `listAssetReferences`，素材回填可先写对象事实与素材元数据，再写章节引用关系。
+- `server/modules/catalog/catalogApi.ts`：新增 `GET/POST /api/catalog/admin/course-products/assets/backfill`，只读预检绑定 `catalog:read`，确认写入绑定 `catalog:review`，缺少 `DATABASE_URL` 或目标 Store 不支持引用写入时返回业务冲突。
+- `client/src/features/catalog/api/httpCourseProductRepository.ts`：新增 backfill 结果解析、预检读取和写入请求方法，供后续运营后台按钮接入。
+- `docs/course-asset-storage-architecture.md`、`docs/domain-contracts.md` 与 `docs/database-schema.md` 已同步受控回填 API、PostgreSQL 引用写入和继续保持 JSON Store 不自动切换的边界。
+
+CUX-I-B-B-E 验收结果：
+
+- `pnpm test -- shared/domain/courseProduct.test.ts server/modules/catalog/postgresCourseProductAssetStore.test.ts server/modules/catalog/courseProductAssetBackfill.test.ts server/modules/catalog/catalogApi.test.ts client/src/features/catalog/api/httpCourseProductRepository.test.ts` 实际执行全量 124 个测试文件 / 597 个测试并通过。
+- `pnpm run check` 已通过。
+- `pnpm run ci` 已通过：类型检查、124 个测试文件 / 597 个测试和生产构建均通过，Vite 仍保留既有大 chunk 提醒。
+- 本轮是服务端 API、Store 与 repository 基建，没有新增用户端页面；浏览器验证不适用。
 
 CUX-I-B-B-D 课程素材 PostgreSQL Store 与回填 dry-run 基础已交付：
 
@@ -632,28 +649,29 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：CUX-I-B-B-D 课程素材 PostgreSQL Store 与回填 dry-run 基础
+### 最近完成阶段：CUX-I-B-B-E 课程素材回填写入任务与运营确认入口准备
 
-CUX-I-B-B-D 稳定切片已交付：
+CUX-I-B-B-E 稳定切片已交付：
 
-- 课程素材资产可显式通过 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres` 切换到 PostgreSQL，默认仍保持 JSON 文件 Store。
-- `PostgresCourseProductAssetStore` 已映射 `course_product_assets`，对象素材同步 `course_product_asset_objects`，外部 URL 素材不会被强制转成对象。
-- 回填 dry-run service 已能扫描素材 Store、课程商品 Store 和课程详情内容 Store，输出扫描数、可回填素材数、引用数、跳过数和原因。
-- 新增测试覆盖 PostgreSQL Store 映射、objectKey/contentHash、外部 URL 保持、回填章节引用和运行时配置。
+- 已新增 backfill 请求/结果契约，保留 `dry_run` 预检与 `commit` 写入模式。
+- 已新增受控 commit service，写入前校验显式确认、操作原因和目标 Store 引用写入能力。
+- `PostgresCourseProductAssetStore` 已支持素材引用关系幂等 upsert 与读取，回填可写对象素材、素材元数据和章节引用关系。
+- 已新增后台 API `GET/POST /api/catalog/admin/course-products/assets/backfill`，预检绑定 `catalog:read`，确认写入绑定 `catalog:review`。
+- 前端 catalog repository 已有 backfill 解析和请求方法，为后续运营后台 UI 接入准备。
 
-### 用户端待续：CUX-I-B-B-E 课程素材回填写入任务与运营确认入口准备
+### 用户端待续：CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入
 
 业务目标：
 
-CUX-I-B-B-D 已经具备 PostgreSQL Store 和 dry-run 回填摘要。下一步应把 dry-run 结果推进到可控写入任务：先由管理员查看扫描结果、跳过原因和影响范围，再确认把素材对象、素材元数据和章节引用关系写入 PostgreSQL，避免直接切换 Store 时遗漏历史资料或产生重复引用。
+CUX-I-B-B-E 已经把开发期素材回填推进到受控 API。下一步应把对象存储 adapter 从本地兼容实现推进到正式 provider 边界：保持现有后台上传、合规、学习页受控下载不变，新增可替换的 OSS/COS/S3 provider 配置、短期读取 URL 能力和 provider 级测试，让后续真实素材文件可以脱离本地文件目录。
 
 建议实施范围：
 
-- 在 dry-run service 基础上新增受控回填写入 service，先写 `course_product_asset_objects` 与 `course_product_assets`，再写 `course_product_asset_references`，保持幂等键或唯一约束设计，避免重复写入。
-- 回填写入必须保留 dry-run 模式和 summary 结果；写入前校验 `DATABASE_URL`、目标表存在、课程商品存在、素材 ID 不冲突和引用 assetId 可解析。
-- 增加管理员可读的后台/接口预备入口，至少提供只读 dry-run 结果与“本轮不自动写库”的明确提示；如写入入口范围过大，先落服务端 API 与测试。
-- 补充测试覆盖：空数据、外部 URL、对象素材、缺失 assetId、重复引用、幂等重复执行和失败摘要。
-- 更新数据库文档、素材架构文档和执行状态；继续保持用户端下载接口不直接读取签名 URL。
+- 抽象正式对象存储 provider 配置解析，支持 `local` 默认和至少一个远端 provider 的接口占位，不要求本轮接真实云密钥。
+- 将 `CourseProductAssetObjectStorage` 的 `createSignedReadUrl` 接入服务端受控读取路径或后台预览路径，继续由 API 做登录、权益、合规和下载开关校验。
+- 增加 provider 级单元测试：对象 key 生成、contentHash、签名 URL 到期时间、缺少配置错误和本地 fallback。
+- 更新 `.env.example`/数据库说明/素材架构文档，明确真实 provider 所需环境变量、上线前密钥与 bucket 决策点。
+- 不改用户端购买、学习页资料展示和后台素材编辑主流程；只替换底层对象读取能力。
 
 ## 执行不变量
 
@@ -674,4 +692,4 @@ CUX-I-B-B-D 已经具备 PostgreSQL Store 和 dry-run 回填摘要。下一步�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 CUX-I-B-B-E 课程素材回填写入任务与运营确认入口准备，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；用户端当前连续执行指针为 CUX-I-B-B-F 正式对象存储 provider 与短期读取 URL 接入，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

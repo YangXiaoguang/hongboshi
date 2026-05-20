@@ -34,13 +34,15 @@
 1. 干跑扫描：
    - 扫描 `.hongboshi-data/course-product-assets.json`，按 `id`、`productId`、`chapterId`、`kind`、`storageKey`、`publicUrl`、`complianceStatus` 和 `downloadEnabled` 生成素材行候选。
    - 扫描 `course_product_contents.chapters[].materialPlaceholders[]`，按 `assetId`、`assetUrl`、`chapterId`、`type` 生成引用行候选。
-   - 输出 `CourseProductAssetBackfillPlanSchema` 结果，不写库。
-2. 对象事实回填：
-   - 对 `sourceType=object_storage` 且存在 `storageKey` 的素材读取本地文件，计算 `contentHash`，写入 `course_product_asset_objects`。
+   - 输出 `CourseProductAssetBackfillPlanSchema` / `CourseProductAssetBackfillMutationResultSchema` 结果，不写库。
+2. 受控写入：
+   - `GET /api/catalog/admin/course-products/assets/backfill` 提供管理员只读预检，`POST /api/catalog/admin/course-products/assets/backfill` 接收 `dry_run` 或 `commit` 动作。
+   - `commit` 必须具备 `catalog:review` 权限、`confirmWrite=true` 和操作原因；缺少 `DATABASE_URL` 或目标 Store 不支持引用写入时返回冲突，不做部分静默切换。
+   - 对 `sourceType=object_storage` 且存在 `objectKey/contentHash` 的素材写入 `course_product_asset_objects`，并写入/更新 `course_product_assets`。
    - 对外部 URL 或历史 data URL 素材只写 `course_product_assets`，`object_key` 为空，后续由运营重新上传或转存对象存储。
 3. 引用关系回填：
-   - 成交图文素材按 `merchandising_showcase/proof/gallery` 写入引用表。
-   - 章节资料按 `chapter_material/chapter_exercise/chapter_audio/chapter_video` 写入引用表。
+   - 当前切片先把章节资料按 `chapter_material/chapter_exercise/chapter_audio/chapter_video` 写入引用表，引用 ID 由课程商品、章节、素材占位和素材 ID 组成，重复执行保持幂等。
+   - 成交图文素材引用后续可按 `merchandising_showcase/proof/gallery` 补充，不改变现有章节资料引用口径。
    - 回填完成后仍保持 API payload 不变，前台继续读取 `CourseProductAssetSchema` 和章节 `materialPlaceholders`。
 
 ## 兼容边界
@@ -49,10 +51,11 @@
 - 当前支持显式开启 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres`，但默认开发路径仍保持 JSON 文件 Store，避免在未回填时误切换。
 - 当前不把学习页下载改为签名 URL 直连对象存储，仍走 `/api/courses/:courseId/assets/:assetId/download` 做登录、权益、合规和下载开关校验。
 - 当前不允许前端直接修改合规状态、下载开关或对象 key。
+- 当前不自动把开发期 JSON Store 切换为 PostgreSQL；管理员应先查看 backfill 预检结果，再通过受控写入入口回填。
 
 ## 后续切片
 
 - `CUX-I-B-B-D`：已实现 `PostgresCourseProductAssetStore`，让素材列表、上传登记、合规审核和后台下载可显式切换 PostgreSQL；已实现素材回填 dry-run service，可扫描 JSON Store 与章节素材占位并输出扫描数、可回填素材数、引用数、跳过数和原因。
-- `CUX-I-B-B-E`：实现素材回填写入任务，允许管理员在 dry-run 结果确认后把素材对象、素材元数据和引用关系写入 PostgreSQL。
+- `CUX-I-B-B-E`：已实现素材回填写入 service、PostgreSQL 引用 upsert 和后台 backfill API，允许管理员在 dry-run 结果确认后把对象素材、素材元数据和章节引用关系写入 PostgreSQL。
 - `CUX-I-B-B-F`：接入正式对象存储 provider，并把本地签名 URL 替换为真实短期签名 URL。
 - `CUX-I-B-B-G`：增加素材治理后台，包括未引用素材、重复内容 hash、待审队列、过期软删和引用报表。

@@ -5,6 +5,8 @@ import { z } from "zod";
 import {
   ApiResponseSchema,
   COURSE_CATALOG_PERMISSIONS,
+  CourseProductAssetBackfillMutationResultSchema,
+  CourseProductAssetBackfillRequestSchema,
   CourseProductAssetComplianceUpdateRequestSchema,
   CourseProductAssetFileUploadRequestSchema,
   CourseProductAssetListResultSchema,
@@ -54,6 +56,11 @@ import {
   type CourseProductAssetFileStorage,
   type CourseProductAssetStore,
 } from "./courseProductAssetStore";
+import {
+  commitCourseProductAssetBackfill,
+  createDefaultCourseProductAssetBackfillSourceStore,
+  previewCourseProductAssetBackfill,
+} from "./courseProductAssetBackfill";
 
 const CourseProductAdminListResponseSchema = ApiResponseSchema(
   CourseProductListResultSchema
@@ -76,6 +83,9 @@ const CourseProductAssetListResponseSchema = ApiResponseSchema(
 const CourseProductAssetMutationResponseSchema = ApiResponseSchema(
   CourseProductAssetMutationResultSchema
 );
+const CourseProductAssetBackfillResponseSchema = ApiResponseSchema(
+  CourseProductAssetBackfillMutationResultSchema
+);
 
 type CatalogApiErrorCode =
   | "BAD_REQUEST"
@@ -92,7 +102,8 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductContentQualityResponseSchema>
   | z.infer<typeof CourseProductContentMutationResponseSchema>
   | z.infer<typeof CourseProductAssetListResponseSchema>
-  | z.infer<typeof CourseProductAssetMutationResponseSchema>;
+  | z.infer<typeof CourseProductAssetMutationResponseSchema>
+  | z.infer<typeof CourseProductAssetBackfillResponseSchema>;
 type CatalogApiPayload = {
   status: number;
   body: CatalogApiBody;
@@ -119,6 +130,8 @@ export const catalogOperationPermissions = {
   assetRead: COURSE_CATALOG_PERMISSIONS.read,
   assetUpload: COURSE_CATALOG_PERMISSIONS.edit,
   assetReview: COURSE_CATALOG_PERMISSIONS.review,
+  assetBackfillRead: COURSE_CATALOG_PERMISSIONS.read,
+  assetBackfillWrite: COURSE_CATALOG_PERMISSIONS.review,
   basicInfoUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   contentUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   reviewUpdate: COURSE_CATALOG_PERMISSIONS.review,
@@ -452,6 +465,111 @@ export async function getCourseProductAssetsPayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程素材资产读取失败");
+  }
+}
+
+export async function getCourseProductAssetBackfillPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    sourceAssetStore = createDefaultCourseProductAssetBackfillSourceStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    sourceAssetStore?: CourseProductAssetStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetBackfillRead
+  );
+  if (denied) return denied;
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetBackfillResponseSchema.parse({
+        ok: true,
+        data: await previewCourseProductAssetBackfill({
+          assetStore: sourceAssetStore,
+          contentStore,
+          productStore,
+          actorId: actor!.id,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材回填预检失败");
+  }
+}
+
+export async function runCourseProductAssetBackfillPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  body: unknown,
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    sourceAssetStore = createDefaultCourseProductAssetBackfillSourceStore(),
+    targetAssetStore,
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    sourceAssetStore?: CourseProductAssetStore;
+    targetAssetStore?: CourseProductAssetStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const parsed = CourseProductAssetBackfillRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程素材回填参数不合法"),
+    };
+  }
+
+  const denied = denyUnauthorizedActor(
+    actor,
+    parsed.data.action === "commit"
+      ? catalogOperationPermissions.assetBackfillWrite
+      : catalogOperationPermissions.assetBackfillRead
+  );
+  if (denied) return denied;
+
+  try {
+    const data =
+      parsed.data.action === "commit"
+        ? await commitCourseProductAssetBackfill({
+            sourceAssetStore,
+            targetAssetStore,
+            contentStore,
+            productStore,
+            actorId: actor!.id,
+            confirmWrite: parsed.data.confirmWrite,
+            reason: parsed.data.reason!,
+            now,
+          })
+        : await previewCourseProductAssetBackfill({
+            assetStore: sourceAssetStore,
+            contentStore,
+            productStore,
+            actorId: actor!.id,
+            now,
+          });
+
+    return {
+      status: 200,
+      body: CourseProductAssetBackfillResponseSchema.parse({
+        ok: true,
+        data,
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材回填写入失败");
   }
 }
 
@@ -829,6 +947,45 @@ export function registerCatalogApi(app: Express) {
   );
 
   app.get(
+    "/api/catalog/admin/course-products/assets/backfill",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await getCourseProductAssetBackfillPayload(
+          session?.user
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材回填预检失败")
+        );
+      }
+    }
+  );
+
+  app.post(
+    "/api/catalog/admin/course-products/assets/backfill",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await runCourseProductAssetBackfillPayload(
+          session?.user,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材回填写入失败")
+        );
+      }
+    }
+  );
+
+  app.get(
     "/api/catalog/admin/course-products/:productId/assets",
     async (req, res) => {
       try {
@@ -984,6 +1141,49 @@ export function handleCatalogApiRequest(
         )
       );
 
+    return true;
+  }
+
+  if (url.pathname === "/api/catalog/admin/course-products/assets/backfill") {
+    if (req.method !== "GET" && req.method !== "POST") {
+      sendJson(
+        res,
+        405,
+        errorPayload("BAD_REQUEST", "接口仅支持 GET/POST 请求")
+      );
+      return true;
+    }
+
+    if (req.method === "GET") {
+      void getLoginSessionFromRequest(req)
+        .then(session => getCourseProductAssetBackfillPayload(session?.user))
+        .then(payload => sendJson(res, payload.status, payload.body))
+        .catch(() =>
+          sendJson(
+            res,
+            500,
+            errorPayload("INTERNAL_ERROR", "课程素材回填预检失败")
+          )
+        );
+      return true;
+    }
+
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await runCourseProductAssetBackfillPayload(
+          session?.user,
+          body
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材回填写入失败")
+        )
+      );
     return true;
   }
 
@@ -1370,6 +1570,36 @@ function courseProductActionFailure(
     return {
       status: 403,
       body: errorPayload("FORBIDDEN", "课程素材暂未开启下载"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_BACKFILL_CONFIRMATION_REQUIRED"
+  ) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "请确认后再写入课程素材回填"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_BACKFILL_DATABASE_URL_REQUIRED"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "请先配置 DATABASE_URL 后再写入回填"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_BACKFILL_TARGET_UNSUPPORTED"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "课程素材回填目标 Store 不支持引用写入"),
     };
   }
 
