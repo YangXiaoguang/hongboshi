@@ -162,6 +162,11 @@ export const WechatLoginRequestSchema = z.object({
   consentVersion: z.string().min(1).default(CURRENT_USER_CONSENT_VERSION),
 });
 
+export const AdminDevLoginRequestSchema = z.object({
+  username: z.string().trim().toLowerCase().min(3).max(120),
+  password: z.string().min(8).max(200),
+});
+
 const RolePermissionMap = {
   visitor: ["course_access:read"],
   member: ["course_access:read", "course:purchase", "membership:activate"],
@@ -478,6 +483,7 @@ export type UserConsent = z.infer<typeof UserConsentSchema>;
 export type LoginSession = z.infer<typeof LoginSessionSchema>;
 export type PhoneLoginRequest = z.infer<typeof PhoneLoginRequestSchema>;
 export type WechatLoginRequest = z.infer<typeof WechatLoginRequestSchema>;
+export type AdminDevLoginRequest = z.infer<typeof AdminDevLoginRequestSchema>;
 export type UserAdminMembershipStatus = z.infer<
   typeof UserAdminMembershipStatusSchema
 >;

@@ -9,7 +9,7 @@ import { useState, useEffect } from "react";
 import { Search, Bell, Users, Heart, Share2, X, Copy, Clock, Ticket, User, Smartphone, MessageSquare, Shield, Loader2, LogOut, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { useAuth } from "@/contexts/AuthContext";
+import { getLoginMethodLabel, useAuth } from "@/contexts/AuthContext";
 import {
   categories,
   courseTypes,
@@ -719,8 +719,10 @@ export default function MobileView({
                 <p className="text-[10px] text-gray-400 flex items-center gap-1 mt-0.5">
                   {user.loginMethod === "wechat" ? (
                     <><svg viewBox="0 0 24 24" className="w-3 h-3 fill-current text-green-500"><path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 01.213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 00.167-.054l1.903-1.114a.864.864 0 01.717-.098 10.16 10.16 0 002.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348z" /></svg>微信登录</>
+                  ) : user.loginMethod === "password" ? (
+                    <><Shield className="w-3 h-3" />{getLoginMethodLabel(user.loginMethod)}</>
                   ) : (
-                    <><Smartphone className="w-3 h-3" />手机号登录</>
+                    <><Smartphone className="w-3 h-3" />{getLoginMethodLabel(user.loginMethod)}</>
                   )}
                 </p>
               </div>

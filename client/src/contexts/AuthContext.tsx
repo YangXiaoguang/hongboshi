@@ -41,6 +41,7 @@ interface AuthContextType {
   closeLoginModal: () => void;
   loginWithPhone: (phone: string, code: string) => Promise<void>;
   loginWithWechat: () => Promise<void>;
+  loginWithAdminDev: (username: string, password: string) => Promise<void>;
   updateProfile: (request: UserProfileUpdateRequest) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -93,6 +94,12 @@ function sessionToUserInfo(session: LoginSession): UserInfo {
     roles: session.user.roles,
     sessionExpiresAt: session.accessTokenExpiresAt,
   };
+}
+
+export function getLoginMethodLabel(loginMethod: LoginProvider) {
+  if (loginMethod === "wechat") return "微信登录";
+  if (loginMethod === "password") return "后台账号";
+  return "手机号登录";
 }
 
 function createFallbackSession(
@@ -212,6 +219,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [commitSession]);
 
+  const loginWithAdminDev = useCallback(
+    async (username: string, password: string) => {
+      setIsAuthSyncing(true);
+      try {
+        const session = await httpAuthRepository.loginWithAdminDev(
+          username,
+          password
+        );
+        commitSession(session);
+        setAuthError(undefined);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "后台账号登录暂时不可用";
+        setAuthError(message);
+        throw new Error(message);
+      } finally {
+        setIsAuthSyncing(false);
+      }
+    },
+    [commitSession]
+  );
+
   const updateProfile = useCallback(
     async (request: UserProfileUpdateRequest) => {
       setIsAuthSyncing(true);
@@ -255,6 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         closeLoginModal,
         loginWithPhone,
         loginWithWechat,
+        loginWithAdminDev,
         updateProfile,
         logout,
       }}

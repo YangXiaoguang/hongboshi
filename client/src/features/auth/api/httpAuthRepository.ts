@@ -68,6 +68,16 @@ export const httpAuthRepository = {
     });
   },
 
+  loginWithAdminDev(username: string, password: string): Promise<LoginSession> {
+    return requestSession("/login/admin-dev", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }).then(session => {
+      if (!session) throw new Error("登录服务未返回会话");
+      return session;
+    });
+  },
+
   updateProfile(request: UserProfileUpdateRequest): Promise<LoginSession> {
     return requestSession("/profile", {
       method: "PATCH",

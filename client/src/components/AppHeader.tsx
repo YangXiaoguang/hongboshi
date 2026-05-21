@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { useAuth } from "@/contexts/AuthContext";
+import { getLoginMethodLabel, useAuth } from "@/contexts/AuthContext";
 import { canAccessAdmin as canAccessAdminShell } from "@/features/admin/adminNavigation";
 
 const navItems = [
@@ -212,9 +212,7 @@ export default function AppHeader() {
                       {user.nickname}
                     </p>
                     <p className="mt-1 text-xs text-[#8A918B]">
-                      {user.loginMethod === "wechat"
-                        ? "微信登录"
-                        : "手机号登录"}
+                      {getLoginMethodLabel(user.loginMethod)}
                     </p>
                   </div>
 

@@ -2,18 +2,36 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   getLoginSession,
   destroyLoginSession,
+  loginWithAdminDevPayload,
   loginWithPhonePayload,
   loginWithWechatPayload,
   parseCookies,
   resetAuthSessionStore,
   AUTH_SESSION_COOKIE,
   getUserConsents,
+  setAdminCredentialStore,
   updateProfilePayload,
 } from "./authSessionApi";
+import {
+  createScryptPasswordHash,
+  StaticAdminCredentialStore,
+} from "./adminCredentialStore";
+
+const adminCredentialStore = new StaticAdminCredentialStore([
+  {
+    id: "admin_dev_test",
+    username: "admin@hongboshi.dev",
+    displayName: "测试管理员",
+    roles: ["admin"],
+    passwordHash: createScryptPasswordHash("Admin@2026", "test-admin"),
+    enabled: true,
+  },
+]);
 
 describe("auth session API payloads", () => {
   beforeEach(async () => {
     await resetAuthSessionStore();
+    setAdminCredentialStore(adminCredentialStore);
   });
 
   it("creates a phone login session", async () => {
@@ -43,6 +61,46 @@ describe("auth session API payloads", () => {
 
     expect(payload.status).toBe(400);
     expect(payload.body.ok).toBe(false);
+  });
+
+  it("creates an isolated development admin password session", async () => {
+    const payload = await loginWithAdminDevPayload({
+      username: "ADMIN@HONGBOSHI.DEV",
+      password: "Admin@2026",
+    });
+
+    expect(payload.status).toBe(200);
+    expect(payload.body.ok).toBe(true);
+    if (!payload.body.ok || !("token" in payload)) return;
+
+    expect(payload.body.data?.provider).toBe("password");
+    expect(payload.body.data?.user).toMatchObject({
+      id: "admin_dev_test",
+      displayName: "测试管理员",
+      roles: ["admin"],
+    });
+    expect(payload.body.data?.consents).toEqual([]);
+    await expect(getLoginSession(payload.token)).resolves.toMatchObject({
+      provider: "password",
+      user: { id: "admin_dev_test", roles: ["admin"] },
+    });
+  });
+
+  it("rejects disabled or invalid development admin credentials", async () => {
+    const invalid = await loginWithAdminDevPayload({
+      username: "admin@hongboshi.dev",
+      password: "Wrong@2026",
+    });
+    expect(invalid.status).toBe(401);
+    expect(invalid.body.ok).toBe(false);
+
+    setAdminCredentialStore(new StaticAdminCredentialStore([], false));
+    const disabled = await loginWithAdminDevPayload({
+      username: "admin@hongboshi.dev",
+      password: "Admin@2026",
+    });
+    expect(disabled.status).toBe(401);
+    expect(disabled.body.ok).toBe(false);
   });
 
   it("parses the auth session cookie", () => {

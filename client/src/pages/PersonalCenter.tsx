@@ -45,7 +45,7 @@ import type {
 } from "@shared/domain";
 import AppFooter from "@/components/AppFooter";
 import AppHeader from "@/components/AppHeader";
-import { useAuth } from "@/contexts/AuthContext";
+import { getLoginMethodLabel, useAuth } from "@/contexts/AuthContext";
 import { httpUserPreferenceRepository } from "@/features/courses/api/httpUserPreferenceRepository";
 import { httpUserNotificationRepository } from "@/features/users/api/httpUserNotificationRepository";
 import {
@@ -902,7 +902,7 @@ export default function PersonalCenter() {
                         </h2>
                         <p className="mt-2 text-sm leading-6 text-[#6D746F]">
                           {isLoggedIn
-                            ? `${user?.loginMethod === "wechat" ? "微信登录" : "手机号登录"} · ${activeRoleLabels}`
+                            ? `${user ? getLoginMethodLabel(user.loginMethod) : "已登录"} · ${activeRoleLabels}`
                             : "登录后可同步订单、收藏和学习权益。"}
                         </p>
                       </div>

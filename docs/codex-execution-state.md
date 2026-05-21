@@ -9,7 +9,7 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`CUX-I-B-B-H /admin/courses 素材治理面板接入` 已完成，课程商品后台已能读取素材治理报表，展示摘要、问题筛选、素材明细、建议处理方向和只读定位入口。
+- 当前状态：`AUTH-A 开发期后台账号登录基建` 已完成，后台账号已与普通用户手机号/微信登录隔离，支持开发期密码登录、独立账号 Store、后台入口表单和生产默认关闭边界。
 - 本轮完成后下一步：执行 `CUX-I-B-B-I 课程素材治理受控处理动作与审计准备`
 
 ## 已完成关键能力
@@ -48,6 +48,7 @@
 - 完成课程素材正式对象存储 provider 与短期读取 URL 接入：新增 local/s3/oss/cos provider 配置解析、远端配置校验、HMAC 短期读取 URL、`.env.example` provider 环境变量、上传/读取路径 object storage adapter 化和课程 API payload 签名 URL 生成，HTTP 路由仍保持服务端权限/合规校验后返回文件流。
 - 完成课程素材治理后台与引用报表基础：新增 `CourseProductAssetGovernance*` 共享契约、只读治理 service、`GET /api/catalog/admin/course-products/assets/governance`、前端 repository 读取方法和测试，支持未引用素材、重复 contentHash、待审/驳回、下载关闭资料、软删候选、缺失商品和引用来源识别。
 - 完成 `/admin/courses` 素材治理面板接入：课程商品后台并行读取素材治理结果，展示总素材、未引用、重复 hash、待审、驳回、下载关闭、软删候选和引用来源；支持按治理问题筛选、查看素材行建议，并可定位课程或打开既有素材队列，保持只读不引入批量写动作。
+- 完成开发期后台账号登录基建：新增 `/api/auth/login/admin-dev`、`AdminDevLoginRequestSchema`、静态后台账号 Store、scrypt 密码哈希校验、后台入口专用登录表单和 `AuthContext.loginWithAdminDev`；默认开发账号与普通用户登录隔离，生产环境默认关闭。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -685,16 +686,16 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：CUX-I-B-B-H /admin/courses 素材治理面板接入
+### 最近完成阶段：AUTH-A 开发期后台账号登录基建
 
-CUX-I-B-B-H 稳定切片已交付：
+AUTH-A 稳定切片已交付：
 
-- `/admin/courses` 已接入 `loadCourseProductAssetGovernance()`，与课程商品列表、内容质量结果并行读取。
-- 页面新增“素材治理”只读区域，展示治理摘要、引用来源、治理说明、问题筛选和最近问题素材行。
-- 支持按未引用、重复内容、待审/驳回、下载关闭、缺失课程商品和软删候选筛选。
-- 治理行展示课程商品、素材标题、类型、合规状态、引用数、重复对象、最近更新时间和建议处理方向。
-- 可从治理行定位课程商品；具备编辑权限且当前页包含该商品时，可打开既有内容/素材队列，不新增批量删除、批量审核或自动软删动作。
-- 已补页面辅助逻辑测试、前端 repository 错误解析测试、权限测试和服务端成员拒绝访问测试。
+- 新增 `AdminDevLoginRequestSchema` 和 `/api/auth/login/admin-dev`，使用 `password` provider 建立后台密码登录会话。
+- 新增 `server/modules/auth/adminCredentialStore.ts`，支持静态后台账号、scrypt 密码哈希、环境变量覆盖和生产默认关闭。
+- 内置开发期账号：`admin@hongboshi.dev`、`operator@hongboshi.dev`、`catalog@hongboshi.dev`，分别映射 `admin`、`operator`、`catalog_operator` 角色。
+- `AuthContext` 和前端 auth repository 已接入 `loginWithAdminDev`，普通手机号/微信登录仍默认 `member`。
+- `/admin` 未登录或普通用户权限不足时展示后台专用登录表单，不再引导打开普通用户登录弹窗。
+- 已补 credential store、auth payload 和前端 repository 测试，覆盖生产关闭、密码错误、登录成功和角色隔离。
 
 ### 后台待续：CUX-I-B-B-I 课程素材治理受控处理动作与审计准备
 

@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { randomUUID } from "crypto";
 import {
+  AdminDevLoginRequestSchema,
   ApiResponseSchema,
   CURRENT_USER_CONSENT_VERSION,
   LoginSessionSchema,
@@ -18,6 +19,11 @@ import {
   createDefaultAuthSessionStore,
   type AuthSessionStore,
 } from "./authSessionStore";
+import {
+  adminCredentialAccountToProfile,
+  createDefaultAdminCredentialStore,
+  type AdminCredentialStore,
+} from "./adminCredentialStore";
 
 export const AUTH_SESSION_COOKIE = "hongboshi_session";
 
@@ -27,6 +33,7 @@ const AuthSessionResponseSchema = ApiResponseSchema(
 );
 
 let authSessionStore = createDefaultAuthSessionStore();
+let adminCredentialStore = createDefaultAdminCredentialStore();
 
 function sendJson(
   res: Response | ServerResponse,
@@ -125,6 +132,27 @@ async function createSession(
   return { token, session };
 }
 
+async function createAdminPasswordSession(
+  account: NonNullable<
+    Awaited<ReturnType<AdminCredentialStore["authenticate"]>>
+  >
+) {
+  const now = new Date().toISOString();
+  const accessTokenExpiresAt = new Date(
+    Date.now() + SESSION_TTL_MS
+  ).toISOString();
+  const session = LoginSessionSchema.parse({
+    user: adminCredentialAccountToProfile(account, now),
+    provider: "password",
+    accessTokenExpiresAt,
+    consents: [],
+  });
+  const token = randomUUID();
+  await authSessionStore.saveSession(token, session);
+
+  return { token, session };
+}
+
 function isSessionActive(session: LoginSession) {
   return Date.parse(session.accessTokenExpiresAt) > Date.now();
 }
@@ -172,6 +200,10 @@ export function readAuthSessionToken(req: Request | IncomingMessage) {
 
 export function setAuthSessionStore(store: AuthSessionStore) {
   authSessionStore = store;
+}
+
+export function setAdminCredentialStore(store: AdminCredentialStore) {
+  adminCredentialStore = store;
 }
 
 export async function getLoginSession(token: string | undefined) {
@@ -245,6 +277,41 @@ export async function loginWithWechatPayload(body: unknown) {
     undefined,
     parsed.data.consentVersion
   );
+  return {
+    status: 200,
+    token,
+    body: sessionPayload(session),
+  } as const;
+}
+
+export async function loginWithAdminDevPayload(body: unknown) {
+  if (!adminCredentialStore.isEnabled()) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "开发期后台账号登录未启用"),
+    } as const;
+  }
+
+  const parsed = AdminDevLoginRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "后台账号或密码不合法"),
+    } as const;
+  }
+
+  const account = await adminCredentialStore.authenticate(
+    parsed.data.username,
+    parsed.data.password
+  );
+  if (!account) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "后台账号或密码错误"),
+    } as const;
+  }
+
+  const { token, session } = await createAdminPasswordSession(account);
   return {
     status: 200,
     token,
@@ -347,6 +414,12 @@ export function registerAuthApi(app: Express) {
     sendJson(res, payload.status, payload.body);
   });
 
+  app.post("/api/auth/login/admin-dev", async (req: Request, res: Response) => {
+    const payload = await loginWithAdminDevPayload(req.body);
+    if (hasSessionToken(payload)) applyAuthCookie(res, payload.token);
+    sendJson(res, payload.status, payload.body);
+  });
+
   app.patch("/api/auth/profile", async (req: Request, res: Response) => {
     const payload = await updateProfilePayload(
       readAuthSessionToken(req),
@@ -432,6 +505,25 @@ export function handleAuthApiRequest(
       .catch(err => {
         console.error(err instanceof Error ? err.message : "微信登录失败");
         sendJson(res, 400, errorPayload("BAD_REQUEST", "微信登录失败"));
+      });
+    return true;
+  }
+
+  if (
+    req.method === "POST" &&
+    req.url.startsWith("/api/auth/login/admin-dev")
+  ) {
+    void readRequestBody(req)
+      .then(async body => {
+        const payload = await loginWithAdminDevPayload(body);
+        if (hasSessionToken(payload)) applyAuthCookie(res, payload.token);
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(err => {
+        console.error(
+          err instanceof Error ? err.message : "后台开发账号登录失败"
+        );
+        sendJson(res, 400, errorPayload("BAD_REQUEST", "后台开发账号登录失败"));
       });
     return true;
   }

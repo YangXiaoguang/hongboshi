@@ -6,7 +6,7 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { type ElementType, type ReactNode } from "react";
+import { type ElementType, type ReactNode, useState } from "react";
 import { useLocation } from "wouter";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/contexts/AuthContext";
@@ -55,9 +55,87 @@ function statusLabel(status: "available" | "planned") {
   return status === "available" ? "可用" : "规划";
 }
 
+function AdminDevLoginForm() {
+  const { loginWithAdminDev, isAuthSyncing } = useAuth();
+  const [username, setUsername] = useState("admin@hongboshi.dev");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string>();
+
+  return (
+    <form
+      onSubmit={event => {
+        event.preventDefault();
+        setError(undefined);
+        void loginWithAdminDev(username, password).catch(err => {
+          setError(err instanceof Error ? err.message : "后台账号登录失败");
+        });
+      }}
+      className="w-full max-w-[420px] rounded-lg border border-[#DED4C6] bg-[#FFFDF8] p-4 text-left shadow-sm shadow-[#243B35]/5"
+    >
+      <div className="flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#E5ECE1] text-[#41675A]">
+          <UserRound className="h-4 w-4" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-[#243B35]">
+            开发期后台账号
+          </p>
+          <p className="mt-0.5 text-xs text-[#8A8176]">
+            与普通用户手机号登录隔离
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3">
+        <label className="grid gap-1.5 text-xs font-semibold text-[#6F7771]">
+          账号
+          <input
+            value={username}
+            onChange={event => setUsername(event.target.value)}
+            className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-medium text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+            autoComplete="username"
+          />
+        </label>
+        <label className="grid gap-1.5 text-xs font-semibold text-[#6F7771]">
+          密码
+          <input
+            value={password}
+            onChange={event => setPassword(event.target.value)}
+            type="password"
+            className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-medium text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+            autoComplete="current-password"
+            placeholder="输入开发期后台密码"
+          />
+        </label>
+      </div>
+
+      {error && (
+        <p className="mt-3 rounded-lg border border-[#EDCDBF] bg-[#FFF4EF] px-3 py-2 text-xs font-semibold text-[#A65F48]">
+          {error}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={
+          isAuthSyncing || username.trim().length < 3 || password.length < 8
+        }
+        className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-55"
+      >
+        {isAuthSyncing ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <LockKeyhole className="h-4 w-4" />
+        )}
+        进入后台
+      </button>
+    </form>
+  );
+}
+
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
-  const { user, isAuthSyncing, openLoginModal } = useAuth();
+  const { user, isAuthSyncing } = useAuth();
   const accessState = getAdminAccessState(user, isAuthSyncing);
   const visibleItems = getVisibleAdminNavigationItems(user);
 
@@ -75,17 +153,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     return (
       <AccessPanel
         icon={LockKeyhole}
-        title="登录后进入运营后台"
+        title="使用后台账号进入"
         description="课程商品、用户、订单、交易、财务和风险信息只对运营与管理员账号开放。"
-        action={
-          <button
-            onClick={openLoginModal}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
-          >
-            <UserRound className="h-4 w-4" />
-            登录
-          </button>
-        }
+        action={<AdminDevLoginForm />}
       />
     );
   }
@@ -95,7 +165,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <AccessPanel
         icon={ShieldCheck}
         title="当前账号暂无后台权限"
-        description="请使用运营或管理员账号进入。咨询师可继续在咨询师工作台处理分配预约。"
+        description="普通用户账号不能进入运营后台。请使用独立的运营或管理员账号进入，咨询师可继续在咨询师工作台处理分配预约。"
+        action={<AdminDevLoginForm />}
       />
     );
   }
