@@ -13,8 +13,10 @@ import {
   CourseProductAssetGovernanceBatchDraftQuerySchema,
   CourseProductAssetGovernanceBatchDraftResultSchema,
   CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
+  CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema,
   CourseProductAssetGovernanceBatchTaskListResultSchema,
   CourseProductAssetGovernanceBatchTaskMutationResultSchema,
+  CourseProductAssetGovernanceBatchTaskReviewRequestSchema,
   CourseProductAssetGovernanceHistoryQuerySchema,
   CourseProductAssetGovernanceHistoryResultSchema,
   CourseProductAssetGovernanceResultSchema,
@@ -305,8 +307,8 @@ describe("course product domain contract", () => {
     });
     expect(commitRequest.action).toBe("commit");
 
-    const backfillResult =
-      CourseProductAssetBackfillMutationResultSchema.parse({
+    const backfillResult = CourseProductAssetBackfillMutationResultSchema.parse(
+      {
         mode: "commit",
         plan: {
           ...backfillPlan,
@@ -318,7 +320,8 @@ describe("course product domain contract", () => {
         confirmedBy: "operator_1",
         reason: "运营确认课程素材回填",
         createdAt: "2026-05-20T09:10:00+08:00",
-      });
+      }
+    );
     expect(backfillResult.writtenReferenceCount).toBe(20);
   });
 
@@ -352,7 +355,8 @@ describe("course product domain contract", () => {
             mimeType: "application/pdf",
             sizeBytes: 188000,
             sourceType: "object_storage",
-            objectKey: "course-assets/course_product_1/asset_worksheet_1/file.pdf",
+            objectKey:
+              "course-assets/course_product_1/asset_worksheet_1/file.pdf",
             contentHash:
               "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
             complianceStatus: "pending",
@@ -393,7 +397,9 @@ describe("course product domain contract", () => {
           ],
         },
       ],
-      notes: ["当前素材 Store 不支持引用表读取，引用数量由课程章节素材占位推导"],
+      notes: [
+        "当前素材 Store 不支持引用表读取，引用数量由课程章节素材占位推导",
+      ],
     });
 
     expect(parsed.summary.referenceSource).toBe(
@@ -401,13 +407,15 @@ describe("course product domain contract", () => {
     );
     expect(parsed.items[0]?.issueTypes).toContain("pending_compliance");
 
-    const actionRequest = CourseProductAssetGovernanceActionRequestSchema.parse({
-      action: "mark_duplicate_primary",
-      issueType: "duplicate_content_hash",
-      primaryAssetId: "asset_worksheet_1",
-      reason: "确认重复素材后保留主素材",
-      note: "后续合并章节引用",
-    });
+    const actionRequest = CourseProductAssetGovernanceActionRequestSchema.parse(
+      {
+        action: "mark_duplicate_primary",
+        issueType: "duplicate_content_hash",
+        primaryAssetId: "asset_worksheet_1",
+        reason: "确认重复素材后保留主素材",
+        note: "后续合并章节引用",
+      }
+    );
     expect(actionRequest.primaryAssetId).toBe("asset_worksheet_1");
 
     expect(
@@ -505,8 +513,8 @@ describe("course product domain contract", () => {
     });
     expect(draftQuery.previewSize).toBe(8);
 
-    const batchDraft =
-      CourseProductAssetGovernanceBatchDraftResultSchema.parse({
+    const batchDraft = CourseProductAssetGovernanceBatchDraftResultSchema.parse(
+      {
         generatedAt: "2026-05-21T09:30:00.000Z",
         requestedBy: "operator_1",
         query: draftQuery,
@@ -546,7 +554,8 @@ describe("course product domain contract", () => {
           },
         ],
         safetyNotes: ["当前为批量处理草稿预览，不会修改素材元数据"],
-      });
+      }
+    );
     expect(batchDraft.willModifyAssetStore).toBe(false);
 
     const batchTaskCreate =
@@ -587,6 +596,10 @@ describe("course product domain contract", () => {
       proposedActionDistribution: [
         { key: "acknowledge_issue", label: "记录处理", count: 1 },
       ],
+      candidateAssetIds: ["asset_worksheet_1"],
+      candidateIssueTypeByAssetId: {
+        asset_worksheet_1: ["pending_compliance"],
+      },
       safetyNotes: ["待审批任务不会修改素材 Store"],
       createdBy: "operator_1",
       createdByRoles: ["catalog_operator"],
@@ -606,6 +619,8 @@ describe("course product domain contract", () => {
         summary: {
           totalTaskCount: 1,
           pendingApprovalCount: 1,
+          approvedCount: 0,
+          rejectedCount: 0,
           canceledCount: 0,
         },
         items: [batchTask],
@@ -622,6 +637,39 @@ describe("course product domain contract", () => {
         tasks: batchTaskList,
       });
     expect(mutation.tasks.summary.pendingApprovalCount).toBe(1);
+
+    expect(
+      CourseProductAssetGovernanceBatchTaskReviewRequestSchema.parse({
+        action: "approve",
+        reason: "审批前候选范围和处理口径已复核",
+      }).action
+    ).toBe("approve");
+    expect(
+      CourseProductAssetGovernanceBatchTaskReviewRequestSchema.safeParse({
+        action: "reject",
+        reason: "短",
+      }).success
+    ).toBe(false);
+
+    const preflight =
+      CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema.parse({
+        generatedAt: "2026-05-21T09:42:00.000Z",
+        originalCandidateAssetCount: 1,
+        currentCandidateAssetCount: 1,
+        candidateDeltaCount: 0,
+        stillEligibleActionCount: 1,
+        currentManualReviewAssetCount: 0,
+        currentSoftDeleteCandidateCount: 0,
+        currentIssueTypeDistribution: [
+          { key: "pending_compliance", label: "待审核", count: 1 },
+        ],
+        currentProposedActionDistribution: [
+          { key: "acknowledge_issue", label: "记录处理", count: 1 },
+        ],
+        requiresRecreate: false,
+        notes: ["审批前预检通过，后续仍需单独执行批量处理任务。"],
+      });
+    expect(preflight.disappearedAssetIds).toEqual([]);
   });
 
   it("validates the first course detail content contract", () => {

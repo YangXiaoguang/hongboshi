@@ -21,6 +21,7 @@ import {
   getCourseProductAssetDownloadPayload,
   getCourseProductAssetGovernancePayload,
   getCourseProductAssetsPayload,
+  reviewCourseProductAssetGovernanceBatchTaskPayload,
   getCourseProductContentQualityPayload,
   getCourseProductContentPayload,
   runCourseProductAssetBackfillPayload,
@@ -808,8 +809,7 @@ describe("catalog admin api payloads", () => {
         mimeType: "application/pdf",
         sizeBytes: 16,
         sourceType: "object_storage",
-        objectKey:
-          "course-assets/course_product_1/asset_pending_1/pending.pdf",
+        objectKey: "course-assets/course_product_1/asset_pending_1/pending.pdf",
         contentHash:
           "sha256:8b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
         complianceStatus: "pending",
@@ -887,8 +887,7 @@ describe("catalog admin api payloads", () => {
     });
     expect(after).toEqual(before);
 
-    const taskStore =
-      new InMemoryCourseProductAssetGovernanceBatchTaskStore();
+    const taskStore = new InMemoryCourseProductAssetGovernanceBatchTaskStore();
     const deniedTasks = await getCourseProductAssetGovernanceBatchTasksPayload(
       { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
       {},
@@ -899,25 +898,24 @@ describe("catalog admin api payloads", () => {
     );
     expect(deniedTasks.status).toBe(403);
 
-    const createTask =
-      await createCourseProductAssetGovernanceBatchTaskPayload(
-        { id: "catalog_operator_1", roles: ["catalog_operator"] },
-        {
-          action: "acknowledge_issue",
-          query: {
-            issueFilter: "pending_compliance",
-            previewSize: 5,
-          },
-          reason: "统一记录待审核素材处理计划",
+    const createTask = await createCourseProductAssetGovernanceBatchTaskPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      {
+        action: "acknowledge_issue",
+        query: {
+          issueFilter: "pending_compliance",
+          previewSize: 5,
         },
-        {
-          productStore,
-          contentStore,
-          assetStore,
-          taskStore,
-          now: "2026-05-21T10:05:00.000Z",
-        }
-      );
+        reason: "统一记录待审核素材处理计划",
+      },
+      {
+        productStore,
+        contentStore,
+        assetStore,
+        taskStore,
+        now: "2026-05-21T10:05:00.000Z",
+      }
+    );
     expect(createTask.status).toBe(200);
     expect(createTask.body).toMatchObject({
       ok: true,
@@ -930,8 +928,9 @@ describe("catalog admin api payloads", () => {
       },
     });
 
-    const taskId =
-      createTask.body.ok ? createTask.body.data.task.id : "missing_task";
+    const taskId = createTask.body.ok
+      ? createTask.body.data.task.id
+      : "missing_task";
     const listed = await getCourseProductAssetGovernanceBatchTasksPayload(
       { id: "catalog_operator_1", roles: ["catalog_operator"] },
       {
@@ -956,6 +955,24 @@ describe("catalog admin api payloads", () => {
         ],
       },
     });
+
+    const forbiddenSelfReview =
+      await reviewCourseProductAssetGovernanceBatchTaskPayload(
+        { id: "catalog_operator_1", roles: ["catalog_operator"] },
+        taskId,
+        {
+          action: "approve",
+          reason: "自己创建的草案不能自己审批",
+        },
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now: "2026-05-21T10:06:30.000Z",
+        }
+      );
+    expect(forbiddenSelfReview.status).toBe(403);
 
     const forbiddenCancel =
       await cancelCourseProductAssetGovernanceBatchTaskPayload(
@@ -992,6 +1009,61 @@ describe("catalog admin api payloads", () => {
         tasks: {
           summary: {
             canceledCount: 1,
+          },
+        },
+      },
+    });
+
+    const reviewDraft =
+      await createCourseProductAssetGovernanceBatchTaskPayload(
+        { id: "catalog_operator_1", roles: ["catalog_operator"] },
+        {
+          action: "acknowledge_issue",
+          query: {
+            issueFilter: "pending_compliance",
+            previewSize: 5,
+          },
+          reason: "重新提交待审核素材处理计划",
+        },
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now: "2026-05-21T10:09:00.000Z",
+        }
+      );
+    const reviewTaskId = reviewDraft.body.ok
+      ? reviewDraft.body.data.task.id
+      : "missing_task";
+    const reviewed = await reviewCourseProductAssetGovernanceBatchTaskPayload(
+      { id: "catalog_operator_2", roles: ["catalog_operator"] },
+      reviewTaskId,
+      {
+        action: "approve",
+        reason: "候选范围和处理口径已完成交叉复核",
+      },
+      {
+        productStore,
+        contentStore,
+        assetStore,
+        taskStore,
+        now: "2026-05-21T10:10:00.000Z",
+      }
+    );
+    expect(reviewed.body).toMatchObject({
+      ok: true,
+      data: {
+        task: {
+          approvalStatus: "approved",
+          reviewedBy: "catalog_operator_2",
+          approvalPreflight: {
+            requiresRecreate: false,
+          },
+        },
+        tasks: {
+          summary: {
+            approvedCount: 1,
           },
         },
       },
@@ -1042,9 +1114,8 @@ describe("catalog admin api payloads", () => {
       }
     );
 
-    const references = await targetAssetStore.listAssetReferences(
-      "asset_worksheet_1"
-    );
+    const references =
+      await targetAssetStore.listAssetReferences("asset_worksheet_1");
 
     expect(payload.status).toBe(200);
     expect(payload.body).toMatchObject({

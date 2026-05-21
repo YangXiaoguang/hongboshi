@@ -15,7 +15,9 @@ import {
 } from "./courseProductStore";
 import {
   cancelCourseProductAssetGovernanceBatchTask,
+  CourseProductAssetGovernanceBatchTaskPreflightError,
   createCourseProductAssetGovernanceBatchTask,
+  reviewCourseProductAssetGovernanceBatchTask,
 } from "./courseProductAssetGovernanceBatchTask";
 import {
   InMemoryCourseProductAssetGovernanceBatchTaskStore,
@@ -179,6 +181,156 @@ describe("course product asset governance batch tasks", () => {
     });
 
     expect(adminCanceled.task.canceledBy).toBe("admin_1");
+  });
+
+  it("reviews task drafts with separation of duties and preflight summaries", async () => {
+    const context = stores();
+    const created = await createCourseProductAssetGovernanceBatchTask({
+      ...context,
+      actorId: "operator_1",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "acknowledge_issue",
+        query: {
+          issueFilter: "pending_compliance",
+          previewSize: 5,
+        },
+        reason: "统一记录待审核素材处理计划",
+      },
+      now: "2026-05-21T10:00:00.000Z",
+    });
+
+    await expect(
+      reviewCourseProductAssetGovernanceBatchTask({
+        ...context,
+        taskId: created.task.id,
+        actorId: "operator_1",
+        actorRoles: ["catalog_operator"],
+        request: {
+          action: "approve",
+          reason: "自己创建的草案不能自己审批",
+        },
+        now: "2026-05-21T10:01:00.000Z",
+      })
+    ).rejects.toThrow(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_REVIEW_SELF_FORBIDDEN"
+    );
+
+    const approved = await reviewCourseProductAssetGovernanceBatchTask({
+      ...context,
+      taskId: created.task.id,
+      actorId: "operator_2",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "approve",
+        reason: "候选范围和处理口径已完成交叉复核",
+      },
+      now: "2026-05-21T10:02:00.000Z",
+    });
+
+    expect(approved.task).toMatchObject({
+      approvalStatus: "approved",
+      reviewedBy: "operator_2",
+      reviewAction: "approve",
+      approvalPreflight: {
+        requiresRecreate: false,
+        currentCandidateAssetCount: 1,
+      },
+    });
+    expect(approved.tasks.summary.approvedCount).toBe(1);
+
+    const nextDraft = await createCourseProductAssetGovernanceBatchTask({
+      ...context,
+      actorId: "operator_1",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "acknowledge_issue",
+        query: {
+          issueFilter: "pending_compliance",
+          previewSize: 5,
+        },
+        reason: "重新提交待审核素材处理计划",
+      },
+      now: "2026-05-21T10:03:00.000Z",
+    });
+    const rejected = await reviewCourseProductAssetGovernanceBatchTask({
+      ...context,
+      taskId: nextDraft.task.id,
+      actorId: "operator_2",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "reject",
+        reason: "筛选口径需要补充人工复核说明",
+      },
+      now: "2026-05-21T10:04:00.000Z",
+    });
+
+    expect(rejected.task).toMatchObject({
+      approvalStatus: "rejected",
+      reviewedBy: "operator_2",
+      reviewAction: "reject",
+      reviewReason: "筛选口径需要补充人工复核说明",
+      reviewBeforeSummary: {
+        approvalStatus: "pending_approval",
+      },
+      reviewAfterSummary: {
+        approvalStatus: "rejected",
+      },
+    });
+    expect(rejected.tasks.summary.rejectedCount).toBe(1);
+  });
+
+  it("keeps task drafts pending when approval preflight requires recreation", async () => {
+    const context = stores();
+    const created = await createCourseProductAssetGovernanceBatchTask({
+      ...context,
+      actorId: "operator_1",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "acknowledge_issue",
+        query: {
+          issueFilter: "pending_compliance",
+          previewSize: 5,
+        },
+        reason: "统一记录待审核素材处理计划",
+      },
+      now: "2026-05-21T10:00:00.000Z",
+    });
+
+    const currentAsset = await context.assetStore.getAsset("asset_pending_1");
+    if (!currentAsset) throw new Error("missing fixture asset");
+    await context.assetStore.saveAsset({
+      ...currentAsset,
+      complianceStatus: "approved",
+      downloadEnabled: true,
+      updatedAt: "2026-05-21T10:01:00.000Z",
+    });
+
+    await expect(
+      reviewCourseProductAssetGovernanceBatchTask({
+        ...context,
+        taskId: created.task.id,
+        actorId: "operator_2",
+        actorRoles: ["catalog_operator"],
+        request: {
+          action: "approve",
+          reason: "候选范围和处理口径已完成交叉复核",
+        },
+        now: "2026-05-21T10:02:00.000Z",
+      })
+    ).rejects.toBeInstanceOf(
+      CourseProductAssetGovernanceBatchTaskPreflightError
+    );
+
+    const storedTask = await context.taskStore.getTask(created.task.id);
+    expect(storedTask).toMatchObject({
+      approvalStatus: "pending_approval",
+      approvalPreflight: {
+        requiresRecreate: true,
+        currentCandidateAssetCount: 0,
+        disappearedAssetIds: ["asset_pending_1"],
+      },
+    });
   });
 
   it("persists task drafts in the JSON store", async () => {

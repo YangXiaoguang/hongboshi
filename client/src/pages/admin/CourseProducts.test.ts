@@ -6,6 +6,7 @@ import type {
 import {
   assetGovernanceBatchIssueFilterFromPanelFilter,
   assetGovernanceBatchTaskCreateRequestFromPanelFilter,
+  assetGovernanceBatchTaskReviewRequestFromAction,
   assetGovernanceHistoryQueryFromFilters,
   courseProductAssetGovernanceSuggestion,
   filterCourseProductAssetGovernanceItems,
@@ -93,10 +94,9 @@ describe("course product asset governance panel helpers", () => {
       "asset_duplicate",
     ]);
     expect(
-      filterCourseProductAssetGovernanceItems(
-        items,
-        "compliance_status"
-      ).map(item => item.asset.id)
+      filterCourseProductAssetGovernanceItems(items, "compliance_status").map(
+        item => item.asset.id
+      )
     ).toEqual(["asset_pending", "asset_rejected"]);
     expect(
       filterCourseProductAssetGovernanceItems(
@@ -170,6 +170,16 @@ describe("course product asset governance panel helpers", () => {
       dateTo: "2026-05-21T23:59:59.999+08:00",
       page: 1,
       pageSize: 5,
+    });
+
+    expect(
+      assetGovernanceBatchTaskReviewRequestFromAction(
+        "approve",
+        "  候选范围和处理口径已完成交叉复核  "
+      )
+    ).toEqual({
+      action: "approve",
+      reason: "候选范围和处理口径已完成交叉复核",
     });
   });
 });

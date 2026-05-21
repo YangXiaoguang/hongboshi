@@ -55,6 +55,8 @@ function batchTaskListData() {
     summary: {
       totalTaskCount: 1,
       pendingApprovalCount: 1,
+      approvedCount: 0,
+      rejectedCount: 0,
       canceledCount: 0,
     },
     items: [batchTaskData()],
@@ -283,7 +285,9 @@ describe("http course product repository parsing", () => {
             issueTypes: ["unreferenced", "pending_compliance"],
           },
         ],
-        notes: ["当前素材 Store 不支持引用表读取，引用数量由课程章节素材占位推导"],
+        notes: [
+          "当前素材 Store 不支持引用表读取，引用数量由课程章节素材占位推导",
+        ],
       },
     });
 
@@ -483,14 +487,15 @@ describe("http course product repository parsing", () => {
       ok: true,
       data: batchTaskListData(),
     });
-    const mutation =
-      parseCourseProductAssetGovernanceBatchTaskMutationResponse({
+    const mutation = parseCourseProductAssetGovernanceBatchTaskMutationResponse(
+      {
         ok: true,
         data: {
           task: batchTaskData(),
           tasks: batchTaskListData(),
         },
-      });
+      }
+    );
 
     expect(list.summary.pendingApprovalCount).toBe(1);
     expect(mutation.task.approvalStatus).toBe("pending_approval");
@@ -937,11 +942,13 @@ describe("http course product repository parsing", () => {
       .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
 
     const result =
-      await httpCourseProductRepository.loadCourseProductAssetGovernanceHistory({
-        action: "acknowledge_issue",
-        actorId: "operator_1",
-        pageSize: 5,
-      });
+      await httpCourseProductRepository.loadCourseProductAssetGovernanceHistory(
+        {
+          action: "acknowledge_issue",
+          actorId: "operator_1",
+          pageSize: 5,
+        }
+      );
 
     expect(result.summary.filteredEventCount).toBe(1);
     expect(fetchMock).toHaveBeenCalledWith(
@@ -987,10 +994,12 @@ describe("http course product repository parsing", () => {
       .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
 
     const result =
-      await httpCourseProductRepository.loadCourseProductAssetGovernanceBatchDraft({
-        issueFilter: "soft_delete_candidate",
-        previewSize: 8,
-      });
+      await httpCourseProductRepository.loadCourseProductAssetGovernanceBatchDraft(
+        {
+          issueFilter: "soft_delete_candidate",
+          previewSize: 8,
+        }
+      );
 
     expect(result.willModifyAssetStore).toBe(false);
     expect(fetchMock).toHaveBeenCalledWith(
@@ -1079,6 +1088,8 @@ describe("http course product repository parsing", () => {
           summary: {
             totalTaskCount: 1,
             pendingApprovalCount: 0,
+            approvedCount: 0,
+            rejectedCount: 0,
             canceledCount: 1,
           },
           items: [canceledTask],
@@ -1103,6 +1114,77 @@ describe("http course product repository parsing", () => {
       expect.objectContaining({
         method: "PATCH",
         body: expect.stringContaining("筛选口径需要重新确认"),
+      })
+    );
+  });
+
+  it("reviews course product asset governance batch task drafts", async () => {
+    const approvedTask = {
+      ...batchTaskData(),
+      approvalStatus: "approved",
+      reviewedBy: "operator_2",
+      reviewedByRoles: ["catalog_operator"],
+      reviewedAt: "2026-05-21T10:10:00.000Z",
+      reviewAction: "approve",
+      reviewReason: "候选范围和处理口径已完成交叉复核",
+      approvalPreflight: {
+        generatedAt: "2026-05-21T10:10:00.000Z",
+        originalCandidateAssetCount: 1,
+        currentCandidateAssetCount: 1,
+        candidateDeltaCount: 0,
+        disappearedAssetIds: [],
+        newCandidateAssetIds: [],
+        changedIssueTypeAssetIds: [],
+        stillEligibleActionCount: 1,
+        currentManualReviewAssetCount: 0,
+        currentSoftDeleteCandidateCount: 0,
+        currentIssueTypeDistribution: [
+          { key: "pending_compliance", label: "待审核", count: 1 },
+        ],
+        currentProposedActionDistribution: [
+          { key: "acknowledge_issue", label: "记录处理", count: 1 },
+        ],
+        requiresRecreate: false,
+        notes: ["审批前预检通过，后续仍需单独执行批量处理任务。"],
+      },
+      updatedAt: "2026-05-21T10:10:00.000Z",
+    };
+    const responsePayload = {
+      ok: true,
+      data: {
+        task: approvedTask,
+        tasks: {
+          ...batchTaskListData(),
+          summary: {
+            totalTaskCount: 1,
+            pendingApprovalCount: 0,
+            approvedCount: 1,
+            rejectedCount: 0,
+            canceledCount: 0,
+          },
+          items: [approvedTask],
+        },
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.reviewCourseProductAssetGovernanceBatchTask(
+        "asset_governance_batch_task_1",
+        {
+          action: "approve",
+          reason: "候选范围和处理口径已完成交叉复核",
+        }
+      );
+
+    expect(result.task.approvalStatus).toBe("approved");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/batch-tasks/asset_governance_batch_task_1/review",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining("approve"),
       })
     );
   });

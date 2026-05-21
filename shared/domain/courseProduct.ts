@@ -152,12 +152,19 @@ export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_ISSUE_FILTERS = [
 
 export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STATUSES = [
   "pending_approval",
+  "approved",
+  "rejected",
   "canceled",
 ] as const;
 
 export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STATUS_FILTERS = [
   "all",
   ...COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STATUSES,
+] as const;
+
+export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_REVIEW_ACTIONS = [
+  "approve",
+  "reject",
 ] as const;
 
 export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
@@ -260,6 +267,10 @@ export const CourseProductAssetGovernanceBatchTaskStatusSchema = z.enum(
 
 export const CourseProductAssetGovernanceBatchTaskStatusFilterSchema = z.enum(
   COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STATUS_FILTERS
+);
+
+export const CourseProductAssetGovernanceBatchTaskReviewActionSchema = z.enum(
+  COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_REVIEW_ACTIONS
 );
 
 export const CourseProductMerchandisingAssetUsageSchema = z.enum(
@@ -655,7 +666,8 @@ export const CourseProductAssetGovernanceHistoryResultSchema = z.object({
 });
 
 export const CourseProductAssetGovernanceBatchDraftQuerySchema = z.object({
-  issueFilter: CourseProductAssetGovernanceBatchIssueFilterSchema.default("all"),
+  issueFilter:
+    CourseProductAssetGovernanceBatchIssueFilterSchema.default("all"),
   productId: EntityIdSchema.optional(),
   previewSize: z.number().int().min(1).max(20).default(8),
 });
@@ -707,6 +719,37 @@ export const CourseProductAssetGovernanceBatchDraftResultSchema = z.object({
   safetyNotes: z.array(z.string().trim().min(1).max(240)).default([]),
 });
 
+export const CourseProductAssetGovernanceBatchTaskReviewSummarySchema =
+  z.object({
+    approvalStatus: CourseProductAssetGovernanceBatchTaskStatusSchema,
+    candidateAssetCount: z.number().int().nonnegative(),
+    eligibleActionCount: z.number().int().nonnegative(),
+    manualReviewAssetCount: z.number().int().nonnegative(),
+    softDeleteCandidateCount: z.number().int().nonnegative(),
+  });
+
+export const CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema =
+  z.object({
+    generatedAt: DateTimeLikeSchema,
+    originalCandidateAssetCount: z.number().int().nonnegative(),
+    currentCandidateAssetCount: z.number().int().nonnegative(),
+    candidateDeltaCount: z.number().int(),
+    disappearedAssetIds: z.array(EntityIdSchema).default([]),
+    newCandidateAssetIds: z.array(EntityIdSchema).default([]),
+    changedIssueTypeAssetIds: z.array(EntityIdSchema).default([]),
+    stillEligibleActionCount: z.number().int().nonnegative(),
+    currentManualReviewAssetCount: z.number().int().nonnegative(),
+    currentSoftDeleteCandidateCount: z.number().int().nonnegative(),
+    currentIssueTypeDistribution: z
+      .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+      .default([]),
+    currentProposedActionDistribution: z
+      .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+      .default([]),
+    requiresRecreate: z.boolean().default(false),
+    notes: z.array(z.string().trim().min(1).max(240)).default([]),
+  });
+
 export const CourseProductAssetGovernanceBatchTaskSchema = z.object({
   id: EntityIdSchema,
   action: CourseProductAssetGovernanceActionSchema,
@@ -723,6 +766,13 @@ export const CourseProductAssetGovernanceBatchTaskSchema = z.object({
   proposedActionDistribution: z
     .array(CourseProductAssetGovernanceHistoryDistributionSchema)
     .default([]),
+  candidateAssetIds: z.array(EntityIdSchema).default([]),
+  candidateIssueTypeByAssetId: z
+    .record(
+      EntityIdSchema,
+      z.array(CourseProductAssetGovernanceIssueTypeSchema)
+    )
+    .default({}),
   safetyNotes: z.array(z.string().trim().min(1).max(240)).default([]),
   createdBy: EntityIdSchema,
   createdByRoles: z.array(EntityIdSchema).default([]),
@@ -730,6 +780,18 @@ export const CourseProductAssetGovernanceBatchTaskSchema = z.object({
   note: z.string().trim().max(240).optional(),
   createdAt: DateTimeLikeSchema,
   updatedAt: DateTimeLikeSchema,
+  reviewedBy: EntityIdSchema.optional(),
+  reviewedByRoles: z.array(EntityIdSchema).default([]),
+  reviewedAt: DateTimeLikeSchema.optional(),
+  reviewAction:
+    CourseProductAssetGovernanceBatchTaskReviewActionSchema.optional(),
+  reviewReason: z.string().trim().min(4).max(240).optional(),
+  reviewBeforeSummary:
+    CourseProductAssetGovernanceBatchTaskReviewSummarySchema.optional(),
+  reviewAfterSummary:
+    CourseProductAssetGovernanceBatchTaskReviewSummarySchema.optional(),
+  approvalPreflight:
+    CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema.optional(),
   canceledBy: EntityIdSchema.optional(),
   canceledAt: DateTimeLikeSchema.optional(),
   cancelReason: z.string().trim().min(4).max(240).optional(),
@@ -737,9 +799,8 @@ export const CourseProductAssetGovernanceBatchTaskSchema = z.object({
 
 export const CourseProductAssetGovernanceBatchTaskCreateRequestSchema = z
   .object({
-    action: CourseProductAssetGovernanceActionSchema.default(
-      "acknowledge_issue"
-    ),
+    action:
+      CourseProductAssetGovernanceActionSchema.default("acknowledge_issue"),
     query: CourseProductAssetGovernanceBatchDraftQuerySchema,
     reason: z.string().trim().min(4).max(240),
     note: z.string().trim().max(240).optional(),
@@ -759,6 +820,12 @@ export const CourseProductAssetGovernanceBatchTaskCancelRequestSchema =
     reason: z.string().trim().min(4).max(240),
   });
 
+export const CourseProductAssetGovernanceBatchTaskReviewRequestSchema =
+  z.object({
+    action: CourseProductAssetGovernanceBatchTaskReviewActionSchema,
+    reason: z.string().trim().min(4).max(240),
+  });
+
 export const CourseProductAssetGovernanceBatchTaskListQuerySchema =
   PaginationQuerySchema.extend({
     approvalStatus:
@@ -770,6 +837,8 @@ export const CourseProductAssetGovernanceBatchTaskListQuerySchema =
 export const CourseProductAssetGovernanceBatchTaskListSummarySchema = z.object({
   totalTaskCount: z.number().int().nonnegative(),
   pendingApprovalCount: z.number().int().nonnegative(),
+  approvedCount: z.number().int().nonnegative(),
+  rejectedCount: z.number().int().nonnegative(),
   canceledCount: z.number().int().nonnegative(),
 });
 
@@ -1288,6 +1357,9 @@ export type CourseProductAssetGovernanceBatchTaskStatus = z.infer<
 export type CourseProductAssetGovernanceBatchTaskStatusFilter = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskStatusFilterSchema
 >;
+export type CourseProductAssetGovernanceBatchTaskReviewAction = z.infer<
+  typeof CourseProductAssetGovernanceBatchTaskReviewActionSchema
+>;
 export type CourseProductAssetObjectDescriptor = z.infer<
   typeof CourseProductAssetObjectDescriptorSchema
 >;
@@ -1355,11 +1427,20 @@ export type CourseProductAssetGovernanceBatchDraftResult = z.infer<
 export type CourseProductAssetGovernanceBatchTask = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskSchema
 >;
+export type CourseProductAssetGovernanceBatchTaskReviewSummary = z.infer<
+  typeof CourseProductAssetGovernanceBatchTaskReviewSummarySchema
+>;
+export type CourseProductAssetGovernanceBatchTaskApprovalPreflight = z.infer<
+  typeof CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema
+>;
 export type CourseProductAssetGovernanceBatchTaskCreateRequest = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskCreateRequestSchema
 >;
 export type CourseProductAssetGovernanceBatchTaskCancelRequest = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskCancelRequestSchema
+>;
+export type CourseProductAssetGovernanceBatchTaskReviewRequest = z.infer<
+  typeof CourseProductAssetGovernanceBatchTaskReviewRequestSchema
 >;
 export type CourseProductAssetGovernanceBatchTaskListQuery = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskListQuerySchema

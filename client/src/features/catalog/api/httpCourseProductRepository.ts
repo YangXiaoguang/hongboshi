@@ -29,6 +29,7 @@ import {
   type CourseProductAssetGovernanceBatchTaskListQuery,
   type CourseProductAssetGovernanceBatchTaskListResult,
   type CourseProductAssetGovernanceBatchTaskMutationResult,
+  type CourseProductAssetGovernanceBatchTaskReviewRequest,
   type CourseProductAssetGovernanceHistoryQuery,
   type CourseProductAssetGovernanceHistoryResult,
   type CourseProductAssetGovernanceResult,
@@ -172,7 +173,8 @@ export function parseCourseProductAssetGovernanceResponse(
 export function parseCourseProductAssetGovernanceActionResponse(
   payload: unknown
 ): CourseProductAssetGovernanceActionResult {
-  const parsed = CourseProductAssetGovernanceActionResponseSchema.parse(payload);
+  const parsed =
+    CourseProductAssetGovernanceActionResponseSchema.parse(payload);
   if (!parsed.ok) throw new Error(parsed.error.message);
   return parsed.data;
 }
@@ -523,9 +525,7 @@ export const httpCourseProductRepository = {
     );
     const payload = await readJson(response);
     if (!response.ok) {
-      throw new Error(
-        extractErrorMessage(payload, "课程素材治理历史读取失败")
-      );
+      throw new Error(extractErrorMessage(payload, "课程素材治理历史读取失败"));
     }
     return parseCourseProductAssetGovernanceHistoryResponse(payload);
   },
@@ -620,6 +620,32 @@ export const httpCourseProductRepository = {
     if (!response.ok) {
       throw new Error(
         extractErrorMessage(payload, "课程素材批量治理任务取消失败")
+      );
+    }
+    return parseCourseProductAssetGovernanceBatchTaskMutationResponse(payload);
+  },
+
+  async reviewCourseProductAssetGovernanceBatchTask(
+    taskId: string,
+    request: CourseProductAssetGovernanceBatchTaskReviewRequest
+  ): Promise<CourseProductAssetGovernanceBatchTaskMutationResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/governance/batch-tasks/${encodeURIComponent(taskId)}/review`,
+      {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify(request),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程素材批量治理任务审批失败")
       );
     }
     return parseCourseProductAssetGovernanceBatchTaskMutationResponse(payload);

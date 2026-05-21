@@ -48,6 +48,8 @@ import {
   type CourseProductAssetGovernanceBatchTask,
   type CourseProductAssetGovernanceBatchTaskCreateRequest,
   type CourseProductAssetGovernanceBatchTaskListResult,
+  type CourseProductAssetGovernanceBatchTaskReviewAction,
+  type CourseProductAssetGovernanceBatchTaskReviewRequest,
   type CourseProductAssetGovernanceHistoryQuery,
   type CourseProductAssetGovernanceHistoryResult,
   type CourseProductAssetGovernanceIssueType,
@@ -181,6 +183,10 @@ type AssetGovernanceActionState = {
 type AssetGovernanceBatchTaskCancelState = {
   task: CourseProductAssetGovernanceBatchTask;
 };
+type AssetGovernanceBatchTaskReviewState = {
+  task: CourseProductAssetGovernanceBatchTask;
+  action: CourseProductAssetGovernanceBatchTaskReviewAction;
+};
 
 const statusFilters: {
   value: CourseProductStatusFilter;
@@ -285,11 +291,18 @@ const assetGovernanceActionCopy = {
 
 const assetGovernanceBatchTaskStatusCopy = {
   pending_approval: "待审批",
+  approved: "已通过",
+  rejected: "已驳回",
   canceled: "已取消",
 } satisfies Record<
   CourseProductAssetGovernanceBatchTask["approvalStatus"],
   string
 >;
+
+const assetGovernanceBatchTaskReviewActionCopy = {
+  approve: "通过审批",
+  reject: "驳回草案",
+} satisfies Record<CourseProductAssetGovernanceBatchTaskReviewAction, string>;
 
 const assetGovernanceFilters: {
   value: AssetGovernanceFilter;
@@ -304,15 +317,16 @@ const assetGovernanceFilters: {
   { value: "soft_delete_candidate", label: "软删候选" },
 ];
 
-const defaultAssetGovernanceHistoryFilters: AssetGovernanceHistoryFilterState = {
-  assetId: "",
-  productId: "",
-  actorId: "",
-  action: "all",
-  issueType: "all",
-  dateFrom: "",
-  dateTo: "",
-};
+const defaultAssetGovernanceHistoryFilters: AssetGovernanceHistoryFilterState =
+  {
+    assetId: "",
+    productId: "",
+    actorId: "",
+    action: "all",
+    issueType: "all",
+    dateFrom: "",
+    dateTo: "",
+  };
 
 export function assetGovernanceBatchIssueFilterFromPanelFilter(
   filter: AssetGovernanceFilter
@@ -333,6 +347,16 @@ export function assetGovernanceBatchTaskCreateRequestFromPanelFilter(
     },
     reason: reason.trim(),
     note: note?.trim() || undefined,
+  };
+}
+
+export function assetGovernanceBatchTaskReviewRequestFromAction(
+  action: CourseProductAssetGovernanceBatchTaskReviewAction,
+  reason: string
+): CourseProductAssetGovernanceBatchTaskReviewRequest {
+  return {
+    action,
+    reason: reason.trim(),
   };
 }
 
@@ -990,6 +1014,7 @@ function CourseProductAssetGovernancePanel({
   onLocateAsset,
   onOpenGovernanceAction,
   onOpenBatchTaskDraft,
+  onOpenBatchTaskReview,
   onOpenBatchTaskCancel,
 }: {
   governance?: CourseProductAssetGovernanceResult;
@@ -1010,6 +1035,10 @@ function CourseProductAssetGovernancePanel({
   onLocateAsset: (item: CourseProductAssetGovernanceItem) => void;
   onOpenGovernanceAction: (action: AssetGovernanceActionState) => void;
   onOpenBatchTaskDraft: () => void;
+  onOpenBatchTaskReview: (
+    task: CourseProductAssetGovernanceBatchTask,
+    action: CourseProductAssetGovernanceBatchTaskReviewAction
+  ) => void;
   onOpenBatchTaskCancel: (task: CourseProductAssetGovernanceBatchTask) => void;
 }) {
   const issueItems = filterCourseProductAssetGovernanceItems(
@@ -1043,7 +1072,9 @@ function CourseProductAssetGovernancePanel({
         </div>
         <p className="text-xs leading-5 text-[#8A8176]">
           生成时间{" "}
-          {governance?.generatedAt ? formatDate(governance.generatedAt) : "待读取"}
+          {governance?.generatedAt
+            ? formatDate(governance.generatedAt)
+            : "待读取"}
         </p>
       </div>
 
@@ -1143,14 +1174,16 @@ function CourseProductAssetGovernancePanel({
                 ))}
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                {batchDraft.summary.issueTypeDistribution.slice(0, 6).map(item => (
-                  <span
-                    key={item.key}
-                    className="inline-flex h-7 items-center rounded-full bg-[#EEF6ED] px-2.5 text-xs font-semibold text-[#41675A]"
-                  >
-                    {item.label} {item.count}
-                  </span>
-                ))}
+                {batchDraft.summary.issueTypeDistribution
+                  .slice(0, 6)
+                  .map(item => (
+                    <span
+                      key={item.key}
+                      className="inline-flex h-7 items-center rounded-full bg-[#EEF6ED] px-2.5 text-xs font-semibold text-[#41675A]"
+                    >
+                      {item.label} {item.count}
+                    </span>
+                  ))}
                 {!batchDraft.summary.issueTypeDistribution.length && (
                   <span className="text-xs text-[#8A8176]">
                     当前筛选没有待处理候选。
@@ -1180,8 +1213,12 @@ function CourseProductAssetGovernancePanel({
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs font-semibold text-[#243B35]">
-                            {assetGovernanceBatchTaskStatusCopy[task.approvalStatus]} ·{" "}
-                            {assetGovernanceActionCopy[task.action]}
+                            {
+                              assetGovernanceBatchTaskStatusCopy[
+                                task.approvalStatus
+                              ]
+                            }{" "}
+                            · {assetGovernanceActionCopy[task.action]}
                           </span>
                           <span className="text-xs text-[#8A8176]">
                             {formatDate(task.updatedAt)}
@@ -1199,16 +1236,51 @@ function CourseProductAssetGovernancePanel({
                             {task.manualReviewAssetCount} 个需复核
                           </span>
                           {task.approvalStatus === "pending_approval" && (
-                            <button
-                              type="button"
-                              onClick={() => onOpenBatchTaskCancel(task)}
-                              disabled={isBatchTaskMutating}
-                              className="inline-flex h-6 items-center rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs font-semibold text-[#A65F48] transition hover:border-[#EDCDBF] disabled:cursor-not-allowed disabled:opacity-45"
-                            >
-                              取消草案
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onOpenBatchTaskReview(task, "approve")
+                                }
+                                disabled={isBatchTaskMutating}
+                                className="inline-flex h-6 items-center rounded-lg bg-[#E6EDDF] px-2 text-xs font-semibold text-[#355F51] transition hover:bg-[#D7E5D4] disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                通过审批
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onOpenBatchTaskReview(task, "reject")
+                                }
+                                disabled={isBatchTaskMutating}
+                                className="inline-flex h-6 items-center rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs font-semibold text-[#A65F48] transition hover:border-[#EDCDBF] disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                驳回
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onOpenBatchTaskCancel(task)}
+                                disabled={isBatchTaskMutating}
+                                className="inline-flex h-6 items-center rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs font-semibold text-[#6F7771] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                取消
+                              </button>
+                            </>
                           )}
                         </div>
+                        {task.approvalPreflight?.requiresRecreate ? (
+                          <p className="mt-2 rounded-md bg-[#FFF7E5] px-2 py-1 text-xs leading-5 text-[#8F6B1C]">
+                            预检提示：{task.approvalPreflight.notes[0]}
+                          </p>
+                        ) : null}
+                        {task.reviewedBy ? (
+                          <p className="mt-2 text-xs text-[#8A8176]">
+                            审批人 {task.reviewedBy} ·{" "}
+                            {task.reviewedAt
+                              ? formatDate(task.reviewedAt)
+                              : "未记录"}
+                          </p>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -1427,7 +1499,11 @@ function CourseProductAssetGovernancePanel({
                     <div className="min-w-[108px]">
                       <p>{item.referenceCount} 处引用</p>
                       <p className="mt-1 text-xs text-[#8A8176]">
-                        {assetGovernanceReferenceSourceCopy[item.referenceSource]}
+                        {
+                          assetGovernanceReferenceSourceCopy[
+                            item.referenceSource
+                          ]
+                        }
                       </p>
                     </div>
                   </td>
@@ -1803,6 +1879,12 @@ export default function CourseProducts() {
     assetGovernanceBatchTaskCancelReason,
     setAssetGovernanceBatchTaskCancelReason,
   ] = useState("");
+  const [assetGovernanceBatchTaskReview, setAssetGovernanceBatchTaskReview] =
+    useState<AssetGovernanceBatchTaskReviewState>();
+  const [
+    assetGovernanceBatchTaskReviewReason,
+    setAssetGovernanceBatchTaskReviewReason,
+  ] = useState("");
   const [mutatingBatchTaskId, setMutatingBatchTaskId] = useState<string>();
   const [assetForm, setAssetForm] =
     useState<AssetFormState>(createAssetFormState);
@@ -1845,33 +1927,31 @@ export default function CourseProducts() {
         history,
         batchDraft,
         batchTasks,
-      ] =
-        await Promise.all([
-          httpCourseProductRepository.loadCourseProducts(query),
-          httpCourseProductRepository.loadCourseProductContentQuality(),
-          httpCourseProductRepository.loadCourseProductAssetGovernance(),
-          httpCourseProductRepository.loadCourseProductAssetGovernanceHistory(
-            assetGovernanceHistoryQueryFromFilters(assetGovernanceHistoryFilters)
-          ),
-          catalogPermissions.canReview
-            ? httpCourseProductRepository.loadCourseProductAssetGovernanceBatchDraft(
-                {
-                  issueFilter:
-                    assetGovernanceBatchIssueFilterFromPanelFilter(
-                      assetGovernanceFilter
-                    ),
-                  previewSize: 8,
-                }
-              )
-            : Promise.resolve(undefined),
-          catalogPermissions.canReview
-            ? httpCourseProductRepository.loadCourseProductAssetGovernanceBatchTasks(
-                {
-                  pageSize: 5,
-                }
-              )
-            : Promise.resolve(undefined),
-        ]);
+      ] = await Promise.all([
+        httpCourseProductRepository.loadCourseProducts(query),
+        httpCourseProductRepository.loadCourseProductContentQuality(),
+        httpCourseProductRepository.loadCourseProductAssetGovernance(),
+        httpCourseProductRepository.loadCourseProductAssetGovernanceHistory(
+          assetGovernanceHistoryQueryFromFilters(assetGovernanceHistoryFilters)
+        ),
+        catalogPermissions.canReview
+          ? httpCourseProductRepository.loadCourseProductAssetGovernanceBatchDraft(
+              {
+                issueFilter: assetGovernanceBatchIssueFilterFromPanelFilter(
+                  assetGovernanceFilter
+                ),
+                previewSize: 8,
+              }
+            )
+          : Promise.resolve(undefined),
+        catalogPermissions.canReview
+          ? httpCourseProductRepository.loadCourseProductAssetGovernanceBatchTasks(
+              {
+                pageSize: 5,
+              }
+            )
+          : Promise.resolve(undefined),
+      ]);
       setData(products);
       setAssetGovernance(governance);
       setAssetGovernanceHistory(history);
@@ -2558,7 +2638,9 @@ export default function CourseProducts() {
         return;
       }
 
-      const localProduct = items.find(product => product.id === item.product?.id);
+      const localProduct = items.find(
+        product => product.id === item.product?.id
+      );
       if (catalogPermissions.canEdit && localProduct) {
         void openContentEditor(localProduct);
         return;
@@ -2648,7 +2730,9 @@ export default function CourseProducts() {
       );
       await loadProducts();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "课程素材治理动作失败");
+      setActionError(
+        err instanceof Error ? err.message : "课程素材治理动作失败"
+      );
     } finally {
       setMutatingAssetId(undefined);
     }
@@ -2725,6 +2809,71 @@ export default function CourseProducts() {
     assetGovernanceBatchTaskNote,
     assetGovernanceBatchTaskReason,
     assetGovernanceFilter,
+    catalogPermissions.canReview,
+    loadProducts,
+  ]);
+
+  const openAssetGovernanceBatchTaskReview = useCallback(
+    (
+      task: CourseProductAssetGovernanceBatchTask,
+      action: CourseProductAssetGovernanceBatchTaskReviewAction
+    ) => {
+      if (!catalogPermissions.canReview) {
+        setActionError("当前账号暂无课程素材治理权限");
+        return;
+      }
+      setActionError(undefined);
+      setActionMessage(undefined);
+      setAssetGovernanceBatchTaskReview({ task, action });
+      setAssetGovernanceBatchTaskReviewReason("");
+    },
+    [catalogPermissions.canReview]
+  );
+
+  const submitAssetGovernanceBatchTaskReview = useCallback(async () => {
+    if (!assetGovernanceBatchTaskReview) return;
+    if (!catalogPermissions.canReview) {
+      setActionError("当前账号暂无课程素材治理权限");
+      return;
+    }
+
+    const reason = assetGovernanceBatchTaskReviewReason.trim();
+    if (reason.length < 4) {
+      setActionError("请填写至少 4 个字的审批原因");
+      return;
+    }
+
+    const { task, action } = assetGovernanceBatchTaskReview;
+    setMutatingBatchTaskId(task.id);
+    setActionError(undefined);
+    setActionMessage(undefined);
+
+    try {
+      const result =
+        await httpCourseProductRepository.reviewCourseProductAssetGovernanceBatchTask(
+          task.id,
+          assetGovernanceBatchTaskReviewRequestFromAction(action, reason)
+        );
+      setAssetGovernanceBatchTasks(result.tasks);
+      setAssetGovernanceBatchTaskReview(undefined);
+      setAssetGovernanceBatchTaskReviewReason("");
+      setActionMessage(
+        `批量治理草案已${action === "approve" ? "通过审批" : "驳回"}`
+      );
+      await loadProducts();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "课程素材批量治理任务审批失败";
+      setActionError(message);
+      if (message.includes("预检变化较大")) {
+        await loadProducts();
+      }
+    } finally {
+      setMutatingBatchTaskId(undefined);
+    }
+  }, [
+    assetGovernanceBatchTaskReview,
+    assetGovernanceBatchTaskReviewReason,
     catalogPermissions.canReview,
     loadProducts,
   ]);
@@ -2905,6 +3054,7 @@ export default function CourseProducts() {
         onLocateAsset={locateGovernanceAsset}
         onOpenGovernanceAction={openGovernanceAction}
         onOpenBatchTaskDraft={openAssetGovernanceBatchTaskDraft}
+        onOpenBatchTaskReview={openAssetGovernanceBatchTaskReview}
         onOpenBatchTaskCancel={openAssetGovernanceBatchTaskCancel}
       />
 
@@ -3277,8 +3427,7 @@ export default function CourseProducts() {
               <button
                 onClick={() => void submitGovernanceAction()}
                 disabled={
-                  governanceReason.trim().length < 4 ||
-                  Boolean(mutatingAssetId)
+                  governanceReason.trim().length < 4 || Boolean(mutatingAssetId)
                 }
                 className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                   governanceAction.action === "mark_soft_deleted"
@@ -3394,6 +3543,112 @@ export default function CourseProducts() {
                   <ClipboardCheck className="h-4 w-4" />
                 )}
                 保存草案
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {assetGovernanceBatchTaskReview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="w-full max-w-[560px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-[#8A8176]">
+                  批量草案审批
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                  {
+                    assetGovernanceBatchTaskReviewActionCopy[
+                      assetGovernanceBatchTaskReview.action
+                    ]
+                  }
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#6F7771]">
+                  审批会先重新校验候选范围；本步骤仍不修改素材状态、引用关系或对象文件。
+                </p>
+              </div>
+              <button
+                onClick={() => setAssetGovernanceBatchTaskReview(undefined)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2 rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] px-3 py-3 text-xs">
+              <div>
+                <p className="text-[#8A8176]">候选素材</p>
+                <p className="mt-1 text-base font-semibold text-[#243B35]">
+                  {assetGovernanceBatchTaskReview.task.candidateAssetCount}
+                </p>
+              </div>
+              <div>
+                <p className="text-[#8A8176]">可记录动作</p>
+                <p className="mt-1 text-base font-semibold text-[#243B35]">
+                  {assetGovernanceBatchTaskReview.task.eligibleActionCount}
+                </p>
+              </div>
+              <div>
+                <p className="text-[#8A8176]">需复核</p>
+                <p className="mt-1 text-base font-semibold text-[#243B35]">
+                  {assetGovernanceBatchTaskReview.task.manualReviewAssetCount}
+                </p>
+              </div>
+            </div>
+
+            <label className="mt-5 block text-sm font-semibold text-[#41524B]">
+              审批原因
+              <textarea
+                value={assetGovernanceBatchTaskReviewReason}
+                onChange={event =>
+                  setAssetGovernanceBatchTaskReviewReason(event.target.value)
+                }
+                placeholder={
+                  assetGovernanceBatchTaskReview.action === "approve"
+                    ? "例如：候选范围和处理口径已复核，允许进入后续执行预案"
+                    : "例如：候选范围需要重新确认，先驳回当前草案"
+                }
+                className="mt-2 min-h-[88px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+              />
+            </label>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setAssetGovernanceBatchTaskReview(undefined)}
+                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void submitAssetGovernanceBatchTaskReview()}
+                disabled={
+                  assetGovernanceBatchTaskReviewReason.trim().length < 4 ||
+                  Boolean(mutatingBatchTaskId)
+                }
+                className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  assetGovernanceBatchTaskReview.action === "approve"
+                    ? "bg-[#243B35] text-white hover:bg-[#315047]"
+                    : "bg-[#AD503A] text-white hover:bg-[#9D4935]"
+                }`}
+              >
+                {mutatingBatchTaskId ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : assetGovernanceBatchTaskReview.action === "approve" ? (
+                  <ClipboardCheck className="h-4 w-4" />
+                ) : (
+                  <X className="h-4 w-4" />
+                )}
+                确认
+                {
+                  assetGovernanceBatchTaskReviewActionCopy[
+                    assetGovernanceBatchTaskReview.action
+                  ]
+                }
               </button>
             </div>
           </motion.div>
