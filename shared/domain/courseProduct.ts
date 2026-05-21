@@ -48,6 +48,7 @@ export const COURSE_PRODUCT_AUDIT_ACTIONS = [
   "content_update",
   "asset_upload",
   "asset_review",
+  "asset_governance",
 ] as const;
 
 export const COURSE_PRODUCT_REVIEW_ACTIONS = [
@@ -137,6 +138,12 @@ export const COURSE_PRODUCT_ASSET_GOVERNANCE_REFERENCE_SOURCES = [
   "none",
 ] as const;
 
+export const COURSE_PRODUCT_ASSET_GOVERNANCE_ACTIONS = [
+  "acknowledge_issue",
+  "mark_duplicate_primary",
+  "mark_soft_deleted",
+] as const;
+
 export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
   "showcase",
   "proof",
@@ -221,6 +228,10 @@ export const CourseProductAssetGovernanceIssueTypeSchema = z.enum(
 
 export const CourseProductAssetGovernanceReferenceSourceSchema = z.enum(
   COURSE_PRODUCT_ASSET_GOVERNANCE_REFERENCE_SOURCES
+);
+
+export const CourseProductAssetGovernanceActionSchema = z.enum(
+  COURSE_PRODUCT_ASSET_GOVERNANCE_ACTIONS
 );
 
 export const CourseProductMerchandisingAssetUsageSchema = z.enum(
@@ -482,6 +493,55 @@ export const CourseProductAssetGovernanceResultSchema = z.object({
   summary: CourseProductAssetGovernanceSummarySchema,
   items: z.array(CourseProductAssetGovernanceItemSchema),
   notes: z.array(z.string().trim().min(1).max(240)).default([]),
+});
+
+export const CourseProductAssetGovernanceActionRequestSchema = z
+  .object({
+    action: CourseProductAssetGovernanceActionSchema,
+    issueType: CourseProductAssetGovernanceIssueTypeSchema,
+    reason: z.string().trim().min(4).max(240),
+    note: z.string().trim().max(240).optional(),
+    primaryAssetId: EntityIdSchema.optional(),
+  })
+  .superRefine((request, ctx) => {
+    if (
+      request.action === "mark_duplicate_primary" &&
+      request.issueType !== "duplicate_content_hash"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["issueType"],
+        message: "mark_duplicate_primary requires duplicate_content_hash",
+      });
+    }
+
+    if (
+      request.action === "mark_duplicate_primary" &&
+      !request.primaryAssetId
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["primaryAssetId"],
+        message: "mark_duplicate_primary requires primaryAssetId",
+      });
+    }
+
+    if (
+      request.action === "mark_soft_deleted" &&
+      request.issueType !== "soft_delete_candidate"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["issueType"],
+        message: "mark_soft_deleted requires soft_delete_candidate",
+      });
+    }
+  });
+
+export const CourseProductAssetGovernanceActionResultSchema = z.object({
+  asset: CourseProductAssetSchema,
+  governance: CourseProductAssetGovernanceResultSchema,
+  auditEvent: CourseProductAuditEventSchema,
 });
 
 export const CourseProductAssetUploadRequestSchema = z
@@ -973,6 +1033,9 @@ export type CourseProductAssetGovernanceIssueType = z.infer<
 export type CourseProductAssetGovernanceReferenceSource = z.infer<
   typeof CourseProductAssetGovernanceReferenceSourceSchema
 >;
+export type CourseProductAssetGovernanceAction = z.infer<
+  typeof CourseProductAssetGovernanceActionSchema
+>;
 export type CourseProductAssetObjectDescriptor = z.infer<
   typeof CourseProductAssetObjectDescriptorSchema
 >;
@@ -1006,6 +1069,12 @@ export type CourseProductAssetGovernanceSummary = z.infer<
 >;
 export type CourseProductAssetGovernanceResult = z.infer<
   typeof CourseProductAssetGovernanceResultSchema
+>;
+export type CourseProductAssetGovernanceActionRequest = z.infer<
+  typeof CourseProductAssetGovernanceActionRequestSchema
+>;
+export type CourseProductAssetGovernanceActionResult = z.infer<
+  typeof CourseProductAssetGovernanceActionResultSchema
 >;
 export type CourseProductAssetUploadRequest = z.infer<
   typeof CourseProductAssetUploadRequestSchema

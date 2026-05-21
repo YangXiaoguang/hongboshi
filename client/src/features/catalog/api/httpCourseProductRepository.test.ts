@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   httpCourseProductRepository,
   parseCourseProductAssetBackfillResponse,
+  parseCourseProductAssetGovernanceActionResponse,
   parseCourseProductAssetGovernanceResponse,
   parseCourseProductAssetListResponse,
   parseCourseProductAssetMutationResponse,
@@ -244,6 +245,72 @@ describe("http course product repository parsing", () => {
         },
       })
     ).toThrow("当前账号暂无课程素材治理读取权限");
+  });
+
+  it("parses course product asset governance action responses", () => {
+    const parsed = parseCourseProductAssetGovernanceActionResponse({
+      ok: true,
+      data: {
+        asset: {
+          id: "asset_course_product_1_worksheet_20260521",
+          productId: "course_product_1",
+          kind: "worksheet",
+          title: "课后练习表",
+          fileName: "worksheet.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 188000,
+          sourceType: "object_storage",
+          objectKey: "course-assets/course_product_1/asset_worksheet/file.pdf",
+          contentHash:
+            "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+          complianceStatus: "approved",
+          downloadEnabled: false,
+          uploadedBy: "operator_1",
+          uploadedAt: "2026-05-21T09:00:00.000Z",
+          deletedAt: "2026-05-21T09:10:00.000Z",
+          updatedAt: "2026-05-21T09:10:00.000Z",
+        },
+        governance: {
+          generatedAt: "2026-05-21T09:10:00.000Z",
+          summary: {
+            totalAssetCount: 1,
+            activeAssetCount: 0,
+            referencedAssetCount: 0,
+            unreferencedAssetCount: 0,
+            duplicateContentHashGroupCount: 0,
+            duplicateContentHashAssetCount: 0,
+            pendingComplianceCount: 0,
+            rejectedComplianceCount: 0,
+            downloadDisabledMaterialCount: 0,
+            softDeleteCandidateCount: 0,
+            missingProductAssetCount: 0,
+            referenceCount: 0,
+            referenceSource: "content_material_placeholders",
+          },
+          items: [],
+          notes: [],
+        },
+        auditEvent: {
+          id: "audit_asset_governance_course_product_1",
+          productId: "course_product_1",
+          productTitle: "情绪管理入门",
+          actorId: "operator_1",
+          action: "asset_governance",
+          reason: "确认无前台引用，进入软删除确认",
+          before: {
+            issueType: "soft_delete_candidate",
+          },
+          after: {
+            issueType: "soft_delete_candidate",
+            governanceAction: "mark_soft_deleted",
+          },
+          createdAt: "2026-05-21T09:10:00.000Z",
+        },
+      },
+    });
+
+    expect(parsed.auditEvent.action).toBe("asset_governance");
+    expect(parsed.asset.deletedAt).toBe("2026-05-21T09:10:00.000Z");
   });
 
   it("parses course product mutation responses", () => {
@@ -630,6 +697,89 @@ describe("http course product repository parsing", () => {
       "/api/catalog/admin/course-products/assets/governance",
       expect.objectContaining({
         credentials: "same-origin",
+      })
+    );
+  });
+
+  it("sends asset governance actions to the admin endpoint", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        asset: {
+          id: "asset_course_product_1_worksheet_20260521",
+          productId: "course_product_1",
+          kind: "worksheet",
+          title: "课后练习表",
+          fileName: "worksheet.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 188000,
+          sourceType: "object_storage",
+          objectKey: "course-assets/course_product_1/asset_worksheet/file.pdf",
+          contentHash:
+            "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+          complianceStatus: "approved",
+          downloadEnabled: false,
+          uploadedBy: "operator_1",
+          uploadedAt: "2026-05-21T09:00:00.000Z",
+          deletedAt: "2026-05-21T09:10:00.000Z",
+          updatedAt: "2026-05-21T09:10:00.000Z",
+        },
+        governance: {
+          generatedAt: "2026-05-21T09:10:00.000Z",
+          summary: {
+            totalAssetCount: 1,
+            activeAssetCount: 0,
+            referencedAssetCount: 0,
+            unreferencedAssetCount: 0,
+            duplicateContentHashGroupCount: 0,
+            duplicateContentHashAssetCount: 0,
+            pendingComplianceCount: 0,
+            rejectedComplianceCount: 0,
+            downloadDisabledMaterialCount: 0,
+            softDeleteCandidateCount: 0,
+            missingProductAssetCount: 0,
+            referenceCount: 0,
+            referenceSource: "content_material_placeholders",
+          },
+          items: [],
+          notes: [],
+        },
+        auditEvent: {
+          id: "audit_asset_governance_course_product_1",
+          productId: "course_product_1",
+          productTitle: "情绪管理入门",
+          actorId: "operator_1",
+          action: "asset_governance",
+          reason: "确认无前台引用，进入软删除确认",
+          before: {},
+          after: {
+            governanceAction: "mark_soft_deleted",
+          },
+          createdAt: "2026-05-21T09:10:00.000Z",
+        },
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.applyCourseProductAssetGovernanceAction(
+        "course_product_1",
+        "asset_course_product_1_worksheet_20260521",
+        {
+          action: "mark_soft_deleted",
+          issueType: "soft_delete_candidate",
+          reason: "确认无前台引用，进入软删除确认",
+        }
+      );
+
+    expect(result.auditEvent.action).toBe("asset_governance");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/course_product_1/assets/asset_course_product_1_worksheet_20260521/governance-actions",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("mark_soft_deleted"),
       })
     );
   });

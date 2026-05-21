@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`AUTH-A 开发期后台账号登录基建` 已完成，后台账号已与普通用户手机号/微信登录隔离，支持开发期密码登录、独立账号 Store、后台入口表单和生产默认关闭边界。
-- 本轮完成后下一步：执行 `CUX-I-B-B-I 课程素材治理受控处理动作与审计准备`
+- 当前状态：`CUX-I-B-B-I 课程素材治理受控处理动作与审计准备` 已完成，素材治理面板已从只读摘要推进到单素材受控动作，支持记录处理、标记重复主素材、软删除确认和 `asset_governance` 审计。
+- 本轮完成后下一步：执行 `CUX-I-B-B-J 课程素材治理历史筛选与批量处理草稿准备`
 
 ## 已完成关键能力
 
@@ -49,6 +49,7 @@
 - 完成课程素材治理后台与引用报表基础：新增 `CourseProductAssetGovernance*` 共享契约、只读治理 service、`GET /api/catalog/admin/course-products/assets/governance`、前端 repository 读取方法和测试，支持未引用素材、重复 contentHash、待审/驳回、下载关闭资料、软删候选、缺失商品和引用来源识别。
 - 完成 `/admin/courses` 素材治理面板接入：课程商品后台并行读取素材治理结果，展示总素材、未引用、重复 hash、待审、驳回、下载关闭、软删候选和引用来源；支持按治理问题筛选、查看素材行建议，并可定位课程或打开既有素材队列，保持只读不引入批量写动作。
 - 完成开发期后台账号登录基建：新增 `/api/auth/login/admin-dev`、`AdminDevLoginRequestSchema`、静态后台账号 Store、scrypt 密码哈希校验、后台入口专用登录表单和 `AuthContext.loginWithAdminDev`；默认开发账号与普通用户登录隔离，生产环境默认关闭。
+- 完成课程素材治理受控动作：新增 `CourseProductAssetGovernanceAction*` 契约、`POST /api/catalog/admin/course-products/:productId/assets/:assetId/governance-actions`、单素材治理 service、`asset_governance` 审计动作和 `/admin/courses` 行级处理入口；支持记录处理、标记重复主素材和软删除确认，软删除不做物理对象删除且受控读取会拒绝 `deletedAt` 素材。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -686,30 +687,30 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：AUTH-A 开发期后台账号登录基建
+### 最近完成阶段：CUX-I-B-B-I 课程素材治理受控处理动作与审计准备
 
-AUTH-A 稳定切片已交付：
+CUX-I-B-B-I 稳定切片已交付：
 
-- 新增 `AdminDevLoginRequestSchema` 和 `/api/auth/login/admin-dev`，使用 `password` provider 建立后台密码登录会话。
-- 新增 `server/modules/auth/adminCredentialStore.ts`，支持静态后台账号、scrypt 密码哈希、环境变量覆盖和生产默认关闭。
-- 内置开发期账号：`admin@hongboshi.dev`、`operator@hongboshi.dev`、`catalog@hongboshi.dev`，分别映射 `admin`、`operator`、`catalog_operator` 角色。
-- `AuthContext` 和前端 auth repository 已接入 `loginWithAdminDev`，普通手机号/微信登录仍默认 `member`。
-- `/admin` 未登录或普通用户权限不足时展示后台专用登录表单，不再引导打开普通用户登录弹窗。
-- 已补 credential store、auth payload 和前端 repository 测试，覆盖生产关闭、密码错误、登录成功和角色隔离。
+- 新增 `CourseProductAssetGovernanceActionRequestSchema` 和 `CourseProductAssetGovernanceActionResultSchema`，统一描述单素材治理动作、问题类型、原因、备注、主素材 ID、返回素材、治理快照和审计事件。
+- 新增 `server/modules/catalog/courseProductAssetGovernanceAction.ts`，执行前重新计算治理结果，校验素材存在、商品存在、问题类型仍匹配、重复主素材同 hash 分组、软删除候选无引用。
+- 新增 `POST /api/catalog/admin/course-products/:productId/assets/:assetId/governance-actions`，由 `catalog:review` 权限控制；只读账号和普通会员不能执行治理动作。
+- 新增课程商品审计动作 `asset_governance` 和迁移 `0020_course_product_asset_governance_audit.sql`，记录 actor、assetId、productId、治理动作、问题类型、before/after 摘要、原因和时间。
+- `/admin/courses` 素材治理面板已开放单行处理入口，支持记录处理、设为重复主素材、软删除确认；批量动作和物理删除继续后置。
+- 受控素材读取已拒绝 `deletedAt` 素材，软删除确认只写元数据，不删除对象字节或引用表。
 
-### 后台待续：CUX-I-B-B-I 课程素材治理受控处理动作与审计准备
+### 后台待续：CUX-I-B-B-J 课程素材治理历史筛选与批量处理草稿准备
 
 业务目标：
 
-CUX-I-B-B-H 仍保持治理面板只读。下一步应在不破坏素材 Store 和课程内容编辑流程的前提下，为“治理问题处理”建立受控写动作、审计事件和单素材操作边界，避免运营依赖手工改数据或直接删除对象。
+CUX-I-B-B-I 已有单素材动作和审计，但运营处理完一批素材后仍缺少“治理动作历史”和“批量处理草稿”的安全准备。下一步应先让运营能按素材、动作、问题类型和操作者回看治理轨迹，并为后续批量处理建立只读草稿预览，避免直接进入不可逆批量写操作。
 
 建议实施范围：
 
-- 在共享契约中新增课程素材治理单项动作请求/结果：处理备注、忽略本轮提醒、标记重复保留主素材、进入软删候选确认等；第一版不做物理删除。
-- 在服务端新增治理动作 service，复用 `catalog:review` 或更细权限，校验素材存在、商品存在、问题类型匹配和操作原因。
-- 写入课程商品审计或新增素材治理审计事件，记录 actor、roles、assetId、productId、action、before/after 摘要、reason 和 createdAt。
-- `/admin/courses` 治理面板只开放单行、单素材动作入口；批量处理继续后置。
-- 增加 API/service/page 测试，覆盖权限失败、无效问题类型、成功写入审计、只读账号不可操作、普通会员不可访问。
+- 在共享契约中新增素材治理动作历史筛选/结果：assetId、productId、治理动作、问题类型、actorId、日期范围、分页和摘要。
+- 服务端从课程商品审计事件中过滤 `asset_governance`，输出治理动作历史，不读取原始文件、不暴露对象签名 URL。
+- `/admin/courses` 治理面板增加最近治理动作区和按当前筛选生成“批量处理草稿预览”，第一版只显示将影响的素材数量、问题类型分布和安全提示，不执行批量写入。
+- 批量草稿仅允许 `catalog:review` 查看；真正批量处理、自动合并引用、对象物理删除和异步任务队列继续后置。
+- 增加 domain/service/API/page 测试，覆盖权限、筛选、空结果、安全摘要和不会修改素材 Store。
 
 ## 执行不变量
 
@@ -730,4 +731,4 @@ CUX-I-B-B-H 仍保持治理面板只读。下一步应在不破坏素材 Store �
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 CUX-I-B-B-I 课程素材治理受控处理动作与审计准备，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 CUX-I-B-B-J 课程素材治理历史筛选与批量处理草稿准备，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

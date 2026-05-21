@@ -103,7 +103,7 @@ describe("course product asset governance panel helpers", () => {
     ).toEqual(["asset_duplicate"]);
   });
 
-  it("keeps governance actions advisory and read-only", () => {
+  it("keeps governance suggestions tied to controlled actions", () => {
     expect(
       courseProductAssetGovernanceSuggestion(
         governanceItem({
@@ -120,6 +120,6 @@ describe("course product asset governance panel helpers", () => {
           issueTypes: ["soft_delete_candidate"],
         })
       )
-    ).toContain("不在本面板直接删除");
+    ).toContain("不触发物理删除");
   });
 });

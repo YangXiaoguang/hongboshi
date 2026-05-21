@@ -9,6 +9,8 @@ import {
   CourseProductAssetBackfillRequestSchema,
   CourseProductAssetComplianceUpdateRequestSchema,
   CourseProductAssetFileUploadRequestSchema,
+  CourseProductAssetGovernanceActionRequestSchema,
+  CourseProductAssetGovernanceActionResultSchema,
   CourseProductAssetGovernanceResultSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetMutationResultSchema,
@@ -63,6 +65,7 @@ import {
   previewCourseProductAssetBackfill,
 } from "./courseProductAssetBackfill";
 import { getCourseProductAssetGovernance } from "./courseProductAssetGovernance";
+import { applyCourseProductAssetGovernanceAction } from "./courseProductAssetGovernanceAction";
 
 const CourseProductAdminListResponseSchema = ApiResponseSchema(
   CourseProductListResultSchema
@@ -91,6 +94,9 @@ const CourseProductAssetBackfillResponseSchema = ApiResponseSchema(
 const CourseProductAssetGovernanceResponseSchema = ApiResponseSchema(
   CourseProductAssetGovernanceResultSchema
 );
+const CourseProductAssetGovernanceActionResponseSchema = ApiResponseSchema(
+  CourseProductAssetGovernanceActionResultSchema
+);
 
 type CatalogApiErrorCode =
   | "BAD_REQUEST"
@@ -109,7 +115,8 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductAssetListResponseSchema>
   | z.infer<typeof CourseProductAssetMutationResponseSchema>
   | z.infer<typeof CourseProductAssetBackfillResponseSchema>
-  | z.infer<typeof CourseProductAssetGovernanceResponseSchema>;
+  | z.infer<typeof CourseProductAssetGovernanceResponseSchema>
+  | z.infer<typeof CourseProductAssetGovernanceActionResponseSchema>;
 type CatalogApiPayload = {
   status: number;
   body: CatalogApiBody;
@@ -139,6 +146,7 @@ export const catalogOperationPermissions = {
   assetBackfillRead: COURSE_CATALOG_PERMISSIONS.read,
   assetBackfillWrite: COURSE_CATALOG_PERMISSIONS.review,
   assetGovernanceRead: COURSE_CATALOG_PERMISSIONS.read,
+  assetGovernanceManage: COURSE_CATALOG_PERMISSIONS.review,
   basicInfoUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   contentUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   reviewUpdate: COURSE_CATALOG_PERMISSIONS.review,
@@ -549,6 +557,61 @@ export async function getCourseProductAssetGovernancePayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程素材治理读取失败");
+  }
+}
+
+export async function applyCourseProductAssetGovernanceActionPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  productId: string,
+  assetId: string,
+  body: unknown,
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    assetStore = getCourseProductAssetStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    assetStore?: CourseProductAssetStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetGovernanceManage
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductAssetGovernanceActionRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程素材治理动作参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetGovernanceActionResponseSchema.parse({
+        ok: true,
+        data: await applyCourseProductAssetGovernanceAction({
+          productId,
+          assetId,
+          request: parsed.data,
+          actorId: actor!.id,
+          actorRoles: actor!.roles,
+          productStore,
+          contentStore,
+          assetStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材治理动作失败");
   }
 }
 
@@ -1153,6 +1216,28 @@ export function registerCatalogApi(app: Express) {
       }
     }
   );
+
+  app.post(
+    "/api/catalog/admin/course-products/:productId/assets/:assetId/governance-actions",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await applyCourseProductAssetGovernanceActionPayload(
+          session?.user,
+          req.params.productId,
+          req.params.assetId,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材治理动作失败")
+        );
+      }
+    }
+  );
 }
 
 export function handleCatalogApiRequest(
@@ -1321,6 +1406,9 @@ export function handleCatalogApiRequest(
   const assetComplianceMatch = url.pathname.match(
     /^\/api\/catalog\/admin\/course-products\/([^/]+)\/assets\/([^/]+)\/compliance$/
   );
+  const assetGovernanceActionMatch = url.pathname.match(
+    /^\/api\/catalog\/admin\/course-products\/([^/]+)\/assets\/([^/]+)\/governance-actions$/
+  );
   const assetFileUploadMatch = url.pathname.match(
     /^\/api\/catalog\/admin\/course-products\/([^/]+)\/assets\/files$/
   );
@@ -1345,6 +1433,33 @@ export function handleCatalogApiRequest(
           res,
           500,
           errorPayload("INTERNAL_ERROR", "课程素材文件上传失败")
+        )
+      );
+    return true;
+  }
+
+  if (assetGovernanceActionMatch?.[1] && assetGovernanceActionMatch[2]) {
+    if (req.method !== "POST") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 POST 请求"));
+      return true;
+    }
+
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await applyCourseProductAssetGovernanceActionPayload(
+          session?.user,
+          decodeURIComponent(assetGovernanceActionMatch[1]),
+          decodeURIComponent(assetGovernanceActionMatch[2]),
+          body
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材治理动作失败")
         )
       );
     return true;
@@ -1683,6 +1798,36 @@ function courseProductActionFailure(
     return {
       status: 409,
       body: errorPayload("CONFLICT", "课程素材回填目标 Store 不支持引用写入"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_GOVERNANCE_ISSUE_MISMATCH"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "课程素材治理问题类型已变化，请刷新后重试"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_GOVERNANCE_PRIMARY_INVALID"
+  ) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "重复素材主素材选择不合法"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_GOVERNANCE_SOFT_DELETE_FORBIDDEN"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "当前素材仍存在引用，不能进入软删除确认"),
     };
   }
 

@@ -10,6 +10,7 @@ import {
 } from "./courseProductStore";
 import {
   catalogOperationPermissions,
+  applyCourseProductAssetGovernanceActionPayload,
   getCourseProductAdminListPayload,
   getCourseProductAssetBackfillPayload,
   getCourseProductAssetDownloadPayload,
@@ -88,6 +89,7 @@ describe("catalog admin api payloads", () => {
       assetBackfillRead: "catalog:read",
       assetBackfillWrite: "catalog:review",
       assetGovernanceRead: "catalog:read",
+      assetGovernanceManage: "catalog:review",
       basicInfoUpdate: "catalog:edit",
       contentUpdate: "catalog:edit",
       reviewUpdate: "catalog:review",
@@ -683,6 +685,76 @@ describe("catalog admin api payloads", () => {
           totalAssetCount: 1,
           referencedAssetCount: 1,
           referenceSource: "content_material_placeholders",
+        },
+      },
+    });
+  });
+
+  it("applies single asset governance actions for catalog reviewers", async () => {
+    const productStore = new InMemoryCourseProductStore([products[0]]);
+    const assetStore = new InMemoryCourseProductAssetStore([
+      {
+        id: "asset_unused_1",
+        productId: products[0].id,
+        kind: "worksheet",
+        title: "未引用练习表",
+        fileName: "worksheet.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 16,
+        sourceType: "object_storage",
+        objectKey:
+          "course-assets/course_product_1/asset_unused_1/hash-worksheet.pdf",
+        contentHash:
+          "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+        complianceStatus: "approved",
+        downloadEnabled: true,
+        uploadedBy: "operator_1",
+        uploadedAt: "2026-05-20T09:00:00.000Z",
+        updatedAt: "2026-05-20T09:00:00.000Z",
+      },
+    ]);
+    const contentStore = new InMemoryCourseProductContentStore([]);
+
+    const denied = await applyCourseProductAssetGovernanceActionPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      products[0].id,
+      "asset_unused_1",
+      {
+        action: "mark_soft_deleted",
+        issueType: "soft_delete_candidate",
+        reason: "确认无前台引用，进入软删除确认",
+      },
+      { productStore, contentStore, assetStore }
+    );
+    expect(denied.status).toBe(403);
+
+    const payload = await applyCourseProductAssetGovernanceActionPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      products[0].id,
+      "asset_unused_1",
+      {
+        action: "mark_soft_deleted",
+        issueType: "soft_delete_candidate",
+        reason: "确认无前台引用，进入软删除确认",
+      },
+      {
+        productStore,
+        contentStore,
+        assetStore,
+        now: "2026-05-21T09:10:00.000Z",
+      }
+    );
+
+    expect(payload.status).toBe(200);
+    expect(payload.body).toMatchObject({
+      ok: true,
+      data: {
+        asset: {
+          id: "asset_unused_1",
+          deletedAt: "2026-05-21T09:10:00.000Z",
+        },
+        auditEvent: {
+          action: "asset_governance",
         },
       },
     });

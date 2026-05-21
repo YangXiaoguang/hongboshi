@@ -8,6 +8,8 @@ import {
   CourseProductAssetBackfillPlanSchema,
   CourseProductAssetBackfillRequestSchema,
   CourseProductAssetFileUploadRequestSchema,
+  CourseProductAssetGovernanceActionRequestSchema,
+  CourseProductAssetGovernanceActionResultSchema,
   CourseProductAssetGovernanceResultSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetObjectDescriptorSchema,
@@ -391,6 +393,43 @@ describe("course product domain contract", () => {
       "content_material_placeholders"
     );
     expect(parsed.items[0]?.issueTypes).toContain("pending_compliance");
+
+    const actionRequest = CourseProductAssetGovernanceActionRequestSchema.parse({
+      action: "mark_duplicate_primary",
+      issueType: "duplicate_content_hash",
+      primaryAssetId: "asset_worksheet_1",
+      reason: "确认重复素材后保留主素材",
+      note: "后续合并章节引用",
+    });
+    expect(actionRequest.primaryAssetId).toBe("asset_worksheet_1");
+
+    expect(
+      CourseProductAssetGovernanceActionRequestSchema.safeParse({
+        action: "mark_soft_deleted",
+        issueType: "unreferenced",
+        reason: "问题类型不匹配",
+      }).success
+    ).toBe(false);
+
+    const actionResult = CourseProductAssetGovernanceActionResultSchema.parse({
+      asset: parsed.items[0]?.asset,
+      governance: parsed,
+      auditEvent: {
+        id: "audit_asset_governance_course_product_1_asset_worksheet_1",
+        productId: "course_product_1",
+        productTitle: "情绪管理入门",
+        actorId: "operator_1",
+        action: "asset_governance",
+        reason: "确认重复素材后保留主素材",
+        before: { issueType: "duplicate_content_hash" },
+        after: {
+          issueType: "duplicate_content_hash",
+          governanceAction: "mark_duplicate_primary",
+        },
+        createdAt: "2026-05-21T09:10:00.000Z",
+      },
+    });
+    expect(actionResult.auditEvent.action).toBe("asset_governance");
   });
 
   it("validates the first course detail content contract", () => {

@@ -529,7 +529,7 @@ export async function getCourseProductAssetStoredFile({
   objectStorage?: CourseProductAssetObjectStorage;
 }) {
   const asset = await assetStore.getAsset(assetId);
-  if (!asset || asset.productId !== productId) {
+  if (!asset || asset.productId !== productId || asset.deletedAt) {
     throw new Error("COURSE_PRODUCT_ASSET_NOT_FOUND");
   }
   const objectKey = asset.objectKey ?? asset.storageKey;

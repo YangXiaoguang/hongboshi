@@ -66,6 +66,16 @@
 - `GET /api/catalog/admin/course-products/assets/governance` 由 `catalog:read` 权限控制，只返回治理摘要和只读素材列表，不执行删除、批量审核、自动清理或下载开关修改。
 - 前端 `httpCourseProductRepository.loadCourseProductAssetGovernance` 已可读取同一契约，为下一步 `/admin/courses` 治理面板接入准备。
 
+## 素材治理受控动作
+
+`server/modules/catalog/courseProductAssetGovernanceAction.ts` 已建立单素材治理动作 service，使用 `CourseProductAssetGovernanceActionRequestSchema` / `CourseProductAssetGovernanceActionResultSchema` 描述操作输入和结果：
+
+- 第一版仅支持 `acknowledge_issue`、`mark_duplicate_primary` 和 `mark_soft_deleted` 三类单素材动作，不做批量处理，不做物理删除对象。
+- 写动作由 `catalog:review` 权限控制，并会在执行前重新计算治理结果，校验素材存在、商品存在、问题类型仍匹配、重复主素材属于同一 `contentHash` 分组，以及软删除候选没有引用。
+- `mark_soft_deleted` 只设置素材 `deletedAt` 并关闭 `downloadEnabled`；后台文件、对象存储字节和引用表不被物理删除。受控下载入口已拒绝读取 `deletedAt` 素材。
+- 每次治理动作写入课程商品审计事件 `asset_governance`，记录 actor、assetId、productId、治理动作、问题类型、引用数量、重复素材 ID、before/after 摘要、原因和时间。
+- `/admin/courses` 治理面板已开放单行处理入口；批量删除、自动合并引用、物理对象清理和跨课程素材复用仍后置。
+
 ## 后续切片
 
 - `CUX-I-B-B-D`：已实现 `PostgresCourseProductAssetStore`，让素材列表、上传登记、合规审核和后台下载可显式切换 PostgreSQL；已实现素材回填 dry-run service，可扫描 JSON Store 与章节素材占位并输出扫描数、可回填素材数、引用数、跳过数和原因。
@@ -73,3 +83,4 @@
 - `CUX-I-B-B-F`：已接入对象存储 provider 配置解析、local/s3/oss/cos 边界、远端公开域名短期 HMAC 签名 URL、上传/读取路径 object storage adapter 化和 provider 级测试。真实云 SDK、STS 临时凭证和 CDN 回源策略仍属于上线前集成任务。
 - `CUX-I-B-B-G`：已完成素材治理共享契约、只读 service、后台 API 和前端 repository 基础，覆盖未引用素材、重复内容 hash、待审/驳回素材、下载关闭资料、软删候选和引用数量。
 - `CUX-I-B-B-H`：在 `/admin/courses` 接入素材治理面板，展示治理摘要、问题筛选、引用来源提示和素材详情跳转；继续保持只读，不引入批量删除。
+- `CUX-I-B-B-I`：已接入单素材治理受控动作、`asset_governance` 审计、软删除读取边界和后台单行处理入口；后续可继续补治理动作历史筛选、批量处理草稿和真实对象清理审批流。

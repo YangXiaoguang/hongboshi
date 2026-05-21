@@ -40,6 +40,7 @@ import {
   evaluateCourseProductContentQuality,
   type CourseCategory,
   type CourseProductAsset,
+  type CourseProductAssetGovernanceAction,
   type CourseProductAssetGovernanceIssueType,
   type CourseProductAssetGovernanceItem,
   type CourseProductAssetGovernanceReferenceSource,
@@ -153,6 +154,12 @@ type AssetGovernanceFilter =
   | "all"
   | "compliance_status"
   | CourseProductAssetGovernanceIssueType;
+type AssetGovernanceActionState = {
+  item: CourseProductAssetGovernanceItem;
+  action: CourseProductAssetGovernanceAction;
+  issueType: CourseProductAssetGovernanceIssueType;
+  primaryAssetId?: string;
+};
 
 const statusFilters: {
   value: CourseProductStatusFilter;
@@ -249,6 +256,12 @@ const assetGovernanceReferenceSourceCopy = {
   none: "暂无引用来源",
 } satisfies Record<CourseProductAssetGovernanceReferenceSource, string>;
 
+const assetGovernanceActionCopy = {
+  acknowledge_issue: "记录处理",
+  mark_duplicate_primary: "设为主素材",
+  mark_soft_deleted: "软删除确认",
+} satisfies Record<CourseProductAssetGovernanceAction, string>;
+
 const assetGovernanceFilters: {
   value: AssetGovernanceFilter;
   label: string;
@@ -310,6 +323,15 @@ function auditReviewStatusLabel(value: unknown) {
 }
 
 function auditChangeText(event: CourseProductAuditEvent) {
+  if (event.action === "asset_governance") {
+    const action =
+      typeof event.after.governanceAction === "string"
+        ? event.after.governanceAction
+        : "acknowledge_issue";
+    const issue =
+      typeof event.after.issueType === "string" ? event.after.issueType : "";
+    return `${assetGovernanceActionCopy[action as CourseProductAssetGovernanceAction] ?? "治理处理"} · ${issue}`;
+  }
   if (event.action === "status_update") {
     return `${auditStatusLabel(event.before.status)} -> ${auditStatusLabel(
       event.after.status
@@ -348,6 +370,9 @@ function auditActionLabel(action: CourseProductAuditEvent["action"]) {
   if (action === "price_update") return "价格更新";
   if (action === "review_update") return "审核更新";
   if (action === "content_update") return "内容更新";
+  if (action === "asset_upload") return "素材上传";
+  if (action === "asset_review") return "素材审核";
+  if (action === "asset_governance") return "素材治理";
   return "信息更新";
 }
 
@@ -495,12 +520,44 @@ export function courseProductAssetGovernanceSuggestion(
     return "保留主素材，合并重复引用后再考虑软删冗余对象。";
   }
   if (hasAssetGovernanceIssue(item, "soft_delete_candidate")) {
-    return "确认无前台引用后进入后续软删治理，不在本面板直接删除。";
+    return "确认无前台引用后可进入单素材软删除确认，不触发物理删除。";
   }
   if (hasAssetGovernanceIssue(item, "unreferenced")) {
     return "补充到课程详情或章节资料，若长期不用再进入软删流程。";
   }
   return "当前素材未发现治理问题，保持定期复核。";
+}
+
+function governanceActionsForItem(item: CourseProductAssetGovernanceItem) {
+  const primaryIssue = item.issueTypes[0];
+  if (!primaryIssue) return [];
+
+  const actions: AssetGovernanceActionState[] = [
+    {
+      item,
+      action: "acknowledge_issue",
+      issueType: primaryIssue,
+    },
+  ];
+
+  if (hasAssetGovernanceIssue(item, "duplicate_content_hash")) {
+    actions.push({
+      item,
+      action: "mark_duplicate_primary",
+      issueType: "duplicate_content_hash",
+      primaryAssetId: item.asset.id,
+    });
+  }
+
+  if (hasAssetGovernanceIssue(item, "soft_delete_candidate")) {
+    actions.push({
+      item,
+      action: "mark_soft_deleted",
+      issueType: "soft_delete_candidate",
+    });
+  }
+
+  return actions;
 }
 
 function reviewActionsForItem(item: CourseProductListItem) {
@@ -838,14 +895,20 @@ function CourseProductAssetGovernancePanel({
   governance,
   filter,
   canEdit,
+  canReview,
+  mutatingAssetId,
   onFilterChange,
   onLocateAsset,
+  onOpenGovernanceAction,
 }: {
   governance?: CourseProductAssetGovernanceResult;
   filter: AssetGovernanceFilter;
   canEdit: boolean;
+  canReview: boolean;
+  mutatingAssetId?: string;
   onFilterChange: (filter: AssetGovernanceFilter) => void;
   onLocateAsset: (item: CourseProductAssetGovernanceItem) => void;
+  onOpenGovernanceAction: (action: AssetGovernanceActionState) => void;
 }) {
   const issueItems = filterCourseProductAssetGovernanceItems(
     governance?.items ?? [],
@@ -862,7 +925,7 @@ function CourseProductAssetGovernancePanel({
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold text-[#243B35]">素材治理</p>
             <span className="inline-flex h-6 items-center rounded-full bg-[#F1E8DC] px-2.5 text-xs font-semibold text-[#756B60]">
-              只读
+              {canReview ? "单素材处理" : "只读"}
             </span>
             <span className="inline-flex h-6 items-center rounded-full bg-[#EEF6ED] px-2.5 text-xs font-semibold text-[#41675A]">
               {issueCount} 个待处理
@@ -926,7 +989,7 @@ function CourseProductAssetGovernancePanel({
 
       {visibleItems.length ? (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] text-left">
+          <table className="w-full min-w-[1360px] text-left">
             <thead className="bg-[#F8F3EA] text-xs text-[#8A8176]">
               <tr>
                 <th className="px-5 py-3 font-semibold">课程商品</th>
@@ -936,6 +999,7 @@ function CourseProductAssetGovernancePanel({
                 <th className="px-5 py-3 font-semibold">重复对象</th>
                 <th className="px-5 py-3 font-semibold">更新时间</th>
                 <th className="px-5 py-3 font-semibold">建议处理</th>
+                <th className="px-5 py-3 font-semibold">治理动作</th>
                 <th className="px-5 py-3 font-semibold">定位</th>
               </tr>
             </thead>
@@ -1019,6 +1083,33 @@ function CourseProductAssetGovernancePanel({
                     <p className="min-w-[240px] max-w-[300px] text-xs leading-5 text-[#6F7771]">
                       {courseProductAssetGovernanceSuggestion(item)}
                     </p>
+                  </td>
+                  <td className="px-5 py-4">
+                    <div className="flex min-w-[180px] flex-wrap gap-2">
+                      {canReview && item.product ? (
+                        governanceActionsForItem(item).map(action => (
+                          <button
+                            key={action.action}
+                            type="button"
+                            onClick={() => onOpenGovernanceAction(action)}
+                            disabled={mutatingAssetId === item.asset.id}
+                            className={`h-8 rounded-lg px-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                              action.action === "mark_soft_deleted"
+                                ? "bg-[#FFF0EA] text-[#AD503A] hover:bg-[#FFE8DE]"
+                                : action.action === "mark_duplicate_primary"
+                                  ? "bg-[#E6EDDF] text-[#355F51] hover:bg-[#D7E5D4]"
+                                  : "border border-[#D8CEC0] bg-white text-[#41524B] hover:border-[#9FB3A9]"
+                            }`}
+                          >
+                            {assetGovernanceActionCopy[action.action]}
+                          </button>
+                        ))
+                      ) : (
+                        <span className="inline-flex h-8 items-center rounded-lg bg-[#F1E8DC] px-2.5 text-xs font-semibold text-[#7B817C]">
+                          {item.product ? "只读" : "待核对"}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-5 py-4">
                     <button
@@ -1311,6 +1402,10 @@ export default function CourseProducts() {
   const [isContentLoading, setIsContentLoading] = useState(false);
   const [contentAssets, setContentAssets] = useState<CourseProductAsset[]>([]);
   const [mutatingAssetId, setMutatingAssetId] = useState<string>();
+  const [governanceAction, setGovernanceAction] =
+    useState<AssetGovernanceActionState>();
+  const [governanceReason, setGovernanceReason] = useState("");
+  const [governanceNote, setGovernanceNote] = useState("");
   const [assetForm, setAssetForm] =
     useState<AssetFormState>(createAssetFormState);
   const [contentForm, setContentForm] = useState<ContentFormState>({
@@ -2047,6 +2142,78 @@ export default function CourseProducts() {
     },
     [catalogPermissions.canEdit, items, openContentEditor]
   );
+
+  const openGovernanceAction = useCallback(
+    (action: AssetGovernanceActionState) => {
+      if (!catalogPermissions.canReview) {
+        setActionError("当前账号暂无课程素材治理权限");
+        return;
+      }
+      setActionError(undefined);
+      setActionMessage(undefined);
+      setGovernanceAction(action);
+      setGovernanceReason("");
+      setGovernanceNote("");
+    },
+    [catalogPermissions.canReview]
+  );
+
+  const submitGovernanceAction = useCallback(async () => {
+    if (!governanceAction) return;
+    if (!catalogPermissions.canReview) {
+      setActionError("当前账号暂无课程素材治理权限");
+      return;
+    }
+
+    const reason = governanceReason.trim();
+    if (reason.length < 4) {
+      setActionError("请填写至少 4 个字的治理原因");
+      return;
+    }
+
+    const { item, action, issueType, primaryAssetId } = governanceAction;
+    setMutatingAssetId(item.asset.id);
+    setActionError(undefined);
+    setActionMessage(undefined);
+
+    try {
+      const result =
+        await httpCourseProductRepository.applyCourseProductAssetGovernanceAction(
+          item.asset.productId,
+          item.asset.id,
+          {
+            action,
+            issueType,
+            primaryAssetId,
+            reason,
+            note: governanceNote.trim() || undefined,
+          }
+        );
+      setAssetGovernance(result.governance);
+      setContentAssets(current =>
+        current.map(asset =>
+          asset.id === result.asset.id ? result.asset : asset
+        )
+      );
+      setGovernanceAction(undefined);
+      setGovernanceReason("");
+      setGovernanceNote("");
+      setActionMessage(
+        `${item.asset.title} 已${assetGovernanceActionCopy[action]}`
+      );
+      await loadProducts();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "课程素材治理动作失败");
+    } finally {
+      setMutatingAssetId(undefined);
+    }
+  }, [
+    catalogPermissions.canReview,
+    governanceAction,
+    governanceNote,
+    governanceReason,
+    loadProducts,
+  ]);
   const meta = data?.meta;
   const auditEvents = data?.auditEvents ?? [];
   const rejectedReviewReasons = useMemo(() => {
@@ -2151,8 +2318,11 @@ export default function CourseProducts() {
         governance={assetGovernance}
         filter={assetGovernanceFilter}
         canEdit={catalogPermissions.canEdit}
+        canReview={catalogPermissions.canReview}
+        mutatingAssetId={mutatingAssetId}
         onFilterChange={setAssetGovernanceFilter}
         onLocateAsset={locateGovernanceAsset}
+        onOpenGovernanceAction={openGovernanceAction}
       />
 
       <section className="mt-6 overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
@@ -2454,6 +2624,93 @@ export default function CourseProducts() {
                   <ClipboardCheck className="h-4 w-4" />
                 )}
                 确认{reviewActionCopy[reviewAction.action]}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {governanceAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="w-full max-w-[540px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-[#8A8176]">
+                  素材治理动作
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                  {assetGovernanceActionCopy[governanceAction.action]}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#6F7771]">
+                  {governanceAction.item.asset.title} ·{" "}
+                  {assetGovernanceIssueCopy[governanceAction.issueType]}
+                </p>
+              </div>
+              <button
+                onClick={() => setGovernanceAction(undefined)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {governanceAction.primaryAssetId && (
+              <div className="mt-4 rounded-lg border border-[#D8CEC0] bg-[#FBF7EF] px-3 py-2 text-xs leading-5 text-[#6F7771]">
+                主素材 ID：{governanceAction.primaryAssetId}
+              </div>
+            )}
+
+            <label className="mt-5 block text-sm font-semibold text-[#41524B]">
+              治理原因
+              <textarea
+                value={governanceReason}
+                onChange={event => setGovernanceReason(event.target.value)}
+                placeholder="例如：重复素材已确认保留该主素材，后续合并引用"
+                className="mt-2 min-h-[88px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+              />
+            </label>
+
+            <label className="mt-4 block text-sm font-semibold text-[#41524B]">
+              处理备注
+              <textarea
+                value={governanceNote}
+                onChange={event => setGovernanceNote(event.target.value)}
+                placeholder="可补充后续动作、引用合并计划或软删除确认依据"
+                className="mt-2 min-h-[72px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+              />
+            </label>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setGovernanceAction(undefined)}
+                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void submitGovernanceAction()}
+                disabled={
+                  governanceReason.trim().length < 4 ||
+                  Boolean(mutatingAssetId)
+                }
+                className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  governanceAction.action === "mark_soft_deleted"
+                    ? "bg-[#AD503A] text-white hover:bg-[#9D4935]"
+                    : "bg-[#243B35] text-white hover:bg-[#315047]"
+                }`}
+              >
+                {mutatingAssetId ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : governanceAction.action === "mark_soft_deleted" ? (
+                  <Trash2 className="h-4 w-4" />
+                ) : (
+                  <ClipboardCheck className="h-4 w-4" />
+                )}
+                确认{assetGovernanceActionCopy[governanceAction.action]}
               </button>
             </div>
           </motion.div>
