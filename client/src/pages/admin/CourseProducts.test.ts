@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type {
+  CourseProductAssetGovernanceBatchTaskExecutionPlanResult,
   CourseProductAssetGovernanceIssueType,
   CourseProductAssetGovernanceItem,
 } from "@shared/domain";
 import {
   assetGovernanceBatchIssueFilterFromPanelFilter,
   assetGovernanceBatchTaskCreateRequestFromPanelFilter,
+  assetGovernanceBatchTaskExecutionPlanSummaryText,
   assetGovernanceBatchTaskReviewRequestFromAction,
   assetGovernanceHistoryQueryFromFilters,
   courseProductAssetGovernanceSuggestion,
@@ -181,5 +183,66 @@ describe("course product asset governance panel helpers", () => {
       action: "approve",
       reason: "候选范围和处理口径已完成交叉复核",
     });
+  });
+
+  it("summarizes execution plans for approved batch tasks", () => {
+    const plan = {
+      generatedAt: "2026-05-21T10:03:00.000Z",
+      requestedBy: "operator_2",
+      previewOnly: true,
+      willModifyAssetStore: false,
+      willWriteAuditEvents: false,
+      task: {
+        id: "asset_governance_batch_task_1",
+        action: "acknowledge_issue",
+        approvalStatus: "approved",
+        query: {
+          issueFilter: "pending_compliance",
+          previewSize: 5,
+        },
+        candidateAssetCount: 2,
+        previewItemCount: 2,
+        eligibleActionCount: 2,
+        manualReviewAssetCount: 0,
+        softDeleteCandidateCount: 0,
+        issueTypeDistribution: [
+          { key: "pending_compliance", label: "待审核", count: 2 },
+        ],
+        proposedActionDistribution: [
+          { key: "acknowledge_issue", label: "记录处理", count: 2 },
+        ],
+        safetyNotes: ["待审批任务不会修改素材 Store"],
+        createdBy: "operator_1",
+        createdByRoles: ["catalog_operator"],
+        reason: "统一记录待审核素材处理计划",
+        createdAt: "2026-05-21T10:00:00.000Z",
+        updatedAt: "2026-05-21T10:02:00.000Z",
+        reviewedBy: "operator_2",
+        reviewedByRoles: ["catalog_operator"],
+        reviewedAt: "2026-05-21T10:02:00.000Z",
+        reviewAction: "approve",
+        reviewReason: "候选范围和处理口径已完成交叉复核",
+      },
+      summary: {
+        taskId: "asset_governance_batch_task_1",
+        originalCandidateAssetCount: 2,
+        currentCandidateAssetCount: 2,
+        newCandidateAssetCount: 0,
+        disappearedAssetCount: 0,
+        changedIssueTypeCount: 0,
+        plannedActionCount: 2,
+        skippedActionCount: 1,
+        estimatedAuditEventCount: 2,
+        highRiskItemCount: 0,
+        mediumRiskItemCount: 2,
+        lowRiskItemCount: 0,
+      },
+      items: [],
+      safetyNotes: ["当前为已审批批量治理任务的执行预案，只读模拟。"],
+    } satisfies CourseProductAssetGovernanceBatchTaskExecutionPlanResult;
+
+    expect(assetGovernanceBatchTaskExecutionPlanSummaryText(plan)).toBe(
+      "计划 2 个动作，跳过 1 个，预计审计 2 条"
+    );
   });
 });

@@ -15,6 +15,7 @@ import {
   CourseProductAssetGovernanceBatchDraftResultSchema,
   CourseProductAssetGovernanceBatchTaskCancelRequestSchema,
   CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
   CourseProductAssetGovernanceBatchTaskListQuerySchema,
   CourseProductAssetGovernanceBatchTaskListResultSchema,
   CourseProductAssetGovernanceBatchTaskMutationResultSchema,
@@ -85,6 +86,7 @@ import {
   CourseProductAssetGovernanceBatchTaskPreflightError,
   createCourseProductAssetGovernanceBatchTask,
   listCourseProductAssetGovernanceBatchTasks,
+  previewCourseProductAssetGovernanceBatchTaskExecutionPlan,
   reviewCourseProductAssetGovernanceBatchTask,
 } from "./courseProductAssetGovernanceBatchTask";
 import {
@@ -132,6 +134,10 @@ const CourseProductAssetGovernanceBatchTaskListResponseSchema =
   ApiResponseSchema(CourseProductAssetGovernanceBatchTaskListResultSchema);
 const CourseProductAssetGovernanceBatchTaskMutationResponseSchema =
   ApiResponseSchema(CourseProductAssetGovernanceBatchTaskMutationResultSchema);
+const CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema =
+  ApiResponseSchema(
+    CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema
+  );
 
 type CatalogApiErrorCode =
   | "BAD_REQUEST"
@@ -155,7 +161,10 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductAssetGovernanceHistoryResponseSchema>
   | z.infer<typeof CourseProductAssetGovernanceBatchDraftResponseSchema>
   | z.infer<typeof CourseProductAssetGovernanceBatchTaskListResponseSchema>
-  | z.infer<typeof CourseProductAssetGovernanceBatchTaskMutationResponseSchema>;
+  | z.infer<typeof CourseProductAssetGovernanceBatchTaskMutationResponseSchema>
+  | z.infer<
+      typeof CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema
+    >;
 type CatalogApiPayload = {
   status: number;
   body: CatalogApiBody;
@@ -900,6 +909,51 @@ export async function reviewCourseProductAssetGovernanceBatchTaskPayload(
   }
 }
 
+export async function getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  taskId: string,
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    assetStore = getCourseProductAssetStore(),
+    taskStore = getCourseProductAssetGovernanceBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    assetStore?: CourseProductAssetStore;
+    taskStore?: CourseProductAssetGovernanceBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetGovernanceBatchTaskManage
+  );
+  if (denied) return denied;
+
+  try {
+    return {
+      status: 200,
+      body:
+        CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema.parse({
+          ok: true,
+          data: await previewCourseProductAssetGovernanceBatchTaskExecutionPlan({
+            taskId,
+            actorId: actor!.id,
+            productStore,
+            contentStore,
+            assetStore,
+            taskStore,
+            now,
+          }),
+        }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材批量治理执行预案读取失败");
+  }
+}
+
 export async function applyCourseProductAssetGovernanceActionPayload(
   actor: CatalogOperationsActor | null | undefined,
   productId: string,
@@ -1513,6 +1567,27 @@ export function registerCatalogApi(app: Express) {
     }
   );
 
+  app.get(
+    "/api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execution-plan",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload(
+            session?.user,
+            req.params.taskId
+          );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理执行预案读取失败")
+        );
+      }
+    }
+  );
+
   app.patch(
     "/api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/cancel",
     async (req, res) => {
@@ -1921,6 +1996,33 @@ export function handleCatalogApiRequest(
           res,
           500,
           errorPayload("INTERNAL_ERROR", "课程素材批量治理任务创建失败")
+        )
+      );
+    return true;
+  }
+
+  const assetGovernanceBatchTaskExecutionPlanMatch = url.pathname.match(
+    /^\/api\/catalog\/admin\/course-products\/assets\/governance\/batch-tasks\/([^/]+)\/execution-plan$/
+  );
+  if (assetGovernanceBatchTaskExecutionPlanMatch?.[1]) {
+    if (req.method !== "GET") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+      return true;
+    }
+
+    void getLoginSessionFromRequest(req)
+      .then(session =>
+        getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload(
+          session?.user,
+          decodeURIComponent(assetGovernanceBatchTaskExecutionPlanMatch[1])
+        )
+      )
+      .then(payload => sendJson(res, payload.status, payload.body))
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理执行预案读取失败")
         )
       );
     return true;
@@ -2548,6 +2650,31 @@ function courseProductActionFailure(
     return {
       status: 403,
       body: errorPayload("FORBIDDEN", "不能审批自己创建的批量治理草案"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message ===
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_NOT_APPROVED"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "仅已通过审批的批量治理草案可生成执行预案"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message ===
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_RECREATE_REQUIRED"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload(
+        "CONFLICT",
+        "当前治理草案需要重新生成后才能生成执行预案"
+      ),
     };
   }
 

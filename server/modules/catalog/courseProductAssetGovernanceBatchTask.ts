@@ -3,6 +3,8 @@ import {
   CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
   CourseProductAssetGovernanceBatchTaskCancelRequestSchema,
   CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
+  CourseProductAssetGovernanceHistorySnapshotSchema,
   CourseProductAssetGovernanceBatchTaskListQuerySchema,
   CourseProductAssetGovernanceBatchTaskListResultSchema,
   CourseProductAssetGovernanceBatchTaskMutationResultSchema,
@@ -13,7 +15,10 @@ import {
   type CourseProductAssetGovernanceBatchTaskApprovalPreflight,
   type CourseProductAssetGovernanceBatchTask,
   type CourseProductAssetGovernanceBatchTaskCreateRequest,
+  type CourseProductAssetGovernanceBatchTaskExecutionPlanItem,
+  type CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevel,
   type CourseProductAssetGovernanceBatchTaskListQuery,
+  type CourseProductAssetGovernanceHistorySnapshot,
   type CourseProductAssetGovernanceIssueType,
   type CourseProductAssetGovernanceItem,
 } from "../../../shared/domain";
@@ -345,6 +350,113 @@ export async function reviewCourseProductAssetGovernanceBatchTask({
   });
 }
 
+export async function previewCourseProductAssetGovernanceBatchTaskExecutionPlan({
+  taskId,
+  actorId,
+  productStore = getCourseProductStore(),
+  contentStore = getCourseProductContentStore(),
+  assetStore = getCourseProductAssetStore(),
+  taskStore = getCourseProductAssetGovernanceBatchTaskStore(),
+  now = new Date().toISOString(),
+}: {
+  taskId: string;
+  actorId: string;
+  productStore?: CourseProductStore;
+  contentStore?: CourseProductContentStore;
+  assetStore?: CourseProductAssetStore;
+  taskStore?: CourseProductAssetGovernanceBatchTaskStore;
+  now?: string;
+}) {
+  const task = await taskStore.getTask(taskId);
+  if (!task) {
+    throw new Error("COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_NOT_FOUND");
+  }
+  if (task.approvalStatus !== "approved") {
+    throw new Error(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_NOT_APPROVED"
+    );
+  }
+  if (task.approvalPreflight?.requiresRecreate) {
+    throw new Error(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_RECREATE_REQUIRED"
+    );
+  }
+
+  const governance = await getCourseProductAssetGovernance({
+    productStore,
+    contentStore,
+    assetStore,
+    now,
+  });
+  const currentCandidates = governance.items.filter(item =>
+    matchesBatchTaskDraftQuery(item, task.query)
+  );
+  const currentCandidateIdSet = new Set(
+    currentCandidates.map(item => item.asset.id)
+  );
+  const currentItemByAssetId = new Map(
+    governance.items.map(item => [item.asset.id, item])
+  );
+  const originalAssetIds = task.candidateAssetIds.length
+    ? task.candidateAssetIds
+    : currentCandidates.map(item => item.asset.id);
+  const originalAssetIdSet = new Set(originalAssetIds);
+  const newCandidateAssetCount = currentCandidates.filter(
+    item => !originalAssetIdSet.has(item.asset.id)
+  ).length;
+  const changedIssueTypeAssetIds = originalAssetIds.filter(assetId => {
+    const originalIssueTypes = task.candidateIssueTypeByAssetId[assetId];
+    const currentItem = currentItemByAssetId.get(assetId);
+    if (!originalIssueTypes?.length || !currentItem) return false;
+    return !issueTypeSetsEqual(originalIssueTypes, currentItem.issueTypes);
+  });
+
+  const items = originalAssetIds.map(assetId =>
+    batchTaskExecutionPlanItem({
+      task,
+      assetId,
+      item: currentItemByAssetId.get(assetId),
+      currentCandidateIdSet,
+    })
+  );
+  const plannedItems = items.filter(item => item.status === "planned");
+  const skippedItems = items.filter(item => item.status === "skipped");
+
+  return CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema.parse({
+    generatedAt: now,
+    requestedBy: actorId,
+    previewOnly: true,
+    willModifyAssetStore: false,
+    willWriteAuditEvents: false,
+    task,
+    summary: {
+      taskId: task.id,
+      originalCandidateAssetCount: originalAssetIds.length,
+      currentCandidateAssetCount: currentCandidates.length,
+      newCandidateAssetCount,
+      disappearedAssetCount: originalAssetIds.filter(
+        assetId => !currentCandidateIdSet.has(assetId)
+      ).length,
+      changedIssueTypeCount: changedIssueTypeAssetIds.length,
+      plannedActionCount: plannedItems.length,
+      skippedActionCount: skippedItems.length,
+      estimatedAuditEventCount: plannedItems.length,
+      highRiskItemCount: items.filter(item => item.riskLevel === "high").length,
+      mediumRiskItemCount: items.filter(item => item.riskLevel === "medium")
+        .length,
+      lowRiskItemCount: items.filter(item => item.riskLevel === "low").length,
+    },
+    items,
+    safetyNotes: buildExecutionPlanSafetyNotes({
+      hasOriginalSnapshot: task.candidateAssetIds.length > 0,
+      plannedCount: plannedItems.length,
+      skippedCount: skippedItems.length,
+      newCandidateAssetCount,
+      changedIssueTypeCount: changedIssueTypeAssetIds.length,
+    }),
+  });
+}
+
 function matchesBatchTaskListQuery(
   task: CourseProductAssetGovernanceBatchTask,
   query: CourseProductAssetGovernanceBatchTaskListQuery
@@ -379,6 +491,213 @@ async function batchTaskMutationResult({
       now,
     }),
   });
+}
+
+function batchTaskExecutionPlanItem({
+  task,
+  assetId,
+  item,
+  currentCandidateIdSet,
+}: {
+  task: CourseProductAssetGovernanceBatchTask;
+  assetId: string;
+  item?: CourseProductAssetGovernanceItem;
+  currentCandidateIdSet: Set<string>;
+}): CourseProductAssetGovernanceBatchTaskExecutionPlanItem {
+  const originalIssueTypes = task.candidateIssueTypeByAssetId[assetId] ?? [];
+  const issueTypes = item?.issueTypes ?? originalIssueTypes;
+  const plannedIssueType = selectExecutionPlanIssueType({
+    task,
+    item,
+    originalIssueTypes,
+  });
+  const base = {
+    assetId,
+    productId: item?.asset.productId,
+    productTitle: item?.product?.title,
+    assetTitle: item?.asset.title,
+    assetKind: item?.asset.kind,
+    issueTypes,
+    referenceCount: item?.referenceCount ?? 0,
+    duplicateContentHashAssetIds: item?.duplicateContentHashAssetIds ?? [],
+    plannedAction: task.action,
+    plannedIssueType,
+  };
+
+  if (!item) {
+    return {
+      ...base,
+      status: "skipped",
+      riskLevel: "high",
+      skipReason: "原候选素材已不在当前素材治理快照中",
+      notes: ["跳过项需要重新生成治理草案，或改为单素材治理。"],
+    };
+  }
+
+  if (
+    originalIssueTypes.length > 0 &&
+    !issueTypeSetsEqual(originalIssueTypes, item.issueTypes)
+  ) {
+    return {
+      ...base,
+      status: "skipped",
+      riskLevel: executionPlanRiskLevel([...originalIssueTypes, ...issueTypes]),
+      skipReason: "当前问题类型已不同于审批时的候选快照",
+      notes: ["问题类型发生漂移，继续执行可能写入错误审计口径。"],
+    };
+  }
+
+  if (!currentCandidateIdSet.has(assetId)) {
+    return {
+      ...base,
+      status: "skipped",
+      riskLevel: executionPlanRiskLevel(issueTypes),
+      skipReason: "当前素材已不再匹配该治理草案筛选条件",
+      notes: ["当前筛选已变化，跳过以保持已审批任务边界。"],
+    };
+  }
+
+  return {
+    ...base,
+    status: "planned",
+    riskLevel: executionPlanRiskLevel(issueTypes),
+    auditEventPreview:
+      item && plannedIssueType
+        ? {
+            action: task.action,
+            issueType: plannedIssueType,
+            reason: task.reason,
+            before: governanceSnapshotForExecutionPlan({
+              item,
+              action: task.action,
+              issueType: plannedIssueType,
+              note: item.asset.note,
+            }),
+            after: governanceSnapshotForExecutionPlan({
+              item,
+              action: task.action,
+              issueType: plannedIssueType,
+              note: task.note?.trim() || task.reason,
+            }),
+          }
+        : undefined,
+    notes: ["真实执行前仍需复核本预案，当前不会写入审计或修改素材。"],
+  };
+}
+
+function selectExecutionPlanIssueType({
+  task,
+  item,
+  originalIssueTypes,
+}: {
+  task: CourseProductAssetGovernanceBatchTask;
+  item?: CourseProductAssetGovernanceItem;
+  originalIssueTypes: CourseProductAssetGovernanceIssueType[];
+}) {
+  if (!item) return originalIssueTypes[0];
+  if (
+    task.query.issueFilter !== "all" &&
+    task.query.issueFilter !== "compliance_status" &&
+    item.issueTypes.includes(task.query.issueFilter)
+  ) {
+    return task.query.issueFilter;
+  }
+  if (task.query.issueFilter === "compliance_status") {
+    const complianceIssue = item.issueTypes.find(issueType =>
+      ["pending_compliance", "rejected_compliance"].includes(issueType)
+    );
+    if (complianceIssue) return complianceIssue;
+  }
+  return (
+    originalIssueTypes.find(issueType => item.issueTypes.includes(issueType)) ??
+    item.issueTypes[0]
+  );
+}
+
+function executionPlanRiskLevel(
+  issueTypes: CourseProductAssetGovernanceIssueType[]
+): CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevel {
+  if (
+    issueTypes.some(issueType =>
+      ["missing_product", "rejected_compliance", "soft_delete_candidate"].includes(
+        issueType
+      )
+    )
+  ) {
+    return "high";
+  }
+  if (
+    issueTypes.some(issueType =>
+      [
+        "duplicate_content_hash",
+        "pending_compliance",
+        "download_disabled_material",
+      ].includes(issueType)
+    )
+  ) {
+    return "medium";
+  }
+  return "low";
+}
+
+function governanceSnapshotForExecutionPlan({
+  item,
+  action,
+  issueType,
+  note,
+}: {
+  item: CourseProductAssetGovernanceItem;
+  action: CourseProductAssetGovernanceBatchTask["action"];
+  issueType: CourseProductAssetGovernanceIssueType;
+  note?: string;
+}): CourseProductAssetGovernanceHistorySnapshot {
+  return CourseProductAssetGovernanceHistorySnapshotSchema.parse({
+    assetId: item.asset.id,
+    productId: item.asset.productId,
+    title: item.asset.title,
+    kind: item.asset.kind,
+    governanceAction: action,
+    issueType,
+    referenceCount: item.referenceCount,
+    duplicateContentHashAssetIds: item.duplicateContentHashAssetIds,
+    complianceStatus: item.asset.complianceStatus,
+    downloadEnabled: item.asset.downloadEnabled,
+    deletedAt: item.asset.deletedAt,
+    note,
+  });
+}
+
+function buildExecutionPlanSafetyNotes({
+  hasOriginalSnapshot,
+  plannedCount,
+  skippedCount,
+  newCandidateAssetCount,
+  changedIssueTypeCount,
+}: {
+  hasOriginalSnapshot: boolean;
+  plannedCount: number;
+  skippedCount: number;
+  newCandidateAssetCount: number;
+  changedIssueTypeCount: number;
+}) {
+  const notes = [
+    "当前为已审批批量治理任务的执行预案，只读模拟，不修改素材 Store。",
+    "本预案只展示未来可能写入的 asset_governance 审计计划，当前不会写审计事件。",
+    `预计真实执行时会生成 ${plannedCount} 个处理动作和 ${plannedCount} 条审计事件。`,
+  ];
+  if (!hasOriginalSnapshot) {
+    notes.push("该任务缺少原始候选快照，预案已按当前筛选做兼容生成。");
+  }
+  if (skippedCount > 0) {
+    notes.push(`${skippedCount} 个候选因当前数据漂移被跳过，需要重新生成草案。`);
+  }
+  if (newCandidateAssetCount > 0) {
+    notes.push(`${newCandidateAssetCount} 个当前新候选不属于已审批任务范围。`);
+  }
+  if (changedIssueTypeCount > 0) {
+    notes.push(`${changedIssueTypeCount} 个候选的问题类型已变化，本次预案不执行。`);
+  }
+  return notes;
 }
 
 async function buildApprovalPreflight({

@@ -16,6 +16,7 @@ import {
   getCourseProductAdminListPayload,
   getCourseProductAssetBackfillPayload,
   getCourseProductAssetGovernanceBatchDraftPayload,
+  getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload,
   getCourseProductAssetGovernanceBatchTasksPayload,
   getCourseProductAssetGovernanceHistoryPayload,
   getCourseProductAssetDownloadPayload,
@@ -1068,6 +1069,59 @@ describe("catalog admin api payloads", () => {
         },
       },
     });
+
+    const deniedPlan =
+      await getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload(
+        { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+        reviewTaskId,
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now: "2026-05-21T10:10:30.000Z",
+        }
+      );
+    expect(deniedPlan.status).toBe(403);
+
+    const approvedPlan =
+      await getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload(
+        { id: "catalog_operator_2", roles: ["catalog_operator"] },
+        reviewTaskId,
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now: "2026-05-21T10:11:00.000Z",
+        }
+      );
+    expect(approvedPlan.body).toMatchObject({
+      ok: true,
+      data: {
+        previewOnly: true,
+        willModifyAssetStore: false,
+        willWriteAuditEvents: false,
+        summary: {
+          plannedActionCount: 1,
+          estimatedAuditEventCount: 1,
+        },
+      },
+    });
+
+    const pendingPlan =
+      await getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload(
+        { id: "catalog_operator_2", roles: ["catalog_operator"] },
+        taskId,
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now: "2026-05-21T10:12:00.000Z",
+        }
+      );
+    expect(pendingPlan.status).toBe(409);
   });
 
   it("requires review permission before committing course asset backfill writes", async () => {

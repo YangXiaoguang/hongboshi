@@ -3,6 +3,7 @@ import {
   CourseProductAssetBackfillMutationResultSchema,
   CourseProductAssetGovernanceActionResultSchema,
   CourseProductAssetGovernanceBatchDraftResultSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
   CourseProductAssetGovernanceBatchTaskListResultSchema,
   CourseProductAssetGovernanceBatchTaskMutationResultSchema,
   CourseProductAssetGovernanceHistoryResultSchema,
@@ -26,6 +27,7 @@ import {
   type CourseProductAssetGovernanceBatchDraftResult,
   type CourseProductAssetGovernanceBatchTaskCancelRequest,
   type CourseProductAssetGovernanceBatchTaskCreateRequest,
+  type CourseProductAssetGovernanceBatchTaskExecutionPlanResult,
   type CourseProductAssetGovernanceBatchTaskListQuery,
   type CourseProductAssetGovernanceBatchTaskListResult,
   type CourseProductAssetGovernanceBatchTaskMutationResult,
@@ -87,6 +89,10 @@ const CourseProductAssetGovernanceBatchTaskListResponseSchema =
   ApiResponseSchema(CourseProductAssetGovernanceBatchTaskListResultSchema);
 const CourseProductAssetGovernanceBatchTaskMutationResponseSchema =
   ApiResponseSchema(CourseProductAssetGovernanceBatchTaskMutationResultSchema);
+const CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema =
+  ApiResponseSchema(
+    CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema
+  );
 
 const API_BASE = "/api/catalog/admin";
 
@@ -215,6 +221,17 @@ export function parseCourseProductAssetGovernanceBatchTaskMutationResponse(
   return parsed.data;
 }
 
+export function parseCourseProductAssetGovernanceBatchTaskExecutionPlanResponse(
+  payload: unknown
+): CourseProductAssetGovernanceBatchTaskExecutionPlanResult {
+  const parsed =
+    CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema.parse(
+      payload
+    );
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = CourseProductListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -312,6 +329,17 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     !assetGovernanceBatchTaskMutationParsed.data.ok
   ) {
     return assetGovernanceBatchTaskMutationParsed.data.error.message;
+  }
+
+  const assetGovernanceBatchTaskExecutionPlanParsed =
+    CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema.safeParse(
+      payload
+    );
+  if (
+    assetGovernanceBatchTaskExecutionPlanParsed.success &&
+    !assetGovernanceBatchTaskExecutionPlanParsed.data.ok
+  ) {
+    return assetGovernanceBatchTaskExecutionPlanParsed.data.error.message;
   }
 
   return fallback;
@@ -649,6 +677,30 @@ export const httpCourseProductRepository = {
       );
     }
     return parseCourseProductAssetGovernanceBatchTaskMutationResponse(payload);
+  },
+
+  async loadCourseProductAssetGovernanceBatchTaskExecutionPlan(
+    taskId: string
+  ): Promise<CourseProductAssetGovernanceBatchTaskExecutionPlanResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/governance/batch-tasks/${encodeURIComponent(taskId)}/execution-plan`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程素材批量治理执行预案读取失败")
+      );
+    }
+    return parseCourseProductAssetGovernanceBatchTaskExecutionPlanResponse(
+      payload
+    );
   },
 
   async runCourseProductAssetBackfill(

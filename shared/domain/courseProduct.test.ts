@@ -14,6 +14,7 @@ import {
   CourseProductAssetGovernanceBatchDraftResultSchema,
   CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
   CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
   CourseProductAssetGovernanceBatchTaskListResultSchema,
   CourseProductAssetGovernanceBatchTaskMutationResultSchema,
   CourseProductAssetGovernanceBatchTaskReviewRequestSchema,
@@ -670,6 +671,87 @@ describe("course product domain contract", () => {
         notes: ["审批前预检通过，后续仍需单独执行批量处理任务。"],
       });
     expect(preflight.disappearedAssetIds).toEqual([]);
+
+    const executionPlan =
+      CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema.parse({
+        generatedAt: "2026-05-21T09:43:00.000Z",
+        requestedBy: "operator_2",
+        previewOnly: true,
+        willModifyAssetStore: false,
+        willWriteAuditEvents: false,
+        task: {
+          ...batchTask,
+          approvalStatus: "approved",
+          reviewedBy: "operator_2",
+          reviewedAt: "2026-05-21T09:42:00.000Z",
+          reviewAction: "approve",
+          reviewReason: "候选范围和处理口径已完成交叉复核",
+          approvalPreflight: preflight,
+        },
+        summary: {
+          taskId: batchTask.id,
+          originalCandidateAssetCount: 1,
+          currentCandidateAssetCount: 1,
+          newCandidateAssetCount: 0,
+          disappearedAssetCount: 0,
+          changedIssueTypeCount: 0,
+          plannedActionCount: 1,
+          skippedActionCount: 0,
+          estimatedAuditEventCount: 1,
+          highRiskItemCount: 0,
+          mediumRiskItemCount: 1,
+          lowRiskItemCount: 0,
+        },
+        items: [
+          {
+            assetId: "asset_worksheet_1",
+            productId: "course_product_1",
+            productTitle: "情绪管理入门",
+            assetTitle: "课后练习表",
+            assetKind: "worksheet",
+            issueTypes: ["pending_compliance"],
+            referenceCount: 1,
+            duplicateContentHashAssetIds: [],
+            plannedAction: "acknowledge_issue",
+            plannedIssueType: "pending_compliance",
+            status: "planned",
+            riskLevel: "medium",
+            auditEventPreview: {
+              action: "acknowledge_issue",
+              issueType: "pending_compliance",
+              reason: "统一记录待审核素材处理计划",
+              before: {
+                assetId: "asset_worksheet_1",
+                productId: "course_product_1",
+                title: "课后练习表",
+                kind: "worksheet",
+                governanceAction: "acknowledge_issue",
+                issueType: "pending_compliance",
+                referenceCount: 1,
+                duplicateContentHashAssetIds: [],
+                complianceStatus: "pending",
+                downloadEnabled: false,
+              },
+              after: {
+                assetId: "asset_worksheet_1",
+                productId: "course_product_1",
+                title: "课后练习表",
+                kind: "worksheet",
+                governanceAction: "acknowledge_issue",
+                issueType: "pending_compliance",
+                referenceCount: 1,
+                duplicateContentHashAssetIds: [],
+                complianceStatus: "pending",
+                downloadEnabled: false,
+                note: "进入审批前不执行素材写入",
+              },
+            },
+            notes: ["真实执行前仍需复核本预案，当前不会写入审计或修改素材。"],
+          },
+        ],
+        safetyNotes: ["当前为已审批批量治理任务的执行预案，只读模拟。"],
+      });
+    expect(executionPlan.willWriteAuditEvents).toBe(false);
   });
 
   it("validates the first course detail content contract", () => {

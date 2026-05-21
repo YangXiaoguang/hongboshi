@@ -4,6 +4,7 @@ import {
   parseCourseProductAssetBackfillResponse,
   parseCourseProductAssetGovernanceActionResponse,
   parseCourseProductAssetGovernanceBatchDraftResponse,
+  parseCourseProductAssetGovernanceBatchTaskExecutionPlanResponse,
   parseCourseProductAssetGovernanceBatchTaskListResponse,
   parseCourseProductAssetGovernanceBatchTaskMutationResponse,
   parseCourseProductAssetGovernanceHistoryResponse,
@@ -66,6 +67,78 @@ function batchTaskListData() {
       total: 1,
       totalPages: 1,
     },
+  };
+}
+
+function executionPlanData() {
+  const task = {
+    ...batchTaskData(),
+    approvalStatus: "approved",
+    reviewedBy: "operator_2",
+    reviewedByRoles: ["catalog_operator"],
+    reviewedAt: "2026-05-21T10:02:00.000Z",
+    reviewAction: "approve",
+    reviewReason: "候选范围和处理口径已完成交叉复核",
+    approvalPreflight: {
+      generatedAt: "2026-05-21T10:02:00.000Z",
+      originalCandidateAssetCount: 1,
+      currentCandidateAssetCount: 1,
+      candidateDeltaCount: 0,
+      disappearedAssetIds: [],
+      newCandidateAssetIds: [],
+      changedIssueTypeAssetIds: [],
+      stillEligibleActionCount: 1,
+      currentManualReviewAssetCount: 0,
+      currentSoftDeleteCandidateCount: 0,
+      currentIssueTypeDistribution: [
+        { key: "pending_compliance", label: "待审核", count: 1 },
+      ],
+      currentProposedActionDistribution: [
+        { key: "acknowledge_issue", label: "记录处理", count: 1 },
+      ],
+      requiresRecreate: false,
+      notes: ["审批前预检通过，后续仍需单独执行批量处理任务。"],
+    },
+  };
+  return {
+    generatedAt: "2026-05-21T10:03:00.000Z",
+    requestedBy: "operator_2",
+    previewOnly: true,
+    willModifyAssetStore: false,
+    willWriteAuditEvents: false,
+    task,
+    summary: {
+      taskId: task.id,
+      originalCandidateAssetCount: 1,
+      currentCandidateAssetCount: 1,
+      newCandidateAssetCount: 0,
+      disappearedAssetCount: 0,
+      changedIssueTypeCount: 0,
+      plannedActionCount: 1,
+      skippedActionCount: 0,
+      estimatedAuditEventCount: 1,
+      highRiskItemCount: 0,
+      mediumRiskItemCount: 1,
+      lowRiskItemCount: 0,
+    },
+    items: [
+      {
+        assetId: "asset_pending_1",
+        productId: "course_product_1",
+        productTitle: "情绪管理入门",
+        assetTitle: "待审核素材",
+        assetKind: "worksheet",
+        issueTypes: ["pending_compliance"],
+        referenceCount: 0,
+        duplicateContentHashAssetIds: [],
+        plannedAction: "acknowledge_issue",
+        plannedIssueType: "pending_compliance",
+        status: "planned",
+        riskLevel: "medium",
+        notes: ["真实执行前仍需复核本预案，当前不会写入审计或修改素材。"],
+      },
+    ],
+    safetyNotes: ["当前为已审批批量治理任务的执行预案，只读模拟。"],
   };
 }
 
@@ -499,6 +572,18 @@ describe("http course product repository parsing", () => {
 
     expect(list.summary.pendingApprovalCount).toBe(1);
     expect(mutation.task.approvalStatus).toBe("pending_approval");
+  });
+
+  it("parses course product asset governance execution plan responses", () => {
+    const parsed =
+      parseCourseProductAssetGovernanceBatchTaskExecutionPlanResponse({
+        ok: true,
+        data: executionPlanData(),
+      });
+
+    expect(parsed.willModifyAssetStore).toBe(false);
+    expect(parsed.willWriteAuditEvents).toBe(false);
+    expect(parsed.summary.estimatedAuditEventCount).toBe(1);
   });
 
   it("parses course product mutation responses", () => {
@@ -1185,6 +1270,30 @@ describe("http course product repository parsing", () => {
       expect.objectContaining({
         method: "PATCH",
         body: expect.stringContaining("approve"),
+      })
+    );
+  });
+
+  it("loads course product asset governance batch task execution plans", async () => {
+    const responsePayload = {
+      ok: true,
+      data: executionPlanData(),
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.loadCourseProductAssetGovernanceBatchTaskExecutionPlan(
+        "asset_governance_batch_task_1"
+      );
+
+    expect(result.summary.plannedActionCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/batch-tasks/asset_governance_batch_task_1/execution-plan",
+      expect.objectContaining({
+        cache: "no-store",
+        credentials: "same-origin",
       })
     );
   });

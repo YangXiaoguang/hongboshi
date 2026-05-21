@@ -167,6 +167,12 @@ export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_REVIEW_ACTIONS = [
   "reject",
 ] as const;
 
+export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_ITEM_STATUSES =
+  ["planned", "skipped"] as const;
+
+export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_RISK_LEVELS =
+  ["low", "medium", "high"] as const;
+
 export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
   "showcase",
   "proof",
@@ -272,6 +278,16 @@ export const CourseProductAssetGovernanceBatchTaskStatusFilterSchema = z.enum(
 export const CourseProductAssetGovernanceBatchTaskReviewActionSchema = z.enum(
   COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_REVIEW_ACTIONS
 );
+
+export const CourseProductAssetGovernanceBatchTaskExecutionPlanItemStatusSchema =
+  z.enum(
+    COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_ITEM_STATUSES
+  );
+
+export const CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevelSchema =
+  z.enum(
+    COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_RISK_LEVELS
+  );
 
 export const CourseProductMerchandisingAssetUsageSchema = z.enum(
   COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES
@@ -856,6 +872,65 @@ export const CourseProductAssetGovernanceBatchTaskMutationResultSchema =
     tasks: CourseProductAssetGovernanceBatchTaskListResultSchema,
   });
 
+export const CourseProductAssetGovernanceBatchTaskExecutionPlanAuditPreviewSchema =
+  z.object({
+    action: CourseProductAssetGovernanceActionSchema,
+    issueType: CourseProductAssetGovernanceIssueTypeSchema,
+    reason: z.string().trim().min(1).max(240),
+    before: CourseProductAssetGovernanceHistorySnapshotSchema,
+    after: CourseProductAssetGovernanceHistorySnapshotSchema,
+  });
+
+export const CourseProductAssetGovernanceBatchTaskExecutionPlanItemSchema =
+  z.object({
+    assetId: EntityIdSchema,
+    productId: EntityIdSchema.optional(),
+    productTitle: z.string().trim().min(1).optional(),
+    assetTitle: z.string().trim().min(1).max(120).optional(),
+    assetKind: CourseProductAssetKindSchema.optional(),
+    issueTypes: z.array(CourseProductAssetGovernanceIssueTypeSchema).default([]),
+    referenceCount: z.number().int().nonnegative().default(0),
+    duplicateContentHashAssetIds: z.array(EntityIdSchema).default([]),
+    plannedAction: CourseProductAssetGovernanceActionSchema,
+    plannedIssueType: CourseProductAssetGovernanceIssueTypeSchema.optional(),
+    status: CourseProductAssetGovernanceBatchTaskExecutionPlanItemStatusSchema,
+    riskLevel: CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevelSchema,
+    skipReason: z.string().trim().min(1).max(240).optional(),
+    auditEventPreview:
+      CourseProductAssetGovernanceBatchTaskExecutionPlanAuditPreviewSchema.optional(),
+    notes: z.array(z.string().trim().min(1).max(240)).default([]),
+  });
+
+export const CourseProductAssetGovernanceBatchTaskExecutionPlanSummarySchema =
+  z.object({
+    taskId: EntityIdSchema,
+    originalCandidateAssetCount: z.number().int().nonnegative(),
+    currentCandidateAssetCount: z.number().int().nonnegative(),
+    newCandidateAssetCount: z.number().int().nonnegative(),
+    disappearedAssetCount: z.number().int().nonnegative(),
+    changedIssueTypeCount: z.number().int().nonnegative(),
+    plannedActionCount: z.number().int().nonnegative(),
+    skippedActionCount: z.number().int().nonnegative(),
+    estimatedAuditEventCount: z.number().int().nonnegative(),
+    highRiskItemCount: z.number().int().nonnegative(),
+    mediumRiskItemCount: z.number().int().nonnegative(),
+    lowRiskItemCount: z.number().int().nonnegative(),
+  });
+
+export const CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema =
+  z.object({
+    generatedAt: DateTimeLikeSchema,
+    requestedBy: EntityIdSchema,
+    previewOnly: z.literal(true).default(true),
+    willModifyAssetStore: z.literal(false).default(false),
+    willWriteAuditEvents: z.literal(false).default(false),
+    task: CourseProductAssetGovernanceBatchTaskSchema,
+    summary:
+      CourseProductAssetGovernanceBatchTaskExecutionPlanSummarySchema,
+    items: z.array(CourseProductAssetGovernanceBatchTaskExecutionPlanItemSchema),
+    safetyNotes: z.array(z.string().trim().min(1).max(240)).default([]),
+  });
+
 export const CourseProductAssetUploadRequestSchema = z
   .object({
     kind: CourseProductAssetKindSchema,
@@ -1360,6 +1435,14 @@ export type CourseProductAssetGovernanceBatchTaskStatusFilter = z.infer<
 export type CourseProductAssetGovernanceBatchTaskReviewAction = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskReviewActionSchema
 >;
+export type CourseProductAssetGovernanceBatchTaskExecutionPlanItemStatus =
+  z.infer<
+    typeof CourseProductAssetGovernanceBatchTaskExecutionPlanItemStatusSchema
+  >;
+export type CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevel =
+  z.infer<
+    typeof CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevelSchema
+  >;
 export type CourseProductAssetObjectDescriptor = z.infer<
   typeof CourseProductAssetObjectDescriptorSchema
 >;
@@ -1450,6 +1533,20 @@ export type CourseProductAssetGovernanceBatchTaskListResult = z.infer<
 >;
 export type CourseProductAssetGovernanceBatchTaskMutationResult = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskMutationResultSchema
+>;
+export type CourseProductAssetGovernanceBatchTaskExecutionPlanAuditPreview =
+  z.infer<
+    typeof CourseProductAssetGovernanceBatchTaskExecutionPlanAuditPreviewSchema
+  >;
+export type CourseProductAssetGovernanceBatchTaskExecutionPlanItem = z.infer<
+  typeof CourseProductAssetGovernanceBatchTaskExecutionPlanItemSchema
+>;
+export type CourseProductAssetGovernanceBatchTaskExecutionPlanSummary =
+  z.infer<
+    typeof CourseProductAssetGovernanceBatchTaskExecutionPlanSummarySchema
+  >;
+export type CourseProductAssetGovernanceBatchTaskExecutionPlanResult = z.infer<
+  typeof CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema
 >;
 export type CourseProductAssetUploadRequest = z.infer<
   typeof CourseProductAssetUploadRequestSchema

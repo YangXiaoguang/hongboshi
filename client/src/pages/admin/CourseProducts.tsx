@@ -47,6 +47,7 @@ import {
   type CourseProductAssetGovernanceBatchIssueFilter,
   type CourseProductAssetGovernanceBatchTask,
   type CourseProductAssetGovernanceBatchTaskCreateRequest,
+  type CourseProductAssetGovernanceBatchTaskExecutionPlanResult,
   type CourseProductAssetGovernanceBatchTaskListResult,
   type CourseProductAssetGovernanceBatchTaskReviewAction,
   type CourseProductAssetGovernanceBatchTaskReviewRequest,
@@ -304,6 +305,23 @@ const assetGovernanceBatchTaskReviewActionCopy = {
   reject: "驳回草案",
 } satisfies Record<CourseProductAssetGovernanceBatchTaskReviewAction, string>;
 
+const assetGovernanceBatchTaskExecutionPlanItemStatusCopy = {
+  planned: "计划执行",
+  skipped: "已跳过",
+} satisfies Record<
+  CourseProductAssetGovernanceBatchTaskExecutionPlanResult["items"][number]["status"],
+  string
+>;
+
+const assetGovernanceBatchTaskExecutionPlanRiskCopy = {
+  low: "低风险",
+  medium: "中风险",
+  high: "高风险",
+} satisfies Record<
+  CourseProductAssetGovernanceBatchTaskExecutionPlanResult["items"][number]["riskLevel"],
+  string
+>;
+
 const assetGovernanceFilters: {
   value: AssetGovernanceFilter;
   label: string;
@@ -358,6 +376,12 @@ export function assetGovernanceBatchTaskReviewRequestFromAction(
     action,
     reason: reason.trim(),
   };
+}
+
+export function assetGovernanceBatchTaskExecutionPlanSummaryText(
+  plan: CourseProductAssetGovernanceBatchTaskExecutionPlanResult
+) {
+  return `计划 ${plan.summary.plannedActionCount} 个动作，跳过 ${plan.summary.skippedActionCount} 个，预计审计 ${plan.summary.estimatedAuditEventCount} 条`;
 }
 
 export function assetGovernanceHistoryQueryFromFilters(
@@ -1008,6 +1032,7 @@ function CourseProductAssetGovernancePanel({
   canReview,
   mutatingAssetId,
   isBatchTaskMutating = false,
+  mutatingBatchTaskId,
   onFilterChange,
   onHistoryFiltersChange,
   onRefreshGovernanceData,
@@ -1016,6 +1041,7 @@ function CourseProductAssetGovernancePanel({
   onOpenBatchTaskDraft,
   onOpenBatchTaskReview,
   onOpenBatchTaskCancel,
+  onOpenBatchTaskExecutionPlan,
 }: {
   governance?: CourseProductAssetGovernanceResult;
   history?: CourseProductAssetGovernanceHistoryResult;
@@ -1027,6 +1053,7 @@ function CourseProductAssetGovernancePanel({
   canReview: boolean;
   mutatingAssetId?: string;
   isBatchTaskMutating?: boolean;
+  mutatingBatchTaskId?: string;
   onFilterChange: (filter: AssetGovernanceFilter) => void;
   onHistoryFiltersChange: (
     patch: Partial<AssetGovernanceHistoryFilterState>
@@ -1040,6 +1067,9 @@ function CourseProductAssetGovernancePanel({
     action: CourseProductAssetGovernanceBatchTaskReviewAction
   ) => void;
   onOpenBatchTaskCancel: (task: CourseProductAssetGovernanceBatchTask) => void;
+  onOpenBatchTaskExecutionPlan: (
+    task: CourseProductAssetGovernanceBatchTask
+  ) => void;
 }) {
   const issueItems = filterCourseProductAssetGovernanceItems(
     governance?.items ?? [],
@@ -1266,6 +1296,24 @@ function CourseProductAssetGovernancePanel({
                                 取消
                               </button>
                             </>
+                          )}
+                          {task.approvalStatus === "approved" && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onOpenBatchTaskExecutionPlan(task)
+                              }
+                              disabled={isBatchTaskMutating}
+                              className="inline-flex h-6 items-center gap-1 rounded-lg bg-[#E6EDDF] px-2 text-xs font-semibold text-[#355F51] transition hover:bg-[#D7E5D4] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              {mutatingBatchTaskId ===
+                              `execution:${task.id}` ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <ClipboardCheck className="h-3 w-3" />
+                              )}
+                              生成执行预案
+                            </button>
                           )}
                         </div>
                         {task.approvalPreflight?.requiresRecreate ? (
@@ -1885,6 +1933,10 @@ export default function CourseProducts() {
     assetGovernanceBatchTaskReviewReason,
     setAssetGovernanceBatchTaskReviewReason,
   ] = useState("");
+  const [
+    assetGovernanceBatchTaskExecutionPlan,
+    setAssetGovernanceBatchTaskExecutionPlan,
+  ] = useState<CourseProductAssetGovernanceBatchTaskExecutionPlanResult>();
   const [mutatingBatchTaskId, setMutatingBatchTaskId] = useState<string>();
   const [assetForm, setAssetForm] =
     useState<AssetFormState>(createAssetFormState);
@@ -2937,6 +2989,41 @@ export default function CourseProducts() {
     loadProducts,
   ]);
 
+  const openAssetGovernanceBatchTaskExecutionPlan = useCallback(
+    async (task: CourseProductAssetGovernanceBatchTask) => {
+      if (!catalogPermissions.canReview) {
+        setActionError("当前账号暂无课程素材治理权限");
+        return;
+      }
+      if (task.approvalStatus !== "approved") {
+        setActionError("仅已通过审批的批量治理草案可生成执行预案");
+        return;
+      }
+
+      setMutatingBatchTaskId(`execution:${task.id}`);
+      setActionError(undefined);
+      setActionMessage(undefined);
+
+      try {
+        const plan =
+          await httpCourseProductRepository.loadCourseProductAssetGovernanceBatchTaskExecutionPlan(
+            task.id
+          );
+        setAssetGovernanceBatchTaskExecutionPlan(plan);
+        setActionMessage(assetGovernanceBatchTaskExecutionPlanSummaryText(plan));
+      } catch (err) {
+        setActionError(
+          err instanceof Error
+            ? err.message
+            : "课程素材批量治理执行预案读取失败"
+        );
+      } finally {
+        setMutatingBatchTaskId(undefined);
+      }
+    },
+    [catalogPermissions.canReview]
+  );
+
   const meta = data?.meta;
   const auditEvents = data?.auditEvents ?? [];
   const rejectedReviewReasons = useMemo(() => {
@@ -3048,6 +3135,7 @@ export default function CourseProducts() {
         canReview={catalogPermissions.canReview}
         mutatingAssetId={mutatingAssetId}
         isBatchTaskMutating={Boolean(mutatingBatchTaskId)}
+        mutatingBatchTaskId={mutatingBatchTaskId}
         onFilterChange={setAssetGovernanceFilter}
         onHistoryFiltersChange={updateAssetGovernanceHistoryFilters}
         onRefreshGovernanceData={() => void loadProducts()}
@@ -3056,6 +3144,7 @@ export default function CourseProducts() {
         onOpenBatchTaskDraft={openAssetGovernanceBatchTaskDraft}
         onOpenBatchTaskReview={openAssetGovernanceBatchTaskReview}
         onOpenBatchTaskCancel={openAssetGovernanceBatchTaskCancel}
+        onOpenBatchTaskExecutionPlan={openAssetGovernanceBatchTaskExecutionPlan}
       />
 
       <section className="mt-6 overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
@@ -3716,6 +3805,158 @@ export default function CourseProducts() {
                   <Trash2 className="h-4 w-4" />
                 )}
                 确认取消
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {assetGovernanceBatchTaskExecutionPlan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="max-h-[86vh] w-full max-w-[780px] overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-[#E8DED0] px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold text-[#8A8176]">
+                  执行预案
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
+                  已审批批量治理任务
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#6F7771]">
+                  {assetGovernanceBatchTaskExecutionPlanSummaryText(
+                    assetGovernanceBatchTaskExecutionPlan
+                  )}
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  setAssetGovernanceBatchTaskExecutionPlan(undefined)
+                }
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[calc(86vh-146px)] overflow-y-auto px-5 py-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {[
+                  [
+                    "计划动作",
+                    assetGovernanceBatchTaskExecutionPlan.summary
+                      .plannedActionCount,
+                  ],
+                  [
+                    "跳过项",
+                    assetGovernanceBatchTaskExecutionPlan.summary
+                      .skippedActionCount,
+                  ],
+                  [
+                    "高风险",
+                    assetGovernanceBatchTaskExecutionPlan.summary
+                      .highRiskItemCount,
+                  ],
+                  [
+                    "新候选",
+                    assetGovernanceBatchTaskExecutionPlan.summary
+                      .newCandidateAssetCount,
+                  ],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] px-3 py-2"
+                  >
+                    <p className="text-xs text-[#8A8176]">{label}</p>
+                    <p className="mt-1 text-lg font-semibold text-[#243B35]">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {assetGovernanceBatchTaskExecutionPlan.safetyNotes.map(note => (
+                  <span
+                    key={note}
+                    className="inline-flex min-h-7 items-center rounded-full bg-[#FFF7E5] px-3 text-xs font-semibold text-[#8F6B1C]"
+                  >
+                    {note}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-4 overflow-hidden rounded-lg border border-[#E1D7C8] bg-white">
+                {assetGovernanceBatchTaskExecutionPlan.items
+                  .slice(0, 8)
+                  .map(item => (
+                    <div
+                      key={item.assetId}
+                      className="border-b border-[#E8DED0] px-3 py-3 last:border-b-0"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="min-w-0 text-sm font-semibold text-[#243B35]">
+                          {item.assetTitle ?? item.assetId}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <span
+                            className={`inline-flex h-6 items-center rounded-full px-2 text-xs font-semibold ${
+                              item.status === "planned"
+                                ? "bg-[#EEF6ED] text-[#41675A]"
+                                : "bg-[#FFF7E5] text-[#8F6B1C]"
+                            }`}
+                          >
+                            {
+                              assetGovernanceBatchTaskExecutionPlanItemStatusCopy[
+                                item.status
+                              ]
+                            }
+                          </span>
+                          <span
+                            className={`inline-flex h-6 items-center rounded-full px-2 text-xs font-semibold ${
+                              item.riskLevel === "high"
+                                ? "bg-[#FDEBE5] text-[#A65F48]"
+                                : item.riskLevel === "medium"
+                                  ? "bg-[#FFF7E5] text-[#8F6B1C]"
+                                  : "bg-[#EEF6ED] text-[#41675A]"
+                            }`}
+                          >
+                            {
+                              assetGovernanceBatchTaskExecutionPlanRiskCopy[
+                                item.riskLevel
+                              ]
+                            }
+                          </span>
+                        </div>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-[#6F7771]">
+                        {item.productTitle ?? item.productId ?? "未知商品"} ·{" "}
+                        {assetGovernanceActionCopy[item.plannedAction]}
+                        {item.plannedIssueType
+                          ? ` · ${assetGovernanceIssueCopy[item.plannedIssueType]}`
+                          : ""}
+                      </p>
+                      {item.skipReason ? (
+                        <p className="mt-2 rounded-md bg-[#FFF7E5] px-2 py-1 text-xs leading-5 text-[#8F6B1C]">
+                          {item.skipReason}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-[#E8DED0] px-5 py-3">
+              <button
+                onClick={() =>
+                  setAssetGovernanceBatchTaskExecutionPlan(undefined)
+                }
+                className="h-10 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
+              >
+                关闭
               </button>
             </div>
           </motion.div>
