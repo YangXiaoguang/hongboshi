@@ -1,8 +1,11 @@
 import { createHash, randomUUID } from "crypto";
 import {
+  CourseProductAuditEventSchema,
   CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
   CourseProductAssetGovernanceBatchTaskCancelRequestSchema,
   CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema,
+  CourseProductAssetGovernanceBatchTaskExecuteRequestSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
   CourseProductAssetGovernanceHistorySnapshotSchema,
   CourseProductAssetGovernanceBatchTaskListQuerySchema,
@@ -15,12 +18,18 @@ import {
   type CourseProductAssetGovernanceBatchTaskApprovalPreflight,
   type CourseProductAssetGovernanceBatchTask,
   type CourseProductAssetGovernanceBatchTaskCreateRequest,
+  type CourseProductAssetGovernanceBatchTaskExecuteRequest,
+  type CourseProductAssetGovernanceBatchTaskExecutionItemResult,
   type CourseProductAssetGovernanceBatchTaskExecutionPlanItem,
   type CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevel,
+  type CourseProductAssetGovernanceBatchTaskExecutionStatus,
+  type CourseProductAssetGovernanceBatchTaskExecutionSummary,
   type CourseProductAssetGovernanceBatchTaskListQuery,
   type CourseProductAssetGovernanceHistorySnapshot,
   type CourseProductAssetGovernanceIssueType,
   type CourseProductAssetGovernanceItem,
+  type CourseProductAuditEvent,
+  type CourseProductListItem,
 } from "../../../shared/domain";
 import {
   getCourseProductAssetStore,
@@ -91,6 +100,21 @@ export async function listCourseProductAssetGovernanceBatchTasks({
         .length,
       canceledCount: allTasks.filter(task => task.approvalStatus === "canceled")
         .length,
+      executionNotStartedCount: allTasks.filter(
+        task => task.executionStatus === "not_started"
+      ).length,
+      executionRunningCount: allTasks.filter(
+        task => task.executionStatus === "running"
+      ).length,
+      executionCompletedCount: allTasks.filter(
+        task => task.executionStatus === "completed"
+      ).length,
+      executionPartiallyCompletedCount: allTasks.filter(
+        task => task.executionStatus === "partially_completed"
+      ).length,
+      executionFailedCount: allTasks.filter(
+        task => task.executionStatus === "failed"
+      ).length,
     },
     items: filteredTasks.slice(start, start + parsedQuery.pageSize),
     meta: {
@@ -457,6 +481,223 @@ export async function previewCourseProductAssetGovernanceBatchTaskExecutionPlan(
   });
 }
 
+export async function executeCourseProductAssetGovernanceBatchTask({
+  taskId,
+  request,
+  actorId,
+  actorRoles = [],
+  productStore = getCourseProductStore(),
+  contentStore = getCourseProductContentStore(),
+  assetStore = getCourseProductAssetStore(),
+  taskStore = getCourseProductAssetGovernanceBatchTaskStore(),
+  now = new Date().toISOString(),
+}: {
+  taskId: string;
+  request: unknown;
+  actorId: string;
+  actorRoles?: string[];
+  productStore?: CourseProductStore;
+  contentStore?: CourseProductContentStore;
+  assetStore?: CourseProductAssetStore;
+  taskStore?: CourseProductAssetGovernanceBatchTaskStore;
+  now?: string;
+}) {
+  const parsed =
+    CourseProductAssetGovernanceBatchTaskExecuteRequestSchema.parse(request);
+  const task = await taskStore.getTask(taskId);
+  if (!task) {
+    throw new Error("COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_NOT_FOUND");
+  }
+
+  if (isFinalExecutionStatus(task.executionStatus)) {
+    return replayBatchTaskExecutionResult({
+      task,
+      actorId,
+      productStore,
+      contentStore,
+      assetStore,
+      taskStore,
+      now,
+    });
+  }
+  if (task.executionStatus === "running") {
+    throw new Error(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_IN_PROGRESS"
+    );
+  }
+  if (task.executionStatus === "failed") {
+    throw new Error(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_RETRY_UNSUPPORTED"
+    );
+  }
+  if (task.action !== "acknowledge_issue") {
+    throw new Error(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_ACTION_UNSUPPORTED"
+    );
+  }
+
+  const executionPlan =
+    await previewCourseProductAssetGovernanceBatchTaskExecutionPlan({
+      taskId,
+      actorId,
+      productStore,
+      contentStore,
+      assetStore,
+      taskStore,
+      now,
+    });
+  const runningTask = await taskStore.saveTask(
+    CourseProductAssetGovernanceBatchTaskSchema.parse({
+      ...task,
+      executionStatus: "running",
+      executionRequestedBy: actorId,
+      executionRequestedByRoles: actorRoles,
+      executionStartedAt: now,
+      executionReason: parsed.reason,
+      executionNote: parsed.note,
+      updatedAt: now,
+    })
+  );
+  const auditEvents: CourseProductAuditEvent[] = [];
+  const items: CourseProductAssetGovernanceBatchTaskExecutionItemResult[] = [];
+
+  try {
+    for (const item of executionPlan.items) {
+      if (item.status !== "planned") {
+        items.push(executionItemResultFromSkippedPlanItem(item));
+        continue;
+      }
+      if (item.plannedAction !== "acknowledge_issue") {
+        items.push({
+          assetId: item.assetId,
+          productId: item.productId,
+          productTitle: item.productTitle,
+          assetTitle: item.assetTitle,
+          plannedAction: item.plannedAction,
+          issueType: item.plannedIssueType,
+          status: "failed",
+          errorMessage: "当前批量执行仅支持记录处理动作",
+        });
+        continue;
+      }
+      if (!item.productId || !item.plannedIssueType || !item.auditEventPreview) {
+        items.push({
+          assetId: item.assetId,
+          productId: item.productId,
+          productTitle: item.productTitle,
+          assetTitle: item.assetTitle,
+          plannedAction: item.plannedAction,
+          issueType: item.plannedIssueType,
+          status: "skipped",
+          skipReason: "缺少执行审计所需的商品或问题类型信息",
+        });
+        continue;
+      }
+
+      const product = await productStore.getProduct(item.productId);
+      if (!product) {
+        items.push({
+          assetId: item.assetId,
+          productId: item.productId,
+          productTitle: item.productTitle,
+          assetTitle: item.assetTitle,
+          plannedAction: item.plannedAction,
+          issueType: item.plannedIssueType,
+          status: "skipped",
+          skipReason: "课程商品不存在，无法写入课程商品审计",
+        });
+        continue;
+      }
+
+      const auditEvent = await productStore.appendAuditEvent(
+        createBatchExecutionAuditEvent({
+          task: runningTask,
+          product,
+          item,
+          request: parsed,
+          actorId,
+          actorRoles,
+          now,
+        })
+      );
+      auditEvents.push(auditEvent);
+      items.push({
+        assetId: item.assetId,
+        productId: item.productId,
+        productTitle: product.title,
+        assetTitle: item.assetTitle,
+        plannedAction: item.plannedAction,
+        issueType: item.plannedIssueType,
+        status: "executed",
+        auditEventId: auditEvent.id,
+      });
+    }
+
+    const summary = batchTaskExecutionSummaryFromItems({
+      taskId: task.id,
+      items,
+    });
+    const completedTask = await taskStore.saveTask(
+      CourseProductAssetGovernanceBatchTaskSchema.parse({
+        ...runningTask,
+        executionStatus: summary.executionStatus,
+        executionCompletedAt: now,
+        executionSummary: summary,
+        executionItems: items,
+        executionAuditEventIds: auditEvents.map(event => event.id),
+        updatedAt: now,
+      })
+    );
+
+    return CourseProductAssetGovernanceBatchTaskExecutionResultSchema.parse({
+      task: completedTask,
+      tasks: await listCourseProductAssetGovernanceBatchTasks({
+        query: {
+          page: 1,
+          pageSize: 5,
+        },
+        store: taskStore,
+        now,
+      }),
+      executionPlan,
+      summary,
+      items,
+      auditEvents,
+      idempotentReplay: false,
+    });
+  } catch (err) {
+    const failureItems = [
+      ...items,
+      {
+        assetId: task.id,
+        plannedAction: task.action,
+        status: "failed" as const,
+        errorMessage:
+          err instanceof Error ? err.message.slice(0, 240) : "批量执行失败",
+      },
+    ];
+    const summary = batchTaskExecutionSummaryFromItems({
+      taskId: task.id,
+      items: failureItems,
+      forcedStatus: auditEvents.length > 0 ? "partially_completed" : "failed",
+    });
+    await taskStore.saveTask(
+      CourseProductAssetGovernanceBatchTaskSchema.parse({
+        ...runningTask,
+        executionStatus: summary.executionStatus,
+        executionCompletedAt: now,
+        executionSummary: summary,
+        executionItems: failureItems,
+        executionAuditEventIds: auditEvents.map(event => event.id),
+        updatedAt: now,
+      })
+    );
+    throw new Error(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_FAILED"
+    );
+  }
+}
+
 function matchesBatchTaskListQuery(
   task: CourseProductAssetGovernanceBatchTask,
   query: CourseProductAssetGovernanceBatchTaskListQuery
@@ -700,6 +941,189 @@ function buildExecutionPlanSafetyNotes({
   return notes;
 }
 
+async function replayBatchTaskExecutionResult({
+  task,
+  actorId,
+  productStore,
+  contentStore,
+  assetStore,
+  taskStore,
+  now,
+}: {
+  task: CourseProductAssetGovernanceBatchTask;
+  actorId: string;
+  productStore: CourseProductStore;
+  contentStore: CourseProductContentStore;
+  assetStore: CourseProductAssetStore;
+  taskStore: CourseProductAssetGovernanceBatchTaskStore;
+  now: string;
+}) {
+  const executionPlan =
+    await previewCourseProductAssetGovernanceBatchTaskExecutionPlan({
+      taskId: task.id,
+      actorId,
+      productStore,
+      contentStore,
+      assetStore,
+      taskStore,
+      now,
+    });
+  const auditEventIds = new Set(task.executionAuditEventIds);
+  const auditEvents = (await productStore.listAuditEvents()).filter(event =>
+    auditEventIds.has(event.id)
+  );
+  const items = task.executionItems;
+  const summary =
+    task.executionSummary ??
+    batchTaskExecutionSummaryFromItems({
+      taskId: task.id,
+      items,
+      forcedStatus: task.executionStatus,
+    });
+
+  return CourseProductAssetGovernanceBatchTaskExecutionResultSchema.parse({
+    task,
+    tasks: await listCourseProductAssetGovernanceBatchTasks({
+      query: {
+        page: 1,
+        pageSize: 5,
+      },
+      store: taskStore,
+      now,
+    }),
+    executionPlan,
+    summary,
+    items,
+    auditEvents,
+    idempotentReplay: true,
+  });
+}
+
+function isFinalExecutionStatus(
+  status: CourseProductAssetGovernanceBatchTaskExecutionStatus
+) {
+  return status === "completed" || status === "partially_completed";
+}
+
+function executionItemResultFromSkippedPlanItem(
+  item: CourseProductAssetGovernanceBatchTaskExecutionPlanItem
+): CourseProductAssetGovernanceBatchTaskExecutionItemResult {
+  return {
+    assetId: item.assetId,
+    productId: item.productId,
+    productTitle: item.productTitle,
+    assetTitle: item.assetTitle,
+    plannedAction: item.plannedAction,
+    issueType: item.plannedIssueType,
+    status: "skipped",
+    skipReason: item.skipReason ?? "执行预案标记该素材不可执行",
+  };
+}
+
+function batchTaskExecutionSummaryFromItems({
+  taskId,
+  items,
+  forcedStatus,
+}: {
+  taskId: string;
+  items: CourseProductAssetGovernanceBatchTaskExecutionItemResult[];
+  forcedStatus?: CourseProductAssetGovernanceBatchTaskExecutionStatus;
+}): CourseProductAssetGovernanceBatchTaskExecutionSummary {
+  const executedActionCount = items.filter(item => item.status === "executed")
+    .length;
+  const skippedActionCount = items.filter(item => item.status === "skipped")
+    .length;
+  const failedActionCount = items.filter(item => item.status === "failed")
+    .length;
+  const auditEventCount = items.filter(item => item.auditEventId).length;
+  const executionStatus =
+    forcedStatus ??
+    finalExecutionStatus({
+      executedActionCount,
+      skippedActionCount,
+      failedActionCount,
+    });
+
+  return {
+    taskId,
+    executionStatus,
+    plannedActionCount: items.length,
+    executedActionCount,
+    skippedActionCount,
+    failedActionCount,
+    auditEventCount,
+  };
+}
+
+function finalExecutionStatus({
+  executedActionCount,
+  skippedActionCount,
+  failedActionCount,
+}: {
+  executedActionCount: number;
+  skippedActionCount: number;
+  failedActionCount: number;
+}): CourseProductAssetGovernanceBatchTaskExecutionStatus {
+  if (failedActionCount > 0) {
+    return executedActionCount > 0 ? "partially_completed" : "failed";
+  }
+  if (skippedActionCount > 0) return "partially_completed";
+  return "completed";
+}
+
+function createBatchExecutionAuditEvent({
+  task,
+  product,
+  item,
+  request,
+  actorId,
+  actorRoles,
+  now,
+}: {
+  task: CourseProductAssetGovernanceBatchTask;
+  product: CourseProductListItem;
+  item: CourseProductAssetGovernanceBatchTaskExecutionPlanItem;
+  request: CourseProductAssetGovernanceBatchTaskExecuteRequest;
+  actorId: string;
+  actorRoles: string[];
+  now: string;
+}): CourseProductAuditEvent {
+  if (!item.auditEventPreview || !item.plannedIssueType) {
+    throw new Error(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_AUDIT_PREVIEW_MISSING"
+    );
+  }
+
+  return CourseProductAuditEventSchema.parse({
+    id: [
+      "audit_asset_governance_batch",
+      safeSegment(task.id),
+      safeSegment(item.assetId),
+      safeTimeId(now),
+      randomUUID().slice(0, 8),
+    ].join("_"),
+    productId: product.id,
+    productTitle: product.title,
+    actorId,
+    action: "asset_governance",
+    reason: request.reason,
+    before: {
+      ...item.auditEventPreview.before,
+      batchTaskId: task.id,
+      batchExecution: true,
+      actorRoles,
+    },
+    after: {
+      ...item.auditEventPreview.after,
+      batchTaskId: task.id,
+      batchExecution: true,
+      actorRoles,
+      note: request.note?.trim() || item.auditEventPreview.after.note,
+    },
+    createdAt: now,
+  });
+}
+
 async function buildApprovalPreflight({
   task,
   actorId,
@@ -924,6 +1348,10 @@ function createBatchTaskId(now: string, dedupeKey: string) {
 
 function stableHash(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function safeSegment(value: string) {
+  return value.replace(/[^0-9A-Za-z_]/g, "_").slice(0, 80);
 }
 
 function safeTimeId(value: string) {

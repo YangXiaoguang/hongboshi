@@ -17,6 +17,7 @@ import {
   cancelCourseProductAssetGovernanceBatchTask,
   CourseProductAssetGovernanceBatchTaskPreflightError,
   createCourseProductAssetGovernanceBatchTask,
+  executeCourseProductAssetGovernanceBatchTask,
   previewCourseProductAssetGovernanceBatchTaskExecutionPlan,
   reviewCourseProductAssetGovernanceBatchTask,
 } from "./courseProductAssetGovernanceBatchTask";
@@ -398,6 +399,169 @@ describe("course product asset governance batch tasks", () => {
       reason: "统一记录待审核素材处理计划",
     });
     expect(after).toEqual(before);
+  });
+
+  it("executes approved task drafts by writing audit events without mutating assets", async () => {
+    const context = stores();
+    const created = await createCourseProductAssetGovernanceBatchTask({
+      ...context,
+      actorId: "operator_1",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "acknowledge_issue",
+        query: {
+          issueFilter: "pending_compliance",
+          previewSize: 5,
+        },
+        reason: "统一记录待审核素材处理计划",
+      },
+      now: "2026-05-21T10:00:00.000Z",
+    });
+    const approved = await reviewCourseProductAssetGovernanceBatchTask({
+      ...context,
+      taskId: created.task.id,
+      actorId: "operator_2",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "approve",
+        reason: "候选范围和处理口径已完成交叉复核",
+      },
+      now: "2026-05-21T10:01:00.000Z",
+    });
+    const before = await context.assetStore.getAsset("asset_pending_1");
+
+    const executed = await executeCourseProductAssetGovernanceBatchTask({
+      ...context,
+      taskId: approved.task.id,
+      actorId: "operator_3",
+      actorRoles: ["catalog_operator"],
+      request: {
+        confirmExecution: true,
+        reason: "审批通过后执行记录处理审计",
+        note: "已由运营确认本批次只写审计",
+      },
+      now: "2026-05-21T10:03:00.000Z",
+    });
+    const after = await context.assetStore.getAsset("asset_pending_1");
+    const auditEvents = await context.productStore.listAuditEvents();
+
+    expect(executed).toMatchObject({
+      idempotentReplay: false,
+      task: {
+        executionStatus: "completed",
+        executionRequestedBy: "operator_3",
+      },
+      summary: {
+        plannedActionCount: 1,
+        executedActionCount: 1,
+        skippedActionCount: 0,
+        failedActionCount: 0,
+        auditEventCount: 1,
+      },
+      items: [
+        {
+          assetId: "asset_pending_1",
+          status: "executed",
+          issueType: "pending_compliance",
+        },
+      ],
+    });
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]).toMatchObject({
+      action: "asset_governance",
+      actorId: "operator_3",
+      reason: "审批通过后执行记录处理审计",
+      after: {
+        batchTaskId: approved.task.id,
+        batchExecution: true,
+        note: "已由运营确认本批次只写审计",
+      },
+    });
+    expect(after).toEqual(before);
+
+    const replay = await executeCourseProductAssetGovernanceBatchTask({
+      ...context,
+      taskId: approved.task.id,
+      actorId: "operator_3",
+      actorRoles: ["catalog_operator"],
+      request: {
+        confirmExecution: true,
+        reason: "重复点击执行应回放结果",
+      },
+      now: "2026-05-21T10:04:00.000Z",
+    });
+
+    expect(replay.idempotentReplay).toBe(true);
+    expect(await context.productStore.listAuditEvents()).toHaveLength(1);
+  });
+
+  it("skips drifted candidates during execution and records partial task state", async () => {
+    const context = stores();
+    const created = await createCourseProductAssetGovernanceBatchTask({
+      ...context,
+      actorId: "operator_1",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "acknowledge_issue",
+        query: {
+          issueFilter: "pending_compliance",
+          previewSize: 5,
+        },
+        reason: "统一记录待审核素材处理计划",
+      },
+      now: "2026-05-21T10:00:00.000Z",
+    });
+    const approved = await reviewCourseProductAssetGovernanceBatchTask({
+      ...context,
+      taskId: created.task.id,
+      actorId: "operator_2",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "approve",
+        reason: "候选范围和处理口径已完成交叉复核",
+      },
+      now: "2026-05-21T10:01:00.000Z",
+    });
+    const currentAsset = await context.assetStore.getAsset("asset_pending_1");
+    if (!currentAsset) throw new Error("missing fixture asset");
+    await context.assetStore.saveAsset({
+      ...currentAsset,
+      complianceStatus: "approved",
+      downloadEnabled: true,
+      updatedAt: "2026-05-21T10:02:00.000Z",
+    });
+
+    const result = await executeCourseProductAssetGovernanceBatchTask({
+      ...context,
+      taskId: approved.task.id,
+      actorId: "operator_3",
+      actorRoles: ["catalog_operator"],
+      request: {
+        confirmExecution: true,
+        reason: "执行前确认漂移候选自动跳过",
+      },
+      now: "2026-05-21T10:03:00.000Z",
+    });
+
+    expect(result).toMatchObject({
+      task: {
+        executionStatus: "partially_completed",
+      },
+      summary: {
+        executedActionCount: 0,
+        skippedActionCount: 1,
+        failedActionCount: 0,
+        auditEventCount: 0,
+      },
+      items: [
+        {
+          assetId: "asset_pending_1",
+          status: "skipped",
+          skipReason: "当前问题类型已不同于审批时的候选快照",
+        },
+      ],
+    });
+    expect(await context.productStore.listAuditEvents()).toEqual([]);
   });
 
   it("rejects execution plans for non-approved task drafts", async () => {

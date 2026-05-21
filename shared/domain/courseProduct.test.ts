@@ -14,6 +14,8 @@ import {
   CourseProductAssetGovernanceBatchDraftResultSchema,
   CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
   CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema,
+  CourseProductAssetGovernanceBatchTaskExecuteRequestSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
   CourseProductAssetGovernanceBatchTaskListResultSchema,
   CourseProductAssetGovernanceBatchTaskMutationResultSchema,
@@ -752,6 +754,105 @@ describe("course product domain contract", () => {
         safetyNotes: ["当前为已审批批量治理任务的执行预案，只读模拟。"],
       });
     expect(executionPlan.willWriteAuditEvents).toBe(false);
+
+    const executeRequest =
+      CourseProductAssetGovernanceBatchTaskExecuteRequestSchema.parse({
+        confirmExecution: true,
+        reason: "审批通过后执行记录处理审计",
+        note: "只写审计，不修改素材",
+      });
+    expect(executeRequest.confirmExecution).toBe(true);
+    expect(
+      CourseProductAssetGovernanceBatchTaskExecuteRequestSchema.safeParse({
+        confirmExecution: false,
+        reason: "缺少确认",
+      }).success
+    ).toBe(false);
+
+    const executionResult =
+      CourseProductAssetGovernanceBatchTaskExecutionResultSchema.parse({
+        task: {
+          ...executionPlan.task,
+          executionStatus: "completed",
+          executionRequestedBy: "operator_3",
+          executionRequestedByRoles: ["catalog_operator"],
+          executionStartedAt: "2026-05-21T09:44:00.000Z",
+          executionCompletedAt: "2026-05-21T09:44:00.000Z",
+          executionReason: executeRequest.reason,
+          executionSummary: {
+            taskId: batchTask.id,
+            executionStatus: "completed",
+            plannedActionCount: 1,
+            executedActionCount: 1,
+            skippedActionCount: 0,
+            failedActionCount: 0,
+            auditEventCount: 1,
+          },
+          executionItems: [
+            {
+              assetId: "asset_worksheet_1",
+              productId: "course_product_1",
+              productTitle: "情绪管理入门",
+              assetTitle: "课后练习表",
+              plannedAction: "acknowledge_issue",
+              issueType: "pending_compliance",
+              status: "executed",
+              auditEventId: "audit_asset_governance_batch_1",
+            },
+          ],
+          executionAuditEventIds: ["audit_asset_governance_batch_1"],
+        },
+        tasks: {
+          ...batchTaskList,
+          summary: {
+            ...batchTaskList.summary,
+            executionCompletedCount: 1,
+          },
+        },
+        executionPlan,
+        summary: {
+          taskId: batchTask.id,
+          executionStatus: "completed",
+          plannedActionCount: 1,
+          executedActionCount: 1,
+          skippedActionCount: 0,
+          failedActionCount: 0,
+          auditEventCount: 1,
+        },
+        items: [
+          {
+            assetId: "asset_worksheet_1",
+            productId: "course_product_1",
+            productTitle: "情绪管理入门",
+            assetTitle: "课后练习表",
+            plannedAction: "acknowledge_issue",
+            issueType: "pending_compliance",
+            status: "executed",
+            auditEventId: "audit_asset_governance_batch_1",
+          },
+        ],
+        auditEvents: [
+          {
+            id: "audit_asset_governance_batch_1",
+            productId: "course_product_1",
+            productTitle: "情绪管理入门",
+            actorId: "operator_3",
+            action: "asset_governance",
+            reason: executeRequest.reason,
+            before: {
+              assetId: "asset_worksheet_1",
+              batchTaskId: batchTask.id,
+            },
+            after: {
+              assetId: "asset_worksheet_1",
+              batchTaskId: batchTask.id,
+              batchExecution: true,
+            },
+            createdAt: "2026-05-21T09:44:00.000Z",
+          },
+        ],
+      });
+    expect(executionResult.summary.auditEventCount).toBe(1);
   });
 
   it("validates the first course detail content contract", () => {

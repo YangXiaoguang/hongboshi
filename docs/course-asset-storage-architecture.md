@@ -88,12 +88,13 @@
 
 `server/modules/catalog/courseProductAssetGovernanceBatchTask.ts` 已建立批量治理任务草案 service，`server/modules/catalog/courseProductAssetGovernanceBatchTaskStore.ts` 提供内存与 JSON 文件 Store，默认文件为 `.hongboshi-data/course-product-asset-governance-batch-tasks.json`：
 
-- `CourseProductAssetGovernanceBatchTask*` 契约记录任务 ID、筛选快照、候选素材快照、候选数、问题分布、拟处理动作分布、创建人、审批状态、原因、备注、审批信息、审批前后摘要、审批前预检和取消信息。
+- `CourseProductAssetGovernanceBatchTask*` 契约记录任务 ID、筛选快照、候选素材快照、候选数、问题分布、拟处理动作分布、创建人、审批状态、原因、备注、审批信息、审批前后摘要、审批前预检、取消信息、执行状态、执行原因、执行摘要、逐素材执行明细和审计事件 ID。
 - `GET/POST /api/catalog/admin/course-products/assets/governance/batch-tasks` 由 `catalog:review` 控制，第一版只允许创建 `acknowledge_issue` 草案；创建时会重新计算批量草稿预览，拒绝空候选和同筛选重复待审批草案。
 - `PATCH /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/cancel` 仅允许草案创建人或管理员取消待审批草案。
 - `PATCH /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/review` 支持通过审批和驳回草案；非管理员不能审批自己创建的草案，通过审批前会重新计算候选范围，候选消失、问题类型变化或数量变化过大时保持待审批并提示重新生成。
 - `GET /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execution-plan` 仅允许已通过审批且审批预检未要求重建的草案生成只读执行预案，返回逐素材计划/跳过原因、风险等级、预计审计事件数量和安全提示；该接口不修改素材 Store、不写 `asset_governance` 审计、不合并引用、不软删和不物理删除对象。
-- `/admin/courses` 批量草稿区已加入“保存草案”、最近草案列表、通过审批、驳回、取消和已审批任务“生成执行预案”入口，明确标注“待审批/未执行”。当前仍不执行批量写入、不写 `asset_governance` 单素材审计、不合并引用、不软删和不物理删除对象。
+- `POST /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execute` 仅允许具备 `catalog:review` 的后台账号在明确确认和填写执行原因后执行已审批任务；第一版只执行 `acknowledge_issue`，执行前重新生成预案，漂移项跳过，成功项只追加 `asset_governance` 审计并保存执行状态，重复执行已完成任务会幂等回放。
+- `/admin/courses` 批量草稿区已加入“保存草案”、最近草案列表、通过审批、驳回、取消、已审批任务“生成执行预案”和预案内“确认执行记录处理”入口，明确展示审批状态与执行状态。当前批量执行只写审计和任务执行结果，不修改素材 Store、不合并引用、不软删和不物理删除对象。
 
 ## 后续切片
 
@@ -106,4 +107,5 @@
 - `CUX-I-B-B-J`：已接入治理动作历史筛选、批量处理草稿预览、后台历史/草稿展示和只读安全边界；真实批量写入、自动合并引用、对象物理删除和异步任务队列继续后置。
 - `CUX-I-B-B-K`：已接入批量治理任务草案、内存/JSON Store、创建/列表/取消 API 和后台最近草案入口。
 - `CUX-I-B-B-L`：已接入批量治理任务审批/驳回、跨人审批限制、审批前候选漂移预检和后台审批入口；执行队列、批量写审计和真实批量处理仍后置。
-- `CUX-I-B-B-M`：已接入已审批批量任务执行只读预案、逐素材漂移跳过、风险等级、预计审计事件数量和后台预案面板；真实执行状态机、批量写审计和异步任务队列继续后置。
+- `CUX-I-B-B-M`：已接入已审批批量任务执行只读预案、逐素材漂移跳过、风险等级、预计审计事件数量和后台预案面板。
+- `CUX-I-B-B-N`：已接入批量任务受控执行状态机、执行确认、批量 `asset_governance` 审计写入、执行明细、部分完成/失败摘要和幂等回放；异步任务队列、批量软删/引用合并和物理对象清理继续后置。

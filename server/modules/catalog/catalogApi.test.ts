@@ -13,6 +13,7 @@ import {
   applyCourseProductAssetGovernanceActionPayload,
   cancelCourseProductAssetGovernanceBatchTaskPayload,
   createCourseProductAssetGovernanceBatchTaskPayload,
+  executeCourseProductAssetGovernanceBatchTaskPayload,
   getCourseProductAdminListPayload,
   getCourseProductAssetBackfillPayload,
   getCourseProductAssetGovernanceBatchDraftPayload,
@@ -1108,6 +1109,76 @@ describe("catalog admin api payloads", () => {
         },
       },
     });
+
+    const deniedExecute =
+      await executeCourseProductAssetGovernanceBatchTaskPayload(
+        { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+        reviewTaskId,
+        {
+          confirmExecution: true,
+          reason: "只读账号不能执行批量治理",
+        },
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now: "2026-05-21T10:11:10.000Z",
+        }
+      );
+    expect(deniedExecute.status).toBe(403);
+
+    const badExecute =
+      await executeCourseProductAssetGovernanceBatchTaskPayload(
+        { id: "catalog_operator_2", roles: ["catalog_operator"] },
+        reviewTaskId,
+        {
+          confirmExecution: false,
+          reason: "缺少明确执行确认",
+        },
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now: "2026-05-21T10:11:20.000Z",
+        }
+      );
+    expect(badExecute.status).toBe(400);
+
+    const beforeExecute = await assetStore.getAsset("asset_pending_1");
+    const executed = await executeCourseProductAssetGovernanceBatchTaskPayload(
+      { id: "catalog_operator_2", roles: ["catalog_operator"] },
+      reviewTaskId,
+      {
+        confirmExecution: true,
+        reason: "审批通过后执行记录处理审计",
+      },
+      {
+        productStore,
+        contentStore,
+        assetStore,
+        taskStore,
+        now: "2026-05-21T10:11:30.000Z",
+      }
+    );
+    const afterExecute = await assetStore.getAsset("asset_pending_1");
+    expect(executed.status).toBe(200);
+    expect(executed.body).toMatchObject({
+      ok: true,
+      data: {
+        summary: {
+          executionStatus: "completed",
+          auditEventCount: 1,
+          executedActionCount: 1,
+        },
+        task: {
+          executionStatus: "completed",
+        },
+      },
+    });
+    expect(afterExecute).toEqual(beforeExecute);
+    expect(await productStore.listAuditEvents()).toHaveLength(2);
 
     const pendingPlan =
       await getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload(

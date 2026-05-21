@@ -4,6 +4,7 @@ import {
   parseCourseProductAssetBackfillResponse,
   parseCourseProductAssetGovernanceActionResponse,
   parseCourseProductAssetGovernanceBatchDraftResponse,
+  parseCourseProductAssetGovernanceBatchTaskExecutionResponse,
   parseCourseProductAssetGovernanceBatchTaskExecutionPlanResponse,
   parseCourseProductAssetGovernanceBatchTaskListResponse,
   parseCourseProductAssetGovernanceBatchTaskMutationResponse,
@@ -139,6 +140,76 @@ function executionPlanData() {
       },
     ],
     safetyNotes: ["当前为已审批批量治理任务的执行预案，只读模拟。"],
+  };
+}
+
+function executionResultData() {
+  const executionPlan = executionPlanData();
+  const executionItem = {
+    assetId: "asset_pending_1",
+    productId: "course_product_1",
+    productTitle: "情绪管理入门",
+    assetTitle: "待审核素材",
+    plannedAction: "acknowledge_issue",
+    issueType: "pending_compliance",
+    status: "executed",
+    auditEventId: "audit_asset_governance_batch_1",
+  };
+  const summary = {
+    taskId: executionPlan.task.id,
+    executionStatus: "completed",
+    plannedActionCount: 1,
+    executedActionCount: 1,
+    skippedActionCount: 0,
+    failedActionCount: 0,
+    auditEventCount: 1,
+  };
+  return {
+    task: {
+      ...executionPlan.task,
+      executionStatus: "completed",
+      executionRequestedBy: "operator_2",
+      executionRequestedByRoles: ["catalog_operator"],
+      executionStartedAt: "2026-05-21T10:04:00.000Z",
+      executionCompletedAt: "2026-05-21T10:04:00.000Z",
+      executionReason: "审批通过后执行记录处理审计",
+      executionSummary: summary,
+      executionItems: [executionItem],
+      executionAuditEventIds: ["audit_asset_governance_batch_1"],
+    },
+    tasks: {
+      ...batchTaskListData(),
+      summary: {
+        ...batchTaskListData().summary,
+        pendingApprovalCount: 0,
+        approvedCount: 1,
+        executionCompletedCount: 1,
+      },
+    },
+    executionPlan,
+    summary,
+    items: [executionItem],
+    auditEvents: [
+      {
+        id: "audit_asset_governance_batch_1",
+        productId: "course_product_1",
+        productTitle: "情绪管理入门",
+        actorId: "operator_2",
+        action: "asset_governance",
+        reason: "审批通过后执行记录处理审计",
+        before: {
+          assetId: "asset_pending_1",
+          batchTaskId: executionPlan.task.id,
+        },
+        after: {
+          assetId: "asset_pending_1",
+          batchTaskId: executionPlan.task.id,
+          batchExecution: true,
+        },
+        createdAt: "2026-05-21T10:04:00.000Z",
+      },
+    ],
+    idempotentReplay: false,
   };
 }
 
@@ -584,6 +655,17 @@ describe("http course product repository parsing", () => {
     expect(parsed.willModifyAssetStore).toBe(false);
     expect(parsed.willWriteAuditEvents).toBe(false);
     expect(parsed.summary.estimatedAuditEventCount).toBe(1);
+  });
+
+  it("parses course product asset governance execution responses", () => {
+    const parsed =
+      parseCourseProductAssetGovernanceBatchTaskExecutionResponse({
+        ok: true,
+        data: executionResultData(),
+      });
+
+    expect(parsed.summary.auditEventCount).toBe(1);
+    expect(parsed.task.executionStatus).toBe("completed");
   });
 
   it("parses course product mutation responses", () => {
@@ -1294,6 +1376,34 @@ describe("http course product repository parsing", () => {
       expect.objectContaining({
         cache: "no-store",
         credentials: "same-origin",
+      })
+    );
+  });
+
+  it("executes course product asset governance batch tasks", async () => {
+    const responsePayload = {
+      ok: true,
+      data: executionResultData(),
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.executeCourseProductAssetGovernanceBatchTask(
+        "asset_governance_batch_task_1",
+        {
+          confirmExecution: true,
+          reason: "审批通过后执行记录处理审计",
+        }
+      );
+
+    expect(result.summary.executedActionCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/batch-tasks/asset_governance_batch_task_1/execute",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("confirmExecution"),
       })
     );
   });

@@ -7,6 +7,7 @@ import type {
 import {
   assetGovernanceBatchIssueFilterFromPanelFilter,
   assetGovernanceBatchTaskCreateRequestFromPanelFilter,
+  assetGovernanceBatchTaskExecuteRequestFromReason,
   assetGovernanceBatchTaskExecutionPlanSummaryText,
   assetGovernanceBatchTaskReviewRequestFromAction,
   assetGovernanceHistoryQueryFromFilters,
@@ -182,6 +183,17 @@ describe("course product asset governance panel helpers", () => {
     ).toEqual({
       action: "approve",
       reason: "候选范围和处理口径已完成交叉复核",
+    });
+
+    expect(
+      assetGovernanceBatchTaskExecuteRequestFromReason(
+        "  审批通过后执行记录处理审计  ",
+        "  只写审计，不修改素材  "
+      )
+    ).toEqual({
+      confirmExecution: true,
+      reason: "审批通过后执行记录处理审计",
+      note: "只写审计，不修改素材",
     });
   });
 

@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`CUX-I-B-B-M 课程素材治理批量任务执行只读模拟与审计计划准备` 已完成，已审批批量治理任务可生成只读执行预案，展示逐素材计划/跳过原因、风险等级和预计审计事件数量；预案不修改素材 Store、不写审计、不合并引用、不软删和不物理删除对象。
-- 本轮完成后下一步：执行 `CUX-I-B-B-N 课程素材治理批量任务执行状态机与审计写入准备`
+- 当前状态：`CUX-I-B-B-N 课程素材治理批量任务执行状态机与审计写入准备` 已完成，已审批批量治理任务可在明确确认和执行原因后受控执行 `acknowledge_issue`，写入 `asset_governance` 批量审计事件并沉淀任务执行状态、执行明细、跳过/失败摘要和幂等回放结果；执行仍不修改素材 Store、不合并引用、不软删和不物理删除对象。
+- 本轮完成后下一步：执行 `CUX-I-B-B-O 课程素材治理批量任务执行结果历史与运营筛选增强`
 
 ## 已完成关键能力
 
@@ -54,6 +54,7 @@
 - 完成课程素材治理批量任务草案：新增 `CourseProductAssetGovernanceBatchTask*` 契约、内存/JSON Store、`GET/POST /api/catalog/admin/course-products/assets/governance/batch-tasks`、取消草案 API 和 `/admin/courses` 最近草案入口；第一版只允许 `acknowledge_issue` 待审批草案，创建时重新计算预览并拒绝空候选/重复待审批草案，取消仅允许创建人或管理员。
 - 完成课程素材治理批量任务审批与预检：批量任务状态扩展为待审批、已通过、已驳回和已取消；新增审批/驳回请求契约、审批前后摘要、候选快照、审批前预检摘要和 `PATCH /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/review`，非管理员不能审批自己创建的草案，审批前候选消失、问题类型变化或数量变化过大时保持待审批并提示重建草案。
 - 完成课程素材治理批量任务执行只读预案：新增 `CourseProductAssetGovernanceBatchTaskExecutionPlan*` 契约、只读执行预案 service、`GET /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execution-plan`、前端 repository 和 `/admin/courses` 执行预案面板；仅已审批且无需重建的任务可生成逐素材计划、漂移跳过项、风险等级和预计审计事件数量。
+- 完成课程素材治理批量任务受控执行状态机：新增执行请求/结果/明细/摘要契约、`POST /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execute`、执行中/完成/部分完成/失败状态、重复执行幂等回放、漂移候选跳过、批量 `asset_governance` 审计写入和 `/admin/courses` 执行确认交互；第一版只支持 `acknowledge_issue`，不修改素材 Store、不合并引用、不软删和不物理删除对象。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -691,31 +692,32 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：CUX-I-B-B-M 课程素材治理批量任务执行只读模拟与审计计划准备
+### 最近完成阶段：CUX-I-B-B-N 课程素材治理批量任务执行状态机与审计写入准备
 
-CUX-I-B-B-M 稳定切片已交付：
+CUX-I-B-B-N 稳定切片已交付：
 
-- 扩展 `CourseProductAssetGovernanceBatchTaskExecutionPlan*` 共享契约，记录执行预案摘要、逐素材计划项、跳过原因、风险等级、预计审计事件数量和审计预览。
-- 新增 `previewCourseProductAssetGovernanceBatchTaskExecutionPlan` service，只允许 `approved` 且 `approvalPreflight.requiresRecreate=false` 的任务生成预案；未审批、已驳回、已取消或要求重建的任务会拒绝。
-- 执行预案会按审批时候选快照和当前素材治理快照重新对齐，问题类型漂移、当前不再匹配筛选或素材缺失的候选会进入 `skipped`，避免越过审批边界。
-- 新增后台 API：`GET /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execution-plan`，要求 `catalog:review`；接口只读返回，不修改素材 Store、不写 `asset_governance` 审计、不合并引用、不软删和不物理删除对象。
-- `/admin/courses` 已通过草案展示“生成执行预案”入口，预案面板展示计划动作、跳过项、高风险数、新候选数、安全提示和前 8 条素材计划。
-- 测试覆盖 domain/service/API/repository/page helper，确认未审批不可预案、审批后可预案、预检要求重建拒绝、候选漂移跳过和只读不变更素材 Store。
-- 验收已通过：`pnpm run ci` 完成 130 个测试文件 / 645 个测试和生产构建；本地浏览器冒烟访问 `/admin/courses`，确认后台登录后可看到课程商品、素材治理、批量处理草稿预览和最近批量草案区域。
+- 扩展 `CourseProductAssetGovernanceBatchTask*` 共享契约，新增执行状态、执行人/角色、开始/完成时间、执行原因/备注、执行摘要、逐素材执行明细和审计事件 ID 列表。
+- 新增 `CourseProductAssetGovernanceBatchTaskExecuteRequestSchema` 与 `CourseProductAssetGovernanceBatchTaskExecutionResultSchema`，要求 `confirmExecution=true` 和至少 4 字执行原因。
+- 新增 `executeCourseProductAssetGovernanceBatchTask` service：执行前重新生成最新 execution plan，仅执行仍为 `planned + acknowledge_issue` 的素材；漂移、缺少商品或缺少审计预览的素材跳过并记录原因。
+- 执行只写课程商品 `asset_governance` 审计事件，审计 before/after 带 `batchTaskId`、`batchExecution` 和 actor roles；不修改素材 Store、不合并引用、不软删和不物理删除对象。
+- 重复执行已完成/部分完成任务会走幂等回放，复用任务已保存的执行明细和审计事件，不重复追加审计。
+- 新增后台 API：`POST /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execute`，要求 `catalog:review`；未确认、权限不足、执行中、失败后重试或不支持的动作会返回明确错误。
+- `/admin/courses` 执行预案面板已加入执行原因、备注、确认勾选、执行按钮、结果摘要和最近任务执行状态展示。
+- 测试覆盖 domain/service/API/repository/page helper，确认审计写入、幂等回放、漂移跳过、权限拒绝、未确认拒绝和素材 Store 不被修改。
 
-### 后台待续：CUX-I-B-B-N 课程素材治理批量任务执行状态机与审计写入准备
+### 后台待续：CUX-I-B-B-O 课程素材治理批量任务执行结果历史与运营筛选增强
 
 业务目标：
 
-CUX-I-B-B-M 已把已审批草案展开为只读执行预案。下一步可以进入“受控执行状态机”，先只执行 `acknowledge_issue` 这类不改素材元数据的批量记录动作，把执行结果写入审计和任务执行状态，但仍不合并引用、不软删和不物理删除对象。
+CUX-I-B-B-N 已让已审批草案可以受控写入批量审计。下一步应把执行结果变成运营可长期复核的任务历史能力，让后台能按执行状态、操作者、时间和异常类型筛选，支持快速定位部分完成/失败/跳过项，同时为后续异步队列和 PostgreSQL 等价 Store 做准备。
 
 建议实施范围：
 
-- 新增批量任务执行状态契约，支持 `not_started / running / completed / partially_completed / failed` 等状态、执行人、执行时间、计划快照、成功数、跳过数和失败摘要。
-- 新增受控执行 service：必须基于最新 execution plan、显式确认、`catalog:review` 权限和已审批任务；第一版仅允许 `acknowledge_issue` 写入 `asset_governance` 审计，不修改素材 Store。
-- 新增后台 API，例如 `POST /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execute`，要求操作原因和确认字段；执行前再次校验预案漂移，漂移项跳过并记录原因。
-- `/admin/courses` 预案面板增加“确认执行记录处理”入口和执行结果摘要，但继续隐藏软删除、引用合并和物理删除能力。
-- 增加 domain/service/API/repository/page helper 测试，覆盖重复执行幂等、部分跳过、审计写入、权限拒绝、执行中失败恢复和素材 Store 不被修改。
+- 扩展批量任务列表查询：支持 `executionStatus`、`createdBy`、`executionRequestedBy`、日期范围和 issue/action 筛选。
+- `/admin/courses` 最近草案从“前三条”升级为可分页/可筛选任务抽屉或子面板，展示执行摘要、跳过/失败原因和审计事件链接。
+- 增加执行结果详情读取 API，避免只依赖执行弹窗内存态；重复打开已完成任务可直接查看历史执行明细。
+- 补充任务 Store 的 JSON 兼容和 PostgreSQL 迁移设计草案，明确执行状态字段、审计事件 ID 数组、幂等键和查询索引。
+- 增加 domain/service/API/repository/page helper 测试，覆盖执行状态筛选、历史详情读取、已完成任务回放展示和旧任务默认值兼容。
 
 ## 执行不变量
 
@@ -736,4 +738,4 @@ CUX-I-B-B-M 已把已审批草案展开为只读执行预案。下一步可以�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 CUX-I-B-B-N 课程素材治理批量任务执行状态机与审计写入准备，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 CUX-I-B-B-O 课程素材治理批量任务执行结果历史与运营筛选增强，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
