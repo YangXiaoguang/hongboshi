@@ -3,6 +3,8 @@ import {
   httpCourseProductRepository,
   parseCourseProductAssetBackfillResponse,
   parseCourseProductAssetGovernanceActionResponse,
+  parseCourseProductAssetGovernanceBatchDraftResponse,
+  parseCourseProductAssetGovernanceHistoryResponse,
   parseCourseProductAssetGovernanceResponse,
   parseCourseProductAssetListResponse,
   parseCourseProductAssetMutationResponse,
@@ -311,6 +313,115 @@ describe("http course product repository parsing", () => {
 
     expect(parsed.auditEvent.action).toBe("asset_governance");
     expect(parsed.asset.deletedAt).toBe("2026-05-21T09:10:00.000Z");
+  });
+
+  it("parses course product asset governance history responses", () => {
+    const parsed = parseCourseProductAssetGovernanceHistoryResponse({
+      ok: true,
+      data: {
+        generatedAt: "2026-05-21T09:20:00.000Z",
+        query: {
+          action: "acknowledge_issue",
+          page: 1,
+          pageSize: 5,
+        },
+        summary: {
+          totalEventCount: 1,
+          filteredEventCount: 1,
+          actorCount: 1,
+          actionDistribution: [
+            { key: "acknowledge_issue", label: "记录处理", count: 1 },
+          ],
+          issueTypeDistribution: [
+            { key: "pending_compliance", label: "待审核", count: 1 },
+          ],
+        },
+        items: [
+          {
+            id: "audit_asset_governance_pending",
+            productId: "course_product_1",
+            productTitle: "情绪管理入门",
+            assetId: "asset_pending_1",
+            assetTitle: "待审核素材",
+            assetKind: "worksheet",
+            action: "acknowledge_issue",
+            issueType: "pending_compliance",
+            actorId: "operator_1",
+            actorRoles: ["operator"],
+            reason: "记录待审核素材处理计划",
+            before: { assetId: "asset_pending_1" },
+            after: {
+              assetId: "asset_pending_1",
+              governanceAction: "acknowledge_issue",
+              issueType: "pending_compliance",
+            },
+            createdAt: "2026-05-21T09:10:00.000Z",
+          },
+        ],
+        meta: {
+          page: 1,
+          pageSize: 5,
+          total: 1,
+          totalPages: 1,
+        },
+      },
+    });
+
+    expect(parsed.items[0]?.action).toBe("acknowledge_issue");
+    expect(parsed.summary.filteredEventCount).toBe(1);
+  });
+
+  it("parses course product asset governance batch draft responses", () => {
+    const parsed = parseCourseProductAssetGovernanceBatchDraftResponse({
+      ok: true,
+      data: {
+        generatedAt: "2026-05-21T09:30:00.000Z",
+        requestedBy: "operator_1",
+        query: {
+          issueFilter: "compliance_status",
+          previewSize: 8,
+        },
+        previewOnly: true,
+        willModifyAssetStore: false,
+        summary: {
+          candidateAssetCount: 1,
+          previewItemCount: 1,
+          eligibleActionCount: 1,
+          manualReviewAssetCount: 0,
+          softDeleteCandidateCount: 0,
+          issueTypeDistribution: [
+            { key: "pending_compliance", label: "待审核", count: 1 },
+          ],
+          proposedActionDistribution: [
+            { key: "acknowledge_issue", label: "记录处理", count: 1 },
+          ],
+        },
+        items: [
+          {
+            assetId: "asset_pending_1",
+            productId: "course_product_1",
+            productTitle: "情绪管理入门",
+            assetTitle: "待审核素材",
+            assetKind: "worksheet",
+            issueTypes: ["pending_compliance"],
+            referenceCount: 0,
+            duplicateContentHashAssetIds: [],
+            proposedActions: [
+              {
+                action: "acknowledge_issue",
+                issueType: "pending_compliance",
+                eligible: true,
+                reason: "可作为后续批量记录处理草稿，当前不执行写入",
+              },
+            ],
+          },
+        ],
+        safetyNotes: ["当前为批量处理草稿预览，不会修改素材元数据"],
+      },
+    });
+
+    expect(parsed.previewOnly).toBe(true);
+    expect(parsed.willModifyAssetStore).toBe(false);
   });
 
   it("parses course product mutation responses", () => {
@@ -695,6 +806,123 @@ describe("http course product repository parsing", () => {
     expect(result.summary.totalAssetCount).toBe(0);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/catalog/admin/course-products/assets/governance",
+      expect.objectContaining({
+        credentials: "same-origin",
+      })
+    );
+  });
+
+  it("loads course product asset governance history with filters", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        generatedAt: "2026-05-21T09:20:00.000Z",
+        query: {
+          action: "acknowledge_issue",
+          actorId: "operator_1",
+          page: 1,
+          pageSize: 5,
+        },
+        summary: {
+          totalEventCount: 1,
+          filteredEventCount: 1,
+          actorCount: 1,
+          actionDistribution: [
+            { key: "acknowledge_issue", label: "记录处理", count: 1 },
+          ],
+          issueTypeDistribution: [
+            { key: "pending_compliance", label: "待审核", count: 1 },
+          ],
+        },
+        items: [
+          {
+            id: "audit_asset_governance_pending",
+            productId: "course_product_1",
+            productTitle: "情绪管理入门",
+            assetId: "asset_pending_1",
+            action: "acknowledge_issue",
+            issueType: "pending_compliance",
+            actorId: "operator_1",
+            reason: "记录待审核素材处理计划",
+            before: {},
+            after: {
+              governanceAction: "acknowledge_issue",
+              issueType: "pending_compliance",
+            },
+            createdAt: "2026-05-21T09:10:00.000Z",
+          },
+        ],
+        meta: {
+          page: 1,
+          pageSize: 5,
+          total: 1,
+          totalPages: 1,
+        },
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.loadCourseProductAssetGovernanceHistory({
+        action: "acknowledge_issue",
+        actorId: "operator_1",
+        pageSize: 5,
+      });
+
+    expect(result.summary.filteredEventCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/history?action=acknowledge_issue&actorId=operator_1&pageSize=5",
+      expect.objectContaining({
+        credentials: "same-origin",
+      })
+    );
+  });
+
+  it("loads course product asset governance batch draft previews", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        generatedAt: "2026-05-21T09:30:00.000Z",
+        requestedBy: "operator_1",
+        query: {
+          issueFilter: "soft_delete_candidate",
+          previewSize: 8,
+        },
+        previewOnly: true,
+        willModifyAssetStore: false,
+        summary: {
+          candidateAssetCount: 2,
+          previewItemCount: 2,
+          eligibleActionCount: 2,
+          manualReviewAssetCount: 2,
+          softDeleteCandidateCount: 2,
+          issueTypeDistribution: [
+            { key: "soft_delete_candidate", label: "软删候选", count: 2 },
+          ],
+          proposedActionDistribution: [
+            { key: "acknowledge_issue", label: "记录处理", count: 2 },
+            { key: "mark_soft_deleted", label: "软删除确认", count: 2 },
+          ],
+        },
+        items: [],
+        safetyNotes: ["当前为批量处理草稿预览，不会修改素材元数据"],
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.loadCourseProductAssetGovernanceBatchDraft({
+        issueFilter: "soft_delete_candidate",
+        previewSize: 8,
+      });
+
+    expect(result.willModifyAssetStore).toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/batch-draft?issueFilter=soft_delete_candidate&previewSize=8",
       expect.objectContaining({
         credentials: "same-origin",
       })

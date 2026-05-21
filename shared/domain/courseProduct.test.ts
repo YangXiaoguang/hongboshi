@@ -10,6 +10,10 @@ import {
   CourseProductAssetFileUploadRequestSchema,
   CourseProductAssetGovernanceActionRequestSchema,
   CourseProductAssetGovernanceActionResultSchema,
+  CourseProductAssetGovernanceBatchDraftQuerySchema,
+  CourseProductAssetGovernanceBatchDraftResultSchema,
+  CourseProductAssetGovernanceHistoryQuerySchema,
+  CourseProductAssetGovernanceHistoryResultSchema,
   CourseProductAssetGovernanceResultSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetObjectDescriptorSchema,
@@ -430,6 +434,117 @@ describe("course product domain contract", () => {
       },
     });
     expect(actionResult.auditEvent.action).toBe("asset_governance");
+
+    const historyQuery = CourseProductAssetGovernanceHistoryQuerySchema.parse({
+      action: "mark_duplicate_primary",
+      issueType: "duplicate_content_hash",
+      actorId: "operator_1",
+      dateFrom: "2026-05-21T00:00:00.000Z",
+      dateTo: "2026-05-21T23:59:59.999Z",
+    });
+    expect(historyQuery.pageSize).toBe(10);
+    expect(
+      CourseProductAssetGovernanceHistoryQuerySchema.safeParse({
+        dateFrom: "2026-05-22T00:00:00.000Z",
+        dateTo: "2026-05-21T00:00:00.000Z",
+      }).success
+    ).toBe(false);
+
+    const history = CourseProductAssetGovernanceHistoryResultSchema.parse({
+      generatedAt: "2026-05-21T09:20:00.000Z",
+      query: historyQuery,
+      summary: {
+        totalEventCount: 1,
+        filteredEventCount: 1,
+        actorCount: 1,
+        actionDistribution: [
+          { key: "mark_duplicate_primary", label: "设为主素材", count: 1 },
+        ],
+        issueTypeDistribution: [
+          { key: "duplicate_content_hash", label: "重复内容", count: 1 },
+        ],
+      },
+      items: [
+        {
+          id: actionResult.auditEvent.id,
+          productId: "course_product_1",
+          productTitle: "情绪管理入门",
+          assetId: "asset_worksheet_1",
+          assetTitle: "课后练习表",
+          assetKind: "worksheet",
+          action: "mark_duplicate_primary",
+          issueType: "duplicate_content_hash",
+          actorId: "operator_1",
+          actorRoles: ["operator"],
+          reason: "确认重复素材后保留主素材",
+          primaryAssetId: "asset_worksheet_1",
+          referenceCount: 1,
+          before: { assetId: "asset_worksheet_1" },
+          after: {
+            assetId: "asset_worksheet_1",
+            governanceAction: "mark_duplicate_primary",
+            issueType: "duplicate_content_hash",
+          },
+          createdAt: "2026-05-21T09:10:00.000Z",
+        },
+      ],
+      meta: {
+        page: 1,
+        pageSize: 10,
+        total: 1,
+        totalPages: 1,
+      },
+    });
+    expect(history.summary.actorCount).toBe(1);
+
+    const draftQuery = CourseProductAssetGovernanceBatchDraftQuerySchema.parse({
+      issueFilter: "compliance_status",
+    });
+    expect(draftQuery.previewSize).toBe(8);
+
+    const batchDraft =
+      CourseProductAssetGovernanceBatchDraftResultSchema.parse({
+        generatedAt: "2026-05-21T09:30:00.000Z",
+        requestedBy: "operator_1",
+        query: draftQuery,
+        previewOnly: true,
+        willModifyAssetStore: false,
+        summary: {
+          candidateAssetCount: 1,
+          previewItemCount: 1,
+          eligibleActionCount: 1,
+          manualReviewAssetCount: 0,
+          softDeleteCandidateCount: 0,
+          issueTypeDistribution: [
+            { key: "pending_compliance", label: "待审核", count: 1 },
+          ],
+          proposedActionDistribution: [
+            { key: "acknowledge_issue", label: "记录处理", count: 1 },
+          ],
+        },
+        items: [
+          {
+            assetId: "asset_worksheet_1",
+            productId: "course_product_1",
+            productTitle: "情绪管理入门",
+            assetTitle: "课后练习表",
+            assetKind: "worksheet",
+            issueTypes: ["pending_compliance"],
+            referenceCount: 1,
+            duplicateContentHashAssetIds: [],
+            proposedActions: [
+              {
+                action: "acknowledge_issue",
+                issueType: "pending_compliance",
+                eligible: true,
+                reason: "可作为后续批量记录处理草稿，当前不执行写入",
+              },
+            ],
+          },
+        ],
+        safetyNotes: ["当前为批量处理草稿预览，不会修改素材元数据"],
+      });
+    expect(batchDraft.willModifyAssetStore).toBe(false);
   });
 
   it("validates the first course detail content contract", () => {

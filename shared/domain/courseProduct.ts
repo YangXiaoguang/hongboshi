@@ -144,6 +144,12 @@ export const COURSE_PRODUCT_ASSET_GOVERNANCE_ACTIONS = [
   "mark_soft_deleted",
 ] as const;
 
+export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_ISSUE_FILTERS = [
+  "all",
+  "compliance_status",
+  ...COURSE_PRODUCT_ASSET_GOVERNANCE_ISSUE_TYPES,
+] as const;
+
 export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
   "showcase",
   "proof",
@@ -232,6 +238,10 @@ export const CourseProductAssetGovernanceReferenceSourceSchema = z.enum(
 
 export const CourseProductAssetGovernanceActionSchema = z.enum(
   COURSE_PRODUCT_ASSET_GOVERNANCE_ACTIONS
+);
+
+export const CourseProductAssetGovernanceBatchIssueFilterSchema = z.enum(
+  COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_ISSUE_FILTERS
 );
 
 export const CourseProductMerchandisingAssetUsageSchema = z.enum(
@@ -542,6 +552,141 @@ export const CourseProductAssetGovernanceActionResultSchema = z.object({
   asset: CourseProductAssetSchema,
   governance: CourseProductAssetGovernanceResultSchema,
   auditEvent: CourseProductAuditEventSchema,
+});
+
+export const CourseProductAssetGovernanceHistoryQuerySchema =
+  PaginationQuerySchema.extend({
+    assetId: EntityIdSchema.optional(),
+    productId: EntityIdSchema.optional(),
+    action: CourseProductAssetGovernanceActionSchema.optional(),
+    issueType: CourseProductAssetGovernanceIssueTypeSchema.optional(),
+    actorId: EntityIdSchema.optional(),
+    dateFrom: DateTimeLikeSchema.optional(),
+    dateTo: DateTimeLikeSchema.optional(),
+    pageSize: z.number().int().min(1).max(50).default(10),
+  }).superRefine((query, ctx) => {
+    if (!query.dateFrom || !query.dateTo) return;
+    if (query.dateFrom > query.dateTo) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dateTo"],
+        message: "dateTo must be later than dateFrom",
+      });
+    }
+  });
+
+export const CourseProductAssetGovernanceHistorySnapshotSchema = z.object({
+  assetId: EntityIdSchema.optional(),
+  productId: EntityIdSchema.optional(),
+  title: z.string().trim().min(1).max(120).optional(),
+  kind: CourseProductAssetKindSchema.optional(),
+  governanceAction: CourseProductAssetGovernanceActionSchema.optional(),
+  issueType: CourseProductAssetGovernanceIssueTypeSchema.optional(),
+  primaryAssetId: EntityIdSchema.optional(),
+  referenceCount: z.number().int().nonnegative().optional(),
+  duplicateContentHashAssetIds: z.array(EntityIdSchema).default([]),
+  complianceStatus: CourseProductContentAssetReviewStatusSchema.optional(),
+  downloadEnabled: z.boolean().optional(),
+  deletedAt: DateTimeLikeSchema.optional(),
+  note: z.string().trim().max(240).optional(),
+});
+
+export const CourseProductAssetGovernanceHistoryItemSchema = z.object({
+  id: EntityIdSchema,
+  productId: EntityIdSchema,
+  productTitle: z.string().trim().min(1),
+  assetId: EntityIdSchema,
+  assetTitle: z.string().trim().min(1).max(120).optional(),
+  assetKind: CourseProductAssetKindSchema.optional(),
+  action: CourseProductAssetGovernanceActionSchema,
+  issueType: CourseProductAssetGovernanceIssueTypeSchema,
+  actorId: EntityIdSchema,
+  actorRoles: z.array(EntityIdSchema).default([]),
+  reason: z.string().trim().min(1).max(240),
+  primaryAssetId: EntityIdSchema.optional(),
+  referenceCount: z.number().int().nonnegative().optional(),
+  before: CourseProductAssetGovernanceHistorySnapshotSchema,
+  after: CourseProductAssetGovernanceHistorySnapshotSchema,
+  createdAt: DateTimeLikeSchema,
+});
+
+export const CourseProductAssetGovernanceHistoryDistributionSchema = z.object({
+  key: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(80),
+  count: z.number().int().nonnegative(),
+});
+
+export const CourseProductAssetGovernanceHistorySummarySchema = z.object({
+  totalEventCount: z.number().int().nonnegative(),
+  filteredEventCount: z.number().int().nonnegative(),
+  actorCount: z.number().int().nonnegative(),
+  actionDistribution: z
+    .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+    .default([]),
+  issueTypeDistribution: z
+    .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+    .default([]),
+});
+
+export const CourseProductAssetGovernanceHistoryResultSchema = z.object({
+  generatedAt: DateTimeLikeSchema,
+  query: CourseProductAssetGovernanceHistoryQuerySchema,
+  summary: CourseProductAssetGovernanceHistorySummarySchema,
+  items: z.array(CourseProductAssetGovernanceHistoryItemSchema),
+  meta: PageMetaSchema,
+});
+
+export const CourseProductAssetGovernanceBatchDraftQuerySchema = z.object({
+  issueFilter: CourseProductAssetGovernanceBatchIssueFilterSchema.default("all"),
+  productId: EntityIdSchema.optional(),
+  previewSize: z.number().int().min(1).max(20).default(8),
+});
+
+export const CourseProductAssetGovernanceBatchDraftActionSchema = z.object({
+  action: CourseProductAssetGovernanceActionSchema,
+  issueType: CourseProductAssetGovernanceIssueTypeSchema,
+  eligible: z.boolean(),
+  reason: z.string().trim().min(1).max(180),
+  primaryAssetId: EntityIdSchema.optional(),
+});
+
+export const CourseProductAssetGovernanceBatchDraftItemSchema = z.object({
+  assetId: EntityIdSchema,
+  productId: EntityIdSchema,
+  productTitle: z.string().trim().min(1).optional(),
+  assetTitle: z.string().trim().min(1).max(120),
+  assetKind: CourseProductAssetKindSchema,
+  issueTypes: z.array(CourseProductAssetGovernanceIssueTypeSchema),
+  referenceCount: z.number().int().nonnegative(),
+  duplicateContentHashAssetIds: z.array(EntityIdSchema).default([]),
+  proposedActions: z
+    .array(CourseProductAssetGovernanceBatchDraftActionSchema)
+    .default([]),
+});
+
+export const CourseProductAssetGovernanceBatchDraftSummarySchema = z.object({
+  candidateAssetCount: z.number().int().nonnegative(),
+  previewItemCount: z.number().int().nonnegative(),
+  eligibleActionCount: z.number().int().nonnegative(),
+  manualReviewAssetCount: z.number().int().nonnegative(),
+  softDeleteCandidateCount: z.number().int().nonnegative(),
+  issueTypeDistribution: z
+    .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+    .default([]),
+  proposedActionDistribution: z
+    .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+    .default([]),
+});
+
+export const CourseProductAssetGovernanceBatchDraftResultSchema = z.object({
+  generatedAt: DateTimeLikeSchema,
+  requestedBy: EntityIdSchema,
+  query: CourseProductAssetGovernanceBatchDraftQuerySchema,
+  previewOnly: z.literal(true).default(true),
+  willModifyAssetStore: z.literal(false).default(false),
+  summary: CourseProductAssetGovernanceBatchDraftSummarySchema,
+  items: z.array(CourseProductAssetGovernanceBatchDraftItemSchema),
+  safetyNotes: z.array(z.string().trim().min(1).max(240)).default([]),
 });
 
 export const CourseProductAssetUploadRequestSchema = z
@@ -1036,6 +1181,9 @@ export type CourseProductAssetGovernanceReferenceSource = z.infer<
 export type CourseProductAssetGovernanceAction = z.infer<
   typeof CourseProductAssetGovernanceActionSchema
 >;
+export type CourseProductAssetGovernanceBatchIssueFilter = z.infer<
+  typeof CourseProductAssetGovernanceBatchIssueFilterSchema
+>;
 export type CourseProductAssetObjectDescriptor = z.infer<
   typeof CourseProductAssetObjectDescriptorSchema
 >;
@@ -1075,6 +1223,30 @@ export type CourseProductAssetGovernanceActionRequest = z.infer<
 >;
 export type CourseProductAssetGovernanceActionResult = z.infer<
   typeof CourseProductAssetGovernanceActionResultSchema
+>;
+export type CourseProductAssetGovernanceHistoryQuery = z.infer<
+  typeof CourseProductAssetGovernanceHistoryQuerySchema
+>;
+export type CourseProductAssetGovernanceHistorySnapshot = z.infer<
+  typeof CourseProductAssetGovernanceHistorySnapshotSchema
+>;
+export type CourseProductAssetGovernanceHistoryItem = z.infer<
+  typeof CourseProductAssetGovernanceHistoryItemSchema
+>;
+export type CourseProductAssetGovernanceHistoryResult = z.infer<
+  typeof CourseProductAssetGovernanceHistoryResultSchema
+>;
+export type CourseProductAssetGovernanceBatchDraftQuery = z.infer<
+  typeof CourseProductAssetGovernanceBatchDraftQuerySchema
+>;
+export type CourseProductAssetGovernanceBatchDraftAction = z.infer<
+  typeof CourseProductAssetGovernanceBatchDraftActionSchema
+>;
+export type CourseProductAssetGovernanceBatchDraftItem = z.infer<
+  typeof CourseProductAssetGovernanceBatchDraftItemSchema
+>;
+export type CourseProductAssetGovernanceBatchDraftResult = z.infer<
+  typeof CourseProductAssetGovernanceBatchDraftResultSchema
 >;
 export type CourseProductAssetUploadRequest = z.infer<
   typeof CourseProductAssetUploadRequestSchema

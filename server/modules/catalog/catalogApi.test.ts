@@ -13,6 +13,8 @@ import {
   applyCourseProductAssetGovernanceActionPayload,
   getCourseProductAdminListPayload,
   getCourseProductAssetBackfillPayload,
+  getCourseProductAssetGovernanceBatchDraftPayload,
+  getCourseProductAssetGovernanceHistoryPayload,
   getCourseProductAssetDownloadPayload,
   getCourseProductAssetGovernancePayload,
   getCourseProductAssetsPayload,
@@ -90,6 +92,7 @@ describe("catalog admin api payloads", () => {
       assetBackfillWrite: "catalog:review",
       assetGovernanceRead: "catalog:read",
       assetGovernanceManage: "catalog:review",
+      assetGovernanceBatchDraft: "catalog:review",
       basicInfoUpdate: "catalog:edit",
       contentUpdate: "catalog:edit",
       reviewUpdate: "catalog:review",
@@ -758,6 +761,125 @@ describe("catalog admin api payloads", () => {
         },
       },
     });
+  });
+
+  it("reads governance action history and protects batch draft preview", async () => {
+    const productStore = new InMemoryCourseProductStore([products[0]]);
+    await productStore.appendAuditEvent({
+      id: "audit_asset_governance_ack_pending",
+      productId: products[0].id,
+      productTitle: products[0].title,
+      actorId: "catalog_operator_1",
+      action: "asset_governance",
+      reason: "记录待审核素材处理计划",
+      before: {
+        assetId: "asset_pending_1",
+        productId: products[0].id,
+        title: "待审核素材",
+        kind: "worksheet",
+        governanceAction: "acknowledge_issue",
+        issueType: "pending_compliance",
+        actorRoles: ["catalog_operator"],
+      },
+      after: {
+        assetId: "asset_pending_1",
+        productId: products[0].id,
+        title: "待审核素材",
+        kind: "worksheet",
+        governanceAction: "acknowledge_issue",
+        issueType: "pending_compliance",
+        actorRoles: ["catalog_operator"],
+      },
+      createdAt: "2026-05-21T09:30:00.000Z",
+    });
+    const assetStore = new InMemoryCourseProductAssetStore([
+      {
+        id: "asset_pending_1",
+        productId: products[0].id,
+        kind: "worksheet",
+        title: "待审核素材",
+        fileName: "pending.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 16,
+        sourceType: "object_storage",
+        objectKey:
+          "course-assets/course_product_1/asset_pending_1/pending.pdf",
+        contentHash:
+          "sha256:8b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+        complianceStatus: "pending",
+        downloadEnabled: false,
+        uploadedBy: "operator_1",
+        uploadedAt: "2026-05-20T09:00:00.000Z",
+        updatedAt: "2026-05-20T09:00:00.000Z",
+      },
+    ]);
+    const contentStore = new InMemoryCourseProductContentStore([]);
+
+    const history = await getCourseProductAssetGovernanceHistoryPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      {
+        action: "acknowledge_issue",
+        issueType: "pending_compliance",
+      },
+      {
+        productStore,
+        now: "2026-05-21T10:00:00.000Z",
+      }
+    );
+    expect(history.status).toBe(200);
+    expect(history.body).toMatchObject({
+      ok: true,
+      data: {
+        summary: {
+          filteredEventCount: 1,
+        },
+        items: [
+          {
+            assetId: "asset_pending_1",
+            actorId: "catalog_operator_1",
+            action: "acknowledge_issue",
+          },
+        ],
+      },
+    });
+
+    const deniedDraft = await getCourseProductAssetGovernanceBatchDraftPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      { issueFilter: "pending_compliance" },
+      {
+        productStore,
+        contentStore,
+        assetStore,
+        now: "2026-05-21T10:00:00.000Z",
+      }
+    );
+    expect(deniedDraft.status).toBe(403);
+
+    const before = await assetStore.getAsset("asset_pending_1");
+    const draft = await getCourseProductAssetGovernanceBatchDraftPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      { issueFilter: "pending_compliance", previewSize: 5 },
+      {
+        productStore,
+        contentStore,
+        assetStore,
+        now: "2026-05-21T10:00:00.000Z",
+      }
+    );
+    const after = await assetStore.getAsset("asset_pending_1");
+
+    expect(draft.status).toBe(200);
+    expect(draft.body).toMatchObject({
+      ok: true,
+      data: {
+        previewOnly: true,
+        willModifyAssetStore: false,
+        summary: {
+          candidateAssetCount: 1,
+        },
+      },
+    });
+    expect(after).toEqual(before);
   });
 
   it("requires review permission before committing course asset backfill writes", async () => {

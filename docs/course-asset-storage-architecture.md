@@ -76,6 +76,14 @@
 - 每次治理动作写入课程商品审计事件 `asset_governance`，记录 actor、assetId、productId、治理动作、问题类型、引用数量、重复素材 ID、before/after 摘要、原因和时间。
 - `/admin/courses` 治理面板已开放单行处理入口；批量删除、自动合并引用、物理对象清理和跨课程素材复用仍后置。
 
+## 治理历史与批量草稿
+
+`server/modules/catalog/courseProductAssetGovernanceHistory.ts` 已补充治理动作历史和批量处理草稿预览：
+
+- `GET /api/catalog/admin/course-products/assets/governance/history` 由 `catalog:read` 权限控制，只从课程商品审计事件中过滤 `asset_governance`，支持按素材 ID、商品 ID、治理动作、问题类型、操作者和日期范围筛选；返回审计摘要，不读取原始文件，不暴露对象签名 URL。
+- `GET /api/catalog/admin/course-products/assets/governance/batch-draft` 由 `catalog:review` 权限控制，按当前治理问题筛选生成候选素材数、问题类型分布、拟处理动作分布和安全提示；第一版仅预览，不修改素材 Store、不写审计、不合并引用、不软删和不物理删除。
+- `/admin/courses` 素材治理面板已展示最近治理动作、历史筛选和批量处理草稿摘要，帮助运营在进入真实批量任务前确认风险边界。
+
 ## 后续切片
 
 - `CUX-I-B-B-D`：已实现 `PostgresCourseProductAssetStore`，让素材列表、上传登记、合规审核和后台下载可显式切换 PostgreSQL；已实现素材回填 dry-run service，可扫描 JSON Store 与章节素材占位并输出扫描数、可回填素材数、引用数、跳过数和原因。
@@ -83,4 +91,5 @@
 - `CUX-I-B-B-F`：已接入对象存储 provider 配置解析、local/s3/oss/cos 边界、远端公开域名短期 HMAC 签名 URL、上传/读取路径 object storage adapter 化和 provider 级测试。真实云 SDK、STS 临时凭证和 CDN 回源策略仍属于上线前集成任务。
 - `CUX-I-B-B-G`：已完成素材治理共享契约、只读 service、后台 API 和前端 repository 基础，覆盖未引用素材、重复内容 hash、待审/驳回素材、下载关闭资料、软删候选和引用数量。
 - `CUX-I-B-B-H`：在 `/admin/courses` 接入素材治理面板，展示治理摘要、问题筛选、引用来源提示和素材详情跳转；继续保持只读，不引入批量删除。
-- `CUX-I-B-B-I`：已接入单素材治理受控动作、`asset_governance` 审计、软删除读取边界和后台单行处理入口；后续可继续补治理动作历史筛选、批量处理草稿和真实对象清理审批流。
+- `CUX-I-B-B-I`：已接入单素材治理受控动作、`asset_governance` 审计、软删除读取边界和后台单行处理入口；后续可继续补真实对象清理审批流。
+- `CUX-I-B-B-J`：已接入治理动作历史筛选、批量处理草稿预览、后台历史/草稿展示和只读安全边界；真实批量写入、自动合并引用、对象物理删除和异步任务队列继续后置。

@@ -2,6 +2,8 @@ import {
   ApiResponseSchema,
   CourseProductAssetBackfillMutationResultSchema,
   CourseProductAssetGovernanceActionResultSchema,
+  CourseProductAssetGovernanceBatchDraftResultSchema,
+  CourseProductAssetGovernanceHistoryResultSchema,
   CourseProductAssetGovernanceResultSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetMutationResultSchema,
@@ -18,6 +20,10 @@ import {
   type CourseProductAssetFileUploadRequest,
   type CourseProductAssetGovernanceActionRequest,
   type CourseProductAssetGovernanceActionResult,
+  type CourseProductAssetGovernanceBatchDraftQuery,
+  type CourseProductAssetGovernanceBatchDraftResult,
+  type CourseProductAssetGovernanceHistoryQuery,
+  type CourseProductAssetGovernanceHistoryResult,
   type CourseProductAssetGovernanceResult,
   type CourseProductAssetListResult,
   type CourseProductAssetMutationResult,
@@ -62,6 +68,12 @@ const CourseProductAssetGovernanceResponseSchema = ApiResponseSchema(
 );
 const CourseProductAssetGovernanceActionResponseSchema = ApiResponseSchema(
   CourseProductAssetGovernanceActionResultSchema
+);
+const CourseProductAssetGovernanceHistoryResponseSchema = ApiResponseSchema(
+  CourseProductAssetGovernanceHistoryResultSchema
+);
+const CourseProductAssetGovernanceBatchDraftResponseSchema = ApiResponseSchema(
+  CourseProductAssetGovernanceBatchDraftResultSchema
 );
 
 const API_BASE = "/api/catalog/admin";
@@ -154,6 +166,24 @@ export function parseCourseProductAssetGovernanceActionResponse(
   return parsed.data;
 }
 
+export function parseCourseProductAssetGovernanceHistoryResponse(
+  payload: unknown
+): CourseProductAssetGovernanceHistoryResult {
+  const parsed =
+    CourseProductAssetGovernanceHistoryResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCourseProductAssetGovernanceBatchDraftResponse(
+  payload: unknown
+): CourseProductAssetGovernanceBatchDraftResult {
+  const parsed =
+    CourseProductAssetGovernanceBatchDraftResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = CourseProductListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -215,12 +245,28 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     return assetGovernanceActionParsed.data.error.message;
   }
 
+  const assetGovernanceHistoryParsed =
+    CourseProductAssetGovernanceHistoryResponseSchema.safeParse(payload);
+  if (
+    assetGovernanceHistoryParsed.success &&
+    !assetGovernanceHistoryParsed.data.ok
+  ) {
+    return assetGovernanceHistoryParsed.data.error.message;
+  }
+
+  const assetGovernanceBatchDraftParsed =
+    CourseProductAssetGovernanceBatchDraftResponseSchema.safeParse(payload);
+  if (
+    assetGovernanceBatchDraftParsed.success &&
+    !assetGovernanceBatchDraftParsed.data.ok
+  ) {
+    return assetGovernanceBatchDraftParsed.data.error.message;
+  }
+
   return fallback;
 }
 
-function queryStringFromCourseProductQuery(
-  query: Partial<CourseProductListQuery>
-) {
+function queryStringFromRecord(query: Record<string, unknown>) {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
@@ -235,7 +281,7 @@ export const httpCourseProductRepository = {
     query: Partial<CourseProductListQuery> = {}
   ): Promise<CourseProductListResult> {
     const response = await fetch(
-      `${API_BASE}/course-products${queryStringFromCourseProductQuery(query)}`,
+      `${API_BASE}/course-products${queryStringFromRecord(query)}`,
       {
         headers: {
           Accept: "application/json",
@@ -411,6 +457,50 @@ export const httpCourseProductRepository = {
       throw new Error(extractErrorMessage(payload, "课程素材治理读取失败"));
     }
     return parseCourseProductAssetGovernanceResponse(payload);
+  },
+
+  async loadCourseProductAssetGovernanceHistory(
+    query: Partial<CourseProductAssetGovernanceHistoryQuery> = {}
+  ): Promise<CourseProductAssetGovernanceHistoryResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/governance/history${queryStringFromRecord(query)}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程素材治理历史读取失败")
+      );
+    }
+    return parseCourseProductAssetGovernanceHistoryResponse(payload);
+  },
+
+  async loadCourseProductAssetGovernanceBatchDraft(
+    query: Partial<CourseProductAssetGovernanceBatchDraftQuery> = {}
+  ): Promise<CourseProductAssetGovernanceBatchDraftResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/governance/batch-draft${queryStringFromRecord(query)}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程素材批量治理草稿读取失败")
+      );
+    }
+    return parseCourseProductAssetGovernanceBatchDraftResponse(payload);
   },
 
   async runCourseProductAssetBackfill(

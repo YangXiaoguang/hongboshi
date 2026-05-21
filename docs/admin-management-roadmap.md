@@ -124,6 +124,7 @@
 - M2-P 已完成：课程素材对象存储 provider 配置解析、local/s3/oss/cos provider 边界、短期签名 URL、上传和受控读取路径 object storage adapter 化。
 - M2-Q 已完成：课程素材治理共享契约、只读 service、`GET /api/catalog/admin/course-products/assets/governance` 和前端 repository 基础，支持未引用、重复 hash、待审/驳回、下载关闭、软删候选和引用来源识别。
 - M2-R 已完成：`/admin/courses` 素材治理面板接入单素材受控动作，支持记录处理、标记重复主素材和软删除确认，服务端写入 `asset_governance` 审计事件并禁止物理删除。
+- M2-S 已完成：素材治理历史筛选和批量处理草稿预览已接入 `/admin/courses`，历史只读取 `asset_governance` 审计摘要，批量草稿只显示候选数量、分布和安全提示，不执行批量写入。
 
 ## M3: 用户与会员管理
 

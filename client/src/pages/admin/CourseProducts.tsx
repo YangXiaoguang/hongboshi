@@ -30,6 +30,8 @@ import {
   ALL_COURSE_PRODUCT_STATUS,
   COURSE_CATEGORIES,
   COURSE_PRODUCT_ASSET_KINDS,
+  COURSE_PRODUCT_ASSET_GOVERNANCE_ACTIONS,
+  COURSE_PRODUCT_ASSET_GOVERNANCE_ISSUE_TYPES,
   COURSE_PRODUCT_PAGE_SIZE,
   COURSE_PRODUCT_CONTENT_ASSET_REVIEW_STATUSES,
   COURSE_PRODUCT_CONTENT_MATERIAL_STATUSES,
@@ -41,6 +43,10 @@ import {
   type CourseCategory,
   type CourseProductAsset,
   type CourseProductAssetGovernanceAction,
+  type CourseProductAssetGovernanceBatchDraftResult,
+  type CourseProductAssetGovernanceBatchIssueFilter,
+  type CourseProductAssetGovernanceHistoryQuery,
+  type CourseProductAssetGovernanceHistoryResult,
   type CourseProductAssetGovernanceIssueType,
   type CourseProductAssetGovernanceItem,
   type CourseProductAssetGovernanceReferenceSource,
@@ -154,6 +160,15 @@ type AssetGovernanceFilter =
   | "all"
   | "compliance_status"
   | CourseProductAssetGovernanceIssueType;
+type AssetGovernanceHistoryFilterState = {
+  assetId: string;
+  productId: string;
+  actorId: string;
+  action: "all" | CourseProductAssetGovernanceAction;
+  issueType: "all" | CourseProductAssetGovernanceIssueType;
+  dateFrom: string;
+  dateTo: string;
+};
 type AssetGovernanceActionState = {
   item: CourseProductAssetGovernanceItem;
   action: CourseProductAssetGovernanceAction;
@@ -274,6 +289,43 @@ const assetGovernanceFilters: {
   { value: "missing_product", label: "缺失商品" },
   { value: "soft_delete_candidate", label: "软删候选" },
 ];
+
+const defaultAssetGovernanceHistoryFilters: AssetGovernanceHistoryFilterState = {
+  assetId: "",
+  productId: "",
+  actorId: "",
+  action: "all",
+  issueType: "all",
+  dateFrom: "",
+  dateTo: "",
+};
+
+export function assetGovernanceBatchIssueFilterFromPanelFilter(
+  filter: AssetGovernanceFilter
+): CourseProductAssetGovernanceBatchIssueFilter {
+  return filter;
+}
+
+export function assetGovernanceHistoryQueryFromFilters(
+  filters: AssetGovernanceHistoryFilterState
+): Partial<CourseProductAssetGovernanceHistoryQuery> {
+  return {
+    assetId: filters.assetId.trim() || undefined,
+    productId: filters.productId.trim() || undefined,
+    actorId: filters.actorId.trim() || undefined,
+    action: filters.action === "all" ? undefined : filters.action,
+    issueType: filters.issueType === "all" ? undefined : filters.issueType,
+    dateFrom: dateInputToDateTime(filters.dateFrom, false),
+    dateTo: dateInputToDateTime(filters.dateTo, true),
+    page: 1,
+    pageSize: 5,
+  };
+}
+
+function dateInputToDateTime(value: string, endOfDay: boolean) {
+  if (!value) return undefined;
+  return `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}+08:00`;
+}
 
 function formatMoney(item: CourseProductListItem) {
   if (item.price.isFree) return "免费";
@@ -893,20 +945,32 @@ function AuditTrail({ events }: { events: CourseProductAuditEvent[] }) {
 
 function CourseProductAssetGovernancePanel({
   governance,
+  history,
+  batchDraft,
   filter,
+  historyFilters,
   canEdit,
   canReview,
   mutatingAssetId,
   onFilterChange,
+  onHistoryFiltersChange,
+  onRefreshGovernanceData,
   onLocateAsset,
   onOpenGovernanceAction,
 }: {
   governance?: CourseProductAssetGovernanceResult;
+  history?: CourseProductAssetGovernanceHistoryResult;
+  batchDraft?: CourseProductAssetGovernanceBatchDraftResult;
   filter: AssetGovernanceFilter;
+  historyFilters: AssetGovernanceHistoryFilterState;
   canEdit: boolean;
   canReview: boolean;
   mutatingAssetId?: string;
   onFilterChange: (filter: AssetGovernanceFilter) => void;
+  onHistoryFiltersChange: (
+    patch: Partial<AssetGovernanceHistoryFilterState>
+  ) => void;
+  onRefreshGovernanceData: () => void;
   onLocateAsset: (item: CourseProductAssetGovernanceItem) => void;
   onOpenGovernanceAction: (action: AssetGovernanceActionState) => void;
 }) {
@@ -985,6 +1049,200 @@ function CourseProductAssetGovernancePanel({
             {option.label}
           </button>
         ))}
+      </div>
+
+      <div className="grid border-b border-[#E8DED0] bg-[#FFFDF8] lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.88fr)]">
+        <div className="border-b border-[#E8DED0] px-5 py-4 lg:border-b-0 lg:border-r">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[#243B35]">
+                批量处理草稿预览
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                按当前问题筛选生成候选摘要，只预览不写入。
+              </p>
+            </div>
+            <span className="inline-flex h-7 items-center rounded-full bg-[#F1E8DC] px-2.5 text-xs font-semibold text-[#756B60]">
+              {canReview ? "审核权限可见" : "需审核权限"}
+            </span>
+          </div>
+          {canReview && batchDraft ? (
+            <>
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  ["候选素材", batchDraft.summary.candidateAssetCount],
+                  ["预览行", batchDraft.summary.previewItemCount],
+                  ["可记录动作", batchDraft.summary.eligibleActionCount],
+                  ["需人工复核", batchDraft.summary.manualReviewAssetCount],
+                ].map(([label, value]) => (
+                  <div key={label} className="border-r border-[#E8DED0] pr-3">
+                    <p className="text-xs text-[#8A8176]">{label}</p>
+                    <p className="mt-1 text-lg font-semibold text-[#243B35]">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {batchDraft.summary.issueTypeDistribution.slice(0, 6).map(item => (
+                  <span
+                    key={item.key}
+                    className="inline-flex h-7 items-center rounded-full bg-[#EEF6ED] px-2.5 text-xs font-semibold text-[#41675A]"
+                  >
+                    {item.label} {item.count}
+                  </span>
+                ))}
+                {!batchDraft.summary.issueTypeDistribution.length && (
+                  <span className="text-xs text-[#8A8176]">
+                    当前筛选没有待处理候选。
+                  </span>
+                )}
+              </div>
+              <ul className="mt-3 space-y-1 text-xs leading-5 text-[#8A8176]">
+                {batchDraft.safetyNotes.slice(0, 3).map(note => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-[#8A8176]">
+              批量草稿涉及后续处理动作，当前账号仅可查看治理摘要与历史。
+            </p>
+          )}
+        </div>
+
+        <div className="px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[#243B35]">
+                治理动作历史
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                只读取审计摘要，不暴露对象文件或签名 URL。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onRefreshGovernanceData}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+            >
+              <History className="h-3.5 w-3.5" />
+              筛选历史
+            </button>
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <input
+              value={historyFilters.assetId}
+              onChange={event =>
+                onHistoryFiltersChange({ assetId: event.target.value })
+              }
+              placeholder="素材 ID"
+              className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-xs outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+            />
+            <input
+              value={historyFilters.productId}
+              onChange={event =>
+                onHistoryFiltersChange({ productId: event.target.value })
+              }
+              placeholder="商品 ID"
+              className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-xs outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+            />
+            <input
+              value={historyFilters.actorId}
+              onChange={event =>
+                onHistoryFiltersChange({ actorId: event.target.value })
+              }
+              placeholder="操作者 ID"
+              className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-xs outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+            />
+            <select
+              value={historyFilters.action}
+              onChange={event =>
+                onHistoryFiltersChange({
+                  action: event.target
+                    .value as AssetGovernanceHistoryFilterState["action"],
+                })
+              }
+              className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-xs text-[#41524B] outline-none transition focus:border-[#6F8F83]"
+            >
+              <option value="all">全部动作</option>
+              {COURSE_PRODUCT_ASSET_GOVERNANCE_ACTIONS.map(action => (
+                <option key={action} value={action}>
+                  {assetGovernanceActionCopy[action]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={historyFilters.issueType}
+              onChange={event =>
+                onHistoryFiltersChange({
+                  issueType: event.target
+                    .value as AssetGovernanceHistoryFilterState["issueType"],
+                })
+              }
+              className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-3 text-xs text-[#41524B] outline-none transition focus:border-[#6F8F83]"
+            >
+              <option value="all">全部问题</option>
+              {COURSE_PRODUCT_ASSET_GOVERNANCE_ISSUE_TYPES.map(issueType => (
+                <option key={issueType} value={issueType}>
+                  {assetGovernanceIssueCopy[issueType]}
+                </option>
+              ))}
+            </select>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="date"
+                value={historyFilters.dateFrom}
+                onChange={event =>
+                  onHistoryFiltersChange({ dateFrom: event.target.value })
+                }
+                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none transition focus:border-[#6F8F83]"
+              />
+              <input
+                type="date"
+                value={historyFilters.dateTo}
+                onChange={event =>
+                  onHistoryFiltersChange({ dateTo: event.target.value })
+                }
+                className="h-9 rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none transition focus:border-[#6F8F83]"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {history?.items.length ? (
+              history.items.map(item => (
+                <div
+                  key={item.id}
+                  className="border-t border-[#E8DED0] pt-2 text-xs leading-5"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-[#243B35]">
+                      {assetGovernanceActionCopy[item.action]}
+                    </span>
+                    <span className="text-[#A65F48]">
+                      {assetGovernanceIssueCopy[item.issueType]}
+                    </span>
+                    <span className="text-[#8A8176]">
+                      {formatDate(item.createdAt)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[#5F6B64]">
+                    {item.assetTitle ?? item.assetId} · 操作者 {item.actorId}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[#8A8176]">
+                    {item.reason}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p className="border-t border-[#E8DED0] pt-3 text-sm text-[#8A8176]">
+                {history ? "当前筛选下暂无治理动作历史" : "治理历史待读取"}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
       {visibleItems.length ? (
@@ -1365,8 +1623,16 @@ export default function CourseProducts() {
   const [data, setData] = useState<CourseProductListResult>();
   const [assetGovernance, setAssetGovernance] =
     useState<CourseProductAssetGovernanceResult>();
+  const [assetGovernanceHistory, setAssetGovernanceHistory] =
+    useState<CourseProductAssetGovernanceHistoryResult>();
+  const [assetGovernanceBatchDraft, setAssetGovernanceBatchDraft] =
+    useState<CourseProductAssetGovernanceBatchDraftResult>();
   const [assetGovernanceFilter, setAssetGovernanceFilter] =
     useState<AssetGovernanceFilter>("all");
+  const [assetGovernanceHistoryFilters, setAssetGovernanceHistoryFilters] =
+    useState<AssetGovernanceHistoryFilterState>(
+      defaultAssetGovernanceHistoryFilters
+    );
   const [contentQualityByProductId, setContentQualityByProductId] = useState<
     Record<string, CourseProductContentQualityResult>
   >({});
@@ -1440,13 +1706,30 @@ export default function CourseProducts() {
     setIsLoading(true);
     setError(undefined);
     try {
-      const [products, contentQuality, governance] = await Promise.all([
+      const [products, contentQuality, governance, history, batchDraft] =
+        await Promise.all([
         httpCourseProductRepository.loadCourseProducts(query),
         httpCourseProductRepository.loadCourseProductContentQuality(),
         httpCourseProductRepository.loadCourseProductAssetGovernance(),
+        httpCourseProductRepository.loadCourseProductAssetGovernanceHistory(
+          assetGovernanceHistoryQueryFromFilters(assetGovernanceHistoryFilters)
+        ),
+        catalogPermissions.canReview
+          ? httpCourseProductRepository.loadCourseProductAssetGovernanceBatchDraft(
+              {
+                issueFilter:
+                  assetGovernanceBatchIssueFilterFromPanelFilter(
+                    assetGovernanceFilter
+                  ),
+                previewSize: 8,
+              }
+            )
+          : Promise.resolve(undefined),
       ]);
       setData(products);
       setAssetGovernance(governance);
+      setAssetGovernanceHistory(history);
+      setAssetGovernanceBatchDraft(batchDraft);
       setContentQualityByProductId(
         Object.fromEntries(
           contentQuality.items.map(item => [item.productId, item.quality])
@@ -1457,7 +1740,12 @@ export default function CourseProducts() {
     } finally {
       setIsLoading(false);
     }
-  }, [query]);
+  }, [
+    assetGovernanceFilter,
+    assetGovernanceHistoryFilters,
+    catalogPermissions.canReview,
+    query,
+  ]);
 
   useEffect(() => {
     if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) return;
@@ -2143,6 +2431,16 @@ export default function CourseProducts() {
     [catalogPermissions.canEdit, items, openContentEditor]
   );
 
+  const updateAssetGovernanceHistoryFilters = useCallback(
+    (patch: Partial<AssetGovernanceHistoryFilterState>) => {
+      setAssetGovernanceHistoryFilters(current => ({
+        ...current,
+        ...patch,
+      }));
+    },
+    []
+  );
+
   const openGovernanceAction = useCallback(
     (action: AssetGovernanceActionState) => {
       if (!catalogPermissions.canReview) {
@@ -2316,11 +2614,16 @@ export default function CourseProducts() {
 
       <CourseProductAssetGovernancePanel
         governance={assetGovernance}
+        history={assetGovernanceHistory}
+        batchDraft={assetGovernanceBatchDraft}
         filter={assetGovernanceFilter}
+        historyFilters={assetGovernanceHistoryFilters}
         canEdit={catalogPermissions.canEdit}
         canReview={catalogPermissions.canReview}
         mutatingAssetId={mutatingAssetId}
         onFilterChange={setAssetGovernanceFilter}
+        onHistoryFiltersChange={updateAssetGovernanceHistoryFilters}
+        onRefreshGovernanceData={() => void loadProducts()}
         onLocateAsset={locateGovernanceAsset}
         onOpenGovernanceAction={openGovernanceAction}
       />

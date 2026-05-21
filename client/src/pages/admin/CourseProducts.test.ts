@@ -4,6 +4,8 @@ import type {
   CourseProductAssetGovernanceItem,
 } from "@shared/domain";
 import {
+  assetGovernanceBatchIssueFilterFromPanelFilter,
+  assetGovernanceHistoryQueryFromFilters,
   courseProductAssetGovernanceSuggestion,
   filterCourseProductAssetGovernanceItems,
 } from "./CourseProducts";
@@ -121,5 +123,36 @@ describe("course product asset governance panel helpers", () => {
         })
       )
     ).toContain("不触发物理删除");
+  });
+
+  it("maps panel filters to server-side history and batch draft queries", () => {
+    expect(
+      assetGovernanceBatchIssueFilterFromPanelFilter("compliance_status")
+    ).toBe("compliance_status");
+    expect(
+      assetGovernanceBatchIssueFilterFromPanelFilter("soft_delete_candidate")
+    ).toBe("soft_delete_candidate");
+
+    expect(
+      assetGovernanceHistoryQueryFromFilters({
+        assetId: " asset_1 ",
+        productId: "course_product_1",
+        actorId: "operator_1",
+        action: "mark_soft_deleted",
+        issueType: "soft_delete_candidate",
+        dateFrom: "2026-05-20",
+        dateTo: "2026-05-21",
+      })
+    ).toEqual({
+      assetId: "asset_1",
+      productId: "course_product_1",
+      actorId: "operator_1",
+      action: "mark_soft_deleted",
+      issueType: "soft_delete_candidate",
+      dateFrom: "2026-05-20T00:00:00.000+08:00",
+      dateTo: "2026-05-21T23:59:59.999+08:00",
+      page: 1,
+      pageSize: 5,
+    });
   });
 });

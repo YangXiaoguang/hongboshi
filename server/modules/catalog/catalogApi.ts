@@ -11,6 +11,10 @@ import {
   CourseProductAssetFileUploadRequestSchema,
   CourseProductAssetGovernanceActionRequestSchema,
   CourseProductAssetGovernanceActionResultSchema,
+  CourseProductAssetGovernanceBatchDraftQuerySchema,
+  CourseProductAssetGovernanceBatchDraftResultSchema,
+  CourseProductAssetGovernanceHistoryQuerySchema,
+  CourseProductAssetGovernanceHistoryResultSchema,
   CourseProductAssetGovernanceResultSchema,
   CourseProductAssetListResultSchema,
   CourseProductAssetMutationResultSchema,
@@ -66,6 +70,10 @@ import {
 } from "./courseProductAssetBackfill";
 import { getCourseProductAssetGovernance } from "./courseProductAssetGovernance";
 import { applyCourseProductAssetGovernanceAction } from "./courseProductAssetGovernanceAction";
+import {
+  listCourseProductAssetGovernanceHistory,
+  previewCourseProductAssetGovernanceBatchDraft,
+} from "./courseProductAssetGovernanceHistory";
 
 const CourseProductAdminListResponseSchema = ApiResponseSchema(
   CourseProductListResultSchema
@@ -97,6 +105,12 @@ const CourseProductAssetGovernanceResponseSchema = ApiResponseSchema(
 const CourseProductAssetGovernanceActionResponseSchema = ApiResponseSchema(
   CourseProductAssetGovernanceActionResultSchema
 );
+const CourseProductAssetGovernanceHistoryResponseSchema = ApiResponseSchema(
+  CourseProductAssetGovernanceHistoryResultSchema
+);
+const CourseProductAssetGovernanceBatchDraftResponseSchema = ApiResponseSchema(
+  CourseProductAssetGovernanceBatchDraftResultSchema
+);
 
 type CatalogApiErrorCode =
   | "BAD_REQUEST"
@@ -116,7 +130,9 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductAssetMutationResponseSchema>
   | z.infer<typeof CourseProductAssetBackfillResponseSchema>
   | z.infer<typeof CourseProductAssetGovernanceResponseSchema>
-  | z.infer<typeof CourseProductAssetGovernanceActionResponseSchema>;
+  | z.infer<typeof CourseProductAssetGovernanceActionResponseSchema>
+  | z.infer<typeof CourseProductAssetGovernanceHistoryResponseSchema>
+  | z.infer<typeof CourseProductAssetGovernanceBatchDraftResponseSchema>;
 type CatalogApiPayload = {
   status: number;
   body: CatalogApiBody;
@@ -147,6 +163,7 @@ export const catalogOperationPermissions = {
   assetBackfillWrite: COURSE_CATALOG_PERMISSIONS.review,
   assetGovernanceRead: COURSE_CATALOG_PERMISSIONS.read,
   assetGovernanceManage: COURSE_CATALOG_PERMISSIONS.review,
+  assetGovernanceBatchDraft: COURSE_CATALOG_PERMISSIONS.review,
   basicInfoUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   contentUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   reviewUpdate: COURSE_CATALOG_PERMISSIONS.review,
@@ -557,6 +574,101 @@ export async function getCourseProductAssetGovernancePayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程素材治理读取失败");
+  }
+}
+
+export async function getCourseProductAssetGovernanceHistoryPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  rawQuery: Record<string, unknown> = {},
+  {
+    productStore = getCourseProductStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetGovernanceRead
+  );
+  if (denied) return denied;
+
+  const parsed = CourseProductAssetGovernanceHistoryQuerySchema.safeParse(
+    rawQuery
+  );
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程素材治理历史查询参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetGovernanceHistoryResponseSchema.parse({
+        ok: true,
+        data: await listCourseProductAssetGovernanceHistory({
+          query: parsed.data,
+          productStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材治理历史读取失败");
+  }
+}
+
+export async function getCourseProductAssetGovernanceBatchDraftPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  rawQuery: Record<string, unknown> = {},
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    assetStore = getCourseProductAssetStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    assetStore?: CourseProductAssetStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetGovernanceBatchDraft
+  );
+  if (denied) return denied;
+
+  const parsed = CourseProductAssetGovernanceBatchDraftQuerySchema.safeParse(
+    rawQuery
+  );
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程素材批量治理草稿参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetGovernanceBatchDraftResponseSchema.parse({
+        ok: true,
+        data: await previewCourseProductAssetGovernanceBatchDraft({
+          query: parsed.data,
+          requestedBy: actor!.id,
+          productStore,
+          contentStore,
+          assetStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材批量治理草稿读取失败");
   }
 }
 
@@ -1092,6 +1204,47 @@ export function registerCatalogApi(app: Express) {
     }
   );
 
+  app.get(
+    "/api/catalog/admin/course-products/assets/governance/history",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await getCourseProductAssetGovernanceHistoryPayload(
+          session?.user,
+          queryFromExpress(req)
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材治理历史读取失败")
+        );
+      }
+    }
+  );
+
+  app.get(
+    "/api/catalog/admin/course-products/assets/governance/batch-draft",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await getCourseProductAssetGovernanceBatchDraftPayload(
+            session?.user,
+            queryFromExpress(req)
+          );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理草稿读取失败")
+        );
+      }
+    }
+  );
+
   app.post(
     "/api/catalog/admin/course-products/assets/backfill",
     async (req, res) => {
@@ -1350,6 +1503,60 @@ export function handleCatalogApiRequest(
           res,
           500,
           errorPayload("INTERNAL_ERROR", "课程素材治理读取失败")
+        )
+      );
+    return true;
+  }
+
+  if (
+    url.pathname ===
+    "/api/catalog/admin/course-products/assets/governance/history"
+  ) {
+    if (req.method !== "GET") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+      return true;
+    }
+
+    void getLoginSessionFromRequest(req)
+      .then(session =>
+        getCourseProductAssetGovernanceHistoryPayload(
+          session?.user,
+          queryFromSearchParams(url.searchParams)
+        )
+      )
+      .then(payload => sendJson(res, payload.status, payload.body))
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材治理历史读取失败")
+        )
+      );
+    return true;
+  }
+
+  if (
+    url.pathname ===
+    "/api/catalog/admin/course-products/assets/governance/batch-draft"
+  ) {
+    if (req.method !== "GET") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+      return true;
+    }
+
+    void getLoginSessionFromRequest(req)
+      .then(session =>
+        getCourseProductAssetGovernanceBatchDraftPayload(
+          session?.user,
+          queryFromSearchParams(url.searchParams)
+        )
+      )
+      .then(payload => sendJson(res, payload.status, payload.body))
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理草稿读取失败")
         )
       );
     return true;
@@ -1953,6 +2160,15 @@ function queryFromRecord(record: Record<string, unknown>) {
     sort: stringValue(record.sort),
     page: numberValue(record.page),
     pageSize: numberValue(record.pageSize),
+    assetId: stringValue(record.assetId),
+    productId: stringValue(record.productId),
+    action: stringValue(record.action),
+    issueType: stringValue(record.issueType),
+    issueFilter: stringValue(record.issueFilter),
+    actorId: stringValue(record.actorId),
+    dateFrom: stringValue(record.dateFrom),
+    dateTo: stringValue(record.dateTo),
+    previewSize: numberValue(record.previewSize),
   };
 }
 
