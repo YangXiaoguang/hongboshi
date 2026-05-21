@@ -13,6 +13,11 @@ import {
   CourseProductAssetGovernanceActionResultSchema,
   CourseProductAssetGovernanceBatchDraftQuerySchema,
   CourseProductAssetGovernanceBatchDraftResultSchema,
+  CourseProductAssetGovernanceBatchTaskCancelRequestSchema,
+  CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
+  CourseProductAssetGovernanceBatchTaskListQuerySchema,
+  CourseProductAssetGovernanceBatchTaskListResultSchema,
+  CourseProductAssetGovernanceBatchTaskMutationResultSchema,
   CourseProductAssetGovernanceHistoryQuerySchema,
   CourseProductAssetGovernanceHistoryResultSchema,
   CourseProductAssetGovernanceResultSchema,
@@ -74,6 +79,15 @@ import {
   listCourseProductAssetGovernanceHistory,
   previewCourseProductAssetGovernanceBatchDraft,
 } from "./courseProductAssetGovernanceHistory";
+import {
+  cancelCourseProductAssetGovernanceBatchTask,
+  createCourseProductAssetGovernanceBatchTask,
+  listCourseProductAssetGovernanceBatchTasks,
+} from "./courseProductAssetGovernanceBatchTask";
+import {
+  getCourseProductAssetGovernanceBatchTaskStore,
+  type CourseProductAssetGovernanceBatchTaskStore,
+} from "./courseProductAssetGovernanceBatchTaskStore";
 
 const CourseProductAdminListResponseSchema = ApiResponseSchema(
   CourseProductListResultSchema
@@ -111,6 +125,10 @@ const CourseProductAssetGovernanceHistoryResponseSchema = ApiResponseSchema(
 const CourseProductAssetGovernanceBatchDraftResponseSchema = ApiResponseSchema(
   CourseProductAssetGovernanceBatchDraftResultSchema
 );
+const CourseProductAssetGovernanceBatchTaskListResponseSchema =
+  ApiResponseSchema(CourseProductAssetGovernanceBatchTaskListResultSchema);
+const CourseProductAssetGovernanceBatchTaskMutationResponseSchema =
+  ApiResponseSchema(CourseProductAssetGovernanceBatchTaskMutationResultSchema);
 
 type CatalogApiErrorCode =
   | "BAD_REQUEST"
@@ -132,7 +150,9 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductAssetGovernanceResponseSchema>
   | z.infer<typeof CourseProductAssetGovernanceActionResponseSchema>
   | z.infer<typeof CourseProductAssetGovernanceHistoryResponseSchema>
-  | z.infer<typeof CourseProductAssetGovernanceBatchDraftResponseSchema>;
+  | z.infer<typeof CourseProductAssetGovernanceBatchDraftResponseSchema>
+  | z.infer<typeof CourseProductAssetGovernanceBatchTaskListResponseSchema>
+  | z.infer<typeof CourseProductAssetGovernanceBatchTaskMutationResponseSchema>;
 type CatalogApiPayload = {
   status: number;
   body: CatalogApiBody;
@@ -164,6 +184,8 @@ export const catalogOperationPermissions = {
   assetGovernanceRead: COURSE_CATALOG_PERMISSIONS.read,
   assetGovernanceManage: COURSE_CATALOG_PERMISSIONS.review,
   assetGovernanceBatchDraft: COURSE_CATALOG_PERMISSIONS.review,
+  assetGovernanceBatchTaskRead: COURSE_CATALOG_PERMISSIONS.review,
+  assetGovernanceBatchTaskManage: COURSE_CATALOG_PERMISSIONS.review,
   basicInfoUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   contentUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   reviewUpdate: COURSE_CATALOG_PERMISSIONS.review,
@@ -669,6 +691,150 @@ export async function getCourseProductAssetGovernanceBatchDraftPayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程素材批量治理草稿读取失败");
+  }
+}
+
+export async function getCourseProductAssetGovernanceBatchTasksPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  rawQuery: Record<string, unknown> = {},
+  {
+    taskStore = getCourseProductAssetGovernanceBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    taskStore?: CourseProductAssetGovernanceBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetGovernanceBatchTaskRead
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductAssetGovernanceBatchTaskListQuerySchema.safeParse(rawQuery);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程素材批量治理任务查询参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetGovernanceBatchTaskListResponseSchema.parse({
+        ok: true,
+        data: await listCourseProductAssetGovernanceBatchTasks({
+          query: parsed.data,
+          store: taskStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材批量治理任务读取失败");
+  }
+}
+
+export async function createCourseProductAssetGovernanceBatchTaskPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  body: unknown,
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    assetStore = getCourseProductAssetStore(),
+    taskStore = getCourseProductAssetGovernanceBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    assetStore?: CourseProductAssetStore;
+    taskStore?: CourseProductAssetGovernanceBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetGovernanceBatchTaskManage
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductAssetGovernanceBatchTaskCreateRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程素材批量治理任务参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetGovernanceBatchTaskMutationResponseSchema.parse({
+        ok: true,
+        data: await createCourseProductAssetGovernanceBatchTask({
+          request: parsed.data,
+          actorId: actor!.id,
+          actorRoles: actor!.roles,
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材批量治理任务创建失败");
+  }
+}
+
+export async function cancelCourseProductAssetGovernanceBatchTaskPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  taskId: string,
+  body: unknown,
+  {
+    taskStore = getCourseProductAssetGovernanceBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    taskStore?: CourseProductAssetGovernanceBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetGovernanceBatchTaskManage
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductAssetGovernanceBatchTaskCancelRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程素材批量治理任务取消参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetGovernanceBatchTaskMutationResponseSchema.parse({
+        ok: true,
+        data: await cancelCourseProductAssetGovernanceBatchTask({
+          taskId,
+          request: parsed.data,
+          actorId: actor!.id,
+          actorRoles: actor!.roles,
+          taskStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材批量治理任务取消失败");
   }
 }
 
@@ -1245,6 +1411,70 @@ export function registerCatalogApi(app: Express) {
     }
   );
 
+  app.get(
+    "/api/catalog/admin/course-products/assets/governance/batch-tasks",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await getCourseProductAssetGovernanceBatchTasksPayload(
+            session?.user,
+            queryFromExpress(req)
+          );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理任务读取失败")
+        );
+      }
+    }
+  );
+
+  app.post(
+    "/api/catalog/admin/course-products/assets/governance/batch-tasks",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await createCourseProductAssetGovernanceBatchTaskPayload(
+            session?.user,
+            req.body
+          );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理任务创建失败")
+        );
+      }
+    }
+  );
+
+  app.patch(
+    "/api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/cancel",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await cancelCourseProductAssetGovernanceBatchTaskPayload(
+            session?.user,
+            req.params.taskId,
+            req.body
+          );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理任务取消失败")
+        );
+      }
+    }
+  );
+
   app.post(
     "/api/catalog/admin/course-products/assets/backfill",
     async (req, res) => {
@@ -1557,6 +1787,88 @@ export function handleCatalogApiRequest(
           res,
           500,
           errorPayload("INTERNAL_ERROR", "课程素材批量治理草稿读取失败")
+        )
+      );
+    return true;
+  }
+
+  if (
+    url.pathname ===
+    "/api/catalog/admin/course-products/assets/governance/batch-tasks"
+  ) {
+    if (req.method !== "GET" && req.method !== "POST") {
+      sendJson(
+        res,
+        405,
+        errorPayload("BAD_REQUEST", "接口仅支持 GET/POST 请求")
+      );
+      return true;
+    }
+
+    if (req.method === "GET") {
+      void getLoginSessionFromRequest(req)
+        .then(session =>
+          getCourseProductAssetGovernanceBatchTasksPayload(
+            session?.user,
+            queryFromSearchParams(url.searchParams)
+          )
+        )
+        .then(payload => sendJson(res, payload.status, payload.body))
+        .catch(() =>
+          sendJson(
+            res,
+            500,
+            errorPayload("INTERNAL_ERROR", "课程素材批量治理任务读取失败")
+          )
+        );
+      return true;
+    }
+
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await createCourseProductAssetGovernanceBatchTaskPayload(
+            session?.user,
+            body
+          );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理任务创建失败")
+        )
+      );
+    return true;
+  }
+
+  const assetGovernanceBatchTaskCancelMatch = url.pathname.match(
+    /^\/api\/catalog\/admin\/course-products\/assets\/governance\/batch-tasks\/([^/]+)\/cancel$/
+  );
+  if (assetGovernanceBatchTaskCancelMatch?.[1]) {
+    if (req.method !== "PATCH") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 PATCH 请求"));
+      return true;
+    }
+
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await cancelCourseProductAssetGovernanceBatchTaskPayload(
+            session?.user,
+            decodeURIComponent(assetGovernanceBatchTaskCancelMatch[1]),
+            body
+          );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理任务取消失败")
         )
       );
     return true;
@@ -2040,6 +2352,56 @@ function courseProductActionFailure(
 
   if (
     err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_NOT_FOUND"
+  ) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "课程素材批量治理任务不存在"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EMPTY"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "当前筛选没有可保存的治理候选"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_DUPLICATE"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "当前筛选已存在待审批批量治理草案"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_NOT_CANCELABLE"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "当前治理草案不可取消"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_CANCEL_FORBIDDEN"
+  ) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "仅草案创建人或管理员可以取消"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
     (err.message === "COURSE_PRODUCT_ASSET_FILE_TOO_LARGE" ||
       err.message === "COURSE_PRODUCT_ASSET_SIZE_MISMATCH" ||
       err.message === "COURSE_PRODUCT_ASSET_FILE_INVALID")
@@ -2166,6 +2528,8 @@ function queryFromRecord(record: Record<string, unknown>) {
     issueType: stringValue(record.issueType),
     issueFilter: stringValue(record.issueFilter),
     actorId: stringValue(record.actorId),
+    approvalStatus: stringValue(record.approvalStatus),
+    createdBy: stringValue(record.createdBy),
     dateFrom: stringValue(record.dateFrom),
     dateTo: stringValue(record.dateTo),
     previewSize: numberValue(record.previewSize),

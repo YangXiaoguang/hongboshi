@@ -12,6 +12,9 @@ import {
   CourseProductAssetGovernanceActionResultSchema,
   CourseProductAssetGovernanceBatchDraftQuerySchema,
   CourseProductAssetGovernanceBatchDraftResultSchema,
+  CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
+  CourseProductAssetGovernanceBatchTaskListResultSchema,
+  CourseProductAssetGovernanceBatchTaskMutationResultSchema,
   CourseProductAssetGovernanceHistoryQuerySchema,
   CourseProductAssetGovernanceHistoryResultSchema,
   CourseProductAssetGovernanceResultSchema,
@@ -545,6 +548,80 @@ describe("course product domain contract", () => {
         safetyNotes: ["当前为批量处理草稿预览，不会修改素材元数据"],
       });
     expect(batchDraft.willModifyAssetStore).toBe(false);
+
+    const batchTaskCreate =
+      CourseProductAssetGovernanceBatchTaskCreateRequestSchema.parse({
+        action: "acknowledge_issue",
+        query: {
+          issueFilter: "compliance_status",
+          previewSize: 8,
+        },
+        reason: "统一记录待审核素材处理计划",
+        note: "进入审批前不执行素材写入",
+      });
+    expect(batchTaskCreate.action).toBe("acknowledge_issue");
+    expect(
+      CourseProductAssetGovernanceBatchTaskCreateRequestSchema.safeParse({
+        action: "mark_soft_deleted",
+        query: {
+          issueFilter: "soft_delete_candidate",
+          previewSize: 8,
+        },
+        reason: "尝试批量软删",
+      }).success
+    ).toBe(false);
+
+    const batchTask = {
+      id: "asset_governance_batch_task_1",
+      action: "acknowledge_issue" as const,
+      approvalStatus: "pending_approval" as const,
+      query: batchTaskCreate.query,
+      candidateAssetCount: 1,
+      previewItemCount: 1,
+      eligibleActionCount: 1,
+      manualReviewAssetCount: 0,
+      softDeleteCandidateCount: 0,
+      issueTypeDistribution: [
+        { key: "pending_compliance", label: "待审核", count: 1 },
+      ],
+      proposedActionDistribution: [
+        { key: "acknowledge_issue", label: "记录处理", count: 1 },
+      ],
+      safetyNotes: ["待审批任务不会修改素材 Store"],
+      createdBy: "operator_1",
+      createdByRoles: ["catalog_operator"],
+      reason: batchTaskCreate.reason,
+      note: batchTaskCreate.note,
+      createdAt: "2026-05-21T09:40:00.000Z",
+      updatedAt: "2026-05-21T09:40:00.000Z",
+    };
+    const batchTaskList =
+      CourseProductAssetGovernanceBatchTaskListResultSchema.parse({
+        generatedAt: "2026-05-21T09:41:00.000Z",
+        query: {
+          approvalStatus: "all",
+          page: 1,
+          pageSize: 5,
+        },
+        summary: {
+          totalTaskCount: 1,
+          pendingApprovalCount: 1,
+          canceledCount: 0,
+        },
+        items: [batchTask],
+        meta: {
+          page: 1,
+          pageSize: 5,
+          total: 1,
+          totalPages: 1,
+        },
+      });
+    const mutation =
+      CourseProductAssetGovernanceBatchTaskMutationResultSchema.parse({
+        task: batchTask,
+        tasks: batchTaskList,
+      });
+    expect(mutation.tasks.summary.pendingApprovalCount).toBe(1);
   });
 
   it("validates the first course detail content contract", () => {

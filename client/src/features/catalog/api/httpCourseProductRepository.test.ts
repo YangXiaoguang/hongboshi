@@ -4,6 +4,8 @@ import {
   parseCourseProductAssetBackfillResponse,
   parseCourseProductAssetGovernanceActionResponse,
   parseCourseProductAssetGovernanceBatchDraftResponse,
+  parseCourseProductAssetGovernanceBatchTaskListResponse,
+  parseCourseProductAssetGovernanceBatchTaskMutationResponse,
   parseCourseProductAssetGovernanceHistoryResponse,
   parseCourseProductAssetGovernanceResponse,
   parseCourseProductAssetListResponse,
@@ -12,6 +14,58 @@ import {
   parseCourseProductListResponse,
   parseCourseProductMutationResponse,
 } from "./httpCourseProductRepository";
+
+function batchTaskData() {
+  return {
+    id: "asset_governance_batch_task_1",
+    action: "acknowledge_issue",
+    approvalStatus: "pending_approval",
+    query: {
+      issueFilter: "pending_compliance",
+      previewSize: 5,
+    },
+    candidateAssetCount: 1,
+    previewItemCount: 1,
+    eligibleActionCount: 1,
+    manualReviewAssetCount: 0,
+    softDeleteCandidateCount: 0,
+    issueTypeDistribution: [
+      { key: "pending_compliance", label: "待审核", count: 1 },
+    ],
+    proposedActionDistribution: [
+      { key: "acknowledge_issue", label: "记录处理", count: 1 },
+    ],
+    safetyNotes: ["待审批任务不会修改素材 Store"],
+    createdBy: "operator_1",
+    createdByRoles: ["catalog_operator"],
+    reason: "统一记录待审核素材处理计划",
+    createdAt: "2026-05-21T10:00:00.000Z",
+    updatedAt: "2026-05-21T10:00:00.000Z",
+  };
+}
+
+function batchTaskListData() {
+  return {
+    generatedAt: "2026-05-21T10:01:00.000Z",
+    query: {
+      approvalStatus: "all",
+      page: 1,
+      pageSize: 5,
+    },
+    summary: {
+      totalTaskCount: 1,
+      pendingApprovalCount: 1,
+      canceledCount: 0,
+    },
+    items: [batchTaskData()],
+    meta: {
+      page: 1,
+      pageSize: 5,
+      total: 1,
+      totalPages: 1,
+    },
+  };
+}
 
 describe("http course product repository parsing", () => {
   afterEach(() => {
@@ -422,6 +476,24 @@ describe("http course product repository parsing", () => {
 
     expect(parsed.previewOnly).toBe(true);
     expect(parsed.willModifyAssetStore).toBe(false);
+  });
+
+  it("parses course product asset governance batch task responses", () => {
+    const list = parseCourseProductAssetGovernanceBatchTaskListResponse({
+      ok: true,
+      data: batchTaskListData(),
+    });
+    const mutation =
+      parseCourseProductAssetGovernanceBatchTaskMutationResponse({
+        ok: true,
+        data: {
+          task: batchTaskData(),
+          tasks: batchTaskListData(),
+        },
+      });
+
+    expect(list.summary.pendingApprovalCount).toBe(1);
+    expect(mutation.task.approvalStatus).toBe("pending_approval");
   });
 
   it("parses course product mutation responses", () => {
@@ -925,6 +997,112 @@ describe("http course product repository parsing", () => {
       "/api/catalog/admin/course-products/assets/governance/batch-draft?issueFilter=soft_delete_candidate&previewSize=8",
       expect.objectContaining({
         credentials: "same-origin",
+      })
+    );
+  });
+
+  it("loads course product asset governance batch tasks", async () => {
+    const responsePayload = {
+      ok: true,
+      data: batchTaskListData(),
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.loadCourseProductAssetGovernanceBatchTasks(
+        {
+          approvalStatus: "pending_approval",
+          pageSize: 5,
+        }
+      );
+
+    expect(result.items[0]?.id).toBe("asset_governance_batch_task_1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/batch-tasks?approvalStatus=pending_approval&pageSize=5",
+      expect.objectContaining({
+        credentials: "same-origin",
+      })
+    );
+  });
+
+  it("creates course product asset governance batch task drafts", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        task: batchTaskData(),
+        tasks: batchTaskListData(),
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.createCourseProductAssetGovernanceBatchTask(
+        {
+          action: "acknowledge_issue",
+          query: {
+            issueFilter: "pending_compliance",
+            previewSize: 5,
+          },
+          reason: "统一记录待审核素材处理计划",
+        }
+      );
+
+    expect(result.task.candidateAssetCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/batch-tasks",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("acknowledge_issue"),
+      })
+    );
+  });
+
+  it("cancels course product asset governance batch task drafts", async () => {
+    const canceledTask = {
+      ...batchTaskData(),
+      approvalStatus: "canceled",
+      canceledBy: "operator_1",
+      canceledAt: "2026-05-21T10:10:00.000Z",
+      cancelReason: "筛选口径需要重新确认",
+      updatedAt: "2026-05-21T10:10:00.000Z",
+    };
+    const responsePayload = {
+      ok: true,
+      data: {
+        task: canceledTask,
+        tasks: {
+          ...batchTaskListData(),
+          summary: {
+            totalTaskCount: 1,
+            pendingApprovalCount: 0,
+            canceledCount: 1,
+          },
+          items: [canceledTask],
+        },
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.cancelCourseProductAssetGovernanceBatchTask(
+        "asset_governance_batch_task_1",
+        {
+          reason: "筛选口径需要重新确认",
+        }
+      );
+
+    expect(result.task.approvalStatus).toBe("canceled");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/batch-tasks/asset_governance_batch_task_1/cancel",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining("筛选口径需要重新确认"),
       })
     );
   });

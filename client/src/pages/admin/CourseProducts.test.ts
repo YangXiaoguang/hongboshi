@@ -5,6 +5,7 @@ import type {
 } from "@shared/domain";
 import {
   assetGovernanceBatchIssueFilterFromPanelFilter,
+  assetGovernanceBatchTaskCreateRequestFromPanelFilter,
   assetGovernanceHistoryQueryFromFilters,
   courseProductAssetGovernanceSuggestion,
   filterCourseProductAssetGovernanceItems,
@@ -132,6 +133,22 @@ describe("course product asset governance panel helpers", () => {
     expect(
       assetGovernanceBatchIssueFilterFromPanelFilter("soft_delete_candidate")
     ).toBe("soft_delete_candidate");
+
+    expect(
+      assetGovernanceBatchTaskCreateRequestFromPanelFilter(
+        "soft_delete_candidate",
+        "  统一记录软删候选处理计划  ",
+        "  审批后再执行  "
+      )
+    ).toEqual({
+      action: "acknowledge_issue",
+      query: {
+        issueFilter: "soft_delete_candidate",
+        previewSize: 8,
+      },
+      reason: "统一记录软删候选处理计划",
+      note: "审批后再执行",
+    });
 
     expect(
       assetGovernanceHistoryQueryFromFilters({

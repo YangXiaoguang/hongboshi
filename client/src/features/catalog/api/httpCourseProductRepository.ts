@@ -3,6 +3,8 @@ import {
   CourseProductAssetBackfillMutationResultSchema,
   CourseProductAssetGovernanceActionResultSchema,
   CourseProductAssetGovernanceBatchDraftResultSchema,
+  CourseProductAssetGovernanceBatchTaskListResultSchema,
+  CourseProductAssetGovernanceBatchTaskMutationResultSchema,
   CourseProductAssetGovernanceHistoryResultSchema,
   CourseProductAssetGovernanceResultSchema,
   CourseProductAssetListResultSchema,
@@ -22,6 +24,11 @@ import {
   type CourseProductAssetGovernanceActionResult,
   type CourseProductAssetGovernanceBatchDraftQuery,
   type CourseProductAssetGovernanceBatchDraftResult,
+  type CourseProductAssetGovernanceBatchTaskCancelRequest,
+  type CourseProductAssetGovernanceBatchTaskCreateRequest,
+  type CourseProductAssetGovernanceBatchTaskListQuery,
+  type CourseProductAssetGovernanceBatchTaskListResult,
+  type CourseProductAssetGovernanceBatchTaskMutationResult,
   type CourseProductAssetGovernanceHistoryQuery,
   type CourseProductAssetGovernanceHistoryResult,
   type CourseProductAssetGovernanceResult,
@@ -75,6 +82,10 @@ const CourseProductAssetGovernanceHistoryResponseSchema = ApiResponseSchema(
 const CourseProductAssetGovernanceBatchDraftResponseSchema = ApiResponseSchema(
   CourseProductAssetGovernanceBatchDraftResultSchema
 );
+const CourseProductAssetGovernanceBatchTaskListResponseSchema =
+  ApiResponseSchema(CourseProductAssetGovernanceBatchTaskListResultSchema);
+const CourseProductAssetGovernanceBatchTaskMutationResponseSchema =
+  ApiResponseSchema(CourseProductAssetGovernanceBatchTaskMutationResultSchema);
 
 const API_BASE = "/api/catalog/admin";
 
@@ -184,6 +195,24 @@ export function parseCourseProductAssetGovernanceBatchDraftResponse(
   return parsed.data;
 }
 
+export function parseCourseProductAssetGovernanceBatchTaskListResponse(
+  payload: unknown
+): CourseProductAssetGovernanceBatchTaskListResult {
+  const parsed =
+    CourseProductAssetGovernanceBatchTaskListResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCourseProductAssetGovernanceBatchTaskMutationResponse(
+  payload: unknown
+): CourseProductAssetGovernanceBatchTaskMutationResult {
+  const parsed =
+    CourseProductAssetGovernanceBatchTaskMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = CourseProductListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -261,6 +290,26 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     !assetGovernanceBatchDraftParsed.data.ok
   ) {
     return assetGovernanceBatchDraftParsed.data.error.message;
+  }
+
+  const assetGovernanceBatchTaskListParsed =
+    CourseProductAssetGovernanceBatchTaskListResponseSchema.safeParse(payload);
+  if (
+    assetGovernanceBatchTaskListParsed.success &&
+    !assetGovernanceBatchTaskListParsed.data.ok
+  ) {
+    return assetGovernanceBatchTaskListParsed.data.error.message;
+  }
+
+  const assetGovernanceBatchTaskMutationParsed =
+    CourseProductAssetGovernanceBatchTaskMutationResponseSchema.safeParse(
+      payload
+    );
+  if (
+    assetGovernanceBatchTaskMutationParsed.success &&
+    !assetGovernanceBatchTaskMutationParsed.data.ok
+  ) {
+    return assetGovernanceBatchTaskMutationParsed.data.error.message;
   }
 
   return fallback;
@@ -501,6 +550,79 @@ export const httpCourseProductRepository = {
       );
     }
     return parseCourseProductAssetGovernanceBatchDraftResponse(payload);
+  },
+
+  async loadCourseProductAssetGovernanceBatchTasks(
+    query: Partial<CourseProductAssetGovernanceBatchTaskListQuery> = {}
+  ): Promise<CourseProductAssetGovernanceBatchTaskListResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/governance/batch-tasks${queryStringFromRecord(query)}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程素材批量治理任务读取失败")
+      );
+    }
+    return parseCourseProductAssetGovernanceBatchTaskListResponse(payload);
+  },
+
+  async createCourseProductAssetGovernanceBatchTask(
+    request: CourseProductAssetGovernanceBatchTaskCreateRequest
+  ): Promise<CourseProductAssetGovernanceBatchTaskMutationResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/governance/batch-tasks`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify(request),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程素材批量治理任务创建失败")
+      );
+    }
+    return parseCourseProductAssetGovernanceBatchTaskMutationResponse(payload);
+  },
+
+  async cancelCourseProductAssetGovernanceBatchTask(
+    taskId: string,
+    request: CourseProductAssetGovernanceBatchTaskCancelRequest
+  ): Promise<CourseProductAssetGovernanceBatchTaskMutationResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/governance/batch-tasks/${encodeURIComponent(taskId)}/cancel`,
+      {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify(request),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程素材批量治理任务取消失败")
+      );
+    }
+    return parseCourseProductAssetGovernanceBatchTaskMutationResponse(payload);
   },
 
   async runCourseProductAssetBackfill(

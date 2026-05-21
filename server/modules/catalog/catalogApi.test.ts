@@ -11,9 +11,12 @@ import {
 import {
   catalogOperationPermissions,
   applyCourseProductAssetGovernanceActionPayload,
+  cancelCourseProductAssetGovernanceBatchTaskPayload,
+  createCourseProductAssetGovernanceBatchTaskPayload,
   getCourseProductAdminListPayload,
   getCourseProductAssetBackfillPayload,
   getCourseProductAssetGovernanceBatchDraftPayload,
+  getCourseProductAssetGovernanceBatchTasksPayload,
   getCourseProductAssetGovernanceHistoryPayload,
   getCourseProductAssetDownloadPayload,
   getCourseProductAssetGovernancePayload,
@@ -36,6 +39,7 @@ import {
   InMemoryCourseProductAssetStore,
   type CourseProductAssetReferenceStore,
 } from "./courseProductAssetStore";
+import { InMemoryCourseProductAssetGovernanceBatchTaskStore } from "./courseProductAssetGovernanceBatchTaskStore";
 
 const products = courses.slice(0, 4).map(courseProductFromCourse);
 const createStore = () => new InMemoryCourseProductStore(products);
@@ -93,6 +97,8 @@ describe("catalog admin api payloads", () => {
       assetGovernanceRead: "catalog:read",
       assetGovernanceManage: "catalog:review",
       assetGovernanceBatchDraft: "catalog:review",
+      assetGovernanceBatchTaskRead: "catalog:review",
+      assetGovernanceBatchTaskManage: "catalog:review",
       basicInfoUpdate: "catalog:edit",
       contentUpdate: "catalog:edit",
       reviewUpdate: "catalog:review",
@@ -880,6 +886,116 @@ describe("catalog admin api payloads", () => {
       },
     });
     expect(after).toEqual(before);
+
+    const taskStore =
+      new InMemoryCourseProductAssetGovernanceBatchTaskStore();
+    const deniedTasks = await getCourseProductAssetGovernanceBatchTasksPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      {},
+      {
+        taskStore,
+        now: "2026-05-21T10:00:00.000Z",
+      }
+    );
+    expect(deniedTasks.status).toBe(403);
+
+    const createTask =
+      await createCourseProductAssetGovernanceBatchTaskPayload(
+        { id: "catalog_operator_1", roles: ["catalog_operator"] },
+        {
+          action: "acknowledge_issue",
+          query: {
+            issueFilter: "pending_compliance",
+            previewSize: 5,
+          },
+          reason: "统一记录待审核素材处理计划",
+        },
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now: "2026-05-21T10:05:00.000Z",
+        }
+      );
+    expect(createTask.status).toBe(200);
+    expect(createTask.body).toMatchObject({
+      ok: true,
+      data: {
+        task: {
+          approvalStatus: "pending_approval",
+          candidateAssetCount: 1,
+          createdBy: "catalog_operator_1",
+        },
+      },
+    });
+
+    const taskId =
+      createTask.body.ok ? createTask.body.data.task.id : "missing_task";
+    const listed = await getCourseProductAssetGovernanceBatchTasksPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      {
+        approvalStatus: "pending_approval",
+        pageSize: 5,
+      },
+      {
+        taskStore,
+        now: "2026-05-21T10:06:00.000Z",
+      }
+    );
+    expect(listed.body).toMatchObject({
+      ok: true,
+      data: {
+        summary: {
+          pendingApprovalCount: 1,
+        },
+        items: [
+          {
+            id: taskId,
+          },
+        ],
+      },
+    });
+
+    const forbiddenCancel =
+      await cancelCourseProductAssetGovernanceBatchTaskPayload(
+        { id: "catalog_operator_2", roles: ["catalog_operator"] },
+        taskId,
+        {
+          reason: "非创建人尝试取消",
+        },
+        {
+          taskStore,
+          now: "2026-05-21T10:07:00.000Z",
+        }
+      );
+    expect(forbiddenCancel.status).toBe(403);
+
+    const canceled = await cancelCourseProductAssetGovernanceBatchTaskPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      taskId,
+      {
+        reason: "筛选口径需要重新确认",
+      },
+      {
+        taskStore,
+        now: "2026-05-21T10:08:00.000Z",
+      }
+    );
+    expect(canceled.body).toMatchObject({
+      ok: true,
+      data: {
+        task: {
+          approvalStatus: "canceled",
+          cancelReason: "筛选口径需要重新确认",
+        },
+        tasks: {
+          summary: {
+            canceledCount: 1,
+          },
+        },
+      },
+    });
   });
 
   it("requires review permission before committing course asset backfill writes", async () => {

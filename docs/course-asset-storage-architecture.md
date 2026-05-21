@@ -84,6 +84,15 @@
 - `GET /api/catalog/admin/course-products/assets/governance/batch-draft` 由 `catalog:review` 权限控制，按当前治理问题筛选生成候选素材数、问题类型分布、拟处理动作分布和安全提示；第一版仅预览，不修改素材 Store、不写审计、不合并引用、不软删和不物理删除。
 - `/admin/courses` 素材治理面板已展示最近治理动作、历史筛选和批量处理草稿摘要，帮助运营在进入真实批量任务前确认风险边界。
 
+## 批量治理任务草案
+
+`server/modules/catalog/courseProductAssetGovernanceBatchTask.ts` 已建立批量治理任务草案 service，`server/modules/catalog/courseProductAssetGovernanceBatchTaskStore.ts` 提供内存与 JSON 文件 Store，默认文件为 `.hongboshi-data/course-product-asset-governance-batch-tasks.json`：
+
+- `CourseProductAssetGovernanceBatchTask*` 契约记录任务 ID、筛选快照、候选数、问题分布、拟处理动作分布、创建人、审批状态、原因、备注和取消信息。
+- `GET/POST /api/catalog/admin/course-products/assets/governance/batch-tasks` 由 `catalog:review` 控制，第一版只允许创建 `acknowledge_issue` 草案；创建时会重新计算批量草稿预览，拒绝空候选和同筛选重复待审批草案。
+- `PATCH /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/cancel` 仅允许草案创建人或管理员取消待审批草案。
+- `/admin/courses` 批量草稿区已加入“保存草案”和最近草案列表，明确标注“待审批/未执行”。当前仍不执行批量写入、不写 `asset_governance` 单素材审计、不合并引用、不软删和不物理删除对象。
+
 ## 后续切片
 
 - `CUX-I-B-B-D`：已实现 `PostgresCourseProductAssetStore`，让素材列表、上传登记、合规审核和后台下载可显式切换 PostgreSQL；已实现素材回填 dry-run service，可扫描 JSON Store 与章节素材占位并输出扫描数、可回填素材数、引用数、跳过数和原因。
@@ -93,3 +102,4 @@
 - `CUX-I-B-B-H`：在 `/admin/courses` 接入素材治理面板，展示治理摘要、问题筛选、引用来源提示和素材详情跳转；继续保持只读，不引入批量删除。
 - `CUX-I-B-B-I`：已接入单素材治理受控动作、`asset_governance` 审计、软删除读取边界和后台单行处理入口；后续可继续补真实对象清理审批流。
 - `CUX-I-B-B-J`：已接入治理动作历史筛选、批量处理草稿预览、后台历史/草稿展示和只读安全边界；真实批量写入、自动合并引用、对象物理删除和异步任务队列继续后置。
+- `CUX-I-B-B-K`：已接入批量治理任务草案、内存/JSON Store、创建/列表/取消 API 和后台最近草案入口；审批通过、拒绝、执行队列、批量写审计和真实批量处理仍后置。
