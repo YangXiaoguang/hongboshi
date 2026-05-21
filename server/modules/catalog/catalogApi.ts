@@ -16,6 +16,7 @@ import {
   CourseProductAssetGovernanceBatchTaskCancelRequestSchema,
   CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
   CourseProductAssetGovernanceBatchTaskExecuteRequestSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionDetailResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
   CourseProductAssetGovernanceBatchTaskListQuerySchema,
@@ -88,6 +89,7 @@ import {
   CourseProductAssetGovernanceBatchTaskPreflightError,
   createCourseProductAssetGovernanceBatchTask,
   executeCourseProductAssetGovernanceBatchTask,
+  getCourseProductAssetGovernanceBatchTaskExecutionDetail,
   listCourseProductAssetGovernanceBatchTasks,
   previewCourseProductAssetGovernanceBatchTaskExecutionPlan,
   reviewCourseProductAssetGovernanceBatchTask,
@@ -141,6 +143,10 @@ const CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema =
   ApiResponseSchema(
     CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema
   );
+const CourseProductAssetGovernanceBatchTaskExecutionDetailResponseSchema =
+  ApiResponseSchema(
+    CourseProductAssetGovernanceBatchTaskExecutionDetailResultSchema
+  );
 const CourseProductAssetGovernanceBatchTaskExecutionResponseSchema =
   ApiResponseSchema(CourseProductAssetGovernanceBatchTaskExecutionResultSchema);
 
@@ -169,6 +175,9 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductAssetGovernanceBatchTaskMutationResponseSchema>
   | z.infer<
       typeof CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema
+    >
+  | z.infer<
+      typeof CourseProductAssetGovernanceBatchTaskExecutionDetailResponseSchema
     >
   | z.infer<
       typeof CourseProductAssetGovernanceBatchTaskExecutionResponseSchema
@@ -943,10 +952,58 @@ export async function getCourseProductAssetGovernanceBatchTaskExecutionPlanPaylo
   try {
     return {
       status: 200,
-      body:
-        CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema.parse({
+      body: CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema.parse(
+        {
           ok: true,
-          data: await previewCourseProductAssetGovernanceBatchTaskExecutionPlan({
+          data: await previewCourseProductAssetGovernanceBatchTaskExecutionPlan(
+            {
+              taskId,
+              actorId: actor!.id,
+              productStore,
+              contentStore,
+              assetStore,
+              taskStore,
+              now,
+            }
+          ),
+        }
+      ),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材批量治理执行预案读取失败");
+  }
+}
+
+export async function getCourseProductAssetGovernanceBatchTaskExecutionDetailPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  taskId: string,
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    assetStore = getCourseProductAssetStore(),
+    taskStore = getCourseProductAssetGovernanceBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    assetStore?: CourseProductAssetStore;
+    taskStore?: CourseProductAssetGovernanceBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetGovernanceBatchTaskManage
+  );
+  if (denied) return denied;
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetGovernanceBatchTaskExecutionDetailResponseSchema.parse(
+        {
+          ok: true,
+          data: await getCourseProductAssetGovernanceBatchTaskExecutionDetail({
             taskId,
             actorId: actor!.id,
             productStore,
@@ -955,10 +1012,11 @@ export async function getCourseProductAssetGovernanceBatchTaskExecutionPlanPaylo
             taskStore,
             now,
           }),
-        }),
+        }
+      ),
     };
   } catch (err) {
-    return courseProductActionFailure(err, "课程素材批量治理执行预案读取失败");
+    return courseProductActionFailure(err, "课程素材批量治理执行记录读取失败");
   }
 }
 
@@ -1652,6 +1710,27 @@ export function registerCatalogApi(app: Express) {
     }
   );
 
+  app.get(
+    "/api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execution-detail",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await getCourseProductAssetGovernanceBatchTaskExecutionDetailPayload(
+            session?.user,
+            req.params.taskId
+          );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理执行记录读取失败")
+        );
+      }
+    }
+  );
+
   app.post(
     "/api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execute",
     async (req, res) => {
@@ -2109,6 +2188,33 @@ export function handleCatalogApiRequest(
           res,
           500,
           errorPayload("INTERNAL_ERROR", "课程素材批量治理执行预案读取失败")
+        )
+      );
+    return true;
+  }
+
+  const assetGovernanceBatchTaskExecutionDetailMatch = url.pathname.match(
+    /^\/api\/catalog\/admin\/course-products\/assets\/governance\/batch-tasks\/([^/]+)\/execution-detail$/
+  );
+  if (assetGovernanceBatchTaskExecutionDetailMatch?.[1]) {
+    if (req.method !== "GET") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+      return true;
+    }
+
+    void getLoginSessionFromRequest(req)
+      .then(session =>
+        getCourseProductAssetGovernanceBatchTaskExecutionDetailPayload(
+          session?.user,
+          decodeURIComponent(assetGovernanceBatchTaskExecutionDetailMatch[1])
+        )
+      )
+      .then(payload => sendJson(res, payload.status, payload.body))
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量治理执行记录读取失败")
         )
       );
     return true;
@@ -2776,7 +2882,10 @@ function courseProductActionFailure(
   ) {
     return {
       status: 409,
-      body: errorPayload("CONFLICT", "仅已通过审批的批量治理草案可生成执行预案"),
+      body: errorPayload(
+        "CONFLICT",
+        "仅已通过审批的批量治理草案可生成执行预案"
+      ),
     };
   }
 
@@ -2837,7 +2946,10 @@ function courseProductActionFailure(
   ) {
     return {
       status: 409,
-      body: errorPayload("CONFLICT", "课程素材批量治理执行失败，请查看任务状态"),
+      body: errorPayload(
+        "CONFLICT",
+        "课程素材批量治理执行失败，请查看任务状态"
+      ),
     };
   }
 

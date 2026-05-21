@@ -9,6 +9,7 @@ import {
   assetGovernanceBatchTaskCreateRequestFromPanelFilter,
   assetGovernanceBatchTaskExecuteRequestFromReason,
   assetGovernanceBatchTaskExecutionPlanSummaryText,
+  assetGovernanceBatchTaskListQueryFromFilters,
   assetGovernanceBatchTaskReviewRequestFromAction,
   assetGovernanceHistoryQueryFromFilters,
   courseProductAssetGovernanceSuggestion,
@@ -194,6 +195,31 @@ describe("course product asset governance panel helpers", () => {
       confirmExecution: true,
       reason: "审批通过后执行记录处理审计",
       note: "只写审计，不修改素材",
+    });
+
+    expect(
+      assetGovernanceBatchTaskListQueryFromFilters({
+        approvalStatus: "approved",
+        executionStatus: "completed",
+        issueFilter: "pending_compliance",
+        action: "acknowledge_issue",
+        createdBy: " operator_1 ",
+        executionRequestedBy: "operator_3",
+        dateFrom: "2026-05-20",
+        dateTo: "2026-05-21",
+        page: 2,
+      })
+    ).toEqual({
+      approvalStatus: "approved",
+      executionStatus: "completed",
+      issueFilter: "pending_compliance",
+      action: "acknowledge_issue",
+      createdBy: "operator_1",
+      executionRequestedBy: "operator_3",
+      dateFrom: "2026-05-20T00:00:00.000+08:00",
+      dateTo: "2026-05-21T23:59:59.999+08:00",
+      page: 2,
+      pageSize: 8,
     });
   });
 

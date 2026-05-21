@@ -17,6 +17,7 @@ import {
   getCourseProductAdminListPayload,
   getCourseProductAssetBackfillPayload,
   getCourseProductAssetGovernanceBatchDraftPayload,
+  getCourseProductAssetGovernanceBatchTaskExecutionDetailPayload,
   getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload,
   getCourseProductAssetGovernanceBatchTasksPayload,
   getCourseProductAssetGovernanceHistoryPayload,
@@ -1179,6 +1180,75 @@ describe("catalog admin api payloads", () => {
     });
     expect(afterExecute).toEqual(beforeExecute);
     expect(await productStore.listAuditEvents()).toHaveLength(2);
+
+    const deniedDetail =
+      await getCourseProductAssetGovernanceBatchTaskExecutionDetailPayload(
+        { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+        reviewTaskId,
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now: "2026-05-21T10:11:40.000Z",
+        }
+      );
+    expect(deniedDetail.status).toBe(403);
+
+    const detail =
+      await getCourseProductAssetGovernanceBatchTaskExecutionDetailPayload(
+        { id: "catalog_operator_2", roles: ["catalog_operator"] },
+        reviewTaskId,
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          taskStore,
+          now: "2026-05-21T10:11:50.000Z",
+        }
+      );
+    expect(detail.body).toMatchObject({
+      ok: true,
+      data: {
+        idempotentReplay: true,
+        summary: {
+          executionStatus: "completed",
+          auditEventCount: 1,
+        },
+        items: [
+          {
+            assetId: "asset_pending_1",
+            status: "executed",
+          },
+        ],
+      },
+    });
+
+    const filteredTasks =
+      await getCourseProductAssetGovernanceBatchTasksPayload(
+        { id: "catalog_operator_2", roles: ["catalog_operator"] },
+        {
+          executionStatus: "completed",
+          executionRequestedBy: "catalog_operator_2",
+          issueFilter: "pending_compliance",
+          action: "acknowledge_issue",
+          dateFrom: "2026-05-21T10:11:00.000Z",
+          dateTo: "2026-05-21T10:12:00.000Z",
+          pageSize: 8,
+        },
+        {
+          taskStore,
+          now: "2026-05-21T10:11:55.000Z",
+        }
+      );
+    expect(filteredTasks.body).toMatchObject({
+      ok: true,
+      data: {
+        meta: {
+          total: 1,
+        },
+      },
+    });
 
     const pendingPlan =
       await getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload(

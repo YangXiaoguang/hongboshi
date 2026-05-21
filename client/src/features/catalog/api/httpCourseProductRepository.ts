@@ -3,6 +3,7 @@ import {
   CourseProductAssetBackfillMutationResultSchema,
   CourseProductAssetGovernanceActionResultSchema,
   CourseProductAssetGovernanceBatchDraftResultSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionDetailResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
   CourseProductAssetGovernanceBatchTaskListResultSchema,
@@ -29,6 +30,7 @@ import {
   type CourseProductAssetGovernanceBatchTaskCancelRequest,
   type CourseProductAssetGovernanceBatchTaskCreateRequest,
   type CourseProductAssetGovernanceBatchTaskExecuteRequest,
+  type CourseProductAssetGovernanceBatchTaskExecutionDetailResult,
   type CourseProductAssetGovernanceBatchTaskExecutionResult,
   type CourseProductAssetGovernanceBatchTaskExecutionPlanResult,
   type CourseProductAssetGovernanceBatchTaskListQuery,
@@ -95,6 +97,10 @@ const CourseProductAssetGovernanceBatchTaskMutationResponseSchema =
 const CourseProductAssetGovernanceBatchTaskExecutionPlanResponseSchema =
   ApiResponseSchema(
     CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema
+  );
+const CourseProductAssetGovernanceBatchTaskExecutionDetailResponseSchema =
+  ApiResponseSchema(
+    CourseProductAssetGovernanceBatchTaskExecutionDetailResultSchema
   );
 const CourseProductAssetGovernanceBatchTaskExecutionResponseSchema =
   ApiResponseSchema(CourseProductAssetGovernanceBatchTaskExecutionResultSchema);
@@ -237,6 +243,17 @@ export function parseCourseProductAssetGovernanceBatchTaskExecutionPlanResponse(
   return parsed.data;
 }
 
+export function parseCourseProductAssetGovernanceBatchTaskExecutionDetailResponse(
+  payload: unknown
+): CourseProductAssetGovernanceBatchTaskExecutionDetailResult {
+  const parsed =
+    CourseProductAssetGovernanceBatchTaskExecutionDetailResponseSchema.parse(
+      payload
+    );
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 export function parseCourseProductAssetGovernanceBatchTaskExecutionResponse(
   payload: unknown
 ): CourseProductAssetGovernanceBatchTaskExecutionResult {
@@ -365,6 +382,17 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     !assetGovernanceBatchTaskExecutionParsed.data.ok
   ) {
     return assetGovernanceBatchTaskExecutionParsed.data.error.message;
+  }
+
+  const assetGovernanceBatchTaskExecutionDetailParsed =
+    CourseProductAssetGovernanceBatchTaskExecutionDetailResponseSchema.safeParse(
+      payload
+    );
+  if (
+    assetGovernanceBatchTaskExecutionDetailParsed.success &&
+    !assetGovernanceBatchTaskExecutionDetailParsed.data.ok
+  ) {
+    return assetGovernanceBatchTaskExecutionDetailParsed.data.error.message;
   }
 
   return fallback;
@@ -728,6 +756,30 @@ export const httpCourseProductRepository = {
     );
   },
 
+  async loadCourseProductAssetGovernanceBatchTaskExecutionDetail(
+    taskId: string
+  ): Promise<CourseProductAssetGovernanceBatchTaskExecutionDetailResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/governance/batch-tasks/${encodeURIComponent(taskId)}/execution-detail`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程素材批量治理执行记录读取失败")
+      );
+    }
+    return parseCourseProductAssetGovernanceBatchTaskExecutionDetailResponse(
+      payload
+    );
+  },
+
   async executeCourseProductAssetGovernanceBatchTask(
     taskId: string,
     request: CourseProductAssetGovernanceBatchTaskExecuteRequest
@@ -747,9 +799,7 @@ export const httpCourseProductRepository = {
     );
     const payload = await readJson(response);
     if (!response.ok) {
-      throw new Error(
-        extractErrorMessage(payload, "课程素材批量治理执行失败")
-      );
+      throw new Error(extractErrorMessage(payload, "课程素材批量治理执行失败"));
     }
     return parseCourseProductAssetGovernanceBatchTaskExecutionResponse(payload);
   },

@@ -15,8 +15,10 @@ import {
   CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
   CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema,
   CourseProductAssetGovernanceBatchTaskExecuteRequestSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionDetailResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
+  CourseProductAssetGovernanceBatchTaskListQuerySchema,
   CourseProductAssetGovernanceBatchTaskListResultSchema,
   CourseProductAssetGovernanceBatchTaskMutationResultSchema,
   CourseProductAssetGovernanceBatchTaskReviewRequestSchema,
@@ -853,6 +855,37 @@ describe("course product domain contract", () => {
         ],
       });
     expect(executionResult.summary.auditEventCount).toBe(1);
+
+    const detail =
+      CourseProductAssetGovernanceBatchTaskExecutionDetailResultSchema.parse({
+        task: executionResult.task,
+        executionPlan,
+        summary: executionResult.summary,
+        items: executionResult.items,
+        auditEvents: executionResult.auditEvents,
+        idempotentReplay: true,
+      });
+    expect(detail.items[0]?.auditEventId).toBe(
+      "audit_asset_governance_batch_1"
+    );
+
+    expect(
+      CourseProductAssetGovernanceBatchTaskListQuerySchema.parse({
+        approvalStatus: "approved",
+        executionStatus: "completed",
+        issueFilter: "pending_compliance",
+        action: "acknowledge_issue",
+        createdBy: "operator_1",
+        executionRequestedBy: "operator_3",
+        dateFrom: "2026-05-21T00:00:00.000+08:00",
+        dateTo: "2026-05-21T23:59:59.999+08:00",
+        pageSize: 8,
+      })
+    ).toMatchObject({
+      executionStatus: "completed",
+      issueFilter: "pending_compliance",
+      pageSize: 8,
+    });
   });
 
   it("validates the first course detail content contract", () => {

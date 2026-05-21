@@ -4,6 +4,7 @@ import {
   parseCourseProductAssetBackfillResponse,
   parseCourseProductAssetGovernanceActionResponse,
   parseCourseProductAssetGovernanceBatchDraftResponse,
+  parseCourseProductAssetGovernanceBatchTaskExecutionDetailResponse,
   parseCourseProductAssetGovernanceBatchTaskExecutionResponse,
   parseCourseProductAssetGovernanceBatchTaskExecutionPlanResponse,
   parseCourseProductAssetGovernanceBatchTaskListResponse,
@@ -210,6 +211,18 @@ function executionResultData() {
       },
     ],
     idempotentReplay: false,
+  };
+}
+
+function executionDetailData() {
+  const result = executionResultData();
+  return {
+    task: result.task,
+    executionPlan: result.executionPlan,
+    summary: result.summary,
+    items: result.items,
+    auditEvents: result.auditEvents,
+    idempotentReplay: true,
   };
 }
 
@@ -658,14 +671,26 @@ describe("http course product repository parsing", () => {
   });
 
   it("parses course product asset governance execution responses", () => {
-    const parsed =
-      parseCourseProductAssetGovernanceBatchTaskExecutionResponse({
-        ok: true,
-        data: executionResultData(),
-      });
+    const parsed = parseCourseProductAssetGovernanceBatchTaskExecutionResponse({
+      ok: true,
+      data: executionResultData(),
+    });
 
     expect(parsed.summary.auditEventCount).toBe(1);
     expect(parsed.task.executionStatus).toBe("completed");
+  });
+
+  it("parses course product asset governance execution detail responses", () => {
+    const parsed =
+      parseCourseProductAssetGovernanceBatchTaskExecutionDetailResponse({
+        ok: true,
+        data: executionDetailData(),
+      });
+
+    expect(parsed.idempotentReplay).toBe(true);
+    expect(parsed.items[0]?.auditEventId).toBe(
+      "audit_asset_governance_batch_1"
+    );
   });
 
   it("parses course product mutation responses", () => {
@@ -1404,6 +1429,30 @@ describe("http course product repository parsing", () => {
       expect.objectContaining({
         method: "POST",
         body: expect.stringContaining("confirmExecution"),
+      })
+    );
+  });
+
+  it("loads course product asset governance batch task execution details", async () => {
+    const responsePayload = {
+      ok: true,
+      data: executionDetailData(),
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+
+    const result =
+      await httpCourseProductRepository.loadCourseProductAssetGovernanceBatchTaskExecutionDetail(
+        "asset_governance_batch_task_1"
+      );
+
+    expect(result.summary?.auditEventCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/batch-tasks/asset_governance_batch_task_1/execution-detail",
+      expect.objectContaining({
+        cache: "no-store",
+        credentials: "same-origin",
       })
     );
   });

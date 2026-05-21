@@ -5,6 +5,7 @@ import {
   CourseProductAssetGovernanceBatchTaskCancelRequestSchema,
   CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema,
   CourseProductAssetGovernanceBatchTaskExecuteRequestSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionDetailResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
   CourseProductAssetGovernanceHistorySnapshotSchema,
@@ -481,6 +482,70 @@ export async function previewCourseProductAssetGovernanceBatchTaskExecutionPlan(
   });
 }
 
+export async function getCourseProductAssetGovernanceBatchTaskExecutionDetail({
+  taskId,
+  actorId,
+  productStore = getCourseProductStore(),
+  contentStore = getCourseProductContentStore(),
+  assetStore = getCourseProductAssetStore(),
+  taskStore = getCourseProductAssetGovernanceBatchTaskStore(),
+  now = new Date().toISOString(),
+}: {
+  taskId: string;
+  actorId: string;
+  productStore?: CourseProductStore;
+  contentStore?: CourseProductContentStore;
+  assetStore?: CourseProductAssetStore;
+  taskStore?: CourseProductAssetGovernanceBatchTaskStore;
+  now?: string;
+}) {
+  const task = await taskStore.getTask(taskId);
+  if (!task) {
+    throw new Error("COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_NOT_FOUND");
+  }
+
+  const executionPlan =
+    await previewCourseProductAssetGovernanceBatchTaskExecutionPlan({
+      taskId,
+      actorId,
+      productStore,
+      contentStore,
+      assetStore,
+      taskStore,
+      now,
+    });
+  const hasStoredResult = hasStoredBatchTaskExecutionResult(
+    task.executionStatus
+  );
+  const auditEventIds = new Set(task.executionAuditEventIds);
+  const auditEvents = hasStoredResult
+    ? (await productStore.listAuditEvents()).filter(event =>
+        auditEventIds.has(event.id)
+      )
+    : [];
+  const items = hasStoredResult ? task.executionItems : [];
+  const summary =
+    task.executionSummary ??
+    (hasStoredResult
+      ? batchTaskExecutionSummaryFromItems({
+          taskId: task.id,
+          items,
+          forcedStatus: task.executionStatus,
+        })
+      : undefined);
+
+  return CourseProductAssetGovernanceBatchTaskExecutionDetailResultSchema.parse(
+    {
+      task,
+      executionPlan,
+      summary,
+      items,
+      auditEvents,
+      idempotentReplay: hasStoredResult,
+    }
+  );
+}
+
 export async function executeCourseProductAssetGovernanceBatchTask({
   taskId,
   request,
@@ -580,7 +645,11 @@ export async function executeCourseProductAssetGovernanceBatchTask({
         });
         continue;
       }
-      if (!item.productId || !item.plannedIssueType || !item.auditEventPreview) {
+      if (
+        !item.productId ||
+        !item.plannedIssueType ||
+        !item.auditEventPreview
+      ) {
         items.push({
           assetId: item.assetId,
           productId: item.productId,
@@ -708,8 +777,54 @@ function matchesBatchTaskListQuery(
   ) {
     return false;
   }
+  if (
+    query.executionStatus !== "all" &&
+    task.executionStatus !== query.executionStatus
+  ) {
+    return false;
+  }
   if (query.createdBy && task.createdBy !== query.createdBy) return false;
+  if (
+    query.executionRequestedBy &&
+    task.executionRequestedBy !== query.executionRequestedBy
+  ) {
+    return false;
+  }
+  if (query.action && task.action !== query.action) return false;
+  if (
+    query.issueFilter !== "all" &&
+    task.query.issueFilter !== query.issueFilter
+  ) {
+    return false;
+  }
+  const operationalTime = batchTaskOperationalTime(task);
+  if (query.dateFrom && compareDateTime(operationalTime, query.dateFrom) < 0) {
+    return false;
+  }
+  if (query.dateTo && compareDateTime(operationalTime, query.dateTo) > 0) {
+    return false;
+  }
   return true;
+}
+
+function batchTaskOperationalTime(task: CourseProductAssetGovernanceBatchTask) {
+  return (
+    task.executionCompletedAt ??
+    task.executionStartedAt ??
+    task.reviewedAt ??
+    task.canceledAt ??
+    task.updatedAt ??
+    task.createdAt
+  );
+}
+
+function compareDateTime(left: string, right: string) {
+  const leftMs = Date.parse(left);
+  const rightMs = Date.parse(right);
+  if (Number.isFinite(leftMs) && Number.isFinite(rightMs)) {
+    return leftMs - rightMs;
+  }
+  return left.localeCompare(right);
 }
 
 async function batchTaskMutationResult({
@@ -860,9 +975,11 @@ function executionPlanRiskLevel(
 ): CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevel {
   if (
     issueTypes.some(issueType =>
-      ["missing_product", "rejected_compliance", "soft_delete_candidate"].includes(
-        issueType
-      )
+      [
+        "missing_product",
+        "rejected_compliance",
+        "soft_delete_candidate",
+      ].includes(issueType)
     )
   ) {
     return "high";
@@ -930,13 +1047,17 @@ function buildExecutionPlanSafetyNotes({
     notes.push("该任务缺少原始候选快照，预案已按当前筛选做兼容生成。");
   }
   if (skippedCount > 0) {
-    notes.push(`${skippedCount} 个候选因当前数据漂移被跳过，需要重新生成草案。`);
+    notes.push(
+      `${skippedCount} 个候选因当前数据漂移被跳过，需要重新生成草案。`
+    );
   }
   if (newCandidateAssetCount > 0) {
     notes.push(`${newCandidateAssetCount} 个当前新候选不属于已审批任务范围。`);
   }
   if (changedIssueTypeCount > 0) {
-    notes.push(`${changedIssueTypeCount} 个候选的问题类型已变化，本次预案不执行。`);
+    notes.push(
+      `${changedIssueTypeCount} 个候选的问题类型已变化，本次预案不执行。`
+    );
   }
   return notes;
 }
@@ -1005,6 +1126,16 @@ function isFinalExecutionStatus(
   return status === "completed" || status === "partially_completed";
 }
 
+function hasStoredBatchTaskExecutionResult(
+  status: CourseProductAssetGovernanceBatchTaskExecutionStatus
+) {
+  return (
+    status === "completed" ||
+    status === "partially_completed" ||
+    status === "failed"
+  );
+}
+
 function executionItemResultFromSkippedPlanItem(
   item: CourseProductAssetGovernanceBatchTaskExecutionPlanItem
 ): CourseProductAssetGovernanceBatchTaskExecutionItemResult {
@@ -1029,12 +1160,15 @@ function batchTaskExecutionSummaryFromItems({
   items: CourseProductAssetGovernanceBatchTaskExecutionItemResult[];
   forcedStatus?: CourseProductAssetGovernanceBatchTaskExecutionStatus;
 }): CourseProductAssetGovernanceBatchTaskExecutionSummary {
-  const executedActionCount = items.filter(item => item.status === "executed")
-    .length;
-  const skippedActionCount = items.filter(item => item.status === "skipped")
-    .length;
-  const failedActionCount = items.filter(item => item.status === "failed")
-    .length;
+  const executedActionCount = items.filter(
+    item => item.status === "executed"
+  ).length;
+  const skippedActionCount = items.filter(
+    item => item.status === "skipped"
+  ).length;
+  const failedActionCount = items.filter(
+    item => item.status === "failed"
+  ).length;
   const auditEventCount = items.filter(item => item.auditEventId).length;
   const executionStatus =
     forcedStatus ??

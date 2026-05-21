@@ -18,6 +18,8 @@ import {
   CourseProductAssetGovernanceBatchTaskPreflightError,
   createCourseProductAssetGovernanceBatchTask,
   executeCourseProductAssetGovernanceBatchTask,
+  getCourseProductAssetGovernanceBatchTaskExecutionDetail,
+  listCourseProductAssetGovernanceBatchTasks,
   previewCourseProductAssetGovernanceBatchTaskExecutionPlan,
   reviewCourseProductAssetGovernanceBatchTask,
 } from "./courseProductAssetGovernanceBatchTask";
@@ -364,14 +366,13 @@ describe("course product asset governance batch tasks", () => {
     });
     const before = await context.assetStore.getAsset("asset_pending_1");
 
-    const plan = await previewCourseProductAssetGovernanceBatchTaskExecutionPlan(
-      {
+    const plan =
+      await previewCourseProductAssetGovernanceBatchTaskExecutionPlan({
         ...context,
         taskId: approved.task.id,
         actorId: "operator_2",
         now: "2026-05-21T10:02:00.000Z",
-      }
-    );
+      });
     const after = await context.assetStore.getAsset("asset_pending_1");
 
     expect(plan).toMatchObject({
@@ -493,6 +494,43 @@ describe("course product asset governance batch tasks", () => {
 
     expect(replay.idempotentReplay).toBe(true);
     expect(await context.productStore.listAuditEvents()).toHaveLength(1);
+
+    const detail =
+      await getCourseProductAssetGovernanceBatchTaskExecutionDetail({
+        ...context,
+        taskId: approved.task.id,
+        actorId: "operator_3",
+        now: "2026-05-21T10:05:00.000Z",
+      });
+    expect(detail).toMatchObject({
+      idempotentReplay: true,
+      summary: {
+        executionStatus: "completed",
+        auditEventCount: 1,
+      },
+      items: [
+        {
+          assetId: "asset_pending_1",
+          status: "executed",
+        },
+      ],
+    });
+
+    const filtered = await listCourseProductAssetGovernanceBatchTasks({
+      store: context.taskStore,
+      now: "2026-05-21T10:05:30.000Z",
+      query: {
+        executionStatus: "completed",
+        executionRequestedBy: "operator_3",
+        issueFilter: "pending_compliance",
+        action: "acknowledge_issue",
+        dateFrom: "2026-05-21T10:02:00.000Z",
+        dateTo: "2026-05-21T10:05:00.000Z",
+        pageSize: 8,
+      },
+    });
+    expect(filtered.meta.total).toBe(1);
+    expect(filtered.items[0]?.id).toBe(approved.task.id);
   });
 
   it("skips drifted candidates during execution and records partial task state", async () => {
@@ -693,14 +731,13 @@ describe("course product asset governance batch tasks", () => {
     });
     const before = await context.assetStore.getAsset("asset_pending_1");
 
-    const plan = await previewCourseProductAssetGovernanceBatchTaskExecutionPlan(
-      {
+    const plan =
+      await previewCourseProductAssetGovernanceBatchTaskExecutionPlan({
         ...context,
         taskId: approved.task.id,
         actorId: "operator_2",
         now: "2026-05-21T10:03:00.000Z",
-      }
-    );
+      });
     const after = await context.assetStore.getAsset("asset_pending_1");
 
     expect(plan.summary).toMatchObject({
