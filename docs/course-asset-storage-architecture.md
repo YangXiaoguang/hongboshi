@@ -88,15 +88,24 @@
 
 `server/modules/catalog/courseProductAssetGovernanceBatchTask.ts` 已建立批量治理任务草案 service，`server/modules/catalog/courseProductAssetGovernanceBatchTaskStore.ts` 提供内存、JSON 文件与显式 PostgreSQL Store，默认文件为 `.hongboshi-data/course-product-asset-governance-batch-tasks.json`，配置 `HONGBOSHI_COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STORE=postgres` 且存在 `DATABASE_URL` 时会写入 PostgreSQL：
 
-- `CourseProductAssetGovernanceBatchTask*` 契约记录任务 ID、筛选快照、候选素材快照、候选数、问题分布、拟处理动作分布、创建人、审批状态、原因、备注、审批信息、审批前后摘要、审批前预检、取消信息、执行状态、执行尝试次数、执行原因、最近失败原因、执行摘要、逐素材执行明细和审计事件 ID；`CourseProductAssetGovernanceBatchTaskExecutionJob*` 契约描述队列 job 的排队、运行、成功和失败状态。
+- `CourseProductAssetGovernanceBatchTask*` 契约记录任务 ID、筛选快照、候选素材快照、候选数、问题分布、拟处理动作分布、创建人、审批状态、原因、备注、审批信息、审批前后摘要、审批前预检、取消信息、执行状态、执行尝试次数、执行原因、最近失败原因、执行摘要、逐素材执行明细和审计事件 ID；`CourseProductAssetGovernanceBatchTaskExecutionJob*` 契约描述队列 job 的排队、运行、成功和失败状态，`CourseProductAssetGovernanceBatchTaskQueueObservation*` 契约只读描述最近 job、可重试压力和运营提示。
 - `GET/POST /api/catalog/admin/course-products/assets/governance/batch-tasks` 由 `catalog:review` 控制，列表支持按审批状态、执行状态、创建人、执行人、问题筛选、动作和日期范围检索；第一版只允许创建 `acknowledge_issue` 草案，创建时会重新计算批量草稿预览，拒绝空候选和同筛选重复待审批草案。
 - `PATCH /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/cancel` 仅允许草案创建人或管理员取消待审批草案。
 - `PATCH /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/review` 支持通过审批和驳回草案；非管理员不能审批自己创建的草案，通过审批前会重新计算候选范围，候选消失、问题类型变化或数量变化过大时保持待审批并提示重新生成。
 - `GET /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execution-plan` 仅允许已通过审批且审批预检未要求重建的草案生成只读执行预案，返回逐素材计划/跳过原因、风险等级、预计审计事件数量和安全提示；该接口不修改素材 Store、不写 `asset_governance` 审计、不合并引用、不软删和不物理删除对象。
 - `GET /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execution-detail` 可重新读取已审批任务的执行详情，返回执行预案、执行摘要、逐素材结果、跳过/失败原因和关联审计事件，避免历史任务只能依赖弹窗内存态。
 - `POST /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execute` 仅允许具备 `catalog:review` 的后台账号在明确确认和填写执行原因后执行已审批任务；第一版只执行 `acknowledge_issue`，执行前会通过 Store 抢占执行锁并重新生成预案，漂移项跳过，成功项只追加 `asset_governance` 审计并保存执行状态；失败任务保存最近失败原因和失败时间，可在锁释放后安全重试，已完成任务仍幂等回放。
-- `server/modules/catalog/courseProductAssetGovernanceBatchTaskExecutionQueue.ts` 已提供 `enqueue/runNow/getJobStatus` 最小队列接口，当前 HTTP 入口使用 `runNow` 复用同一 worker；后续接 BullMQ、Redis 队列或云任务时只替换队列实现，不改执行状态机。
-- `/admin/courses` 批量草稿区已加入“保存草案”、批量任务筛选/分页列表、通过审批、驳回、取消、已审批任务“生成执行预案/查看执行记录”和预案内“确认执行记录处理”入口，明确展示审批状态、执行状态、执行摘要、跳过/失败线索、最近失败原因、可重试提示和审计事件 ID。当前批量执行只写审计和任务执行结果，不修改素材 Store、不合并引用、不软删和不物理删除对象。
+- `server/modules/catalog/courseProductAssetGovernanceBatchTaskExecutionQueue.ts` 已提供 `enqueue/runNow/getJobStatus/listJobs` 最小队列接口，当前 HTTP 入口使用 `runNow` 复用同一 worker；后续接 BullMQ、Redis 队列或云任务时只替换队列实现，不改执行状态机。
+- `/admin/courses` 批量草稿区已加入“保存草案”、批量任务筛选/分页列表、通过审批、驳回、取消、已审批任务“生成执行预案/查看执行记录”和预案内“确认执行记录处理”入口，明确展示审批状态、执行状态、执行摘要、跳过/失败线索、最近失败原因、可重试提示和审计事件 ID；同一区域已展示队列观测摘要，区分最近 job、执行中、失败和可重试任务。当前批量执行只写审计和任务执行结果，不修改素材 Store、不合并引用、不软删和不物理删除对象。
+
+## 学习资料运营报表
+
+`server/modules/catalog/courseProductLearningMaterialOperationsReport.ts` 复用素材治理结果、课程商品 Store 和课程详情章节素材占位，提供学习资料运营只读报表：
+
+- `CourseProductLearningMaterialOperationsReport*` 契约聚合课程数、章节数、资料槽位数、已绑定槽位数、绑定率、学习资料素材数、已通过合规数、开放下载数、未引用数、待审/驳回数、软删候选数、治理问题数和引用来源。
+- 报表分布覆盖资料类型、合规状态、下载状态、引用类型和治理问题类型；课程维度行展示每个课程的章节数、资料槽位、已绑定槽位、绑定率、资料素材数、开放下载数和问题素材数。
+- `GET /api/catalog/admin/course-products/assets/learning-material-report` 由 `catalog:read` 控制，只返回摘要和问题分布，不返回文件内容、签名 URL 或敏感用户学习记录。
+- `/admin/courses` 已把学习资料运营报表放在素材治理面板内，用于决定后续是优先补齐资料绑定、处理合规，还是进入批量治理预案。
 
 ## 后续切片
 
@@ -114,3 +123,4 @@
 - `CUX-I-B-B-O`：已接入批量任务执行结果历史与运营筛选，支持执行状态/操作者/时间/问题/动作筛选、执行详情读取 API、后台分页任务列表和执行明细复盘。
 - `CUX-I-B-B-P`：已新增批量治理任务 PostgreSQL 表、候选快照表、执行明细表、执行审计事件 ID 表、幂等键、执行锁预留字段和查询索引，并实现 `PostgresCourseProductAssetGovernanceBatchTaskStore`。
 - `CUX-I-B-B-Q`：已新增批量执行 job 契约、最小内存队列、可复用执行 worker、执行锁 helper、内存/JSON/PostgreSQL Store 抢锁释放、失败尝试次数和最近失败原因字段，支持并发保护与失败安全重试；批量软删、引用合并、物理对象清理和队列 job 持久化继续后置。
+- `CUX-I-B-B-R`：已新增队列 job 只读观测、`listJobs`、队列观测 API、学习资料运营报表 service/API 和 `/admin/courses` 摘要展示；批量软删、引用合并、物理对象清理和队列 job 持久化继续后置。

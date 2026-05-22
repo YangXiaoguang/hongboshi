@@ -9,11 +9,13 @@ import {
   parseCourseProductAssetGovernanceBatchTaskExecutionPlanResponse,
   parseCourseProductAssetGovernanceBatchTaskListResponse,
   parseCourseProductAssetGovernanceBatchTaskMutationResponse,
+  parseCourseProductAssetGovernanceBatchTaskQueueObservationResponse,
   parseCourseProductAssetGovernanceHistoryResponse,
   parseCourseProductAssetGovernanceResponse,
   parseCourseProductAssetListResponse,
   parseCourseProductAssetMutationResponse,
   parseCourseProductContentResponse,
+  parseCourseProductLearningMaterialOperationsReportResponse,
   parseCourseProductListResponse,
   parseCourseProductMutationResponse,
 } from "./httpCourseProductRepository";
@@ -69,6 +71,120 @@ function batchTaskListData() {
       total: 1,
       totalPages: 1,
     },
+  };
+}
+
+function batchTaskQueueObservationData() {
+  return {
+    generatedAt: "2026-05-21T10:02:00.000Z",
+    query: {
+      taskId: "asset_governance_batch_task_1",
+      limit: 5,
+    },
+    summary: {
+      observedTaskCount: 1,
+      observedJobCount: 1,
+      queuedJobCount: 0,
+      runningJobCount: 0,
+      succeededJobCount: 0,
+      failedJobCount: 1,
+      runningTaskCount: 0,
+      failedTaskCount: 1,
+      retryableTaskCount: 1,
+      totalExecutionAttemptCount: 2,
+    },
+    items: [
+      {
+        taskId: "asset_governance_batch_task_1",
+        task: {
+          ...batchTaskData(),
+          approvalStatus: "approved",
+          executionStatus: "failed",
+          executionAttemptCount: 2,
+          lastExecutionError: "audit append timeout",
+        },
+        latestJob: {
+          id: "asset_governance_batch_execution_job_1",
+          taskId: "asset_governance_batch_task_1",
+          status: "failed",
+          requestedBy: "operator_1",
+          enqueuedAt: "2026-05-21T10:01:00.000Z",
+          startedAt: "2026-05-21T10:01:00.000Z",
+          finishedAt: "2026-05-21T10:01:01.000Z",
+          attemptCount: 1,
+          lastError: "audit append timeout",
+        },
+        approvalStatus: "approved",
+        executionStatus: "failed",
+        executionAttemptCount: 2,
+        lastExecutionError: "audit append timeout",
+        retryRecommended: true,
+        operatorHint: "检查失败原因后，可重新打开执行面板重试",
+      },
+    ],
+    notes: ["当前队列观测基于内存 job 状态，服务重启后只保留任务执行字段"],
+  };
+}
+
+function learningMaterialReportData() {
+  return {
+    generatedAt: "2026-05-21T10:03:00.000Z",
+    summary: {
+      totalProductCount: 1,
+      productWithMaterialSlotsCount: 1,
+      chapterCount: 3,
+      materialSlotCount: 6,
+      boundMaterialSlotCount: 4,
+      materialBindingRate: 0.6667,
+      totalAssetCount: 8,
+      learningMaterialAssetCount: 4,
+      activeLearningMaterialAssetCount: 4,
+      approvedLearningMaterialAssetCount: 3,
+      downloadableLearningMaterialAssetCount: 2,
+      downloadDisabledLearningMaterialAssetCount: 2,
+      referencedLearningMaterialAssetCount: 3,
+      unreferencedLearningMaterialAssetCount: 1,
+      pendingComplianceLearningMaterialCount: 1,
+      rejectedComplianceLearningMaterialCount: 0,
+      softDeleteCandidateLearningMaterialCount: 1,
+      governanceIssueLearningMaterialCount: 2,
+      referenceSource: "content_material_placeholders",
+    },
+    assetKindDistribution: [
+      { key: "worksheet", label: "练习表", count: 2 },
+      { key: "audio", label: "音频", count: 1 },
+    ],
+    complianceStatusDistribution: [
+      { key: "approved", label: "已通过", count: 3 },
+      { key: "pending", label: "待审核", count: 1 },
+    ],
+    downloadStatusDistribution: [
+      { key: "download_enabled", label: "已开放下载", count: 2 },
+      { key: "download_disabled", label: "下载关闭", count: 2 },
+    ],
+    referenceTypeDistribution: [
+      { key: "chapter_exercise", label: "章节练习", count: 2 },
+    ],
+    issueTypeDistribution: [
+      { key: "download_disabled_material", label: "下载关闭", count: 2 },
+    ],
+    productRows: [
+      {
+        productId: "course_product_1",
+        courseId: 1,
+        title: "情绪管理入门",
+        status: "published",
+        reviewStatus: "approved",
+        chapterCount: 3,
+        materialSlotCount: 6,
+        boundMaterialSlotCount: 4,
+        materialBindingRate: 0.6667,
+        learningMaterialAssetCount: 4,
+        downloadableAssetCount: 2,
+        issueAssetCount: 2,
+      },
+    ],
+    notes: ["发现 2 个学习资料素材仍有治理问题"],
   };
 }
 
@@ -658,6 +774,27 @@ describe("http course product repository parsing", () => {
     expect(mutation.task.approvalStatus).toBe("pending_approval");
   });
 
+  it("parses course product asset governance queue observations", () => {
+    const parsed =
+      parseCourseProductAssetGovernanceBatchTaskQueueObservationResponse({
+        ok: true,
+        data: batchTaskQueueObservationData(),
+      });
+
+    expect(parsed.summary.retryableTaskCount).toBe(1);
+    expect(parsed.items[0]?.latestJob?.status).toBe("failed");
+  });
+
+  it("parses course product learning material operations reports", () => {
+    const parsed = parseCourseProductLearningMaterialOperationsReportResponse({
+      ok: true,
+      data: learningMaterialReportData(),
+    });
+
+    expect(parsed.summary.materialBindingRate).toBe(0.6667);
+    expect(parsed.productRows[0]?.issueAssetCount).toBe(2);
+  });
+
   it("parses course product asset governance execution plan responses", () => {
     const parsed =
       parseCourseProductAssetGovernanceBatchTaskExecutionPlanResponse({
@@ -1081,6 +1218,28 @@ describe("http course product repository parsing", () => {
     );
   });
 
+  it("loads course product learning material operations reports", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: learningMaterialReportData(),
+        })
+      )
+    );
+
+    const result =
+      await httpCourseProductRepository.loadCourseProductLearningMaterialOperationsReport();
+
+    expect(result.summary.learningMaterialAssetCount).toBe(4);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/learning-material-report",
+      expect.objectContaining({
+        credentials: "same-origin",
+      })
+    );
+  });
+
   it("loads course product asset governance history with filters", async () => {
     const responsePayload = {
       ok: true,
@@ -1222,6 +1381,33 @@ describe("http course product repository parsing", () => {
     expect(result.items[0]?.id).toBe("asset_governance_batch_task_1");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/catalog/admin/course-products/assets/governance/batch-tasks?approvalStatus=pending_approval&pageSize=5",
+      expect.objectContaining({
+        credentials: "same-origin",
+      })
+    );
+  });
+
+  it("loads course product asset governance batch task queue observations", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: batchTaskQueueObservationData(),
+        })
+      )
+    );
+
+    const result =
+      await httpCourseProductRepository.loadCourseProductAssetGovernanceBatchTaskQueueObservation(
+        {
+          taskId: "asset_governance_batch_task_1",
+          limit: 5,
+        }
+      );
+
+    expect(result.summary.failedJobCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/batch-tasks/queue-observation?taskId=asset_governance_batch_task_1&limit=5",
       expect.objectContaining({
         credentials: "same-origin",
       })

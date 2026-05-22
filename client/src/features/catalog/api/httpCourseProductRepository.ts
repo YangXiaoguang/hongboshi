@@ -8,6 +8,7 @@ import {
   CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
   CourseProductAssetGovernanceBatchTaskListResultSchema,
   CourseProductAssetGovernanceBatchTaskMutationResultSchema,
+  CourseProductAssetGovernanceBatchTaskQueueObservationResultSchema,
   CourseProductAssetGovernanceHistoryResultSchema,
   CourseProductAssetGovernanceResultSchema,
   CourseProductAssetListResultSchema,
@@ -15,6 +16,7 @@ import {
   CourseProductContentMutationResultSchema,
   CourseProductContentQualityBatchResultSchema,
   CourseProductDetailContentSchema,
+  CourseProductLearningMaterialOperationsReportSchema,
   CourseProductListResultSchema,
   CourseProductMutationResultSchema,
   type CourseProductContentMutationResult,
@@ -36,6 +38,8 @@ import {
   type CourseProductAssetGovernanceBatchTaskListQuery,
   type CourseProductAssetGovernanceBatchTaskListResult,
   type CourseProductAssetGovernanceBatchTaskMutationResult,
+  type CourseProductAssetGovernanceBatchTaskQueueObservationQuery,
+  type CourseProductAssetGovernanceBatchTaskQueueObservationResult,
   type CourseProductAssetGovernanceBatchTaskReviewRequest,
   type CourseProductAssetGovernanceHistoryQuery,
   type CourseProductAssetGovernanceHistoryResult,
@@ -45,6 +49,7 @@ import {
   type CourseProductAssetUploadRequest,
   type CourseProductContentUpdateRequest,
   type CourseProductDetailContent,
+  type CourseProductLearningMaterialOperationsReport,
   type CourseProductMutationResult,
   type CourseProductBasicInfoUpdateRequest,
   type CourseProductPriceUpdateRequest,
@@ -104,6 +109,12 @@ const CourseProductAssetGovernanceBatchTaskExecutionDetailResponseSchema =
   );
 const CourseProductAssetGovernanceBatchTaskExecutionResponseSchema =
   ApiResponseSchema(CourseProductAssetGovernanceBatchTaskExecutionResultSchema);
+const CourseProductAssetGovernanceBatchTaskQueueObservationResponseSchema =
+  ApiResponseSchema(
+    CourseProductAssetGovernanceBatchTaskQueueObservationResultSchema
+  );
+const CourseProductLearningMaterialOperationsReportResponseSchema =
+  ApiResponseSchema(CourseProductLearningMaterialOperationsReportSchema);
 
 const API_BASE = "/api/catalog/admin";
 
@@ -263,6 +274,26 @@ export function parseCourseProductAssetGovernanceBatchTaskExecutionResponse(
   return parsed.data;
 }
 
+export function parseCourseProductAssetGovernanceBatchTaskQueueObservationResponse(
+  payload: unknown
+): CourseProductAssetGovernanceBatchTaskQueueObservationResult {
+  const parsed =
+    CourseProductAssetGovernanceBatchTaskQueueObservationResponseSchema.parse(
+      payload
+    );
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCourseProductLearningMaterialOperationsReportResponse(
+  payload: unknown
+): CourseProductLearningMaterialOperationsReport {
+  const parsed =
+    CourseProductLearningMaterialOperationsReportResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 function extractErrorMessage(payload: unknown, fallback: string) {
   const listParsed = CourseProductListResponseSchema.safeParse(payload);
   if (listParsed.success && !listParsed.data.ok) {
@@ -393,6 +424,28 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     !assetGovernanceBatchTaskExecutionDetailParsed.data.ok
   ) {
     return assetGovernanceBatchTaskExecutionDetailParsed.data.error.message;
+  }
+
+  const assetGovernanceBatchTaskQueueObservationParsed =
+    CourseProductAssetGovernanceBatchTaskQueueObservationResponseSchema.safeParse(
+      payload
+    );
+  if (
+    assetGovernanceBatchTaskQueueObservationParsed.success &&
+    !assetGovernanceBatchTaskQueueObservationParsed.data.ok
+  ) {
+    return assetGovernanceBatchTaskQueueObservationParsed.data.error.message;
+  }
+
+  const learningMaterialReportParsed =
+    CourseProductLearningMaterialOperationsReportResponseSchema.safeParse(
+      payload
+    );
+  if (
+    learningMaterialReportParsed.success &&
+    !learningMaterialReportParsed.data.ok
+  ) {
+    return learningMaterialReportParsed.data.error.message;
   }
 
   return fallback;
@@ -591,6 +644,26 @@ export const httpCourseProductRepository = {
     return parseCourseProductAssetGovernanceResponse(payload);
   },
 
+  async loadCourseProductLearningMaterialOperationsReport(): Promise<CourseProductLearningMaterialOperationsReport> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/learning-material-report`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程学习资料运营报表读取失败")
+      );
+    }
+    return parseCourseProductLearningMaterialOperationsReportResponse(payload);
+  },
+
   async loadCourseProductAssetGovernanceHistory(
     query: Partial<CourseProductAssetGovernanceHistoryQuery> = {}
   ): Promise<CourseProductAssetGovernanceHistoryResult> {
@@ -653,6 +726,30 @@ export const httpCourseProductRepository = {
       );
     }
     return parseCourseProductAssetGovernanceBatchTaskListResponse(payload);
+  },
+
+  async loadCourseProductAssetGovernanceBatchTaskQueueObservation(
+    query: Partial<CourseProductAssetGovernanceBatchTaskQueueObservationQuery> = {}
+  ): Promise<CourseProductAssetGovernanceBatchTaskQueueObservationResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/governance/batch-tasks/queue-observation${queryStringFromRecord(query)}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程素材批量治理队列观测读取失败")
+      );
+    }
+    return parseCourseProductAssetGovernanceBatchTaskQueueObservationResponse(
+      payload
+    );
   },
 
   async createCourseProductAssetGovernanceBatchTask(

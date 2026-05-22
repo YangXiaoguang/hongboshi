@@ -12,6 +12,10 @@ type BatchTaskExecutionQueueRunInput = {
 };
 
 type BatchTaskExecutionRunner<T> = () => Promise<T>;
+type BatchTaskExecutionQueueListInput = {
+  taskId?: string;
+  limit?: number;
+};
 
 export interface CourseProductAssetGovernanceBatchTaskExecutionQueue {
   enqueue<T>(
@@ -25,6 +29,9 @@ export interface CourseProductAssetGovernanceBatchTaskExecutionQueue {
   getJobStatus(
     jobId: string
   ): Promise<CourseProductAssetGovernanceBatchTaskExecutionJob | undefined>;
+  listJobs(
+    input?: BatchTaskExecutionQueueListInput
+  ): Promise<CourseProductAssetGovernanceBatchTaskExecutionJob[]>;
 }
 
 export class InMemoryCourseProductAssetGovernanceBatchTaskExecutionQueue implements CourseProductAssetGovernanceBatchTaskExecutionQueue {
@@ -55,6 +62,15 @@ export class InMemoryCourseProductAssetGovernanceBatchTaskExecutionQueue impleme
   async getJobStatus(jobId: string) {
     const job = this.jobs.get(jobId);
     return job ? cloneJob(job) : undefined;
+  }
+
+  async listJobs(input: BatchTaskExecutionQueueListInput = {}) {
+    const limit = Math.max(1, Math.min(input.limit ?? 20, 100));
+    return Array.from(this.jobs.values())
+      .filter(job => !input.taskId || job.taskId === input.taskId)
+      .sort((left, right) => right.enqueuedAt.localeCompare(left.enqueuedAt))
+      .slice(0, limit)
+      .map(cloneJob);
   }
 
   clear() {

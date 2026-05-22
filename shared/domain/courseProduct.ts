@@ -691,6 +691,69 @@ export const CourseProductAssetGovernanceHistoryDistributionSchema = z.object({
   count: z.number().int().nonnegative(),
 });
 
+export const CourseProductLearningMaterialOperationsReportProductRowSchema =
+  z.object({
+    productId: EntityIdSchema,
+    courseId: LegacyNumericIdSchema,
+    title: z.string().trim().min(2),
+    status: CourseProductStatusSchema,
+    reviewStatus: CourseProductReviewStatusSchema,
+    chapterCount: z.number().int().nonnegative(),
+    materialSlotCount: z.number().int().nonnegative(),
+    boundMaterialSlotCount: z.number().int().nonnegative(),
+    materialBindingRate: z.number().min(0).max(1),
+    learningMaterialAssetCount: z.number().int().nonnegative(),
+    downloadableAssetCount: z.number().int().nonnegative(),
+    issueAssetCount: z.number().int().nonnegative(),
+  });
+
+export const CourseProductLearningMaterialOperationsReportSummarySchema =
+  z.object({
+    totalProductCount: z.number().int().nonnegative(),
+    productWithMaterialSlotsCount: z.number().int().nonnegative(),
+    chapterCount: z.number().int().nonnegative(),
+    materialSlotCount: z.number().int().nonnegative(),
+    boundMaterialSlotCount: z.number().int().nonnegative(),
+    materialBindingRate: z.number().min(0).max(1),
+    totalAssetCount: z.number().int().nonnegative(),
+    learningMaterialAssetCount: z.number().int().nonnegative(),
+    activeLearningMaterialAssetCount: z.number().int().nonnegative(),
+    approvedLearningMaterialAssetCount: z.number().int().nonnegative(),
+    downloadableLearningMaterialAssetCount: z.number().int().nonnegative(),
+    downloadDisabledLearningMaterialAssetCount: z.number().int().nonnegative(),
+    referencedLearningMaterialAssetCount: z.number().int().nonnegative(),
+    unreferencedLearningMaterialAssetCount: z.number().int().nonnegative(),
+    pendingComplianceLearningMaterialCount: z.number().int().nonnegative(),
+    rejectedComplianceLearningMaterialCount: z.number().int().nonnegative(),
+    softDeleteCandidateLearningMaterialCount: z.number().int().nonnegative(),
+    governanceIssueLearningMaterialCount: z.number().int().nonnegative(),
+    referenceSource: CourseProductAssetGovernanceReferenceSourceSchema,
+  });
+
+export const CourseProductLearningMaterialOperationsReportSchema = z.object({
+  generatedAt: DateTimeLikeSchema,
+  summary: CourseProductLearningMaterialOperationsReportSummarySchema,
+  assetKindDistribution: z
+    .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+    .default([]),
+  complianceStatusDistribution: z
+    .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+    .default([]),
+  downloadStatusDistribution: z
+    .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+    .default([]),
+  referenceTypeDistribution: z
+    .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+    .default([]),
+  issueTypeDistribution: z
+    .array(CourseProductAssetGovernanceHistoryDistributionSchema)
+    .default([]),
+  productRows: z
+    .array(CourseProductLearningMaterialOperationsReportProductRowSchema)
+    .default([]),
+  notes: z.array(z.string().trim().min(1).max(240)).default([]),
+});
+
 export const CourseProductAssetGovernanceHistorySummarySchema = z.object({
   totalEventCount: z.number().int().nonnegative(),
   filteredEventCount: z.number().int().nonnegative(),
@@ -902,6 +965,54 @@ export const CourseProductAssetGovernanceBatchTaskExecutionJobSchema = z.object(
     lastError: z.string().trim().min(1).max(240).optional(),
   }
 );
+
+export const CourseProductAssetGovernanceBatchTaskQueueObservationQuerySchema =
+  z.object({
+    taskId: EntityIdSchema.optional(),
+    limit: z.number().int().min(1).max(20).default(10),
+  });
+
+export const CourseProductAssetGovernanceBatchTaskQueueObservationItemSchema =
+  z.object({
+    taskId: EntityIdSchema,
+    task: CourseProductAssetGovernanceBatchTaskSchema.optional(),
+    latestJob:
+      CourseProductAssetGovernanceBatchTaskExecutionJobSchema.optional(),
+    approvalStatus:
+      CourseProductAssetGovernanceBatchTaskStatusSchema.optional(),
+    executionStatus:
+      CourseProductAssetGovernanceBatchTaskExecutionStatusSchema.optional(),
+    executionAttemptCount: z.number().int().nonnegative().default(0),
+    lastExecutionError: z.string().trim().min(1).max(240).optional(),
+    lastExecutionFailedAt: DateTimeLikeSchema.optional(),
+    retryRecommended: z.boolean().default(false),
+    operatorHint: z.string().trim().min(1).max(240),
+  });
+
+export const CourseProductAssetGovernanceBatchTaskQueueObservationSummarySchema =
+  z.object({
+    observedTaskCount: z.number().int().nonnegative(),
+    observedJobCount: z.number().int().nonnegative(),
+    queuedJobCount: z.number().int().nonnegative(),
+    runningJobCount: z.number().int().nonnegative(),
+    succeededJobCount: z.number().int().nonnegative(),
+    failedJobCount: z.number().int().nonnegative(),
+    runningTaskCount: z.number().int().nonnegative(),
+    failedTaskCount: z.number().int().nonnegative(),
+    retryableTaskCount: z.number().int().nonnegative(),
+    totalExecutionAttemptCount: z.number().int().nonnegative(),
+  });
+
+export const CourseProductAssetGovernanceBatchTaskQueueObservationResultSchema =
+  z.object({
+    generatedAt: DateTimeLikeSchema,
+    query: CourseProductAssetGovernanceBatchTaskQueueObservationQuerySchema,
+    summary: CourseProductAssetGovernanceBatchTaskQueueObservationSummarySchema,
+    items: z.array(
+      CourseProductAssetGovernanceBatchTaskQueueObservationItemSchema
+    ),
+    notes: z.array(z.string().trim().min(1).max(240)).default([]),
+  });
 
 export const CourseProductAssetGovernanceBatchTaskCreateRequestSchema = z
   .object({
@@ -1658,6 +1769,15 @@ export type CourseProductAssetGovernanceActionRequest = z.infer<
 export type CourseProductAssetGovernanceActionResult = z.infer<
   typeof CourseProductAssetGovernanceActionResultSchema
 >;
+export type CourseProductLearningMaterialOperationsReportProductRow = z.infer<
+  typeof CourseProductLearningMaterialOperationsReportProductRowSchema
+>;
+export type CourseProductLearningMaterialOperationsReportSummary = z.infer<
+  typeof CourseProductLearningMaterialOperationsReportSummarySchema
+>;
+export type CourseProductLearningMaterialOperationsReport = z.infer<
+  typeof CourseProductLearningMaterialOperationsReportSchema
+>;
 export type CourseProductAssetGovernanceHistoryQuery = z.infer<
   typeof CourseProductAssetGovernanceHistoryQuerySchema
 >;
@@ -1688,6 +1808,21 @@ export type CourseProductAssetGovernanceBatchTask = z.infer<
 export type CourseProductAssetGovernanceBatchTaskExecutionJob = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskExecutionJobSchema
 >;
+export type CourseProductAssetGovernanceBatchTaskQueueObservationQuery =
+  z.infer<
+    typeof CourseProductAssetGovernanceBatchTaskQueueObservationQuerySchema
+  >;
+export type CourseProductAssetGovernanceBatchTaskQueueObservationItem = z.infer<
+  typeof CourseProductAssetGovernanceBatchTaskQueueObservationItemSchema
+>;
+export type CourseProductAssetGovernanceBatchTaskQueueObservationSummary =
+  z.infer<
+    typeof CourseProductAssetGovernanceBatchTaskQueueObservationSummarySchema
+  >;
+export type CourseProductAssetGovernanceBatchTaskQueueObservationResult =
+  z.infer<
+    typeof CourseProductAssetGovernanceBatchTaskQueueObservationResultSchema
+  >;
 export type CourseProductAssetGovernanceBatchTaskReviewSummary = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskReviewSummarySchema
 >;

@@ -63,4 +63,37 @@ describe("course product asset governance batch task execution queue", () => {
       lastError: "queue worker failed",
     });
   });
+
+  it("lists recent jobs by task id for queue observation", async () => {
+    const queue =
+      new InMemoryCourseProductAssetGovernanceBatchTaskExecutionQueue();
+
+    await queue.runNow(
+      {
+        taskId: "asset_governance_batch_task_1",
+        requestedBy: "operator_1",
+        now: "2026-05-22T10:02:00.000Z",
+      },
+      async () => ({ ok: true })
+    );
+    await queue.runNow(
+      {
+        taskId: "asset_governance_batch_task_2",
+        requestedBy: "operator_1",
+        now: "2026-05-22T10:03:00.000Z",
+      },
+      async () => ({ ok: true })
+    );
+
+    const jobs = await queue.listJobs({
+      taskId: "asset_governance_batch_task_2",
+      limit: 1,
+    });
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      taskId: "asset_governance_batch_task_2",
+      status: "succeeded",
+    });
+  });
 });

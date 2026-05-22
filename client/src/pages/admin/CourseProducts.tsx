@@ -54,6 +54,7 @@ import {
   type CourseProductAssetGovernanceBatchTaskExecutionStatusFilter,
   type CourseProductAssetGovernanceBatchTaskListQuery,
   type CourseProductAssetGovernanceBatchTaskListResult,
+  type CourseProductAssetGovernanceBatchTaskQueueObservationResult,
   type CourseProductAssetGovernanceBatchTaskReviewAction,
   type CourseProductAssetGovernanceBatchTaskReviewRequest,
   type CourseProductAssetGovernanceHistoryQuery,
@@ -71,6 +72,7 @@ import {
   type CourseProductContentMaterialType,
   type CourseProductContentUpdateRequest,
   type CourseProductDetailContent,
+  type CourseProductLearningMaterialOperationsReport,
   type CourseProductListItem,
   type CourseProductListQuery,
   type CourseProductMerchandisingAssetUsage,
@@ -326,6 +328,13 @@ const assetGovernanceBatchTaskExecutionStatusCopy = {
   CourseProductAssetGovernanceBatchTask["executionStatus"],
   string
 >;
+
+const assetGovernanceBatchTaskQueueJobStatusCopy = {
+  queued: "已排队",
+  running: "执行中",
+  succeeded: "已成功",
+  failed: "已失败",
+} as const;
 
 const assetGovernanceBatchTaskReviewActionCopy = {
   approve: "通过审批",
@@ -698,6 +707,47 @@ function assetGovernanceMetricItems(
         : "未读取",
     },
   ];
+}
+
+function queueObservationMetricItems(
+  observation?: CourseProductAssetGovernanceBatchTaskQueueObservationResult
+) {
+  const summary = observation?.summary;
+  return [
+    { label: "观测任务", value: summary?.observedTaskCount ?? 0 },
+    { label: "队列 job", value: summary?.observedJobCount ?? 0 },
+    { label: "执行中", value: summary?.runningJobCount ?? 0 },
+    { label: "失败 job", value: summary?.failedJobCount ?? 0 },
+    { label: "可重试", value: summary?.retryableTaskCount ?? 0 },
+    { label: "尝试次数", value: summary?.totalExecutionAttemptCount ?? 0 },
+  ];
+}
+
+function learningMaterialReportMetricItems(
+  report?: CourseProductLearningMaterialOperationsReport
+) {
+  const summary = report?.summary;
+  return [
+    { label: "资料槽位", value: summary?.materialSlotCount ?? 0 },
+    { label: "已绑定", value: summary?.boundMaterialSlotCount ?? 0 },
+    {
+      label: "绑定率",
+      value: summary ? formatPercent(summary.materialBindingRate) : "0%",
+    },
+    { label: "资料素材", value: summary?.learningMaterialAssetCount ?? 0 },
+    {
+      label: "开放下载",
+      value: summary?.downloadableLearningMaterialAssetCount ?? 0,
+    },
+    {
+      label: "治理问题",
+      value: summary?.governanceIssueLearningMaterialCount ?? 0,
+    },
+  ];
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
 }
 
 function hasAssetGovernanceIssue(
@@ -1126,6 +1176,8 @@ function CourseProductAssetGovernancePanel({
   history,
   batchDraft,
   batchTasks,
+  queueObservation,
+  learningMaterialReport,
   filter,
   historyFilters,
   batchTaskFilters,
@@ -1149,6 +1201,8 @@ function CourseProductAssetGovernancePanel({
   history?: CourseProductAssetGovernanceHistoryResult;
   batchDraft?: CourseProductAssetGovernanceBatchDraftResult;
   batchTasks?: CourseProductAssetGovernanceBatchTaskListResult;
+  queueObservation?: CourseProductAssetGovernanceBatchTaskQueueObservationResult;
+  learningMaterialReport?: CourseProductLearningMaterialOperationsReport;
   filter: AssetGovernanceFilter;
   historyFilters: AssetGovernanceHistoryFilterState;
   batchTaskFilters: AssetGovernanceBatchTaskFilterState;
@@ -1242,6 +1296,167 @@ function CourseProductAssetGovernancePanel({
           </div>
         </div>
       ) : null}
+
+      <div className="grid border-b border-[#E8DED0] bg-white lg:grid-cols-2">
+        <div className="border-b border-[#E8DED0] px-5 py-4 lg:border-b-0 lg:border-r">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[#243B35]">队列观测</p>
+              <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                最近任务 job、执行中、失败和可重试压力。
+              </p>
+            </div>
+            <span className="inline-flex h-7 items-center rounded-full bg-[#F1E8DC] px-2.5 text-xs font-semibold text-[#756B60]">
+              {queueObservation?.generatedAt
+                ? formatDate(queueObservation.generatedAt)
+                : canReview
+                  ? "待读取"
+                  : "需审核权限"}
+            </span>
+          </div>
+          {queueObservation ? (
+            <>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {queueObservationMetricItems(queueObservation).map(item => (
+                  <div
+                    key={item.label}
+                    className="rounded-lg border border-[#E8DED0] bg-[#FBF7EF] px-3 py-2"
+                  >
+                    <p className="text-xs text-[#8A8176]">{item.label}</p>
+                    <p className="mt-1 text-lg font-semibold text-[#243B35]">
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 space-y-2">
+                {queueObservation.items.slice(0, 3).map(item => (
+                  <div
+                    key={item.taskId}
+                    className="rounded-lg border border-[#E1D7C8] bg-white px-3 py-2"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-[#243B35]">
+                        {item.task?.reason ?? item.taskId}
+                      </p>
+                      <span className="text-xs text-[#8A8176]">
+                        {item.latestJob
+                          ? assetGovernanceBatchTaskQueueJobStatusCopy[
+                              item.latestJob.status
+                            ]
+                          : item.executionStatus
+                            ? assetGovernanceBatchTaskExecutionStatusCopy[
+                                item.executionStatus
+                              ]
+                            : "无 job"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-[#6F7771]">
+                      {item.operatorHint}
+                    </p>
+                    {item.lastExecutionError ? (
+                      <p className="mt-1 text-xs leading-5 text-[#A65F48]">
+                        {item.lastExecutionError}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+                {!queueObservation.items.length ? (
+                  <p className="text-xs leading-5 text-[#8A8176]">
+                    暂无可观测队列任务。
+                  </p>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-[#8A8176]">
+              当前账号只能查看素材治理摘要，队列观测需审核权限。
+            </p>
+          )}
+        </div>
+
+        <div className="px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[#243B35]">
+                学习资料运营报表
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                章节资料绑定、下载开放、合规和治理问题分布。
+              </p>
+            </div>
+            <span className="inline-flex h-7 items-center rounded-full bg-[#EEF6ED] px-2.5 text-xs font-semibold text-[#41675A]">
+              {learningMaterialReport
+                ? assetGovernanceReferenceSourceCopy[
+                    learningMaterialReport.summary.referenceSource
+                  ]
+                : "待读取"}
+            </span>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {learningMaterialReportMetricItems(learningMaterialReport).map(
+              item => (
+                <div
+                  key={item.label}
+                  className="rounded-lg border border-[#E8DED0] bg-[#FBF7EF] px-3 py-2"
+                >
+                  <p className="text-xs text-[#8A8176]">{item.label}</p>
+                  <p className="mt-1 text-lg font-semibold text-[#243B35]">
+                    {item.value}
+                  </p>
+                </div>
+              )
+            )}
+          </div>
+          {learningMaterialReport ? (
+            <>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {learningMaterialReport.issueTypeDistribution
+                  .slice(0, 5)
+                  .map(item => (
+                    <span
+                      key={item.key}
+                      className="inline-flex h-7 items-center rounded-full bg-[#FFF7E5] px-2.5 text-xs font-semibold text-[#8F6B1C]"
+                    >
+                      {item.label} {item.count}
+                    </span>
+                  ))}
+                {!learningMaterialReport.issueTypeDistribution.length ? (
+                  <span className="inline-flex h-7 items-center rounded-full bg-[#EEF6ED] px-2.5 text-xs font-semibold text-[#41675A]">
+                    暂无资料治理问题
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-3 space-y-2">
+                {learningMaterialReport.productRows.slice(0, 3).map(row => (
+                  <div
+                    key={row.productId}
+                    className="rounded-lg border border-[#E1D7C8] bg-white px-3 py-2"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="truncate text-xs font-semibold text-[#243B35]">
+                        {row.title}
+                      </p>
+                      <span className="text-xs text-[#8A8176]">
+                        绑定率 {formatPercent(row.materialBindingRate)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-[#6F7771]">
+                      资料槽 {row.materialSlotCount} · 已绑定{" "}
+                      {row.boundMaterialSlotCount} · 问题素材{" "}
+                      {row.issueAssetCount}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-[#8A8176]">
+              学习资料运营报表待读取。
+            </p>
+          )}
+        </div>
+      </div>
 
       <div className="flex gap-2 overflow-x-auto border-b border-[#E8DED0] px-5 py-3">
         {assetGovernanceFilters.map(option => (
@@ -2185,6 +2400,10 @@ export default function CourseProducts() {
     useState<CourseProductAssetGovernanceBatchDraftResult>();
   const [assetGovernanceBatchTasks, setAssetGovernanceBatchTasks] =
     useState<CourseProductAssetGovernanceBatchTaskListResult>();
+  const [assetGovernanceQueueObservation, setAssetGovernanceQueueObservation] =
+    useState<CourseProductAssetGovernanceBatchTaskQueueObservationResult>();
+  const [learningMaterialReport, setLearningMaterialReport] =
+    useState<CourseProductLearningMaterialOperationsReport>();
   const [assetGovernanceFilter, setAssetGovernanceFilter] =
     useState<AssetGovernanceFilter>("all");
   const [assetGovernanceHistoryFilters, setAssetGovernanceHistoryFilters] =
@@ -2317,13 +2536,16 @@ export default function CourseProducts() {
         products,
         contentQuality,
         governance,
+        learningReport,
         history,
         batchDraft,
         batchTasks,
+        queueObservation,
       ] = await Promise.all([
         httpCourseProductRepository.loadCourseProducts(query),
         httpCourseProductRepository.loadCourseProductContentQuality(),
         httpCourseProductRepository.loadCourseProductAssetGovernance(),
+        httpCourseProductRepository.loadCourseProductLearningMaterialOperationsReport(),
         httpCourseProductRepository.loadCourseProductAssetGovernanceHistory(
           assetGovernanceHistoryQueryFromFilters(assetGovernanceHistoryFilters)
         ),
@@ -2344,12 +2566,19 @@ export default function CourseProducts() {
               )
             )
           : Promise.resolve(undefined),
+        catalogPermissions.canReview
+          ? httpCourseProductRepository.loadCourseProductAssetGovernanceBatchTaskQueueObservation(
+              { limit: 6 }
+            )
+          : Promise.resolve(undefined),
       ]);
       setData(products);
       setAssetGovernance(governance);
+      setLearningMaterialReport(learningReport);
       setAssetGovernanceHistory(history);
       setAssetGovernanceBatchDraft(batchDraft);
       setAssetGovernanceBatchTasks(batchTasks);
+      setAssetGovernanceQueueObservation(queueObservation);
       setContentQualityByProductId(
         Object.fromEntries(
           contentQuality.items.map(item => [item.productId, item.quality])
@@ -3582,6 +3811,8 @@ export default function CourseProducts() {
         history={assetGovernanceHistory}
         batchDraft={assetGovernanceBatchDraft}
         batchTasks={assetGovernanceBatchTasks}
+        queueObservation={assetGovernanceQueueObservation}
+        learningMaterialReport={learningMaterialReport}
         filter={assetGovernanceFilter}
         historyFilters={assetGovernanceHistoryFilters}
         batchTaskFilters={assetGovernanceBatchTaskFilters}

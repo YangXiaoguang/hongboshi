@@ -17,12 +17,14 @@ import {
   getCourseProductAdminListPayload,
   getCourseProductAssetBackfillPayload,
   getCourseProductAssetGovernanceBatchDraftPayload,
+  getCourseProductAssetGovernanceBatchTaskQueueObservationPayload,
   getCourseProductAssetGovernanceBatchTaskExecutionDetailPayload,
   getCourseProductAssetGovernanceBatchTaskExecutionPlanPayload,
   getCourseProductAssetGovernanceBatchTasksPayload,
   getCourseProductAssetGovernanceHistoryPayload,
   getCourseProductAssetDownloadPayload,
   getCourseProductAssetGovernancePayload,
+  getCourseProductLearningMaterialOperationsReportPayload,
   getCourseProductAssetsPayload,
   reviewCourseProductAssetGovernanceBatchTaskPayload,
   getCourseProductContentQualityPayload,
@@ -44,6 +46,7 @@ import {
   type CourseProductAssetReferenceStore,
 } from "./courseProductAssetStore";
 import { InMemoryCourseProductAssetGovernanceBatchTaskStore } from "./courseProductAssetGovernanceBatchTaskStore";
+import { InMemoryCourseProductAssetGovernanceBatchTaskExecutionQueue } from "./courseProductAssetGovernanceBatchTaskExecutionQueue";
 
 const products = courses.slice(0, 4).map(courseProductFromCourse);
 const createStore = () => new InMemoryCourseProductStore(products);
@@ -852,6 +855,41 @@ describe("catalog admin api payloads", () => {
       },
     });
 
+    const deniedLearningReport =
+      await getCourseProductLearningMaterialOperationsReportPayload(
+        { id: "member_1", roles: ["member"] },
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          now: "2026-05-21T10:00:30.000Z",
+        }
+      );
+    expect(deniedLearningReport.status).toBe(403);
+
+    const learningReport =
+      await getCourseProductLearningMaterialOperationsReportPayload(
+        { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          now: "2026-05-21T10:01:00.000Z",
+        }
+      );
+    expect(learningReport.status).toBe(200);
+    expect(learningReport.body).toMatchObject({
+      ok: true,
+      data: {
+        summary: {
+          totalProductCount: 1,
+          learningMaterialAssetCount: 1,
+          pendingComplianceLearningMaterialCount: 1,
+          governanceIssueLearningMaterialCount: 1,
+        },
+      },
+    });
+
     const deniedDraft = await getCourseProductAssetGovernanceBatchDraftPayload(
       { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
       { issueFilter: "pending_compliance" },
@@ -1247,6 +1285,69 @@ describe("catalog admin api payloads", () => {
         meta: {
           total: 1,
         },
+      },
+    });
+
+    const deniedQueueObservation =
+      await getCourseProductAssetGovernanceBatchTaskQueueObservationPayload(
+        { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+        {},
+        {
+          taskStore,
+          queue:
+            new InMemoryCourseProductAssetGovernanceBatchTaskExecutionQueue(),
+          now: "2026-05-21T10:11:57.000Z",
+        }
+      );
+    expect(deniedQueueObservation.status).toBe(403);
+
+    const queue =
+      new InMemoryCourseProductAssetGovernanceBatchTaskExecutionQueue();
+    await queue.runNow(
+      {
+        taskId: reviewTaskId,
+        requestedBy: "catalog_operator_2",
+        now: "2026-05-21T10:11:58.000Z",
+      },
+      async () => ({
+        summary: executed.body.ok
+          ? executed.body.data.summary
+          : {
+              taskId: reviewTaskId,
+              executionStatus: "completed" as const,
+              plannedActionCount: 1,
+              executedActionCount: 1,
+              skippedActionCount: 0,
+              failedActionCount: 0,
+              auditEventCount: 1,
+            },
+      })
+    );
+    const queueObservation =
+      await getCourseProductAssetGovernanceBatchTaskQueueObservationPayload(
+        { id: "catalog_operator_2", roles: ["catalog_operator"] },
+        { taskId: reviewTaskId, limit: 5 },
+        {
+          taskStore,
+          queue,
+          now: "2026-05-21T10:11:59.000Z",
+        }
+      );
+    expect(queueObservation.body).toMatchObject({
+      ok: true,
+      data: {
+        summary: {
+          observedTaskCount: 1,
+          succeededJobCount: 1,
+        },
+        items: [
+          {
+            taskId: reviewTaskId,
+            latestJob: {
+              status: "succeeded",
+            },
+          },
+        ],
       },
     });
 

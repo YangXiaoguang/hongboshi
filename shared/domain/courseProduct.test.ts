@@ -22,6 +22,7 @@ import {
   CourseProductAssetGovernanceBatchTaskListQuerySchema,
   CourseProductAssetGovernanceBatchTaskListResultSchema,
   CourseProductAssetGovernanceBatchTaskMutationResultSchema,
+  CourseProductAssetGovernanceBatchTaskQueueObservationResultSchema,
   CourseProductAssetGovernanceBatchTaskReviewRequestSchema,
   CourseProductAssetGovernanceHistoryQuerySchema,
   CourseProductAssetGovernanceHistoryResultSchema,
@@ -34,6 +35,7 @@ import {
   CourseProductBasicInfoUpdateRequestSchema,
   CourseProductContentUpdateRequestSchema,
   CourseProductDetailContentSchema,
+  CourseProductLearningMaterialOperationsReportSchema,
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
   CourseProductReviewActionRequestSchema,
@@ -898,6 +900,43 @@ describe("course product domain contract", () => {
     });
     expect(job.status).toBe("failed");
 
+    const queueObservation =
+      CourseProductAssetGovernanceBatchTaskQueueObservationResultSchema.parse({
+        generatedAt: "2026-05-21T09:46:00.000Z",
+        query: {
+          taskId: batchTask.id,
+          limit: 5,
+        },
+        summary: {
+          observedTaskCount: 1,
+          observedJobCount: 1,
+          queuedJobCount: 0,
+          runningJobCount: 0,
+          succeededJobCount: 0,
+          failedJobCount: 1,
+          runningTaskCount: 0,
+          failedTaskCount: 1,
+          retryableTaskCount: 1,
+          totalExecutionAttemptCount: 2,
+        },
+        items: [
+          {
+            taskId: batchTask.id,
+            task: retryableTask,
+            latestJob: job,
+            approvalStatus: "approved",
+            executionStatus: "failed",
+            executionAttemptCount: 2,
+            lastExecutionError: "audit append timeout",
+            lastExecutionFailedAt: "2026-05-21T09:45:00.000Z",
+            retryRecommended: true,
+            operatorHint: "检查失败原因后，可重新打开执行面板重试",
+          },
+        ],
+        notes: ["当前队列观测基于内存 job 状态，服务重启后只保留任务执行字段"],
+      });
+    expect(queueObservation.summary.retryableTaskCount).toBe(1);
+
     expect(
       CourseProductAssetGovernanceBatchTaskListQuerySchema.parse({
         approvalStatus: "approved",
@@ -915,6 +954,68 @@ describe("course product domain contract", () => {
       issueFilter: "pending_compliance",
       pageSize: 8,
     });
+
+    const learningReport =
+      CourseProductLearningMaterialOperationsReportSchema.parse({
+        generatedAt: "2026-05-21T09:47:00.000Z",
+        summary: {
+          totalProductCount: 1,
+          productWithMaterialSlotsCount: 1,
+          chapterCount: 3,
+          materialSlotCount: 6,
+          boundMaterialSlotCount: 4,
+          materialBindingRate: 0.6667,
+          totalAssetCount: 8,
+          learningMaterialAssetCount: 4,
+          activeLearningMaterialAssetCount: 4,
+          approvedLearningMaterialAssetCount: 3,
+          downloadableLearningMaterialAssetCount: 2,
+          downloadDisabledLearningMaterialAssetCount: 2,
+          referencedLearningMaterialAssetCount: 3,
+          unreferencedLearningMaterialAssetCount: 1,
+          pendingComplianceLearningMaterialCount: 1,
+          rejectedComplianceLearningMaterialCount: 0,
+          softDeleteCandidateLearningMaterialCount: 1,
+          governanceIssueLearningMaterialCount: 2,
+          referenceSource: "reference_table",
+        },
+        assetKindDistribution: [
+          { key: "worksheet", label: "练习表", count: 2 },
+          { key: "audio", label: "音频", count: 1 },
+        ],
+        complianceStatusDistribution: [
+          { key: "approved", label: "已通过", count: 3 },
+          { key: "pending", label: "待审核", count: 1 },
+        ],
+        downloadStatusDistribution: [
+          { key: "download_enabled", label: "已开放下载", count: 2 },
+          { key: "download_disabled", label: "下载关闭", count: 2 },
+        ],
+        referenceTypeDistribution: [
+          { key: "chapter_exercise", label: "章节练习", count: 2 },
+        ],
+        issueTypeDistribution: [
+          { key: "download_disabled_material", label: "下载关闭", count: 2 },
+        ],
+        productRows: [
+          {
+            productId: "course_product_1",
+            courseId: 1,
+            title: "情绪管理入门",
+            status: "published",
+            reviewStatus: "approved",
+            chapterCount: 3,
+            materialSlotCount: 6,
+            boundMaterialSlotCount: 4,
+            materialBindingRate: 0.6667,
+            learningMaterialAssetCount: 4,
+            downloadableAssetCount: 2,
+            issueAssetCount: 2,
+          },
+        ],
+        notes: ["发现 2 个学习资料素材仍有治理问题"],
+      });
+    expect(learningReport.summary.materialBindingRate).toBe(0.6667);
   });
 
   it("validates the first course detail content contract", () => {
