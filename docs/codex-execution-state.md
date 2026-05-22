@@ -699,7 +699,7 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：ADM-IA-A 后台壳分离 + /admin/courses 减负第一刀
+### 最近完成阶段：ADM-IA-B-A 课程素材治理组件与模型拆分
 
 ADM-IA-A 稳定切片已交付：
 
@@ -709,17 +709,24 @@ ADM-IA-A 稳定切片已交付：
 - `/admin/courses` 默认只加载课程商品列表与内容质量，不再默认拉取素材治理、学习资料报表、治理历史、批量任务、队列观测和高风险预案。
 - `/admin/course-assets/governance` 承接原素材治理工作区，继续保留治理摘要、学习资料报表、批量草稿、批量任务、队列观测和高风险动作只读预案。
 
-### 后台待续：ADM-IA-B 课程商品详情页与课程素材治理代码级拆分
+ADM-IA-B-A 稳定切片已交付：
+
+- 新增 `client/src/pages/admin/course-assets/courseAssetGovernanceModel.ts`，把素材治理筛选、批量任务 query/request 映射、执行预案摘要、治理建议、治理指标和批量任务状态 copy 从 `CourseProducts.tsx` 拆出。
+- 新增 `client/src/pages/admin/course-assets/CourseProductAssetGovernancePanel.tsx`，把素材治理工作区主面板从课程商品页主文件迁出，`CourseProducts.tsx` 从 6263 行降至 4684 行。
+- 新增 `client/src/pages/admin/courses/CourseProductsPage.tsx` 与 `client/src/pages/admin/course-assets/CourseAssetGovernancePage.tsx` 页面入口，`App.tsx` 不再直接在路由层传递 `workspace` 参数。
+- `CourseProducts.test.ts` 继续通过 `CourseProducts.tsx` re-export 使用治理 helper，外部测试契约保持稳定。
+
+### 后台待续：ADM-IA-B-B 治理弹窗与治理数据加载彻底迁出
 
 业务目标：
 
-ADM-IA-A 已先完成路由和视觉分离，但 `CourseProducts.tsx` 仍承载过多后台代码。下一步应把课程商品详情、内容编辑、素材治理面板和批量任务弹窗拆到独立组件/页面，减少单文件复杂度，并让每个后台页面只拥有自己的数据加载和操作状态。
+ADM-IA-B-A 已先完成素材治理模型、主面板和页面入口拆分，但 `CourseProducts.tsx` 仍保留治理弹窗、治理 action 状态和 asset-governance workspace 数据加载。下一步应把治理弹窗与治理数据加载彻底迁入 `course-assets` 页面，让课程商品页只拥有商品列表、商品编辑、内容编辑和价格/审核/上下架状态。
 
 建议实施范围：
 
-- 新建 `client/src/pages/admin/courses/*` 与 `client/src/pages/admin/course-assets/*`，把商品列表页、素材治理页和通用弹窗从 `CourseProducts.tsx` 拆出。
-- 课程商品列表下一步只保留商品表格、基础动作弹窗、审核/改价/上下架入口，详情内容编辑迁到 `/admin/courses/:courseId` 或详情抽屉。
-- 课程素材治理页迁出 `CourseProductAssetGovernancePanel`、批量任务弹窗和治理动作弹窗，形成独立页面级组件。
+- 新建 `CourseAssetGovernanceDialogs.tsx` 或直接升级 `CourseAssetGovernancePage.tsx`，承接单素材治理、批量草案、审批、取消和执行预案弹窗。
+- 从 `CourseProducts.tsx` 删除 `workspace` prop、治理状态、治理加载分支和治理弹窗，仅保留 `/admin/courses` 商品管理主链路。
+- 课程商品列表下一步只保留商品表格、基础动作弹窗、审核/改价/上下架入口；内容编辑后续迁到 `/admin/courses/:courseId` 或详情抽屉。
 - 补后台页面级 loading/error/empty 规范，避免一个刷新按钮同时驱动多个不相关数据域。
 - 保留 CUX-I-B-B-T 高风险动作执行开关与二次审批为后续业务切片，待后台 IA 拆分稳定后继续。
 
@@ -742,4 +749,4 @@ ADM-IA-A 已先完成路由和视觉分离，但 `CourseProducts.tsx` 仍承载�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-IA-B 课程商品详情页与课程素材治理代码级拆分，CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-IA-B-B 治理弹窗与治理数据加载彻底迁出，CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

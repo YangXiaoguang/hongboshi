@@ -17,7 +17,8 @@ import CounselorWorkbench from "./pages/CounselorWorkbench";
 import CourseDetail from "./pages/CourseDetail";
 import CourseLearning from "./pages/CourseLearning";
 import Courses from "./pages/Courses";
-import CourseProducts from "./pages/admin/CourseProducts";
+import CourseAssetGovernancePage from "./pages/admin/course-assets/CourseAssetGovernancePage";
+import CourseProductsPage from "./pages/admin/courses/CourseProductsPage";
 import FinanceManagement from "./pages/admin/FinanceManagement";
 import Home from "./pages/Home";
 import MarketingRules from "./pages/admin/MarketingRules";
@@ -55,12 +56,12 @@ function Router() {
       </Route>
       <Route path={"/admin/courses"}>
         <AdminLayout>
-          <CourseProducts />
+          <CourseProductsPage />
         </AdminLayout>
       </Route>
       <Route path={"/admin/course-assets/governance"}>
         <AdminLayout>
-          <CourseProducts workspace="asset-governance" />
+          <CourseAssetGovernancePage />
         </AdminLayout>
       </Route>
       <Route path={"/admin/marketing"}>
