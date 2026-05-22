@@ -2567,8 +2567,15 @@ function CourseProductRow({
   );
 }
 
-export default function CourseProducts() {
+type CourseProductsWorkspace = "products" | "asset-governance";
+
+export default function CourseProducts({
+  workspace = "products",
+}: {
+  workspace?: CourseProductsWorkspace;
+}) {
   const { user, isLoggedIn, isAuthSyncing } = useAuth();
+  const isAssetGovernanceWorkspace = workspace === "asset-governance";
   const [data, setData] = useState<CourseProductListResult>();
   const [assetGovernance, setAssetGovernance] =
     useState<CourseProductAssetGovernanceResult>();
@@ -2712,9 +2719,29 @@ export default function CourseProducts() {
     setIsLoading(true);
     setError(undefined);
     try {
+      const [products, contentQuality] = await Promise.all([
+        httpCourseProductRepository.loadCourseProducts(query),
+        httpCourseProductRepository.loadCourseProductContentQuality(),
+      ]);
+      setData(products);
+      setContentQualityByProductId(
+        Object.fromEntries(
+          contentQuality.items.map(item => [item.productId, item.quality])
+        )
+      );
+
+      if (!isAssetGovernanceWorkspace) {
+        setAssetGovernance(undefined);
+        setLearningMaterialReport(undefined);
+        setAssetGovernanceHistory(undefined);
+        setAssetGovernanceBatchDraft(undefined);
+        setAssetGovernanceBatchTasks(undefined);
+        setAssetGovernanceQueueObservation(undefined);
+        setAssetGovernanceBatchActionPlan(undefined);
+        return;
+      }
+
       const [
-        products,
-        contentQuality,
         governance,
         learningReport,
         history,
@@ -2723,8 +2750,6 @@ export default function CourseProducts() {
         queueObservation,
         batchActionPlan,
       ] = await Promise.all([
-        httpCourseProductRepository.loadCourseProducts(query),
-        httpCourseProductRepository.loadCourseProductContentQuality(),
         httpCourseProductRepository.loadCourseProductAssetGovernance(),
         httpCourseProductRepository.loadCourseProductLearningMaterialOperationsReport(),
         httpCourseProductRepository.loadCourseProductAssetGovernanceHistory(
@@ -2761,7 +2786,6 @@ export default function CourseProducts() {
             )
           : Promise.resolve(undefined),
       ]);
-      setData(products);
       setAssetGovernance(governance);
       setLearningMaterialReport(learningReport);
       setAssetGovernanceHistory(history);
@@ -2769,11 +2793,6 @@ export default function CourseProducts() {
       setAssetGovernanceBatchTasks(batchTasks);
       setAssetGovernanceQueueObservation(queueObservation);
       setAssetGovernanceBatchActionPlan(batchActionPlan);
-      setContentQualityByProductId(
-        Object.fromEntries(
-          contentQuality.items.map(item => [item.productId, item.quality])
-        )
-      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "课程商品列表暂时不可用");
     } finally {
@@ -2784,6 +2803,7 @@ export default function CourseProducts() {
     assetGovernanceFilter,
     assetGovernanceHistoryFilters,
     catalogPermissions.canReview,
+    isAssetGovernanceWorkspace,
     query,
   ]);
 
@@ -3917,6 +3937,13 @@ export default function CourseProducts() {
     assetGovernanceBatchTaskExecutionDetail?.idempotentReplay ??
     assetGovernanceBatchTaskExecutionResult?.idempotentReplay ??
     false;
+  const pageEyebrow = isAssetGovernanceWorkspace ? "课程素材" : "课程商品";
+  const pageTitle = isAssetGovernanceWorkspace
+    ? "素材治理工作区"
+    : "商品列表与状态";
+  const pageDescription = isAssetGovernanceWorkspace
+    ? "集中查看素材引用、学习资料报表、批量治理任务和高风险动作预案；默认不进入课程商品列表，避免治理信息干扰日常商品管理。"
+    : "管理课程商品的基础信息、审核流、上架状态和价格；素材治理、批量任务与资料报表已拆到独立工作区。";
 
   if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) {
     return null;
@@ -3927,13 +3954,13 @@ export default function CourseProducts() {
       <section className="flex flex-col gap-4 border-b border-[#E1D7C8] pb-5 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8B7E6D]">
-            课程商品
+            {pageEyebrow}
           </p>
           <h1 className="mt-2 text-3xl font-semibold md:text-4xl">
-            商品列表与状态
+            {pageTitle}
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
-            统一管理课程商品的基础信息、详情内容、审核流、上架状态、价格和审计记录，已联动前台发布可见性，支持搜索、分类、排序和分页核对。
+            {pageDescription}
           </p>
         </div>
         <button
@@ -3969,232 +3996,262 @@ export default function CourseProducts() {
         </div>
       )}
 
-      <motion.section
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-        className="mt-6 grid border-y border-[#E1D7C8] bg-[#FFFDF8] md:grid-cols-4"
-      >
-        {metricItems(data).map(item => {
-          const Icon = item.icon;
-          return (
-            <div
-              key={item.label}
-              className="flex items-center justify-between border-b border-[#E8DED0] px-4 py-4 md:border-b-0 md:border-r last:md:border-r-0"
-            >
-              <div>
-                <p className="text-xs text-[#8A8176]">{item.label}</p>
-                <p className="mt-1 text-2xl font-semibold text-[#243B35]">
-                  {item.value}
+      {!isAssetGovernanceWorkspace && (
+        <motion.section
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+          className="mt-6 grid border-y border-[#E1D7C8] bg-[#FFFDF8] md:grid-cols-4"
+        >
+          {metricItems(data).map(item => {
+            const Icon = item.icon;
+            return (
+              <div
+                key={item.label}
+                className="flex items-center justify-between border-b border-[#E8DED0] px-4 py-4 md:border-b-0 md:border-r last:md:border-r-0"
+              >
+                <div>
+                  <p className="text-xs text-[#8A8176]">{item.label}</p>
+                  <p className="mt-1 text-2xl font-semibold text-[#243B35]">
+                    {item.value}
+                  </p>
+                </div>
+                <Icon className="h-5 w-5 text-[#6F8F83]" />
+              </div>
+            );
+          })}
+        </motion.section>
+      )}
+
+      {isAssetGovernanceWorkspace ? (
+        <CourseProductAssetGovernancePanel
+          governance={assetGovernance}
+          history={assetGovernanceHistory}
+          batchDraft={assetGovernanceBatchDraft}
+          batchTasks={assetGovernanceBatchTasks}
+          queueObservation={assetGovernanceQueueObservation}
+          batchActionPlan={assetGovernanceBatchActionPlan}
+          learningMaterialReport={learningMaterialReport}
+          filter={assetGovernanceFilter}
+          historyFilters={assetGovernanceHistoryFilters}
+          batchTaskFilters={assetGovernanceBatchTaskFilters}
+          canEdit={catalogPermissions.canEdit}
+          canReview={catalogPermissions.canReview}
+          mutatingAssetId={mutatingAssetId}
+          isBatchTaskMutating={Boolean(mutatingBatchTaskId)}
+          mutatingBatchTaskId={mutatingBatchTaskId}
+          onFilterChange={setAssetGovernanceFilter}
+          onHistoryFiltersChange={updateAssetGovernanceHistoryFilters}
+          onBatchTaskFiltersChange={updateAssetGovernanceBatchTaskFilters}
+          onRefreshGovernanceData={() => void loadProducts()}
+          onLocateAsset={locateGovernanceAsset}
+          onOpenGovernanceAction={openGovernanceAction}
+          onOpenBatchTaskDraft={openAssetGovernanceBatchTaskDraft}
+          onOpenBatchTaskReview={openAssetGovernanceBatchTaskReview}
+          onOpenBatchTaskCancel={openAssetGovernanceBatchTaskCancel}
+          onOpenBatchTaskExecutionPlan={
+            openAssetGovernanceBatchTaskExecutionPlan
+          }
+        />
+      ) : (
+        <>
+          <AuditTrail events={auditEvents} />
+
+          <section className="mt-6 border border-[#E1D7C8] bg-[#FFFDF8] px-5 py-4 shadow-sm shadow-[#243B35]/5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#243B35]">
+                  课程素材治理已拆分
+                </p>
+                <p className="mt-1 max-w-[760px] text-sm leading-6 text-[#6F7771]">
+                  素材引用、合规队列、学习资料报表和批量治理任务进入独立工作区，课程商品页只保留日常商品管理。
                 </p>
               </div>
-              <Icon className="h-5 w-5 text-[#6F8F83]" />
+              <a
+                href="/admin/course-assets/governance"
+                className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
+              >
+                打开素材治理
+                <ChevronRight className="h-4 w-4" />
+              </a>
             </div>
-          );
-        })}
-      </motion.section>
+          </section>
+        </>
+      )}
 
-      <AuditTrail events={auditEvents} />
-
-      <CourseProductAssetGovernancePanel
-        governance={assetGovernance}
-        history={assetGovernanceHistory}
-        batchDraft={assetGovernanceBatchDraft}
-        batchTasks={assetGovernanceBatchTasks}
-        queueObservation={assetGovernanceQueueObservation}
-        batchActionPlan={assetGovernanceBatchActionPlan}
-        learningMaterialReport={learningMaterialReport}
-        filter={assetGovernanceFilter}
-        historyFilters={assetGovernanceHistoryFilters}
-        batchTaskFilters={assetGovernanceBatchTaskFilters}
-        canEdit={catalogPermissions.canEdit}
-        canReview={catalogPermissions.canReview}
-        mutatingAssetId={mutatingAssetId}
-        isBatchTaskMutating={Boolean(mutatingBatchTaskId)}
-        mutatingBatchTaskId={mutatingBatchTaskId}
-        onFilterChange={setAssetGovernanceFilter}
-        onHistoryFiltersChange={updateAssetGovernanceHistoryFilters}
-        onBatchTaskFiltersChange={updateAssetGovernanceBatchTaskFilters}
-        onRefreshGovernanceData={() => void loadProducts()}
-        onLocateAsset={locateGovernanceAsset}
-        onOpenGovernanceAction={openGovernanceAction}
-        onOpenBatchTaskDraft={openAssetGovernanceBatchTaskDraft}
-        onOpenBatchTaskReview={openAssetGovernanceBatchTaskReview}
-        onOpenBatchTaskCancel={openAssetGovernanceBatchTaskCancel}
-        onOpenBatchTaskExecutionPlan={openAssetGovernanceBatchTaskExecutionPlan}
-      />
-
-      <section className="mt-6 overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
-        <form
-          onSubmit={event => {
-            event.preventDefault();
-            setQuery(current => ({
-              ...current,
-              keyword: keywordDraft,
-              page: 1,
-            }));
-          }}
-          className="grid gap-3 border-b border-[#E8DED0] px-4 py-4 lg:grid-cols-[minmax(240px,1fr)_180px_150px_170px_auto] lg:items-center lg:px-5"
-        >
-          <label className="relative min-w-0">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8A8176]" />
-            <input
-              value={keywordDraft}
-              onChange={event => setKeywordDraft(event.target.value)}
-              placeholder="搜索课程、讲师、分类或 ID"
-              className="h-10 w-full rounded-lg border border-[#D8CEC0] bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
-            />
-          </label>
-
-          <select
-            value={query.category}
-            onChange={event =>
+      {!isAssetGovernanceWorkspace && (
+        <section className="mt-6 overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
+          <form
+            onSubmit={event => {
+              event.preventDefault();
               setQuery(current => ({
                 ...current,
-                category: event.target.value as CourseProductCategoryFilter,
+                keyword: keywordDraft,
                 page: 1,
-              }))
-            }
-            className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm text-[#41524B] outline-none transition focus:border-[#6F8F83]"
+              }));
+            }}
+            className="grid gap-3 border-b border-[#E8DED0] px-4 py-4 lg:grid-cols-[minmax(240px,1fr)_180px_150px_170px_auto] lg:items-center lg:px-5"
           >
-            {categories.map(category => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
+            <label className="relative min-w-0">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8A8176]" />
+              <input
+                value={keywordDraft}
+                onChange={event => setKeywordDraft(event.target.value)}
+                placeholder="搜索课程、讲师、分类或 ID"
+                className="h-10 w-full rounded-lg border border-[#D8CEC0] bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+              />
+            </label>
 
-          <select
-            value={query.status}
-            onChange={event =>
-              setQuery(current => ({
-                ...current,
-                status: event.target.value as CourseProductStatusFilter,
-                page: 1,
-              }))
-            }
-            className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm text-[#41524B] outline-none transition focus:border-[#6F8F83]"
-          >
-            {statusFilters.map(item => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
+            <select
+              value={query.category}
+              onChange={event =>
+                setQuery(current => ({
+                  ...current,
+                  category: event.target.value as CourseProductCategoryFilter,
+                  page: 1,
+                }))
+              }
+              className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm text-[#41524B] outline-none transition focus:border-[#6F8F83]"
+            >
+              {categories.map(category => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
 
-          <select
-            value={query.sort}
-            onChange={event =>
-              setQuery(current => ({
-                ...current,
-                sort: event.target.value as CourseProductListQuery["sort"],
-                page: 1,
-              }))
-            }
-            className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm text-[#41524B] outline-none transition focus:border-[#6F8F83]"
-          >
-            {sortOptions.map(item => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
+            <select
+              value={query.status}
+              onChange={event =>
+                setQuery(current => ({
+                  ...current,
+                  status: event.target.value as CourseProductStatusFilter,
+                  page: 1,
+                }))
+              }
+              className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm text-[#41524B] outline-none transition focus:border-[#6F8F83]"
+            >
+              {statusFilters.map(item => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
 
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]">
-            <ListFilter className="h-4 w-4" />
-            筛选
-          </button>
-        </form>
+            <select
+              value={query.sort}
+              onChange={event =>
+                setQuery(current => ({
+                  ...current,
+                  sort: event.target.value as CourseProductListQuery["sort"],
+                  page: 1,
+                }))
+              }
+              className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm text-[#41524B] outline-none transition focus:border-[#6F8F83]"
+            >
+              {sortOptions.map(item => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
 
-        {isLoading && !data ? (
-          <div className="flex min-h-[420px] items-center justify-center text-sm text-[#6F7771]">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            正在读取课程商品
-          </div>
-        ) : items.length ? (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1320px] text-left">
-                <thead className="bg-[#F8F3EA] text-xs text-[#8A8176]">
-                  <tr>
-                    <th className="px-5 py-3 font-semibold">商品</th>
-                    <th className="px-5 py-3 font-semibold">分类</th>
-                    <th className="px-5 py-3 font-semibold">讲师与学习</th>
-                    <th className="px-5 py-3 font-semibold">价格</th>
-                    <th className="px-5 py-3 font-semibold">状态</th>
-                    <th className="px-5 py-3 font-semibold">更新时间</th>
-                    <th className="px-5 py-3 font-semibold">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item, index) => (
-                    <CourseProductRow
-                      key={item.id}
-                      item={item}
-                      index={index}
-                      isMutating={Boolean(mutatingProductId)}
-                      contentQuality={contentQualityByProductId[item.id]}
-                      canEdit={catalogPermissions.canEdit}
-                      canReview={catalogPermissions.canReview}
-                      canPublish={catalogPermissions.canPublish}
-                      canPrice={catalogPermissions.canPrice}
-                      reviewBlockReason={rejectedReviewReasons.get(item.id)}
-                      onEditInfo={openInfoEditor}
-                      onEditContent={openContentEditor}
-                      onEditPrice={openPriceEditor}
-                      onRequestReviewAction={openReviewAction}
-                      onRequestStatusChange={openStatusAction}
-                    />
-                  ))}
-                </tbody>
-              </table>
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]">
+              <ListFilter className="h-4 w-4" />
+              筛选
+            </button>
+          </form>
+
+          {isLoading && !data ? (
+            <div className="flex min-h-[420px] items-center justify-center text-sm text-[#6F7771]">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              正在读取课程商品
             </div>
-
-            <div className="flex flex-col gap-3 border-t border-[#E8DED0] px-4 py-4 text-sm text-[#6F7771] md:flex-row md:items-center md:justify-between md:px-5">
-              <span>
-                第 {meta?.page ?? 1} / {meta?.totalPages ?? 1} 页，共{" "}
-                {meta?.total ?? 0} 个商品
-              </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() =>
-                    setQuery(current => ({
-                      ...current,
-                      page: Math.max(1, current.page - 1),
-                    }))
-                  }
-                  disabled={!hasPreviousPage || isLoading}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  上一页
-                </button>
-                <button
-                  onClick={() =>
-                    setQuery(current => ({
-                      ...current,
-                      page: current.page + 1,
-                    }))
-                  }
-                  disabled={!hasNextPage || isLoading}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  下一页
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+          ) : items.length ? (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1320px] text-left">
+                  <thead className="bg-[#F8F3EA] text-xs text-[#8A8176]">
+                    <tr>
+                      <th className="px-5 py-3 font-semibold">商品</th>
+                      <th className="px-5 py-3 font-semibold">分类</th>
+                      <th className="px-5 py-3 font-semibold">讲师与学习</th>
+                      <th className="px-5 py-3 font-semibold">价格</th>
+                      <th className="px-5 py-3 font-semibold">状态</th>
+                      <th className="px-5 py-3 font-semibold">更新时间</th>
+                      <th className="px-5 py-3 font-semibold">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item, index) => (
+                      <CourseProductRow
+                        key={item.id}
+                        item={item}
+                        index={index}
+                        isMutating={Boolean(mutatingProductId)}
+                        contentQuality={contentQualityByProductId[item.id]}
+                        canEdit={catalogPermissions.canEdit}
+                        canReview={catalogPermissions.canReview}
+                        canPublish={catalogPermissions.canPublish}
+                        canPrice={catalogPermissions.canPrice}
+                        reviewBlockReason={rejectedReviewReasons.get(item.id)}
+                        onEditInfo={openInfoEditor}
+                        onEditContent={openContentEditor}
+                        onEditPrice={openPriceEditor}
+                        onRequestReviewAction={openReviewAction}
+                        onRequestStatusChange={openStatusAction}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
+
+              <div className="flex flex-col gap-3 border-t border-[#E8DED0] px-4 py-4 text-sm text-[#6F7771] md:flex-row md:items-center md:justify-between md:px-5">
+                <span>
+                  第 {meta?.page ?? 1} / {meta?.totalPages ?? 1} 页，共{" "}
+                  {meta?.total ?? 0} 个商品
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() =>
+                      setQuery(current => ({
+                        ...current,
+                        page: Math.max(1, current.page - 1),
+                      }))
+                    }
+                    disabled={!hasPreviousPage || isLoading}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    上一页
+                  </button>
+                  <button
+                    onClick={() =>
+                      setQuery(current => ({
+                        ...current,
+                        page: current.page + 1,
+                      }))
+                    }
+                    disabled={!hasNextPage || isLoading}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    下一页
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex min-h-[420px] flex-col items-center justify-center px-6 text-center">
+              <BadgeCheck className="h-8 w-8 text-[#7C9288]" />
+              <h2 className="mt-4 text-lg font-semibold">暂无匹配商品</h2>
+              <p className="mt-2 max-w-[420px] text-sm leading-6 text-[#6F7771]">
+                调整搜索关键词、分类或状态后重新筛选。
+              </p>
             </div>
-          </>
-        ) : (
-          <div className="flex min-h-[420px] flex-col items-center justify-center px-6 text-center">
-            <BadgeCheck className="h-8 w-8 text-[#7C9288]" />
-            <h2 className="mt-4 text-lg font-semibold">暂无匹配商品</h2>
-            <p className="mt-2 max-w-[420px] text-sm leading-6 text-[#6F7771]">
-              调整搜索关键词、分类或状态后重新筛选。
-            </p>
-          </div>
-        )}
-      </section>
+          )}
+        </section>
+      )}
 
       {statusAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">

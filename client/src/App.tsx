@@ -58,6 +58,11 @@ function Router() {
           <CourseProducts />
         </AdminLayout>
       </Route>
+      <Route path={"/admin/course-assets/governance"}>
+        <AdminLayout>
+          <CourseProducts workspace="asset-governance" />
+        </AdminLayout>
+      </Route>
       <Route path={"/admin/marketing"}>
         <AdminLayout>
           <MarketingRules />

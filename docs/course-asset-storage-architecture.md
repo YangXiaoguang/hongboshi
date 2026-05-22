@@ -106,7 +106,7 @@
 - `GET /api/catalog/admin/course-products/assets/governance/batch-action-plan` 由 `catalog:review` 控制，支持 `all`、`mark_duplicate_primary`、`mark_soft_deleted`、商品 ID 和预览数量参数；接口固定返回 `previewOnly=true`、`executable=false`、`willModifyAssetStore=false`、`willWriteAuditEvents=false`。
 - 重复素材预案会按引用数量、前台成交/学习使用、合规通过、下载开放和上传时间建议主素材，并列出后续可能需要重定向的引用；跨课程、前台使用或学习下载占用会提高风险等级。
 - 软删除预案会标出是否仍有引用、是否通过审核、是否开放下载、是否在课程详情成交素材或章节资料中使用，并只把无引用、未开放下载且未被前台使用的素材标为可安全软删候选。
-- `/admin/courses` 已在素材治理面板展示“高风险批量动作只读预案”，运营可先看到重复组、合并影响、软删影响和安全提示；当前仍不可执行，不修改素材 Store、不合并引用、不软删、不写审计、不物理删除对象。
+- `/admin/course-assets/governance` 已在素材治理工作区展示“高风险批量动作只读预案”，运营可先看到重复组、合并影响、软删影响和安全提示；当前仍不可执行，不修改素材 Store、不合并引用、不软删、不写审计、不物理删除对象。`/admin/courses` 默认商品列表已不再加载该治理数据。
 
 ## 学习资料运营报表
 
@@ -115,7 +115,7 @@
 - `CourseProductLearningMaterialOperationsReport*` 契约聚合课程数、章节数、资料槽位数、已绑定槽位数、绑定率、学习资料素材数、已通过合规数、开放下载数、未引用数、待审/驳回数、软删候选数、治理问题数和引用来源。
 - 报表分布覆盖资料类型、合规状态、下载状态、引用类型和治理问题类型；课程维度行展示每个课程的章节数、资料槽位、已绑定槽位、绑定率、资料素材数、开放下载数和问题素材数。
 - `GET /api/catalog/admin/course-products/assets/learning-material-report` 由 `catalog:read` 控制，只返回摘要和问题分布，不返回文件内容、签名 URL 或敏感用户学习记录。
-- `/admin/courses` 已把学习资料运营报表放在素材治理面板内，用于决定后续是优先补齐资料绑定、处理合规，还是进入批量治理预案。
+- `/admin/course-assets/governance` 已把学习资料运营报表放在素材治理工作区内，用于决定后续是优先补齐资料绑定、处理合规，还是进入批量治理预案。
 
 ## 后续切片
 
@@ -133,5 +133,6 @@
 - `CUX-I-B-B-O`：已接入批量任务执行结果历史与运营筛选，支持执行状态/操作者/时间/问题/动作筛选、执行详情读取 API、后台分页任务列表和执行明细复盘。
 - `CUX-I-B-B-P`：已新增批量治理任务 PostgreSQL 表、候选快照表、执行明细表、执行审计事件 ID 表、幂等键、执行锁预留字段和查询索引，并实现 `PostgresCourseProductAssetGovernanceBatchTaskStore`。
 - `CUX-I-B-B-Q`：已新增批量执行 job 契约、最小内存队列、可复用执行 worker、执行锁 helper、内存/JSON/PostgreSQL Store 抢锁释放、失败尝试次数和最近失败原因字段，支持并发保护与失败安全重试；批量软删、引用合并、物理对象清理和队列 job 持久化继续后置。
-- `CUX-I-B-B-R`：已新增队列 job 只读观测、`listJobs`、队列观测 API、学习资料运营报表 service/API 和 `/admin/courses` 摘要展示；批量软删、引用合并、物理对象清理和队列 job 持久化继续后置。
-- `CUX-I-B-B-S`：已新增批量软删与引用合并只读预案 service/API/repository 和 `/admin/courses` 高风险批量动作预案展示，支持重复素材主素材建议、引用合并影响、软删除影响和前台展示位/学习下载占用识别；真实批量写入、引用合并落库、物理对象清理和高风险动作二次审批继续后置。
+- `CUX-I-B-B-R`：已新增队列 job 只读观测、`listJobs`、队列观测 API、学习资料运营报表 service/API 和后台摘要展示；批量软删、引用合并、物理对象清理和队列 job 持久化继续后置。
+- `CUX-I-B-B-S`：已新增批量软删与引用合并只读预案 service/API/repository 和后台高风险批量动作预案展示，支持重复素材主素材建议、引用合并影响、软删除影响和前台展示位/学习下载占用识别；真实批量写入、引用合并落库、物理对象清理和高风险动作二次审批继续后置。
+- `ADM-IA-A`：已把素材治理工作区迁入 `/admin/course-assets/governance`，`/admin/courses` 默认商品列表不再加载素材治理、学习资料报表、批量任务、队列观测和高风险预案。

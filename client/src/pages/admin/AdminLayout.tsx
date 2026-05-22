@@ -1,15 +1,17 @@
 import { motion } from "framer-motion";
 import {
+  Bell,
   ChevronRight,
+  Home,
   Loader2,
   LockKeyhole,
+  LogOut,
   ShieldCheck,
   UserRound,
 } from "lucide-react";
 import { type ElementType, type ReactNode, useState } from "react";
 import { useLocation } from "wouter";
-import AppHeader from "@/components/AppHeader";
-import { useAuth } from "@/contexts/AuthContext";
+import { getLoginMethodLabel, useAuth } from "@/contexts/AuthContext";
 import {
   adminGroupLabels,
   AdminShellIcon,
@@ -36,8 +38,22 @@ function AccessPanel({
 
   return (
     <div className="min-h-screen bg-[#F8F3EA]">
-      <AppHeader />
-      <div className="mx-auto flex min-h-[calc(100svh-62px)] max-w-[680px] flex-col items-center justify-center px-5 py-16 text-center">
+      <div className="border-b border-[#E1D7C8] bg-[#FFFDF8]">
+        <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between px-4 lg:px-6">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#243B35] text-xs font-semibold text-[#F4EBDD]">
+              红
+            </span>
+            <div className="text-left">
+              <p className="text-sm font-semibold text-[#243B35]">
+                红博士运营后台
+              </p>
+              <p className="text-[11px] text-[#8A8176]">Backoffice</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="mx-auto flex min-h-[calc(100svh-56px)] max-w-[680px] flex-col items-center justify-center px-5 py-16 text-center">
         <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#E5ECE1] text-[#41675A]">
           <Icon className="h-5 w-5" />
         </span>
@@ -48,6 +64,77 @@ function AccessPanel({
         {action && <div className="mt-6">{action}</div>}
       </div>
     </div>
+  );
+}
+
+function AdminTopBar({
+  currentTitle,
+  onNavigate,
+}: {
+  currentTitle: string;
+  onNavigate: (href: string) => void;
+}) {
+  const { user, logout } = useAuth();
+
+  return (
+    <header className="sticky top-0 z-40 border-b border-[#DCD4C8] bg-[#FFFDF8]/95 backdrop-blur-xl">
+      <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between px-4 lg:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            onClick={() => onNavigate("/admin")}
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#243B35] text-sm font-semibold text-[#F4EBDD]"
+            aria-label="后台首页"
+          >
+            红
+          </button>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[#243B35]">
+              红博士运营后台
+            </p>
+            <p className="truncate text-[11px] text-[#8A8176]">
+              {currentTitle}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onNavigate("/")}
+            className="hidden h-9 items-center gap-2 rounded-lg border border-[#D8CEC0] bg-white px-3 text-xs font-semibold text-[#5F6B64] transition hover:border-[#9FB3A9] hover:text-[#243B35] sm:inline-flex"
+          >
+            <Home className="h-3.5 w-3.5" />
+            用户端
+          </button>
+          <button
+            onClick={() => onNavigate("/me?tab=messages")}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#6D746F] transition hover:bg-[#F5EFE6] hover:text-[#243B35]"
+            aria-label="后台通知"
+          >
+            <Bell className="h-4 w-4" />
+          </button>
+          <div className="hidden min-w-0 items-center gap-2 rounded-lg border border-[#E1D7C8] bg-white px-2.5 py-1.5 md:flex">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#E6EDDF] text-xs font-semibold text-[#41675A]">
+              {user?.nickname.trim().charAt(0) || "管"}
+            </span>
+            <div className="min-w-0">
+              <p className="max-w-[120px] truncate text-xs font-semibold text-[#243B35]">
+                {user?.nickname ?? "管理员"}
+              </p>
+              <p className="text-[11px] text-[#8A8176]">
+                {user ? getLoginMethodLabel(user.loginMethod) : "后台账号"}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => void logout()}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#6D746F] transition hover:bg-[#F5EFE6] hover:text-[#243B35]"
+            aria-label="退出后台"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </header>
   );
 }
 
@@ -77,9 +164,7 @@ function AdminDevLoginForm() {
           <UserRound className="h-4 w-4" />
         </span>
         <div>
-          <p className="text-sm font-semibold text-[#243B35]">
-            开发期后台账号
-          </p>
+          <p className="text-sm font-semibold text-[#243B35]">开发期后台账号</p>
           <p className="mt-0.5 text-xs text-[#8A8176]">
             与普通用户手机号登录隔离
           </p>
@@ -138,6 +223,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, isAuthSyncing } = useAuth();
   const accessState = getAdminAccessState(user, isAuthSyncing);
   const visibleItems = getVisibleAdminNavigationItems(user);
+  const currentItem = visibleItems.find(item =>
+    isAdminNavigationItemActive(item, location)
+  );
 
   if (accessState === "syncing") {
     return (
@@ -173,7 +261,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[#F8F3EA] text-[#243B35]">
-      <AppHeader />
+      <AdminTopBar
+        currentTitle={currentItem?.title ?? "后台首页"}
+        onNavigate={navigate}
+      />
       <div className="mx-auto flex w-full max-w-[1440px] gap-5 px-4 py-4 lg:px-6 lg:py-6">
         <motion.aside
           initial={{ opacity: 0, x: -12 }}
@@ -181,7 +272,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
           className="hidden w-[268px] shrink-0 lg:block"
         >
-          <nav className="sticky top-[86px] overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
+          <nav className="sticky top-[80px] overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5">
             <div className="border-b border-[#E8DED0] px-4 py-4">
               <div className="flex items-center gap-2">
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#E5ECE1] text-[#41675A]">
@@ -301,9 +392,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               </button>
               <ChevronRight className="h-3.5 w-3.5" />
               <span className="text-[#53675D]">
-                {visibleItems.find(item =>
-                  isAdminNavigationItemActive(item, location)
-                )?.title ?? "模块"}
+                {currentItem?.title ?? "模块"}
               </span>
             </div>
             {children}

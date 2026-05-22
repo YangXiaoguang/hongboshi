@@ -8,15 +8,16 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`CUX-I-B-B-S 课程素材治理批量软删与引用合并只读预案` 已完成，后台已具备重复素材主素材建议、引用合并影响预览、软删除风险预案、前台展示位使用识别、API 权限边界和 `/admin/courses` 高风险批量动作只读预案展示。
-- 本轮完成后下一步：执行 `CUX-I-B-B-T 课程素材治理高风险动作执行开关与二次审批边界`
+- 当前阶段：`ADM-IA 后台独立化与信息架构减负`
+- 当前状态：`ADM-IA-A 后台壳分离 + /admin/courses 减负第一刀` 已完成，后台已从用户端顶部导航中分离，课程商品页默认只加载商品列表/内容质量，素材治理迁入 `/admin/course-assets/governance` 独立工作区。
+- 本轮完成后下一步：执行 `ADM-IA-B 课程商品详情页与课程素材治理代码级拆分`
 
 ## 已完成关键能力
 
 - 项目已提交到 GitHub，并以 `main` 作为持续开发分支。
 - 建立连续执行基建：后台路线图、Codex 执行状态和操作协议已进入仓库。
 - 建立统一 `/admin` 运营管理后台框架，提供后台首页、侧边导航、移动端导航和统一权限守卫。
+- 完成后台壳分离第一刀：后台登录、无权限、授权后工作台不再复用用户端 `AppHeader`；新增后台专用顶栏、模块上下文、用户端返回入口、通知入口和退出入口。
 - `/admin/counseling` 和 `/admin/payments` 已接入统一后台 shell，原 URL 保持可用。
 - 顶部用户菜单的运营入口已统一指向 `/admin`。
 - 完成心理咨询类项目的现代化界面优化。
@@ -60,6 +61,7 @@
 - 完成课程素材治理批量任务异步队列与安全重试边界：新增执行 job 契约、最小内存队列、可复用执行 worker、执行锁 helper、Store 锁接口、PostgreSQL 原子抢锁/释放、失败尝试次数与最近失败原因字段；失败任务可安全重试，并发执行会被锁拒绝，后台任务列表展示“可重试”和最近失败线索。
 - 完成课程素材治理队列观测与学习资料运营报表基础：新增批量任务队列观测契约、队列 job 列表读取、只读观测 service/API、前端 repository 和 `/admin/courses` 队列摘要；新增学习资料运营报表契约/service/API/repository，聚合章节资料槽位绑定率、资料素材类型、合规、下载开放、引用来源和治理问题分布，保持不新增批量写动作。
 - 完成课程素材治理批量软删与引用合并只读预案：新增 `CourseProductAssetGovernanceBatchActionPlan*` 契约、只读预案 service/API/repository 和 `/admin/courses` 高风险批量动作预案区，支持重复 `contentHash` 主素材建议、引用合并影响列表、软删除候选风险、学习下载/成交展示位使用识别，并明确 `previewOnly=true`、`executable=false`、不修改素材 Store、不写审计。
+- 完成 `/admin/courses` 减负第一刀：课程商品页默认只读取商品列表和内容质量，不再默认加载素材治理、学习资料报表、治理历史、批量任务、队列观测和高风险预案；新增 `/admin/course-assets/governance` 独立后台入口承接素材治理工作区。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -697,29 +699,29 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：CUX-I-B-B-S 课程素材治理批量软删与引用合并只读预案
+### 最近完成阶段：ADM-IA-A 后台壳分离 + /admin/courses 减负第一刀
 
-CUX-I-B-B-S 稳定切片已交付：
+ADM-IA-A 稳定切片已交付：
 
-- `shared/domain/courseProduct.ts` 新增 `CourseProductAssetGovernanceBatchActionPlan*` 契约，统一描述动作筛选、重复素材分组、主素材建议、引用合并影响、软删影响、风险等级、安全提示和只读执行边界。
-- 新增 `courseProductAssetGovernanceBatchActionPlan.ts`，复用素材治理快照、课程详情内容和素材引用表，生成重复 `contentHash` 主素材建议、需要合并的引用列表、软删除候选风险和学习下载/成交展示位使用识别。
-- `catalogApi.ts` 新增 `GET /api/catalog/admin/course-products/assets/governance/batch-action-plan`，仅允许具备 `catalog:review` 的后台账号读取；返回结果固定声明 `previewOnly=true`、`executable=false`、`willModifyAssetStore=false`、`willWriteAuditEvents=false`。
-- 前端 repository 和 `/admin/courses` 已展示“高风险批量动作只读预案”，运营可看到重复素材组、待合并引用、软删候选、安全软删数量、高风险数量和不可执行状态。
-- 测试覆盖只读 service、API 权限边界、前端仓储解析、共享契约和“不写入素材 Store/不写审计”的安全边界；本阶段仍不自动删除、不合并引用、不物理清理对象。
+- `AdminLayout.tsx` 已脱离用户端 `AppHeader`，后台登录页、权限提示页和授权后工作台使用后台专用顶栏，不再显示用户端主导航。
+- 后台顶栏只保留后台品牌、当前模块、用户端返回入口、消息入口、后台账号摘要和退出入口，降低管理员在前台/后台之间的心智混淆。
+- `adminNavigation.ts` 新增 `course-assets` 模块，路径为 `/admin/course-assets/governance`，与课程商品模块并列。
+- `/admin/courses` 默认只加载课程商品列表与内容质量，不再默认拉取素材治理、学习资料报表、治理历史、批量任务、队列观测和高风险预案。
+- `/admin/course-assets/governance` 承接原素材治理工作区，继续保留治理摘要、学习资料报表、批量草稿、批量任务、队列观测和高风险动作只读预案。
 
-### 后台待续：CUX-I-B-B-T 课程素材治理高风险动作执行开关与二次审批边界
+### 后台待续：ADM-IA-B 课程商品详情页与课程素材治理代码级拆分
 
 业务目标：
 
-CUX-I-B-B-S 已让运营在不写入的前提下看清批量软删和引用合并风险。下一步不应直接放开真实处理，而是先补高风险动作的执行开关、二次审批、执行前二次预检、灰度开关和审计留痕设计，确保未来真实合并引用或软删除素材时可以被明确授权、可回滚定位、可观测失败。
+ADM-IA-A 已先完成路由和视觉分离，但 `CourseProducts.tsx` 仍承载过多后台代码。下一步应把课程商品详情、内容编辑、素材治理面板和批量任务弹窗拆到独立组件/页面，减少单文件复杂度，并让每个后台页面只拥有自己的数据加载和操作状态。
 
 建议实施范围：
 
-- 增加高风险动作 feature flag/config，默认关闭真实 `mark_duplicate_primary`、引用重定向和 `mark_soft_deleted` 批量写入。
-- 设计并落地高风险动作 intent/approval 契约，区分预案生成、发起执行申请、二次审批、执行前二次预检和执行结果复盘。
-- 扩展批量任务 Store 或新增高风险动作 Store 草案，保存预案快照、审批人、审批原因、执行人、二次预检摘要和幂等键。
-- 在 `/admin/courses` 为高风险预案补“申请执行/二次审批”不可误触交互，继续默认不可执行，只有 feature flag 打开且权限满足时才出现下一步动作。
-- 增加测试覆盖开关关闭、权限不足、自己审批限制、预案漂移、二次预检失败和不写素材 Store 的默认边界。
+- 新建 `client/src/pages/admin/courses/*` 与 `client/src/pages/admin/course-assets/*`，把商品列表页、素材治理页和通用弹窗从 `CourseProducts.tsx` 拆出。
+- 课程商品列表下一步只保留商品表格、基础动作弹窗、审核/改价/上下架入口，详情内容编辑迁到 `/admin/courses/:courseId` 或详情抽屉。
+- 课程素材治理页迁出 `CourseProductAssetGovernancePanel`、批量任务弹窗和治理动作弹窗，形成独立页面级组件。
+- 补后台页面级 loading/error/empty 规范，避免一个刷新按钮同时驱动多个不相关数据域。
+- 保留 CUX-I-B-B-T 高风险动作执行开关与二次审批为后续业务切片，待后台 IA 拆分稳定后继续。
 
 ## 执行不变量
 
@@ -740,4 +742,4 @@ CUX-I-B-B-S 已让运营在不写入的前提下看清批量软删和引用合�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 CUX-I-B-B-T 课程素材治理高风险动作执行开关与二次审批边界，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-IA-B 课程商品详情页与课程素材治理代码级拆分，CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
