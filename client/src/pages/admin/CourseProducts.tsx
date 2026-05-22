@@ -20,7 +20,6 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
-  X,
   UsersRound,
 } from "lucide-react";
 import {
@@ -29,7 +28,6 @@ import {
   COURSE_CATEGORIES,
   COURSE_PRODUCT_PAGE_SIZE,
   COURSE_TYPES,
-  type CourseCategory,
   type CourseProductAuditEvent,
   type CourseProductBasicInfoUpdateRequest,
   type CourseProductContentQualityResult,
@@ -40,12 +38,26 @@ import {
   type CourseProductReviewAction,
   type CourseProductReviewStatus,
   type CourseProductStatus,
-  type CourseType,
 } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpCourseProductRepository } from "@/features/catalog";
 import { getCourseProductAdminPermissions } from "@/features/catalog/model/courseProductAdminPermissions";
 import { assetGovernanceActionCopy } from "./course-assets/courseAssetGovernanceModel";
+import {
+  CourseProductBasicInfoDialog,
+  type CourseProductBasicInfoFormState,
+} from "./courses/CourseProductBasicInfoDialog";
+import {
+  CourseProductPriceDialog,
+  type CourseProductPriceFormState,
+} from "./courses/CourseProductPriceDialog";
+import { CourseProductReviewDialog } from "./courses/CourseProductReviewDialog";
+import { CourseProductStatusDialog } from "./courses/CourseProductStatusDialog";
+import {
+  courseProductReviewActionCopy as reviewActionCopy,
+  courseProductReviewCopy as reviewCopy,
+  courseProductStatusCopy as statusCopy,
+} from "./courses/courseProductAdminLabels";
 export {
   assetGovernanceBatchIssueFilterFromPanelFilter,
   assetGovernanceBatchTaskCreateRequestFromPanelFilter,
@@ -68,22 +80,6 @@ type ReviewActionState = {
   product: CourseProductListItem;
   action: CourseProductReviewAction;
   targetReviewStatus: CourseProductReviewStatus;
-};
-type PriceFormState = {
-  amount: string;
-  originalAmount: string;
-  isFree: boolean;
-  memberIncluded: boolean;
-  reason: string;
-};
-type BasicInfoFormState = {
-  title: string;
-  coverUrl: string;
-  category: CourseCategory;
-  type: CourseType;
-  instructorName: string;
-  learners: string;
-  reason: string;
 };
 
 const statusFilters: {
@@ -170,27 +166,6 @@ function courseProductListPathFromQuery(query: CourseProductListQuery) {
   const queryString = params.toString();
   return queryString ? "/admin/courses?" + queryString : "/admin/courses";
 }
-
-const statusCopy = {
-  draft: "草稿",
-  published: "已上架",
-  unpublished: "已下架",
-  archived: "已归档",
-} satisfies Record<CourseProductStatus, string>;
-
-const reviewCopy = {
-  not_submitted: "未提交",
-  pending: "待审核",
-  approved: "已通过",
-  rejected: "已驳回",
-} satisfies Record<CourseProductReviewStatus, string>;
-
-const reviewActionCopy = {
-  submit: "提交审核",
-  approve: "通过审核",
-  reject: "驳回审核",
-  withdraw: "撤回审核",
-} satisfies Record<CourseProductReviewAction, string>;
 
 function formatMoney(item: CourseProductListItem) {
   if (item.price.isFree) return "免费";
@@ -668,7 +643,7 @@ export default function CourseProducts() {
   const [reviewAction, setReviewAction] = useState<ReviewActionState>();
   const [reviewReason, setReviewReason] = useState("");
   const [infoEditor, setInfoEditor] = useState<CourseProductListItem>();
-  const [infoForm, setInfoForm] = useState<BasicInfoFormState>({
+  const [infoForm, setInfoForm] = useState<CourseProductBasicInfoFormState>({
     title: "",
     coverUrl: "",
     category: COURSE_CATEGORIES[0],
@@ -678,7 +653,7 @@ export default function CourseProducts() {
     reason: "",
   });
   const [priceEditor, setPriceEditor] = useState<CourseProductListItem>();
-  const [priceForm, setPriceForm] = useState<PriceFormState>({
+  const [priceForm, setPriceForm] = useState<CourseProductPriceFormState>({
     amount: "",
     originalAmount: "",
     isFree: false,
@@ -1244,432 +1219,50 @@ export default function CourseProducts() {
       </section>
 
       {statusAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="w-full max-w-[520px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold text-[#8A8176]">状态动作</p>
-                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
-                  {statusAction.targetStatus === "published"
-                    ? "上架课程商品"
-                    : "下架课程商品"}
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-[#6F7771]">
-                  {statusAction.product.title}
-                </p>
-              </div>
-              <button
-                onClick={() => setStatusAction(undefined)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <label className="mt-5 block text-sm font-semibold text-[#41524B]">
-              操作原因
-              <textarea
-                value={statusReason}
-                onChange={event => setStatusReason(event.target.value)}
-                placeholder="例如：内容完成复核，允许本周活动曝光"
-                className="mt-2 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
-              />
-            </label>
-
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                onClick={() => setStatusAction(undefined)}
-                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => void submitStatusAction()}
-                disabled={
-                  statusReason.trim().length < 4 || Boolean(mutatingProductId)
-                }
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {mutatingProductId ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : statusAction.targetStatus === "published" ? (
-                  <Eye className="h-4 w-4" />
-                ) : (
-                  <EyeOff className="h-4 w-4" />
-                )}
-                确认
-                {statusAction.targetStatus === "published" ? "上架" : "下架"}
-              </button>
-            </div>
-          </motion.div>
-        </div>
+        <CourseProductStatusDialog
+          product={statusAction.product}
+          targetStatus={statusAction.targetStatus}
+          reason={statusReason}
+          isSubmitting={Boolean(mutatingProductId)}
+          onReasonChange={setStatusReason}
+          onCancel={() => setStatusAction(undefined)}
+          onSubmit={() => void submitStatusAction()}
+        />
       )}
 
       {reviewAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="w-full max-w-[520px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold text-[#8A8176]">审核动作</p>
-                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
-                  {reviewActionCopy[reviewAction.action]}
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-[#6F7771]">
-                  {reviewAction.product.title} ·{" "}
-                  {reviewCopy[reviewAction.product.reviewStatus]} {"->"}{" "}
-                  {reviewCopy[reviewAction.targetReviewStatus]}
-                </p>
-              </div>
-              <button
-                onClick={() => setReviewAction(undefined)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <label className="mt-5 block text-sm font-semibold text-[#41524B]">
-              审核原因
-              <textarea
-                value={reviewReason}
-                onChange={event => setReviewReason(event.target.value)}
-                placeholder={
-                  reviewAction.action === "reject"
-                    ? "例如：章节素材缺少课后练习说明"
-                    : "例如：课程内容和素材已完成审核确认"
-                }
-                className="mt-2 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
-              />
-            </label>
-
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                onClick={() => setReviewAction(undefined)}
-                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => void submitReviewAction()}
-                disabled={
-                  reviewReason.trim().length < 4 || Boolean(mutatingProductId)
-                }
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {mutatingProductId ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ClipboardCheck className="h-4 w-4" />
-                )}
-                确认{reviewActionCopy[reviewAction.action]}
-              </button>
-            </div>
-          </motion.div>
-        </div>
+        <CourseProductReviewDialog
+          product={reviewAction.product}
+          action={reviewAction.action}
+          targetReviewStatus={reviewAction.targetReviewStatus}
+          reason={reviewReason}
+          isSubmitting={Boolean(mutatingProductId)}
+          onReasonChange={setReviewReason}
+          onCancel={() => setReviewAction(undefined)}
+          onSubmit={() => void submitReviewAction()}
+        />
       )}
 
       {infoEditor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="w-full max-w-[680px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold text-[#8A8176]">基础信息</p>
-                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
-                  {infoEditor.title}
-                </h2>
-              </div>
-              <button
-                onClick={() => setInfoEditor(undefined)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-semibold text-[#41524B]">
-                课程标题
-                <input
-                  value={infoForm.title}
-                  onChange={event =>
-                    setInfoForm(current => ({
-                      ...current,
-                      title: event.target.value,
-                    }))
-                  }
-                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
-                />
-              </label>
-              <label className="text-sm font-semibold text-[#41524B]">
-                讲师
-                <input
-                  value={infoForm.instructorName}
-                  onChange={event =>
-                    setInfoForm(current => ({
-                      ...current,
-                      instructorName: event.target.value,
-                    }))
-                  }
-                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
-                />
-              </label>
-            </div>
-
-            <label className="mt-4 block text-sm font-semibold text-[#41524B]">
-              封面地址
-              <input
-                value={infoForm.coverUrl}
-                onChange={event =>
-                  setInfoForm(current => ({
-                    ...current,
-                    coverUrl: event.target.value,
-                  }))
-                }
-                className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
-              />
-            </label>
-
-            <div className="mt-4 grid gap-4 sm:grid-cols-3">
-              <label className="text-sm font-semibold text-[#41524B]">
-                分类
-                <select
-                  value={infoForm.category}
-                  onChange={event =>
-                    setInfoForm(current => ({
-                      ...current,
-                      category: event.target.value as CourseCategory,
-                    }))
-                  }
-                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
-                >
-                  {COURSE_CATEGORIES.map(category => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm font-semibold text-[#41524B]">
-                类型
-                <select
-                  value={infoForm.type}
-                  onChange={event =>
-                    setInfoForm(current => ({
-                      ...current,
-                      type: event.target.value as CourseType,
-                    }))
-                  }
-                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
-                >
-                  {COURSE_TYPES.map(type => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm font-semibold text-[#41524B]">
-                学习人数
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={infoForm.learners}
-                  onChange={event =>
-                    setInfoForm(current => ({
-                      ...current,
-                      learners: event.target.value,
-                    }))
-                  }
-                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
-                />
-              </label>
-            </div>
-
-            <label className="mt-4 block text-sm font-semibold text-[#41524B]">
-              更新原因
-              <textarea
-                value={infoForm.reason}
-                onChange={event =>
-                  setInfoForm(current => ({
-                    ...current,
-                    reason: event.target.value,
-                  }))
-                }
-                placeholder="例如：课程封面和讲师信息完成校对"
-                className="mt-2 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
-              />
-            </label>
-
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                onClick={() => setInfoEditor(undefined)}
-                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => void submitBasicInfoUpdate()}
-                disabled={
-                  infoForm.title.trim().length < 2 ||
-                  infoForm.instructorName.trim().length < 1 ||
-                  infoForm.reason.trim().length < 4 ||
-                  Boolean(mutatingProductId)
-                }
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {mutatingProductId ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Edit3 className="h-4 w-4" />
-                )}
-                保存信息
-              </button>
-            </div>
-          </motion.div>
-        </div>
+        <CourseProductBasicInfoDialog
+          product={infoEditor}
+          form={infoForm}
+          isSubmitting={Boolean(mutatingProductId)}
+          onFormChange={setInfoForm}
+          onCancel={() => setInfoEditor(undefined)}
+          onSubmit={() => void submitBasicInfoUpdate()}
+        />
       )}
 
       {priceEditor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="w-full max-w-[560px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold text-[#8A8176]">价格编辑</p>
-                <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
-                  {priceEditor.title}
-                </h2>
-              </div>
-              <button
-                onClick={() => setPriceEditor(undefined)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#7D746B] transition hover:bg-[#F1E8DC]"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-semibold text-[#41524B]">
-                售价
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={priceForm.amount}
-                  disabled={priceForm.isFree}
-                  onChange={event =>
-                    setPriceForm(current => ({
-                      ...current,
-                      amount: event.target.value,
-                    }))
-                  }
-                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83] disabled:bg-[#F4EFE7] disabled:text-[#9A8F82]"
-                />
-              </label>
-              <label className="text-sm font-semibold text-[#41524B]">
-                原价
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={priceForm.originalAmount}
-                  onChange={event =>
-                    setPriceForm(current => ({
-                      ...current,
-                      originalAmount: event.target.value,
-                    }))
-                  }
-                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
-                />
-              </label>
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center gap-3 rounded-lg border border-[#E1D7C8] bg-white px-3 py-2 text-sm font-semibold text-[#41524B]">
-                <input
-                  type="checkbox"
-                  checked={priceForm.isFree}
-                  onChange={event =>
-                    setPriceForm(current => ({
-                      ...current,
-                      isFree: event.target.checked,
-                      amount: event.target.checked ? "0" : current.amount,
-                    }))
-                  }
-                />
-                免费课程
-              </label>
-              <label className="flex items-center gap-3 rounded-lg border border-[#E1D7C8] bg-white px-3 py-2 text-sm font-semibold text-[#41524B]">
-                <input
-                  type="checkbox"
-                  checked={priceForm.memberIncluded}
-                  onChange={event =>
-                    setPriceForm(current => ({
-                      ...current,
-                      memberIncluded: event.target.checked,
-                    }))
-                  }
-                />
-                会员权益内
-              </label>
-            </div>
-
-            <label className="mt-4 block text-sm font-semibold text-[#41524B]">
-              改价原因
-              <textarea
-                value={priceForm.reason}
-                onChange={event =>
-                  setPriceForm(current => ({
-                    ...current,
-                    reason: event.target.value,
-                  }))
-                }
-                placeholder="例如：配合课程专题活动调整本期价格"
-                className="mt-2 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
-              />
-            </label>
-
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                onClick={() => setPriceEditor(undefined)}
-                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => void submitPriceUpdate()}
-                disabled={
-                  priceForm.reason.trim().length < 4 ||
-                  Boolean(mutatingProductId)
-                }
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {mutatingProductId ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Edit3 className="h-4 w-4" />
-                )}
-                保存价格
-              </button>
-            </div>
-          </motion.div>
-        </div>
+        <CourseProductPriceDialog
+          product={priceEditor}
+          form={priceForm}
+          isSubmitting={Boolean(mutatingProductId)}
+          onFormChange={setPriceForm}
+          onCancel={() => setPriceEditor(undefined)}
+          onSubmit={() => void submitPriceUpdate()}
+        />
       )}
     </div>
   );

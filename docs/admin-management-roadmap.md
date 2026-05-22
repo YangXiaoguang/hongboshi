@@ -16,7 +16,7 @@
 - 已建立 `visitor`、`member`、`counselor`、`catalog_viewer`、`catalog_operator`、`operator`、`admin` 角色和 `admin:manage`、`counseling:fulfill`、`catalog:*`、`membership_product:*`、`user:read`、`user:membership`、`order:read`、`order:operate`、`transaction:read`、`transaction:operate`、`finance:read`、`finance:manage`、`risk:read`、`risk:review`、`risk:sop`、`audit:read` 等权限能力。
 - 咨询运营配置页面 `/admin/counseling` 已可管理咨询师档案与资质服务状态、咨询排班、服务记录与履约异常、配置取消规则并查看履约审计。
 - 支付对账页面 `/admin/payments` 已可对比支付回调收据、业务订单和咨询预约状态。
-- 课程商品列表 `/admin/courses` 已接入统一后台，可读取课程商品契约、搜索、状态筛选、分类筛选、排序、分页、基础信息编辑、详情内容编辑、成交图文素材维护、素材资产 URL 登记、真实文件上传、合规队列、内容质量校验、审核动作、上下架、改价、资源级权限和最近审计；状态与详情内容均可写入 JSON Store 或 PostgreSQL，并已联动前台课程列表/详情。
+- 课程商品列表 `/admin/courses` 已接入统一后台，可读取课程商品契约、搜索、状态筛选、分类筛选、排序、分页、基础信息编辑、内容质量校验、审核动作、上下架、改价、资源级权限和最近审计；详情内容、成交图文素材、素材资产 URL 登记、真实文件上传和合规队列已进入 `/admin/courses/:courseId` 独立详情页；状态与详情内容均可写入 JSON Store 或 PostgreSQL，并已联动前台课程列表/详情。
 - 会员商品后台 `/admin/memberships` 已接入统一后台，可读取会员商品配置、维护商品文案、调整套餐价格、暂停/恢复套餐，并写入会员商品操作审计；当前支持开发期 JSON Store，用户端会员公共快照和服务端会员 checkout 已复用同一 Store，前台已能区分可买、暂不可购买和历史待支付继续支付。
 - 用户会员后台 `/admin/users` 已接入统一后台，可按关键词、角色和会员状态筛选用户，聚合账号、会员、课程权益、订单、咨询预约和风险摘要，并支持会员开通、延期、到期标记、计划调整和审计追溯。
 - 订单管理后台 `/admin/orders` 已接入统一后台，可按关键词、订单状态和商品类型筛选课程、会员与咨询订单，并展示订单详情、支付回调摘要、关联履约对象、状态时间线、待支付订单关闭、异常标记和操作审计。
@@ -140,6 +140,7 @@
 - ADM-IA-B-A 已完成：课程素材治理模型与主面板已迁入 `client/src/pages/admin/course-assets/*`，新增课程商品与课程素材页面入口文件，路由层不再直接用 `CourseProducts workspace` 作为入口。
 - ADM-IA-B-B 已完成：`/admin/course-assets/governance` 已独立承接治理数据加载、单素材治理、批量草案、审批、取消和执行预案弹窗；`/admin/courses` 删除 `workspace` 分支和治理加载链路，下一步继续迁出内容编辑/成交素材/章节资料到商品详情承载。
 - ADM-IA-B-C-A 已完成：新增 `/admin/courses/:courseId` 课程商品内容详情页，承接详情文案、成交图文、章节资料、素材上传和合规处理；`/admin/courses` 的“内容”动作改为跳转详情页并携带 `returnTo` 保留筛选分页，下一步继续拆基础/价格/审核/上下架动作弹窗。
+- ADM-IA-B-C-B 已完成：课程商品基础信息、价格、审核和上下架动作弹窗已拆入 `client/src/pages/admin/courses/*` 组件，列表页保留状态编排和刷新逻辑，下一步继续拆列表行、筛选、指标和审计摘要展示组件。
 
 ## M3: 用户与会员管理
 

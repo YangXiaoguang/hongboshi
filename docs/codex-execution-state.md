@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`ADM-IA 后台独立化与信息架构减负`
-- 当前状态：`ADM-IA-B-C-A 课程商品内容编辑详情页承载` 已完成，课程商品列表的“内容”动作进入 `/admin/courses/:courseId` 独立页面，详情页承接详情文案、成交图文、章节资料、素材上传和合规处理。
-- 本轮完成后下一步：执行 `ADM-IA-B-C-B 课程商品基础/价格/审核动作弹窗组件化`
+- 当前状态：`ADM-IA-B-C-B 课程商品基础/价格/审核动作弹窗组件化` 已完成，课程商品列表页已把基础信息、价格、审核和上下架弹窗迁入 `client/src/pages/admin/courses/*` 组件。
+- 本轮完成后下一步：执行 `ADM-IA-B-C-C 课程商品列表行与筛选组件化`
 
 ## 已完成关键能力
 
@@ -22,6 +22,7 @@
 - 顶部用户菜单的运营入口已统一指向 `/admin`。
 - 完成课程商品与课程素材治理代码级拆分第二刀：`/admin/course-assets/governance` 独立拥有治理数据加载、单素材治理、批量草案、审批、取消和执行预案弹窗；`/admin/courses` 删除 `workspace` 分支，只保留商品列表、基础编辑、价格/审核/上下架入口。
 - 完成课程商品内容编辑详情页承载：新增 `/admin/courses/:courseId`，将详情文案、成交图文、章节资料、素材上传和合规处理从商品列表页迁出，并支持 `returnTo` 返回原筛选分页。
+- 完成课程商品动作弹窗组件化：基础信息、价格、审核和上下架弹窗已拆入 `client/src/pages/admin/courses/*`，列表页继续保留动作状态与刷新编排，并新增弹窗静态渲染回归。
 - 完成心理咨询类项目的现代化界面优化。
 - 建立产品工程路线文档、领域契约文档、数据库准备文档和课程中心 Feature 架构文档。
 - 建立课程中心、课程权益、成长档案、心理测评和咨询预约基础闭环。
@@ -740,17 +741,30 @@ ADM-IA-B-C-A 稳定切片已交付：
 - `CourseProducts.tsx` 删除内容编辑长弹窗、内容表单状态、素材上传/合规处理状态和内容保存 handler，从约 3310 行降至约 1734 行。
 - 商品详情页复用现有 shared/domain 契约和后台 API，不改动服务端写入边界。
 
-### 后台待续：ADM-IA-B-C-B 课程商品基础/价格/审核动作弹窗组件化
+### 最近完成阶段：ADM-IA-B-C-B 课程商品基础/价格/审核动作弹窗组件化
 
 业务目标：
 
 `CourseProducts.tsx` 已不再承载素材治理和内容编辑，但仍包含基础信息、价格编辑、审核动作和上下架动作弹窗。下一步应继续把这些低复杂度动作拆到 `client/src/pages/admin/courses/*` 组件，让列表页最终只保留读取、筛选、表格、分页和动作编排。
 
+ADM-IA-B-C-B 稳定切片已交付：
+
+- 新增 `CourseProductBasicInfoDialog.tsx`、`CourseProductPriceDialog.tsx`、`CourseProductReviewDialog.tsx` 和 `CourseProductStatusDialog.tsx`，迁出基础信息、价格、审核和上下架弹窗 JSX。
+- 新增 `courseProductAdminLabels.ts` 统一课程商品状态、审核状态和审核动作中文 copy，避免列表页和弹窗重复维护。
+- `CourseProducts.tsx` 保持 `loadProducts`、动作提交和成功后刷新逻辑不变，只负责打开弹窗、维护表单状态和编排 API 调用。
+- 新增 `CourseProductDialogs.test.tsx`，通过静态渲染覆盖四个弹窗组件的关键标题、表单项和主动作。
+
+### 后台待续：ADM-IA-B-C-C 课程商品列表行与筛选组件化
+
+业务目标：
+
+`CourseProducts.tsx` 已迁出素材治理、内容详情页和动作弹窗，但仍包含列表行、审计摘要、筛选表单、分页、指标卡和多个格式化 helper。下一步继续把列表 UI 拆成可复用组件，让主页面最终接近“读取数据 + 组织状态 + 绑定动作”。
+
 建议实施范围：
 
-- 新增 `CourseProductBasicInfoDialog.tsx`、`CourseProductPriceDialog.tsx`、`CourseProductReviewDialog.tsx` 和 `CourseProductStatusDialog.tsx`，先迁出 JSX，再按风险决定是否迁出各自 form state。
-- 保持列表页的 `loadProducts` 和动作完成后刷新逻辑不变，避免同时改服务端 API。
-- 为列表页补一个轻量回归：内容按钮跳转详情页，基础/价格/审核/上下架动作仍能打开对应弹窗。
+- 新增 `CourseProductListFilters.tsx`、`CourseProductMetrics.tsx`、`CourseProductAuditTrail.tsx` 和 `CourseProductTable.tsx`，优先迁出展示 JSX。
+- 将 `formatMoney`、`formatDate`、`statusClass`、`reviewClass`、`reviewActionsForItem` 等纯展示 helper 迁入 `courseProductListModel.ts`，并补纯函数测试。
+- 保持 URL query、分页、打开内容详情页和弹窗编排仍在 `CourseProducts.tsx`，避免同时改路由和 API。
 - 保留 CUX-I-B-B-T 高风险动作执行开关与二次审批为后续业务切片，待后台 IA 拆分稳定后继续。
 
 ## 执行不变量
@@ -772,4 +786,4 @@ ADM-IA-B-C-A 稳定切片已交付：
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-IA-B-C-B 课程商品基础/价格/审核动作弹窗组件化，CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-IA-B-C-C 课程商品列表行与筛选组件化，CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
