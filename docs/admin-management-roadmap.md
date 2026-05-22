@@ -139,6 +139,7 @@
 - M2-AC 已完成：后台信息架构减负第一刀已把课程素材治理从 `/admin/courses` 默认商品列表中拆出，新增 `/admin/course-assets/governance` 独立入口；课程商品页默认不再加载素材治理、学习资料报表、治理历史、批量任务、队列观测和高风险预案。
 - ADM-IA-B-A 已完成：课程素材治理模型与主面板已迁入 `client/src/pages/admin/course-assets/*`，新增课程商品与课程素材页面入口文件，路由层不再直接用 `CourseProducts workspace` 作为入口。
 - ADM-IA-B-B 已完成：`/admin/course-assets/governance` 已独立承接治理数据加载、单素材治理、批量草案、审批、取消和执行预案弹窗；`/admin/courses` 删除 `workspace` 分支和治理加载链路，下一步继续迁出内容编辑/成交素材/章节资料到商品详情承载。
+- ADM-IA-B-C-A 已完成：新增 `/admin/courses/:courseId` 课程商品内容详情页，承接详情文案、成交图文、章节资料、素材上传和合规处理；`/admin/courses` 的“内容”动作改为跳转详情页并携带 `returnTo` 保留筛选分页，下一步继续拆基础/价格/审核/上下架动作弹窗。
 
 ## M3: 用户与会员管理
 
