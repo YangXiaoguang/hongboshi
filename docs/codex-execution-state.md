@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`CUX-I-B-B-P 课程素材治理批量任务 PostgreSQL Store 与索引准备` 已完成，批量治理任务可显式切换 PostgreSQL Store，任务头、候选快照、执行明细、执行审计事件 ID、幂等键、执行锁预留字段和运营查询索引已进入迁移与 Store 测试。
-- 本轮完成后下一步：执行 `CUX-I-B-B-Q 课程素材治理批量任务异步队列与安全重试边界`
+- 当前状态：`CUX-I-B-B-Q 课程素材治理批量任务异步队列与安全重试边界` 已完成，批量治理任务执行已抽出可复用 worker，具备最小队列接口、执行锁、失败重试字段、PostgreSQL 锁更新、失败原因展示和并发保护测试。
+- 本轮完成后下一步：执行 `CUX-I-B-B-R 课程素材治理队列观测与学习资料运营报表基础`
 
 ## 已完成关键能力
 
@@ -57,6 +57,7 @@
 - 完成课程素材治理批量任务受控执行状态机：新增执行请求/结果/明细/摘要契约、`POST /api/catalog/admin/course-products/assets/governance/batch-tasks/:taskId/execute`、执行中/完成/部分完成/失败状态、重复执行幂等回放、漂移候选跳过、批量 `asset_governance` 审计写入和 `/admin/courses` 执行确认交互；第一版只支持 `acknowledge_issue`，不修改素材 Store、不合并引用、不软删和不物理删除对象。
 - 完成课程素材治理批量任务执行历史增强：扩展批量任务查询契约和 service 筛选，新增执行详情读取 API、前端 repository 和 `/admin/courses` 批量任务筛选/分页/执行明细复盘；已执行任务可脱离弹窗内存态重新打开，查看执行摘要、执行项结果、跳过/失败原因和关联审计事件。
 - 完成课程素材治理批量任务 PostgreSQL Store 与索引准备：新增 `0021_course_product_asset_governance_batch_tasks.sql`、`PostgresCourseProductAssetGovernanceBatchTaskStore`、显式 `HONGBOSHI_COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STORE=postgres` 切换、任务头/候选快照/执行明细/执行审计事件 ID 表、幂等键、执行锁预留字段和查询索引。
+- 完成课程素材治理批量任务异步队列与安全重试边界：新增执行 job 契约、最小内存队列、可复用执行 worker、执行锁 helper、Store 锁接口、PostgreSQL 原子抢锁/释放、失败尝试次数与最近失败原因字段；失败任务可安全重试，并发执行会被锁拒绝，后台任务列表展示“可重试”和最近失败线索。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -694,30 +695,31 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：CUX-I-B-B-P 课程素材治理批量任务 PostgreSQL Store 与索引准备
+### 最近完成阶段：CUX-I-B-B-Q 课程素材治理批量任务异步队列与安全重试边界
 
-CUX-I-B-B-P 稳定切片已交付：
+CUX-I-B-B-Q 稳定切片已交付：
 
-- 新增 `server/db/migrations/0021_course_product_asset_governance_batch_tasks.sql`，落下批量任务主表、候选快照表、执行明细表和执行审计事件 ID 表。
-- 主表保存审批状态、执行状态、创建人、执行人、动作、原因、JSONB 查询快照、JSONB 审批/执行摘要、数组角色字段、幂等键和执行锁预留字段。
-- 新增索引覆盖审批状态、执行状态、创建人、执行人、动作、创建时间、更新时间、候选问题类型 GIN、执行项状态和审计事件 ID，为任务量增长后的运营筛选做准备。
-- 新增 `server/modules/catalog/postgresCourseProductAssetGovernanceBatchTaskStore.ts`，保持现有 Store 接口不变，支持 `listTasks`、`getTask`、`saveTask` 和测试清理能力。
-- `courseProductAssetGovernanceBatchTaskStore.ts` 增加显式 `HONGBOSHI_COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STORE=postgres` 切换；默认开发仍可使用 JSON 文件 Store。
-- `.env.example`、数据库契约和路线文档已同步；测试覆盖 PostgreSQL 读写映射、候选/执行/审计子表同步、二次保存替换子表、payload 默认值回填和 schema 索引契约。
+- `shared/domain/courseProduct.ts` 新增批量执行 job 契约，并为批量任务补充 `executionAttemptCount`、`lastExecutionError` 和 `lastExecutionFailedAt`，让失败重试、失败原因和队列状态具备共享类型。
+- 新增 `courseProductAssetGovernanceBatchTaskExecutionQueue.ts`，提供 `enqueue/runNow/getJobStatus` 最小队列接口和内存实现；当前 HTTP 执行入口继续使用 `runNow`，后续可平滑替换为 BullMQ/云队列消费者。
+- 新增 `courseProductAssetGovernanceBatchTaskExecutionLock.ts`，统一生成执行锁、锁过期时间和 running 状态任务；内存、JSON 与 PostgreSQL Store 均支持 `acquireExecutionLock/releaseExecutionLock`。
+- `PostgresCourseProductAssetGovernanceBatchTaskStore` 支持原子抢锁、锁超时后重入、释放锁、清理旧执行明细和写入失败重试字段；新增 `0022_course_product_asset_governance_batch_task_execution_retry.sql` 保存尝试次数、最近失败原因和失败时间索引。
+- `executeCourseProductAssetGovernanceBatchTask` 已抽出 `runCourseProductAssetGovernanceBatchTaskExecutionWorker`，HTTP 入口与未来队列消费者复用同一状态机；失败任务可安全重试，已完成任务仍幂等回放，同一任务并发执行会返回执行中错误。
+- `/admin/courses` 批量任务列表展示“可重试”和最近失败原因，失败任务可重新打开执行面板并再次确认执行记录处理。
+- 测试覆盖队列成功/失败状态、PostgreSQL 抢锁/释放、并发执行拒绝、失败后重试成功、共享契约解析和 schema 迁移索引。
 
-### 后台待续：CUX-I-B-B-Q 课程素材治理批量任务异步队列与安全重试边界
+### 后台待续：CUX-I-B-B-R 课程素材治理队列观测与学习资料运营报表基础
 
 业务目标：
 
-CUX-I-B-B-P 已把批量治理任务沉淀到 PostgreSQL 并预留幂等键与执行锁字段。下一步应把当前同步执行入口拆成可被后台队列复用的安全执行边界，避免长任务阻塞请求，并为失败重试、并发执行保护和运营追踪打下基础。
+CUX-I-B-B-Q 已把批量执行拆成可队列化、可抢锁、可重试的稳定边界，但后台仍缺少队列 job 的运营可观测入口，也缺少面向学习资料的运营统计。下一步应把“任务运行是否健康”和“资料使用是否值得继续治理”做成运营可读的只读报表，继续保持不自动删除、不自动合并引用和不绕过审批。
 
 建议实施范围：
 
-- 抽出批量任务执行 worker service，让 HTTP `execute` 接口和未来队列消费复用同一状态机。
-- 为执行前抢锁、锁超时、重复执行、失败重试和已完成幂等回放定义清晰规则；PostgreSQL Store 可优先实现锁字段写入，JSON/内存 Store 保持开发期降级。
-- 设计最小队列接口 `enqueue/runNow/getJobStatus`，首版可使用内存队列或同步 runNow，避免引入外部依赖，同时保留后续 BullMQ/云队列替换点。
-- 后台任务列表增加“执行中/可重试/最近失败原因”的只读展示口径，先不做自动批量软删、引用合并和物理对象清理。
-- 增加并发与重试测试：同一任务并发执行只能一个获得锁，失败任务可在安全状态下重试，已完成任务仍返回幂等回放。
+- 为批量治理任务增加队列 job 只读查询口径，可按任务 ID 查看最近 job 状态、尝试次数、开始/结束时间、失败原因和执行摘要；首版可复用内存队列接口，后续再持久化 job 表。
+- 在 `/admin/courses` 批量任务详情中补充队列状态区，区分已排队、执行中、已成功、已失败和可重试，并给出下一步处理提示。
+- 建立学习资料运营报表共享契约，聚合素材类型、合规状态、下载开关、引用来源、软删除候选、章节资料绑定率和治理问题分布。
+- 新增只读 API 与前端 repository，先服务 `/admin/courses` 管理端摘要，不新增批量写动作。
+- 增加测试覆盖队列状态读取、报表契约、权限边界和空数据/失败数据降级展示。
 
 ## 执行不变量
 
@@ -738,4 +740,4 @@ CUX-I-B-B-P 已把批量治理任务沉淀到 PostgreSQL 并预留幂等键与�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 CUX-I-B-B-Q 课程素材治理批量任务异步队列与安全重试边界，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 CUX-I-B-B-R 课程素材治理队列观测与学习资料运营报表基础，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

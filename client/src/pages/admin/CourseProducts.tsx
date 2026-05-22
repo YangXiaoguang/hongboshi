@@ -1506,6 +1506,11 @@ function CourseProductAssetGovernancePanel({
                                 ]
                               }
                             </span>
+                            {task.executionStatus === "failed" ? (
+                              <span className="inline-flex h-6 items-center rounded-full bg-[#FDEBE5] px-2 text-xs font-semibold text-[#A65F48]">
+                                可重试
+                              </span>
+                            ) : null}
                             {task.approvalStatus === "pending_approval" && (
                               <>
                                 <button
@@ -1558,7 +1563,9 @@ function CourseProductAssetGovernancePanel({
                                 )}
                                 {task.executionStatus === "not_started"
                                   ? "生成执行预案"
-                                  : "查看执行记录"}
+                                  : task.executionStatus === "failed"
+                                    ? "查看/重试"
+                                    : "查看执行记录"}
                               </button>
                             )}
                           </div>
@@ -1573,6 +1580,14 @@ function CourseProductAssetGovernancePanel({
                           {executionIssue ? (
                             <p className="mt-2 rounded-md bg-[#FFF7E5] px-2 py-1 text-xs leading-5 text-[#8F6B1C]">
                               异常线索：{executionIssue}
+                            </p>
+                          ) : null}
+                          {task.lastExecutionError ? (
+                            <p className="mt-2 rounded-md bg-[#FDEBE5] px-2 py-1 text-xs leading-5 text-[#A65F48]">
+                              最近失败：{task.lastExecutionError}
+                              {task.lastExecutionFailedAt
+                                ? ` · ${formatDate(task.lastExecutionFailedAt)}`
+                                : ""}
                             </p>
                           ) : null}
                           {task.executionAuditEventIds[0] ? (
@@ -4479,8 +4494,10 @@ export default function CourseProducts() {
             </div>
 
             <div className="border-t border-[#E8DED0] px-5 py-3">
-              {batchTaskExecutionCurrentTask?.executionStatus ===
-                "not_started" && (
+              {(batchTaskExecutionCurrentTask?.executionStatus ===
+                "not_started" ||
+                batchTaskExecutionCurrentTask?.executionStatus ===
+                  "failed") && (
                 <div className="mb-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                   <label className="block text-xs font-semibold text-[#41524B]">
                     执行原因
@@ -4529,8 +4546,10 @@ export default function CourseProducts() {
                 </div>
               )}
               <div className="flex flex-wrap justify-end gap-2">
-                {batchTaskExecutionCurrentTask?.executionStatus ===
-                  "not_started" && (
+                {(batchTaskExecutionCurrentTask?.executionStatus ===
+                  "not_started" ||
+                  batchTaskExecutionCurrentTask?.executionStatus ===
+                    "failed") && (
                   <button
                     onClick={() =>
                       void submitAssetGovernanceBatchTaskExecution()
@@ -4548,7 +4567,9 @@ export default function CourseProducts() {
                     ) : (
                       <ClipboardCheck className="h-4 w-4" />
                     )}
-                    确认执行记录处理
+                    {batchTaskExecutionCurrentTask.executionStatus === "failed"
+                      ? "重新执行记录处理"
+                      : "确认执行记录处理"}
                   </button>
                 )}
                 <button

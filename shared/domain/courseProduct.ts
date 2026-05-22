@@ -190,6 +190,9 @@ export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_ITEM_STAT
 export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_RISK_LEVELS =
   ["low", "medium", "high"] as const;
 
+export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_JOB_STATUSES =
+  ["queued", "running", "succeeded", "failed"] as const;
+
 export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
   "showcase",
   "proof",
@@ -312,6 +315,9 @@ export const CourseProductAssetGovernanceBatchTaskExecutionPlanItemStatusSchema 
 
 export const CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevelSchema =
   z.enum(COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_PLAN_RISK_LEVELS);
+
+export const CourseProductAssetGovernanceBatchTaskExecutionJobStatusSchema =
+  z.enum(COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_JOB_STATUSES);
 
 export const CourseProductMerchandisingAssetUsageSchema = z.enum(
   COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES
@@ -861,6 +867,7 @@ export const CourseProductAssetGovernanceBatchTaskSchema = z.object({
     CourseProductAssetGovernanceBatchTaskExecutionStatusSchema.default(
       "not_started"
     ),
+  executionAttemptCount: z.number().int().nonnegative().default(0),
   executionRequestedBy: EntityIdSchema.optional(),
   executionRequestedByRoles: z.array(EntityIdSchema).default([]),
   executionStartedAt: DateTimeLikeSchema.optional(),
@@ -873,10 +880,28 @@ export const CourseProductAssetGovernanceBatchTaskSchema = z.object({
     .array(CourseProductAssetGovernanceBatchTaskExecutionItemResultSchema)
     .default([]),
   executionAuditEventIds: z.array(EntityIdSchema).default([]),
+  lastExecutionError: z.string().trim().min(1).max(240).optional(),
+  lastExecutionFailedAt: DateTimeLikeSchema.optional(),
   canceledBy: EntityIdSchema.optional(),
   canceledAt: DateTimeLikeSchema.optional(),
   cancelReason: z.string().trim().min(4).max(240).optional(),
 });
+
+export const CourseProductAssetGovernanceBatchTaskExecutionJobSchema = z.object(
+  {
+    id: EntityIdSchema,
+    taskId: EntityIdSchema,
+    status: CourseProductAssetGovernanceBatchTaskExecutionJobStatusSchema,
+    requestedBy: EntityIdSchema,
+    enqueuedAt: DateTimeLikeSchema,
+    startedAt: DateTimeLikeSchema.optional(),
+    finishedAt: DateTimeLikeSchema.optional(),
+    attemptCount: z.number().int().nonnegative().default(0),
+    summary:
+      CourseProductAssetGovernanceBatchTaskExecutionSummarySchema.optional(),
+    lastError: z.string().trim().min(1).max(240).optional(),
+  }
+);
 
 export const CourseProductAssetGovernanceBatchTaskCreateRequestSchema = z
   .object({
@@ -1590,6 +1615,9 @@ export type CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevel =
   z.infer<
     typeof CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevelSchema
   >;
+export type CourseProductAssetGovernanceBatchTaskExecutionJobStatus = z.infer<
+  typeof CourseProductAssetGovernanceBatchTaskExecutionJobStatusSchema
+>;
 export type CourseProductAssetObjectDescriptor = z.infer<
   typeof CourseProductAssetObjectDescriptorSchema
 >;
@@ -1656,6 +1684,9 @@ export type CourseProductAssetGovernanceBatchDraftResult = z.infer<
 >;
 export type CourseProductAssetGovernanceBatchTask = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskSchema
+>;
+export type CourseProductAssetGovernanceBatchTaskExecutionJob = z.infer<
+  typeof CourseProductAssetGovernanceBatchTaskExecutionJobSchema
 >;
 export type CourseProductAssetGovernanceBatchTaskReviewSummary = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskReviewSummarySchema

@@ -1,7 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { courses } from "../../../shared/data/mockCourses";
 import type {
   CourseProductAsset,
@@ -531,6 +531,144 @@ describe("course product asset governance batch tasks", () => {
     });
     expect(filtered.meta.total).toBe(1);
     expect(filtered.items[0]?.id).toBe(approved.task.id);
+  });
+
+  it("blocks concurrent execution while an execution lock is active", async () => {
+    const context = stores();
+    const created = await createCourseProductAssetGovernanceBatchTask({
+      ...context,
+      actorId: "operator_1",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "acknowledge_issue",
+        query: {
+          issueFilter: "pending_compliance",
+          previewSize: 5,
+        },
+        reason: "统一记录待审核素材处理计划",
+      },
+      now: "2026-05-21T10:00:00.000Z",
+    });
+    const approved = await reviewCourseProductAssetGovernanceBatchTask({
+      ...context,
+      taskId: created.task.id,
+      actorId: "operator_2",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "approve",
+        reason: "候选范围和处理口径已完成交叉复核",
+      },
+      now: "2026-05-21T10:01:00.000Z",
+    });
+
+    const lock = await context.taskStore.acquireExecutionLock?.({
+      taskId: approved.task.id,
+      actorId: "operator_3",
+      actorRoles: ["catalog_operator"],
+      reason: "模拟后台队列正在执行",
+      now: "2026-05-21T10:02:00.000Z",
+      lockToken: "active_lock",
+      lockTtlMs: 60_000,
+    });
+
+    expect(lock).toBeDefined();
+    await expect(
+      executeCourseProductAssetGovernanceBatchTask({
+        ...context,
+        taskId: approved.task.id,
+        actorId: "operator_4",
+        actorRoles: ["catalog_operator"],
+        request: {
+          confirmExecution: true,
+          reason: "并发点击应被执行锁阻止",
+        },
+        now: "2026-05-21T10:02:30.000Z",
+      })
+    ).rejects.toThrow(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_IN_PROGRESS"
+    );
+  });
+
+  it("allows failed execution tasks to be retried safely", async () => {
+    const context = stores();
+    const created = await createCourseProductAssetGovernanceBatchTask({
+      ...context,
+      actorId: "operator_1",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "acknowledge_issue",
+        query: {
+          issueFilter: "pending_compliance",
+          previewSize: 5,
+        },
+        reason: "统一记录待审核素材处理计划",
+      },
+      now: "2026-05-21T10:00:00.000Z",
+    });
+    const approved = await reviewCourseProductAssetGovernanceBatchTask({
+      ...context,
+      taskId: created.task.id,
+      actorId: "operator_2",
+      actorRoles: ["catalog_operator"],
+      request: {
+        action: "approve",
+        reason: "候选范围和处理口径已完成交叉复核",
+      },
+      now: "2026-05-21T10:01:00.000Z",
+    });
+    vi.spyOn(context.productStore, "appendAuditEvent").mockRejectedValueOnce(
+      new Error("audit append timeout")
+    );
+
+    await expect(
+      executeCourseProductAssetGovernanceBatchTask({
+        ...context,
+        taskId: approved.task.id,
+        actorId: "operator_3",
+        actorRoles: ["catalog_operator"],
+        request: {
+          confirmExecution: true,
+          reason: "第一次执行模拟审计写入失败",
+        },
+        now: "2026-05-21T10:03:00.000Z",
+      })
+    ).rejects.toThrow(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_FAILED"
+    );
+    const failedTask = await context.taskStore.getTask(approved.task.id);
+
+    expect(failedTask).toMatchObject({
+      executionStatus: "failed",
+      executionAttemptCount: 1,
+      lastExecutionError: "audit append timeout",
+      lastExecutionFailedAt: "2026-05-21T10:03:00.000Z",
+    });
+
+    const retried = await executeCourseProductAssetGovernanceBatchTask({
+      ...context,
+      taskId: approved.task.id,
+      actorId: "operator_3",
+      actorRoles: ["catalog_operator"],
+      request: {
+        confirmExecution: true,
+        reason: "失败任务重新执行记录处理",
+      },
+      now: "2026-05-21T10:04:00.000Z",
+    });
+
+    expect(retried).toMatchObject({
+      idempotentReplay: false,
+      task: {
+        executionStatus: "completed",
+        executionAttemptCount: 2,
+      },
+      summary: {
+        executedActionCount: 1,
+        failedActionCount: 0,
+      },
+    });
+    expect(retried.task.lastExecutionError).toBeUndefined();
+    expect(await context.productStore.listAuditEvents()).toHaveLength(1);
   });
 
   it("skips drifted candidates during execution and records partial task state", async () => {

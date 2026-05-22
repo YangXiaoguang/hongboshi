@@ -3,6 +3,11 @@ import {
   type CourseProductAssetGovernanceBatchTask,
 } from "../../../shared/domain";
 import type { DatabaseQueryExecutor } from "../../db/postgres";
+import {
+  createCourseProductAssetGovernanceBatchTaskExecutionLock,
+  type CourseProductAssetGovernanceBatchTaskExecutionLockAcquireInput,
+  type CourseProductAssetGovernanceBatchTaskExecutionLockReleaseInput,
+} from "./courseProductAssetGovernanceBatchTaskExecutionLock";
 import type { CourseProductAssetGovernanceBatchTaskStore } from "./courseProductAssetGovernanceBatchTaskStore";
 
 type CourseProductAssetGovernanceBatchTaskRow = {
@@ -107,6 +112,7 @@ export class PostgresCourseProductAssetGovernanceBatchTaskStore implements Cours
             review_after_summary,
             approval_preflight,
             execution_status,
+            execution_attempt_count,
             execution_requested_by,
             execution_requested_by_roles,
             execution_started_at,
@@ -115,6 +121,8 @@ export class PostgresCourseProductAssetGovernanceBatchTaskStore implements Cours
             execution_note,
             execution_summary,
             execution_audit_event_ids,
+            last_execution_error,
+            last_execution_failed_at,
             canceled_by,
             canceled_at,
             cancel_reason,
@@ -125,7 +133,8 @@ export class PostgresCourseProductAssetGovernanceBatchTaskStore implements Cours
             $11::jsonb, $12::jsonb, $13, $14, $15, $16, $17,
             $18, $19, $20, $21, $22, $23, $24, $25::jsonb,
             $26::jsonb, $27::jsonb, $28, $29, $30, $31, $32,
-            $33, $34, $35::jsonb, $36, $37, $38, $39, $40::jsonb
+            $33, $34, $35, $36::jsonb, $37, $38, $39, $40,
+            $41, $42, $43::jsonb
           )
           ON CONFLICT (id) DO UPDATE SET
             idempotency_key = EXCLUDED.idempotency_key,
@@ -155,6 +164,7 @@ export class PostgresCourseProductAssetGovernanceBatchTaskStore implements Cours
             review_after_summary = EXCLUDED.review_after_summary,
             approval_preflight = EXCLUDED.approval_preflight,
             execution_status = EXCLUDED.execution_status,
+            execution_attempt_count = EXCLUDED.execution_attempt_count,
             execution_requested_by = EXCLUDED.execution_requested_by,
             execution_requested_by_roles = EXCLUDED.execution_requested_by_roles,
             execution_started_at = EXCLUDED.execution_started_at,
@@ -163,6 +173,8 @@ export class PostgresCourseProductAssetGovernanceBatchTaskStore implements Cours
             execution_note = EXCLUDED.execution_note,
             execution_summary = EXCLUDED.execution_summary,
             execution_audit_event_ids = EXCLUDED.execution_audit_event_ids,
+            last_execution_error = EXCLUDED.last_execution_error,
+            last_execution_failed_at = EXCLUDED.last_execution_failed_at,
             canceled_by = EXCLUDED.canceled_by,
             canceled_at = EXCLUDED.canceled_at,
             cancel_reason = EXCLUDED.cancel_reason,
@@ -200,6 +212,7 @@ export class PostgresCourseProductAssetGovernanceBatchTaskStore implements Cours
           nullableJsonb(normalized.reviewAfterSummary),
           nullableJsonb(normalized.approvalPreflight),
           normalized.executionStatus,
+          normalized.executionAttemptCount ?? 0,
           normalized.executionRequestedBy ?? null,
           normalized.executionRequestedByRoles,
           normalized.executionStartedAt ?? null,
@@ -208,6 +221,8 @@ export class PostgresCourseProductAssetGovernanceBatchTaskStore implements Cours
           normalized.executionNote ?? null,
           nullableJsonb(normalized.executionSummary),
           normalized.executionAuditEventIds,
+          normalized.lastExecutionError ?? null,
+          normalized.lastExecutionFailedAt ?? null,
           normalized.canceledBy ?? null,
           normalized.canceledAt ?? null,
           normalized.cancelReason ?? null,
@@ -224,6 +239,97 @@ export class PostgresCourseProductAssetGovernanceBatchTaskStore implements Cours
       throw new Error("COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_NOT_FOUND");
     }
     return courseProductAssetGovernanceBatchTaskRowToDomain(row);
+  }
+
+  async acquireExecutionLock(
+    input: CourseProductAssetGovernanceBatchTaskExecutionLockAcquireInput
+  ) {
+    const task = await this.getTask(input.taskId);
+    if (!task) return undefined;
+    if (!["not_started", "failed", "running"].includes(task.executionStatus)) {
+      return undefined;
+    }
+
+    const lock = createCourseProductAssetGovernanceBatchTaskExecutionLock({
+      task,
+      input,
+    });
+    const result =
+      await this.db.query<CourseProductAssetGovernanceBatchTaskRow>(
+        `
+          UPDATE course_product_asset_gov_batch_tasks
+          SET
+            execution_status = 'running',
+            execution_attempt_count = $2,
+            execution_requested_by = $3,
+            execution_requested_by_roles = $4,
+            execution_started_at = $5,
+            execution_completed_at = NULL,
+            execution_reason = $6,
+            execution_note = $7,
+            execution_summary = NULL,
+            execution_audit_event_ids = '{}'::text[],
+            execution_lock_token = $8,
+            execution_lock_expires_at = $9,
+            last_execution_error = NULL,
+            last_execution_failed_at = NULL,
+            updated_at = $10,
+            task_payload = $11::jsonb
+          WHERE id = $1
+            AND (
+              execution_status IN ('not_started', 'failed')
+              OR (
+                execution_status = 'running'
+                AND (
+                  execution_lock_expires_at IS NULL
+                  OR execution_lock_expires_at <= $10
+                )
+              )
+            )
+          RETURNING
+            id,
+            task_payload
+        `,
+        [
+          input.taskId,
+          lock.task.executionAttemptCount,
+          input.actorId,
+          input.actorRoles ?? [],
+          input.now,
+          input.reason,
+          input.note ?? null,
+          lock.lockToken,
+          lock.expiresAt,
+          input.now,
+          requiredJsonb(lock.task),
+        ]
+      );
+    const row = result.rows[0];
+    if (!row) return undefined;
+
+    await this.replaceExecutionItems(lock.task);
+    await this.replaceExecutionAuditEventIds(lock.task);
+
+    return {
+      ...lock,
+      task: courseProductAssetGovernanceBatchTaskRowToDomain(row),
+    };
+  }
+
+  async releaseExecutionLock(
+    input: CourseProductAssetGovernanceBatchTaskExecutionLockReleaseInput
+  ) {
+    await this.db.query(
+      `
+        UPDATE course_product_asset_gov_batch_tasks
+        SET
+          execution_lock_token = NULL,
+          execution_lock_expires_at = NULL
+        WHERE id = $1
+          AND execution_lock_token = $2
+      `,
+      [input.taskId, input.lockToken]
+    );
   }
 
   async clear() {

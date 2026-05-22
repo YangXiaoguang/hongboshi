@@ -16,6 +16,7 @@ import {
   CourseProductAssetGovernanceBatchTaskApprovalPreflightSchema,
   CourseProductAssetGovernanceBatchTaskExecuteRequestSchema,
   CourseProductAssetGovernanceBatchTaskExecutionDetailResultSchema,
+  CourseProductAssetGovernanceBatchTaskExecutionJobSchema,
   CourseProductAssetGovernanceBatchTaskExecutionResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionPlanResultSchema,
   CourseProductAssetGovernanceBatchTaskListQuerySchema,
@@ -868,6 +869,34 @@ describe("course product domain contract", () => {
     expect(detail.items[0]?.auditEventId).toBe(
       "audit_asset_governance_batch_1"
     );
+    const retryableTask =
+      CourseProductAssetGovernanceBatchTaskMutationResultSchema.parse({
+        task: {
+          ...executionResult.task,
+          executionStatus: "failed",
+          executionAttemptCount: 2,
+          lastExecutionError: "audit append timeout",
+          lastExecutionFailedAt: "2026-05-21T09:45:00.000Z",
+        },
+        tasks: batchTaskList,
+      }).task;
+    expect(retryableTask).toMatchObject({
+      executionStatus: "failed",
+      executionAttemptCount: 2,
+      lastExecutionError: "audit append timeout",
+    });
+    const job = CourseProductAssetGovernanceBatchTaskExecutionJobSchema.parse({
+      id: "asset_governance_batch_execution_job_1",
+      taskId: batchTask.id,
+      status: "failed",
+      requestedBy: "operator_3",
+      enqueuedAt: "2026-05-21T09:45:00.000Z",
+      startedAt: "2026-05-21T09:45:00.000Z",
+      finishedAt: "2026-05-21T09:45:01.000Z",
+      attemptCount: 1,
+      lastError: "audit append timeout",
+    });
+    expect(job.status).toBe("failed");
 
     expect(
       CourseProductAssetGovernanceBatchTaskListQuerySchema.parse({

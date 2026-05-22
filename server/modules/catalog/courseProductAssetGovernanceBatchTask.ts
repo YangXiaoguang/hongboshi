@@ -50,6 +50,14 @@ import {
   getCourseProductAssetGovernanceBatchTaskStore,
   type CourseProductAssetGovernanceBatchTaskStore,
 } from "./courseProductAssetGovernanceBatchTaskStore";
+import {
+  getCourseProductAssetGovernanceBatchTaskExecutionQueue,
+  type CourseProductAssetGovernanceBatchTaskExecutionQueue,
+} from "./courseProductAssetGovernanceBatchTaskExecutionQueue";
+import {
+  createCourseProductAssetGovernanceBatchTaskExecutionLock,
+  type CourseProductAssetGovernanceBatchTaskExecutionLock,
+} from "./courseProductAssetGovernanceBatchTaskExecutionLock";
 
 export class CourseProductAssetGovernanceBatchTaskPreflightError extends Error {
   constructor(
@@ -555,10 +563,56 @@ export async function executeCourseProductAssetGovernanceBatchTask({
   contentStore = getCourseProductContentStore(),
   assetStore = getCourseProductAssetStore(),
   taskStore = getCourseProductAssetGovernanceBatchTaskStore(),
+  executionQueue = getCourseProductAssetGovernanceBatchTaskExecutionQueue(),
   now = new Date().toISOString(),
 }: {
   taskId: string;
   request: unknown;
+  actorId: string;
+  actorRoles?: string[];
+  productStore?: CourseProductStore;
+  contentStore?: CourseProductContentStore;
+  assetStore?: CourseProductAssetStore;
+  taskStore?: CourseProductAssetGovernanceBatchTaskStore;
+  executionQueue?: CourseProductAssetGovernanceBatchTaskExecutionQueue;
+  now?: string;
+}) {
+  const parsed =
+    CourseProductAssetGovernanceBatchTaskExecuteRequestSchema.parse(request);
+  return executionQueue.runNow(
+    {
+      taskId,
+      requestedBy: actorId,
+      now,
+    },
+    () =>
+      runCourseProductAssetGovernanceBatchTaskExecutionWorker({
+        taskId,
+        request: parsed,
+        actorId,
+        actorRoles,
+        productStore,
+        contentStore,
+        assetStore,
+        taskStore,
+        now,
+      })
+  );
+}
+
+export async function runCourseProductAssetGovernanceBatchTaskExecutionWorker({
+  taskId,
+  request,
+  actorId,
+  actorRoles = [],
+  productStore = getCourseProductStore(),
+  contentStore = getCourseProductContentStore(),
+  assetStore = getCourseProductAssetStore(),
+  taskStore = getCourseProductAssetGovernanceBatchTaskStore(),
+  now = new Date().toISOString(),
+}: {
+  taskId: string;
+  request: CourseProductAssetGovernanceBatchTaskExecuteRequest;
   actorId: string;
   actorRoles?: string[];
   productStore?: CourseProductStore;
@@ -585,48 +639,40 @@ export async function executeCourseProductAssetGovernanceBatchTask({
       now,
     });
   }
-  if (task.executionStatus === "running") {
-    throw new Error(
-      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_IN_PROGRESS"
-    );
-  }
-  if (task.executionStatus === "failed") {
-    throw new Error(
-      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_RETRY_UNSUPPORTED"
-    );
-  }
   if (task.action !== "acknowledge_issue") {
     throw new Error(
       "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_ACTION_UNSUPPORTED"
     );
   }
 
-  const executionPlan =
-    await previewCourseProductAssetGovernanceBatchTaskExecutionPlan({
-      taskId,
-      actorId,
-      productStore,
-      contentStore,
-      assetStore,
-      taskStore,
-      now,
-    });
-  const runningTask = await taskStore.saveTask(
-    CourseProductAssetGovernanceBatchTaskSchema.parse({
-      ...task,
-      executionStatus: "running",
-      executionRequestedBy: actorId,
-      executionRequestedByRoles: actorRoles,
-      executionStartedAt: now,
-      executionReason: parsed.reason,
-      executionNote: parsed.note,
-      updatedAt: now,
-    })
-  );
+  const executionLock = await acquireBatchTaskExecutionLock({
+    task,
+    taskStore,
+    parsed,
+    actorId,
+    actorRoles,
+    now,
+  });
+  if (!executionLock) {
+    throw new Error(
+      "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_IN_PROGRESS"
+    );
+  }
+  const runningTask = executionLock.task;
   const auditEvents: CourseProductAuditEvent[] = [];
   const items: CourseProductAssetGovernanceBatchTaskExecutionItemResult[] = [];
 
   try {
+    const executionPlan =
+      await previewCourseProductAssetGovernanceBatchTaskExecutionPlan({
+        taskId,
+        actorId,
+        productStore,
+        contentStore,
+        assetStore,
+        taskStore,
+        now,
+      });
     for (const item of executionPlan.items) {
       if (item.status !== "planned") {
         items.push(executionItemResultFromSkippedPlanItem(item));
@@ -714,6 +760,8 @@ export async function executeCourseProductAssetGovernanceBatchTask({
         executionSummary: summary,
         executionItems: items,
         executionAuditEventIds: auditEvents.map(event => event.id),
+        lastExecutionError: undefined,
+        lastExecutionFailedAt: undefined,
         updatedAt: now,
       })
     );
@@ -735,14 +783,15 @@ export async function executeCourseProductAssetGovernanceBatchTask({
       idempotentReplay: false,
     });
   } catch (err) {
+    const errorMessage =
+      err instanceof Error ? err.message.slice(0, 240) : "批量执行失败";
     const failureItems = [
       ...items,
       {
         assetId: task.id,
         plannedAction: task.action,
         status: "failed" as const,
-        errorMessage:
-          err instanceof Error ? err.message.slice(0, 240) : "批量执行失败",
+        errorMessage,
       },
     ];
     const summary = batchTaskExecutionSummaryFromItems({
@@ -758,12 +807,20 @@ export async function executeCourseProductAssetGovernanceBatchTask({
         executionSummary: summary,
         executionItems: failureItems,
         executionAuditEventIds: auditEvents.map(event => event.id),
+        lastExecutionError: errorMessage,
+        lastExecutionFailedAt: now,
         updatedAt: now,
       })
     );
     throw new Error(
       "COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_EXECUTION_FAILED"
     );
+  } finally {
+    await releaseBatchTaskExecutionLock({
+      taskStore,
+      executionLock,
+      now,
+    });
   }
 }
 
@@ -805,6 +862,70 @@ function matchesBatchTaskListQuery(
     return false;
   }
   return true;
+}
+
+async function acquireBatchTaskExecutionLock({
+  task,
+  taskStore,
+  parsed,
+  actorId,
+  actorRoles,
+  now,
+}: {
+  task: CourseProductAssetGovernanceBatchTask;
+  taskStore: CourseProductAssetGovernanceBatchTaskStore;
+  parsed: CourseProductAssetGovernanceBatchTaskExecuteRequest;
+  actorId: string;
+  actorRoles: string[];
+  now: string;
+}) {
+  if (taskStore.acquireExecutionLock) {
+    return taskStore.acquireExecutionLock({
+      taskId: task.id,
+      actorId,
+      actorRoles,
+      reason: parsed.reason,
+      note: parsed.note,
+      now,
+    });
+  }
+
+  if (!["not_started", "failed"].includes(task.executionStatus)) {
+    return undefined;
+  }
+  const executionLock =
+    createCourseProductAssetGovernanceBatchTaskExecutionLock({
+      task,
+      input: {
+        taskId: task.id,
+        actorId,
+        actorRoles,
+        reason: parsed.reason,
+        note: parsed.note,
+        now,
+      },
+    });
+  const runningTask = await taskStore.saveTask(executionLock.task);
+  return {
+    ...executionLock,
+    task: runningTask,
+  };
+}
+
+async function releaseBatchTaskExecutionLock({
+  taskStore,
+  executionLock,
+  now,
+}: {
+  taskStore: CourseProductAssetGovernanceBatchTaskStore;
+  executionLock: CourseProductAssetGovernanceBatchTaskExecutionLock;
+  now: string;
+}) {
+  await taskStore.releaseExecutionLock?.({
+    taskId: executionLock.task.id,
+    lockToken: executionLock.lockToken,
+    now,
+  });
 }
 
 function batchTaskOperationalTime(task: CourseProductAssetGovernanceBatchTask) {

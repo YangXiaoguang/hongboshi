@@ -6,6 +6,13 @@ import {
   type CourseProductAssetGovernanceBatchTask,
 } from "../../../shared/domain";
 import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
+import {
+  createCourseProductAssetGovernanceBatchTaskExecutionLock,
+  isCourseProductAssetGovernanceBatchTaskExecutionLockExpired,
+  type CourseProductAssetGovernanceBatchTaskExecutionLock,
+  type CourseProductAssetGovernanceBatchTaskExecutionLockAcquireInput,
+  type CourseProductAssetGovernanceBatchTaskExecutionLockReleaseInput,
+} from "./courseProductAssetGovernanceBatchTaskExecutionLock";
 import { PostgresCourseProductAssetGovernanceBatchTaskStore } from "./postgresCourseProductAssetGovernanceBatchTaskStore";
 
 const CourseProductAssetGovernanceBatchTaskStoreFileSchema = z.object({
@@ -25,10 +32,20 @@ export interface CourseProductAssetGovernanceBatchTaskStore {
   saveTask(
     task: CourseProductAssetGovernanceBatchTask
   ): Promise<CourseProductAssetGovernanceBatchTask>;
+  acquireExecutionLock?(
+    input: CourseProductAssetGovernanceBatchTaskExecutionLockAcquireInput
+  ): Promise<CourseProductAssetGovernanceBatchTaskExecutionLock | undefined>;
+  releaseExecutionLock?(
+    input: CourseProductAssetGovernanceBatchTaskExecutionLockReleaseInput
+  ): Promise<void>;
 }
 
 export class InMemoryCourseProductAssetGovernanceBatchTaskStore implements CourseProductAssetGovernanceBatchTaskStore {
   private tasks = new Map<string, CourseProductAssetGovernanceBatchTask>();
+  private executionLocks = new Map<
+    string,
+    CourseProductAssetGovernanceBatchTaskExecutionLock
+  >();
 
   constructor(tasks: CourseProductAssetGovernanceBatchTask[] = []) {
     tasks.forEach(task => {
@@ -51,9 +68,47 @@ export class InMemoryCourseProductAssetGovernanceBatchTaskStore implements Cours
     this.tasks.set(parsed.id, cloneTask(parsed));
     return cloneTask(parsed);
   }
+
+  async acquireExecutionLock(
+    input: CourseProductAssetGovernanceBatchTaskExecutionLockAcquireInput
+  ) {
+    const task = this.tasks.get(input.taskId);
+    if (!task) return undefined;
+    if (
+      !canAcquireExecutionLock(
+        task,
+        this.executionLocks.get(task.id),
+        input.now
+      )
+    ) {
+      return undefined;
+    }
+
+    const lock = createCourseProductAssetGovernanceBatchTaskExecutionLock({
+      task,
+      input,
+    });
+    this.tasks.set(task.id, cloneTask(lock.task));
+    this.executionLocks.set(task.id, lock);
+    return cloneExecutionLock(lock);
+  }
+
+  async releaseExecutionLock(
+    input: CourseProductAssetGovernanceBatchTaskExecutionLockReleaseInput
+  ) {
+    const lock = this.executionLocks.get(input.taskId);
+    if (lock?.lockToken === input.lockToken) {
+      this.executionLocks.delete(input.taskId);
+    }
+  }
 }
 
 export class JsonFileCourseProductAssetGovernanceBatchTaskStore implements CourseProductAssetGovernanceBatchTaskStore {
+  private executionLocks = new Map<
+    string,
+    CourseProductAssetGovernanceBatchTaskExecutionLock
+  >();
+
   constructor(
     private readonly filePath = resolveCourseProductAssetGovernanceBatchTaskStorePath()
   ) {}
@@ -78,6 +133,42 @@ export class JsonFileCourseProductAssetGovernanceBatchTaskStore implements Cours
     }
     this.writeFile(file);
     return cloneTask(parsed);
+  }
+
+  async acquireExecutionLock(
+    input: CourseProductAssetGovernanceBatchTaskExecutionLockAcquireInput
+  ) {
+    const file = this.readFile();
+    const task = file.tasks.find(item => item.id === input.taskId);
+    if (!task) return undefined;
+    if (
+      !canAcquireExecutionLock(
+        task,
+        this.executionLocks.get(task.id),
+        input.now
+      )
+    ) {
+      return undefined;
+    }
+
+    const lock = createCourseProductAssetGovernanceBatchTaskExecutionLock({
+      task,
+      input,
+    });
+    const existingIndex = file.tasks.findIndex(item => item.id === task.id);
+    file.tasks[existingIndex] = lock.task;
+    this.writeFile(file);
+    this.executionLocks.set(task.id, lock);
+    return cloneExecutionLock(lock);
+  }
+
+  async releaseExecutionLock(
+    input: CourseProductAssetGovernanceBatchTaskExecutionLockReleaseInput
+  ) {
+    const lock = this.executionLocks.get(input.taskId);
+    if (lock?.lockToken === input.lockToken) {
+      this.executionLocks.delete(input.taskId);
+    }
   }
 
   clear() {
@@ -189,6 +280,32 @@ function cloneTask(task: CourseProductAssetGovernanceBatchTask) {
   return CourseProductAssetGovernanceBatchTaskSchema.parse(
     JSON.parse(JSON.stringify(task))
   );
+}
+
+function cloneExecutionLock(
+  lock: CourseProductAssetGovernanceBatchTaskExecutionLock
+) {
+  return {
+    ...lock,
+    task: cloneTask(lock.task),
+  };
+}
+
+function canAcquireExecutionLock(
+  task: CourseProductAssetGovernanceBatchTask,
+  lock: CourseProductAssetGovernanceBatchTaskExecutionLock | undefined,
+  now: string
+) {
+  if (
+    lock &&
+    !isCourseProductAssetGovernanceBatchTaskExecutionLockExpired({
+      expiresAt: lock.expiresAt,
+      now,
+    })
+  ) {
+    return false;
+  }
+  return ["not_started", "failed", "running"].includes(task.executionStatus);
 }
 
 function sortTasks(

@@ -40,13 +40,51 @@ class FakeCourseProductAssetGovernanceBatchTaskExecutor implements DatabaseQuery
 
     if (text.includes("INSERT INTO course_product_asset_gov_batch_tasks")) {
       const row = rowFromTask(
-        jsonValue<CourseProductAssetGovernanceBatchTask>(values?.[39])
+        jsonValue<CourseProductAssetGovernanceBatchTask>(values?.[42])
       );
       this.tasks = [
         ...this.tasks.filter(item => (item as { id: string }).id !== row.id),
         row,
       ];
       return { rows: [row] as Row[], rowCount: 1 };
+    }
+
+    if (
+      text.includes("UPDATE course_product_asset_gov_batch_tasks") &&
+      text.includes("execution_lock_token = $8")
+    ) {
+      const existing = this.tasks.find(
+        item => (item as { id: string }).id === values?.[0]
+      );
+      if (!existing) return { rows: [] as Row[], rowCount: 0 };
+      const currentTask = (
+        existing as {
+          task_payload: CourseProductAssetGovernanceBatchTask;
+        }
+      ).task_payload;
+      if (
+        currentTask.executionStatus !== "not_started" &&
+        currentTask.executionStatus !== "failed" &&
+        currentTask.executionStatus !== "running"
+      ) {
+        return { rows: [] as Row[], rowCount: 0 };
+      }
+
+      const row = rowFromTask(
+        jsonValue<CourseProductAssetGovernanceBatchTask>(values?.[10])
+      );
+      this.tasks = [
+        ...this.tasks.filter(item => (item as { id: string }).id !== row.id),
+        row,
+      ];
+      return { rows: [row] as Row[], rowCount: 1 };
+    }
+
+    if (
+      text.includes("UPDATE course_product_asset_gov_batch_tasks") &&
+      text.includes("execution_lock_token = NULL")
+    ) {
+      return { rows: [] as Row[], rowCount: 1 };
     }
 
     if (
@@ -376,6 +414,57 @@ describe("postgres course product asset governance batch task store", () => {
     expect(db.candidates).toHaveLength(1);
     expect(db.executionItems).toHaveLength(1);
     expect(db.auditEvents).toHaveLength(0);
+  });
+
+  it("acquires and releases execution locks while clearing stale execution rows", async () => {
+    const db = new FakeCourseProductAssetGovernanceBatchTaskExecutor();
+    const store = new PostgresCourseProductAssetGovernanceBatchTaskStore(db);
+    const task = taskFixture({
+      executionStatus: "failed",
+      executionAttemptCount: 1,
+      lastExecutionError: "审计写入失败",
+      lastExecutionFailedAt: "2026-05-22T09:40:00.000Z",
+    });
+
+    await store.saveTask(task);
+    const lock = await store.acquireExecutionLock({
+      taskId: task.id,
+      actorId: "operator_3",
+      actorRoles: ["catalog_operator"],
+      reason: "失败任务安全重试",
+      note: "重新写入审计",
+      now: "2026-05-22T10:00:00.000Z",
+      lockToken: "lock_retry_1",
+      lockTtlMs: 60_000,
+    });
+
+    expect(lock).toMatchObject({
+      lockToken: "lock_retry_1",
+      task: {
+        executionStatus: "running",
+        executionAttemptCount: 2,
+        executionRequestedBy: "operator_3",
+      },
+    });
+    expect(lock?.task.lastExecutionError).toBeUndefined();
+    expect(db.executionItems).toHaveLength(0);
+    expect(db.auditEvents).toHaveLength(0);
+    expect(
+      db.queries.some(query =>
+        query.text.includes("execution_lock_expires_at = $9")
+      )
+    ).toBe(true);
+
+    await store.releaseExecutionLock({
+      taskId: task.id,
+      lockToken: "lock_retry_1",
+      now: "2026-05-22T10:01:00.000Z",
+    });
+    expect(
+      db.queries.some(query =>
+        query.text.includes("execution_lock_token = NULL")
+      )
+    ).toBe(true);
   });
 
   it("parses payload rows through the domain schema defaults", () => {
