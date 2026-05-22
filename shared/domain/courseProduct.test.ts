@@ -10,6 +10,8 @@ import {
   CourseProductAssetFileUploadRequestSchema,
   CourseProductAssetGovernanceActionRequestSchema,
   CourseProductAssetGovernanceActionResultSchema,
+  CourseProductAssetGovernanceBatchActionPlanQuerySchema,
+  CourseProductAssetGovernanceBatchActionPlanResultSchema,
   CourseProductAssetGovernanceBatchDraftQuerySchema,
   CourseProductAssetGovernanceBatchDraftResultSchema,
   CourseProductAssetGovernanceBatchTaskCreateRequestSchema,
@@ -936,6 +938,153 @@ describe("course product domain contract", () => {
         notes: ["当前队列观测基于内存 job 状态，服务重启后只保留任务执行字段"],
       });
     expect(queueObservation.summary.retryableTaskCount).toBe(1);
+
+    const batchActionPlanQuery =
+      CourseProductAssetGovernanceBatchActionPlanQuerySchema.parse({
+        action: "all",
+        previewSize: 6,
+      });
+    expect(batchActionPlanQuery.action).toBe("all");
+
+    const batchActionPlan =
+      CourseProductAssetGovernanceBatchActionPlanResultSchema.parse({
+        generatedAt: "2026-05-21T09:46:30.000Z",
+        requestedBy: "operator_3",
+        previewOnly: true,
+        executable: false,
+        willModifyAssetStore: false,
+        willWriteAuditEvents: false,
+        query: batchActionPlanQuery,
+        summary: {
+          duplicateGroupCount: 1,
+          duplicateAssetCount: 2,
+          suggestedPrimaryAssetCount: 1,
+          affectedReferenceCount: 2,
+          mergeCandidateReferenceCount: 1,
+          softDeleteCandidateCount: 1,
+          safeSoftDeleteCandidateCount: 1,
+          blockedSoftDeleteCandidateCount: 0,
+          frontStageUsageAssetCount: 1,
+          highRiskItemCount: 1,
+          mediumRiskItemCount: 0,
+          lowRiskItemCount: 1,
+        },
+        duplicateGroups: [
+          {
+            contentHash:
+              "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+            assetIds: ["asset_worksheet_1", "asset_worksheet_2"],
+            suggestedPrimaryAssetId: "asset_worksheet_1",
+            primarySelectionReason: "建议保留：引用数 1、合规已通过",
+            duplicateAssetCount: 2,
+            affectedReferenceCount: 2,
+            mergeCandidateReferenceCount: 1,
+            materialPlaceholderReferenceCount: 2,
+            frontStageUsageAssetCount: 1,
+            crossProduct: false,
+            riskLevel: "high",
+            reviewReasons: ["重复素材需要人工确认主素材后再合并引用"],
+            assets: [
+              {
+                assetId: "asset_worksheet_1",
+                productId: "course_product_1",
+                productTitle: "情绪管理入门",
+                assetTitle: "课后练习表",
+                assetKind: "worksheet",
+                contentHash:
+                  "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+                complianceStatus: "approved",
+                downloadEnabled: true,
+                referenceCount: 1,
+                references: [
+                  {
+                    id: "asset_ref_1",
+                    assetId: "asset_worksheet_1",
+                    productId: "course_product_1",
+                    courseId: 1,
+                    chapterId: "chapter_1",
+                    referenceType: "chapter_exercise",
+                    materialPlaceholderId: "material_1",
+                    materialPlaceholderIndex: 0,
+                    createdBy: "system_asset_governance",
+                    createdAt: "2026-05-21T09:00:00.000Z",
+                  },
+                ],
+                frontStageUsage: true,
+                frontStageUsageReasons: ["成交主视觉"],
+                riskLevel: "high",
+                reviewReasons: ["当前建议作为主素材"],
+              },
+              {
+                assetId: "asset_worksheet_2",
+                productId: "course_product_1",
+                productTitle: "情绪管理入门",
+                assetTitle: "课后练习表 B",
+                assetKind: "worksheet",
+                contentHash:
+                  "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+                complianceStatus: "approved",
+                downloadEnabled: false,
+                referenceCount: 1,
+                references: [],
+                frontStageUsage: false,
+                riskLevel: "medium",
+                reviewReasons: ["已有引用 1"],
+              },
+            ],
+            referencesToMerge: [
+              {
+                fromAssetId: "asset_worksheet_2",
+                toAssetId: "asset_worksheet_1",
+                reference: {
+                  id: "asset_ref_2",
+                  assetId: "asset_worksheet_2",
+                  productId: "course_product_1",
+                  courseId: 1,
+                  chapterId: "chapter_1",
+                  referenceType: "chapter_exercise",
+                  materialPlaceholderId: "material_2",
+                  materialPlaceholderIndex: 1,
+                  createdBy: "system_asset_governance",
+                  createdAt: "2026-05-21T09:00:00.000Z",
+                },
+                action: "retarget_to_primary",
+                requiresManualReview: true,
+                reason: "章节素材占位可在后续写入阶段改指向主素材",
+              },
+            ],
+          },
+        ],
+        softDeleteCandidates: [
+          {
+            asset: {
+              assetId: "asset_unused_1",
+              productId: "course_product_1",
+              productTitle: "情绪管理入门",
+              assetTitle: "旧练习表",
+              assetKind: "worksheet",
+              complianceStatus: "rejected",
+              downloadEnabled: false,
+              referenceCount: 0,
+              references: [],
+              frontStageUsage: false,
+              riskLevel: "low",
+              reviewReasons: ["素材已驳回且无引用，可优先清理"],
+            },
+            canSoftDeleteSafely: true,
+            hasReferences: false,
+            isApproved: false,
+            downloadEnabled: false,
+            frontStageUsage: false,
+            willHideLearningDownload: false,
+            reviewReasons: ["素材已驳回且无引用，可优先清理"],
+          },
+        ],
+        safetyNotes: [
+          "当前预案只读展示影响范围，不保存批量任务、不写审计、不修改素材 Store。",
+        ],
+      });
+    expect(batchActionPlan.executable).toBe(false);
 
     expect(
       CourseProductAssetGovernanceBatchTaskListQuerySchema.parse({

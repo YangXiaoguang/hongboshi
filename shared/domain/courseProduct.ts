@@ -144,6 +144,9 @@ export const COURSE_PRODUCT_ASSET_GOVERNANCE_ACTIONS = [
   "mark_soft_deleted",
 ] as const;
 
+export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_ACTION_PLAN_ACTION_FILTERS =
+  ["all", "mark_duplicate_primary", "mark_soft_deleted"] as const;
+
 export const COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_ISSUE_FILTERS = [
   "all",
   "compliance_status",
@@ -1014,6 +1017,116 @@ export const CourseProductAssetGovernanceBatchTaskQueueObservationResultSchema =
     notes: z.array(z.string().trim().min(1).max(240)).default([]),
   });
 
+export const CourseProductAssetGovernanceBatchActionPlanActionFilterSchema =
+  z.enum(COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_ACTION_PLAN_ACTION_FILTERS);
+
+export const CourseProductAssetGovernanceBatchActionPlanQuerySchema = z.object({
+  action:
+    CourseProductAssetGovernanceBatchActionPlanActionFilterSchema.default(
+      "all"
+    ),
+  productId: EntityIdSchema.optional(),
+  previewSize: z.number().int().min(1).max(20).default(6),
+});
+
+export const CourseProductAssetGovernanceBatchActionPlanAssetSchema = z.object({
+  assetId: EntityIdSchema,
+  productId: EntityIdSchema.optional(),
+  productTitle: z.string().trim().min(1).optional(),
+  assetTitle: z.string().trim().min(1).max(120).optional(),
+  assetKind: CourseProductAssetKindSchema.optional(),
+  contentHash: CourseProductAssetContentHashSchema.optional(),
+  complianceStatus: CourseProductContentAssetReviewStatusSchema.optional(),
+  downloadEnabled: z.boolean().default(false),
+  deletedAt: DateTimeLikeSchema.optional(),
+  referenceCount: z.number().int().nonnegative().default(0),
+  references: z.array(CourseProductAssetReferenceSchema).default([]),
+  frontStageUsage: z.boolean().default(false),
+  frontStageUsageReasons: z
+    .array(z.string().trim().min(1).max(120))
+    .default([]),
+  riskLevel: CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevelSchema,
+  reviewReasons: z.array(z.string().trim().min(1).max(180)).default([]),
+});
+
+export const CourseProductAssetGovernanceDuplicateMergeReferenceSchema =
+  z.object({
+    fromAssetId: EntityIdSchema,
+    toAssetId: EntityIdSchema,
+    reference: CourseProductAssetReferenceSchema,
+    action: z.literal("retarget_to_primary").default("retarget_to_primary"),
+    requiresManualReview: z.boolean().default(true),
+    reason: z.string().trim().min(1).max(180),
+  });
+
+export const CourseProductAssetGovernanceDuplicateGroupPlanSchema = z.object({
+  contentHash: CourseProductAssetContentHashSchema,
+  assetIds: z.array(EntityIdSchema).min(2),
+  suggestedPrimaryAssetId: EntityIdSchema.optional(),
+  primarySelectionReason: z.string().trim().min(1).max(180).optional(),
+  duplicateAssetCount: z.number().int().min(2),
+  affectedReferenceCount: z.number().int().nonnegative(),
+  mergeCandidateReferenceCount: z.number().int().nonnegative(),
+  materialPlaceholderReferenceCount: z.number().int().nonnegative(),
+  frontStageUsageAssetCount: z.number().int().nonnegative(),
+  crossProduct: z.boolean().default(false),
+  riskLevel: CourseProductAssetGovernanceBatchTaskExecutionPlanRiskLevelSchema,
+  reviewReasons: z.array(z.string().trim().min(1).max(180)).default([]),
+  assets: z
+    .array(CourseProductAssetGovernanceBatchActionPlanAssetSchema)
+    .min(2),
+  referencesToMerge: z
+    .array(CourseProductAssetGovernanceDuplicateMergeReferenceSchema)
+    .default([]),
+});
+
+export const CourseProductAssetGovernanceSoftDeleteImpactPlanSchema = z.object({
+  asset: CourseProductAssetGovernanceBatchActionPlanAssetSchema,
+  canSoftDeleteSafely: z.boolean().default(false),
+  hasReferences: z.boolean().default(false),
+  isApproved: z.boolean().default(false),
+  downloadEnabled: z.boolean().default(false),
+  frontStageUsage: z.boolean().default(false),
+  willHideLearningDownload: z.boolean().default(false),
+  reviewReasons: z.array(z.string().trim().min(1).max(180)).default([]),
+});
+
+export const CourseProductAssetGovernanceBatchActionPlanSummarySchema =
+  z.object({
+    duplicateGroupCount: z.number().int().nonnegative(),
+    duplicateAssetCount: z.number().int().nonnegative(),
+    suggestedPrimaryAssetCount: z.number().int().nonnegative(),
+    affectedReferenceCount: z.number().int().nonnegative(),
+    mergeCandidateReferenceCount: z.number().int().nonnegative(),
+    softDeleteCandidateCount: z.number().int().nonnegative(),
+    safeSoftDeleteCandidateCount: z.number().int().nonnegative(),
+    blockedSoftDeleteCandidateCount: z.number().int().nonnegative(),
+    frontStageUsageAssetCount: z.number().int().nonnegative(),
+    highRiskItemCount: z.number().int().nonnegative(),
+    mediumRiskItemCount: z.number().int().nonnegative(),
+    lowRiskItemCount: z.number().int().nonnegative(),
+  });
+
+export const CourseProductAssetGovernanceBatchActionPlanResultSchema = z.object(
+  {
+    generatedAt: DateTimeLikeSchema,
+    requestedBy: EntityIdSchema,
+    previewOnly: z.literal(true).default(true),
+    executable: z.literal(false).default(false),
+    willModifyAssetStore: z.literal(false).default(false),
+    willWriteAuditEvents: z.literal(false).default(false),
+    query: CourseProductAssetGovernanceBatchActionPlanQuerySchema,
+    summary: CourseProductAssetGovernanceBatchActionPlanSummarySchema,
+    duplicateGroups: z
+      .array(CourseProductAssetGovernanceDuplicateGroupPlanSchema)
+      .default([]),
+    softDeleteCandidates: z
+      .array(CourseProductAssetGovernanceSoftDeleteImpactPlanSchema)
+      .default([]),
+    safetyNotes: z.array(z.string().trim().min(1).max(240)).default([]),
+  }
+);
+
 export const CourseProductAssetGovernanceBatchTaskCreateRequestSchema = z
   .object({
     action:
@@ -1823,6 +1936,30 @@ export type CourseProductAssetGovernanceBatchTaskQueueObservationResult =
   z.infer<
     typeof CourseProductAssetGovernanceBatchTaskQueueObservationResultSchema
   >;
+export type CourseProductAssetGovernanceBatchActionPlanActionFilter = z.infer<
+  typeof CourseProductAssetGovernanceBatchActionPlanActionFilterSchema
+>;
+export type CourseProductAssetGovernanceBatchActionPlanQuery = z.infer<
+  typeof CourseProductAssetGovernanceBatchActionPlanQuerySchema
+>;
+export type CourseProductAssetGovernanceBatchActionPlanAsset = z.infer<
+  typeof CourseProductAssetGovernanceBatchActionPlanAssetSchema
+>;
+export type CourseProductAssetGovernanceDuplicateMergeReference = z.infer<
+  typeof CourseProductAssetGovernanceDuplicateMergeReferenceSchema
+>;
+export type CourseProductAssetGovernanceDuplicateGroupPlan = z.infer<
+  typeof CourseProductAssetGovernanceDuplicateGroupPlanSchema
+>;
+export type CourseProductAssetGovernanceSoftDeleteImpactPlan = z.infer<
+  typeof CourseProductAssetGovernanceSoftDeleteImpactPlanSchema
+>;
+export type CourseProductAssetGovernanceBatchActionPlanSummary = z.infer<
+  typeof CourseProductAssetGovernanceBatchActionPlanSummarySchema
+>;
+export type CourseProductAssetGovernanceBatchActionPlanResult = z.infer<
+  typeof CourseProductAssetGovernanceBatchActionPlanResultSchema
+>;
 export type CourseProductAssetGovernanceBatchTaskReviewSummary = z.infer<
   typeof CourseProductAssetGovernanceBatchTaskReviewSummarySchema
 >;

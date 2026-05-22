@@ -43,6 +43,7 @@ import {
   type CourseCategory,
   type CourseProductAsset,
   type CourseProductAssetGovernanceAction,
+  type CourseProductAssetGovernanceBatchActionPlanResult,
   type CourseProductAssetGovernanceBatchDraftResult,
   type CourseProductAssetGovernanceBatchIssueFilter,
   type CourseProductAssetGovernanceBatchTask,
@@ -746,6 +747,23 @@ function learningMaterialReportMetricItems(
   ];
 }
 
+function batchActionPlanMetricItems(
+  plan?: CourseProductAssetGovernanceBatchActionPlanResult
+) {
+  const summary = plan?.summary;
+  return [
+    { label: "重复组", value: summary?.duplicateGroupCount ?? 0 },
+    { label: "重复素材", value: summary?.duplicateAssetCount ?? 0 },
+    { label: "待合并引用", value: summary?.mergeCandidateReferenceCount ?? 0 },
+    { label: "软删候选", value: summary?.softDeleteCandidateCount ?? 0 },
+    {
+      label: "低风险软删",
+      value: summary?.safeSoftDeleteCandidateCount ?? 0,
+    },
+    { label: "高风险项", value: summary?.highRiskItemCount ?? 0 },
+  ];
+}
+
 function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
 }
@@ -1177,6 +1195,7 @@ function CourseProductAssetGovernancePanel({
   batchDraft,
   batchTasks,
   queueObservation,
+  batchActionPlan,
   learningMaterialReport,
   filter,
   historyFilters,
@@ -1202,6 +1221,7 @@ function CourseProductAssetGovernancePanel({
   batchDraft?: CourseProductAssetGovernanceBatchDraftResult;
   batchTasks?: CourseProductAssetGovernanceBatchTaskListResult;
   queueObservation?: CourseProductAssetGovernanceBatchTaskQueueObservationResult;
+  batchActionPlan?: CourseProductAssetGovernanceBatchActionPlanResult;
   learningMaterialReport?: CourseProductLearningMaterialOperationsReport;
   filter: AssetGovernanceFilter;
   historyFilters: AssetGovernanceHistoryFilterState;
@@ -1456,6 +1476,164 @@ function CourseProductAssetGovernancePanel({
             </p>
           )}
         </div>
+      </div>
+
+      <div className="border-b border-[#E8DED0] bg-[#FBF7EF] px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-[#243B35]">
+                高风险批量动作只读预案
+              </p>
+              <span className="inline-flex h-6 items-center rounded-full bg-[#FFF7E5] px-2.5 text-xs font-semibold text-[#8F6B1C]">
+                不可执行
+              </span>
+            </div>
+            <p className="mt-1 max-w-[760px] text-xs leading-5 text-[#8A8176]">
+              批量软删除、重复素材主素材选择和章节引用合并先只展示影响范围，当前不会保存任务、写审计或修改素材。
+            </p>
+          </div>
+          <span className="inline-flex h-7 items-center rounded-full bg-white px-2.5 text-xs font-semibold text-[#756B60]">
+            {batchActionPlan?.generatedAt
+              ? formatDate(batchActionPlan.generatedAt)
+              : canReview
+                ? "待读取"
+                : "需审核权限"}
+          </span>
+        </div>
+        {batchActionPlan ? (
+          <>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              {batchActionPlanMetricItems(batchActionPlan).map(item => (
+                <div
+                  key={item.label}
+                  className="rounded-lg border border-[#E8DED0] bg-white px-3 py-2"
+                >
+                  <p className="text-xs text-[#8A8176]">{item.label}</p>
+                  <p className="mt-1 text-lg font-semibold text-[#243B35]">
+                    {item.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-lg border border-[#E1D7C8] bg-white p-3">
+                <div className="flex items-center gap-2">
+                  <Layers3 className="h-4 w-4 text-[#5D7F73]" />
+                  <p className="text-xs font-semibold text-[#243B35]">
+                    重复素材与引用合并
+                  </p>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {batchActionPlan.duplicateGroups.slice(0, 2).map(group => (
+                    <div
+                      key={group.contentHash}
+                      className="rounded-lg border border-[#E8DED0] bg-[#FFFDF8] px-3 py-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="truncate text-xs font-semibold text-[#243B35]">
+                          主素材 {group.suggestedPrimaryAssetId ?? "待人工确认"}
+                        </p>
+                        <span
+                          className={`text-xs font-semibold ${
+                            group.riskLevel === "high"
+                              ? "text-[#A65F48]"
+                              : group.riskLevel === "medium"
+                                ? "text-[#8F6B1C]"
+                                : "text-[#41675A]"
+                          }`}
+                        >
+                          {
+                            assetGovernanceBatchTaskExecutionPlanRiskCopy[
+                              group.riskLevel
+                            ]
+                          }
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-[#6F7771]">
+                        素材 {group.duplicateAssetCount} · 受影响引用{" "}
+                        {group.affectedReferenceCount} · 待合并{" "}
+                        {group.mergeCandidateReferenceCount}
+                      </p>
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#8A8176]">
+                        {group.reviewReasons.join("；")}
+                      </p>
+                    </div>
+                  ))}
+                  {!batchActionPlan.duplicateGroups.length ? (
+                    <p className="text-xs leading-5 text-[#8A8176]">
+                      当前没有重复 contentHash 合并预案。
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="rounded-lg border border-[#E1D7C8] bg-white p-3">
+                <div className="flex items-center gap-2">
+                  <Trash2 className="h-4 w-4 text-[#A65F48]" />
+                  <p className="text-xs font-semibold text-[#243B35]">
+                    软删除影响预案
+                  </p>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {batchActionPlan.softDeleteCandidates
+                    .slice(0, 3)
+                    .map(item => (
+                      <div
+                        key={item.asset.assetId}
+                        className="rounded-lg border border-[#E8DED0] bg-[#FFFDF8] px-3 py-2"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="truncate text-xs font-semibold text-[#243B35]">
+                            {item.asset.assetTitle ?? item.asset.assetId}
+                          </p>
+                          <span
+                            className={`text-xs font-semibold ${
+                              item.canSoftDeleteSafely
+                                ? "text-[#41675A]"
+                                : "text-[#A65F48]"
+                            }`}
+                          >
+                            {item.canSoftDeleteSafely
+                              ? "低风险候选"
+                              : "需人工复核"}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-[#6F7771]">
+                          引用 {item.asset.referenceCount} · 下载{" "}
+                          {item.downloadEnabled ? "开启" : "关闭"} · 成交位{" "}
+                          {item.frontStageUsage ? "可能使用" : "未发现"}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#8A8176]">
+                          {item.reviewReasons.join("；")}
+                        </p>
+                      </div>
+                    ))}
+                  {!batchActionPlan.softDeleteCandidates.length ? (
+                    <p className="text-xs leading-5 text-[#8A8176]">
+                      当前没有软删除候选预案。
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            {batchActionPlan.safetyNotes.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {batchActionPlan.safetyNotes.slice(0, 3).map(note => (
+                  <span
+                    key={note}
+                    className="inline-flex min-h-7 items-center rounded-full bg-white px-3 text-xs font-semibold text-[#756B60]"
+                  >
+                    {note}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <p className="mt-4 text-sm leading-6 text-[#8A8176]">
+            当前账号只能查看素材治理摘要，高风险批量动作预案需审核权限。
+          </p>
+        )}
       </div>
 
       <div className="flex gap-2 overflow-x-auto border-b border-[#E8DED0] px-5 py-3">
@@ -2402,6 +2580,8 @@ export default function CourseProducts() {
     useState<CourseProductAssetGovernanceBatchTaskListResult>();
   const [assetGovernanceQueueObservation, setAssetGovernanceQueueObservation] =
     useState<CourseProductAssetGovernanceBatchTaskQueueObservationResult>();
+  const [assetGovernanceBatchActionPlan, setAssetGovernanceBatchActionPlan] =
+    useState<CourseProductAssetGovernanceBatchActionPlanResult>();
   const [learningMaterialReport, setLearningMaterialReport] =
     useState<CourseProductLearningMaterialOperationsReport>();
   const [assetGovernanceFilter, setAssetGovernanceFilter] =
@@ -2541,6 +2721,7 @@ export default function CourseProducts() {
         batchDraft,
         batchTasks,
         queueObservation,
+        batchActionPlan,
       ] = await Promise.all([
         httpCourseProductRepository.loadCourseProducts(query),
         httpCourseProductRepository.loadCourseProductContentQuality(),
@@ -2571,6 +2752,14 @@ export default function CourseProducts() {
               { limit: 6 }
             )
           : Promise.resolve(undefined),
+        catalogPermissions.canReview
+          ? httpCourseProductRepository.loadCourseProductAssetGovernanceBatchActionPlan(
+              {
+                action: "all",
+                previewSize: 6,
+              }
+            )
+          : Promise.resolve(undefined),
       ]);
       setData(products);
       setAssetGovernance(governance);
@@ -2579,6 +2768,7 @@ export default function CourseProducts() {
       setAssetGovernanceBatchDraft(batchDraft);
       setAssetGovernanceBatchTasks(batchTasks);
       setAssetGovernanceQueueObservation(queueObservation);
+      setAssetGovernanceBatchActionPlan(batchActionPlan);
       setContentQualityByProductId(
         Object.fromEntries(
           contentQuality.items.map(item => [item.productId, item.quality])
@@ -3812,6 +4002,7 @@ export default function CourseProducts() {
         batchDraft={assetGovernanceBatchDraft}
         batchTasks={assetGovernanceBatchTasks}
         queueObservation={assetGovernanceQueueObservation}
+        batchActionPlan={assetGovernanceBatchActionPlan}
         learningMaterialReport={learningMaterialReport}
         filter={assetGovernanceFilter}
         historyFilters={assetGovernanceHistoryFilters}

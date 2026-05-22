@@ -3,6 +3,7 @@ import {
   httpCourseProductRepository,
   parseCourseProductAssetBackfillResponse,
   parseCourseProductAssetGovernanceActionResponse,
+  parseCourseProductAssetGovernanceBatchActionPlanResponse,
   parseCourseProductAssetGovernanceBatchDraftResponse,
   parseCourseProductAssetGovernanceBatchTaskExecutionDetailResponse,
   parseCourseProductAssetGovernanceBatchTaskExecutionResponse,
@@ -123,6 +124,116 @@ function batchTaskQueueObservationData() {
       },
     ],
     notes: ["当前队列观测基于内存 job 状态，服务重启后只保留任务执行字段"],
+  };
+}
+
+function batchActionPlanData() {
+  return {
+    generatedAt: "2026-05-21T10:02:30.000Z",
+    requestedBy: "operator_1",
+    previewOnly: true,
+    executable: false,
+    willModifyAssetStore: false,
+    willWriteAuditEvents: false,
+    query: {
+      action: "all",
+      previewSize: 6,
+    },
+    summary: {
+      duplicateGroupCount: 1,
+      duplicateAssetCount: 2,
+      suggestedPrimaryAssetCount: 1,
+      affectedReferenceCount: 2,
+      mergeCandidateReferenceCount: 1,
+      softDeleteCandidateCount: 1,
+      safeSoftDeleteCandidateCount: 1,
+      blockedSoftDeleteCandidateCount: 0,
+      frontStageUsageAssetCount: 1,
+      highRiskItemCount: 1,
+      mediumRiskItemCount: 0,
+      lowRiskItemCount: 1,
+    },
+    duplicateGroups: [
+      {
+        contentHash:
+          "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+        assetIds: ["asset_a", "asset_b"],
+        suggestedPrimaryAssetId: "asset_a",
+        primarySelectionReason: "建议保留：引用数 1、合规已通过",
+        duplicateAssetCount: 2,
+        affectedReferenceCount: 2,
+        mergeCandidateReferenceCount: 1,
+        materialPlaceholderReferenceCount: 2,
+        frontStageUsageAssetCount: 1,
+        crossProduct: false,
+        riskLevel: "high",
+        reviewReasons: ["重复素材需要人工确认主素材后再合并引用"],
+        assets: [
+          {
+            assetId: "asset_a",
+            productId: "course_product_1",
+            productTitle: "情绪管理入门",
+            assetTitle: "详情主图",
+            assetKind: "detail_image",
+            contentHash:
+              "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+            complianceStatus: "approved",
+            downloadEnabled: false,
+            referenceCount: 1,
+            references: [],
+            frontStageUsage: true,
+            frontStageUsageReasons: ["成交主视觉"],
+            riskLevel: "high",
+            reviewReasons: ["当前建议作为主素材"],
+          },
+          {
+            assetId: "asset_b",
+            productId: "course_product_1",
+            productTitle: "情绪管理入门",
+            assetTitle: "重复主图",
+            assetKind: "detail_image",
+            contentHash:
+              "sha256:9b6f0c37f2ad11858dd6ca056f3027e1dc856d08e88cef7a0381c3a4ac00d0d1",
+            complianceStatus: "approved",
+            downloadEnabled: false,
+            referenceCount: 1,
+            references: [],
+            frontStageUsage: false,
+            riskLevel: "medium",
+            reviewReasons: ["已有引用 1"],
+          },
+        ],
+        referencesToMerge: [],
+      },
+    ],
+    softDeleteCandidates: [
+      {
+        asset: {
+          assetId: "asset_unused",
+          productId: "course_product_1",
+          productTitle: "情绪管理入门",
+          assetTitle: "旧练习表",
+          assetKind: "worksheet",
+          complianceStatus: "rejected",
+          downloadEnabled: false,
+          referenceCount: 0,
+          references: [],
+          frontStageUsage: false,
+          riskLevel: "low",
+          reviewReasons: ["素材已驳回且无引用，可优先清理"],
+        },
+        canSoftDeleteSafely: true,
+        hasReferences: false,
+        isApproved: false,
+        downloadEnabled: false,
+        frontStageUsage: false,
+        willHideLearningDownload: false,
+        reviewReasons: ["素材已驳回且无引用，可优先清理"],
+      },
+    ],
+    safetyNotes: [
+      "当前预案只读展示影响范围，不保存批量任务、不写审计、不修改素材 Store。",
+    ],
   };
 }
 
@@ -785,6 +896,17 @@ describe("http course product repository parsing", () => {
     expect(parsed.items[0]?.latestJob?.status).toBe("failed");
   });
 
+  it("parses course product asset governance batch action plans", () => {
+    const parsed = parseCourseProductAssetGovernanceBatchActionPlanResponse({
+      ok: true,
+      data: batchActionPlanData(),
+    });
+
+    expect(parsed.executable).toBe(false);
+    expect(parsed.summary.mergeCandidateReferenceCount).toBe(1);
+    expect(parsed.duplicateGroups[0]?.riskLevel).toBe("high");
+  });
+
   it("parses course product learning material operations reports", () => {
     const parsed = parseCourseProductLearningMaterialOperationsReportResponse({
       ok: true,
@@ -1408,6 +1530,33 @@ describe("http course product repository parsing", () => {
     expect(result.summary.failedJobCount).toBe(1);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/catalog/admin/course-products/assets/governance/batch-tasks/queue-observation?taskId=asset_governance_batch_task_1&limit=5",
+      expect.objectContaining({
+        credentials: "same-origin",
+      })
+    );
+  });
+
+  it("loads course product asset governance batch action plans", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: batchActionPlanData(),
+        })
+      )
+    );
+
+    const result =
+      await httpCourseProductRepository.loadCourseProductAssetGovernanceBatchActionPlan(
+        {
+          action: "all",
+          previewSize: 6,
+        }
+      );
+
+    expect(result.summary.duplicateGroupCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/assets/governance/batch-action-plan?action=all&previewSize=6",
       expect.objectContaining({
         credentials: "same-origin",
       })

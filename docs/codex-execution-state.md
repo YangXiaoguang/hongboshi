@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`CUX-I 课程详情内容素材后台化与真实图文资产管理`
-- 当前状态：`CUX-I-B-B-R 课程素材治理队列观测与学习资料运营报表基础` 已完成，后台已具备队列 job 只读观测、任务可重试压力摘要、学习资料绑定率/下载/合规/治理问题报表、API 权限边界和 `/admin/courses` 摘要展示。
-- 本轮完成后下一步：执行 `CUX-I-B-B-S 课程素材治理批量软删与引用合并只读预案`
+- 当前状态：`CUX-I-B-B-S 课程素材治理批量软删与引用合并只读预案` 已完成，后台已具备重复素材主素材建议、引用合并影响预览、软删除风险预案、前台展示位使用识别、API 权限边界和 `/admin/courses` 高风险批量动作只读预案展示。
+- 本轮完成后下一步：执行 `CUX-I-B-B-T 课程素材治理高风险动作执行开关与二次审批边界`
 
 ## 已完成关键能力
 
@@ -59,6 +59,7 @@
 - 完成课程素材治理批量任务 PostgreSQL Store 与索引准备：新增 `0021_course_product_asset_governance_batch_tasks.sql`、`PostgresCourseProductAssetGovernanceBatchTaskStore`、显式 `HONGBOSHI_COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STORE=postgres` 切换、任务头/候选快照/执行明细/执行审计事件 ID 表、幂等键、执行锁预留字段和查询索引。
 - 完成课程素材治理批量任务异步队列与安全重试边界：新增执行 job 契约、最小内存队列、可复用执行 worker、执行锁 helper、Store 锁接口、PostgreSQL 原子抢锁/释放、失败尝试次数与最近失败原因字段；失败任务可安全重试，并发执行会被锁拒绝，后台任务列表展示“可重试”和最近失败线索。
 - 完成课程素材治理队列观测与学习资料运营报表基础：新增批量任务队列观测契约、队列 job 列表读取、只读观测 service/API、前端 repository 和 `/admin/courses` 队列摘要；新增学习资料运营报表契约/service/API/repository，聚合章节资料槽位绑定率、资料素材类型、合规、下载开放、引用来源和治理问题分布，保持不新增批量写动作。
+- 完成课程素材治理批量软删与引用合并只读预案：新增 `CourseProductAssetGovernanceBatchActionPlan*` 契约、只读预案 service/API/repository 和 `/admin/courses` 高风险批量动作预案区，支持重复 `contentHash` 主素材建议、引用合并影响列表、软删除候选风险、学习下载/成交展示位使用识别，并明确 `previewOnly=true`、`executable=false`、不修改素材 Store、不写审计。
 - 完成课程转化漏斗埋点：新增共享 `courseConversion` 事件契约、前端 analytics repository、课程中心曝光/点击/下单事件和课程详情浏览/购买/支付/学习启动事件，为后续运营分析与营销后台化提供数据基线。
 - 完成营销规则后台只读基线：新增共享 `courseMarketing` 规则契约、服务端课程营销规则派生 Store、公共规则 API、后台规则 API、前端营销规则 repository/hook 和 `/admin/marketing` 只读控制台。
 - 完成营销规则持久化与审计：营销规则 Store 已支持状态覆盖层、JSON 文件持久化、暂停/恢复 API、操作原因、审计事件和后台行级操作，前台公共规则快照会实时排除暂停规则。
@@ -696,30 +697,29 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：CUX-I-B-B-R 课程素材治理队列观测与学习资料运营报表基础
+### 最近完成阶段：CUX-I-B-B-S 课程素材治理批量软删与引用合并只读预案
 
-CUX-I-B-B-R 稳定切片已交付：
+CUX-I-B-B-S 稳定切片已交付：
 
-- `shared/domain/courseProduct.ts` 新增 `CourseProductAssetGovernanceBatchTaskQueueObservation*` 和 `CourseProductLearningMaterialOperationsReport*` 契约，统一描述队列 job 只读观测、任务可重试压力、学习资料槽位绑定率、素材类型、合规、下载、引用来源和治理问题分布。
-- `courseProductAssetGovernanceBatchTaskExecutionQueue.ts` 新增 `listJobs`，内存队列可按任务 ID 和 limit 返回最近 job；新增 `courseProductAssetGovernanceBatchTaskQueueObservation.ts` 聚合任务状态、job 状态、失败原因和运营提示。
-- 新增 `courseProductLearningMaterialOperationsReport.ts`，复用素材治理口径和课程详情章节素材占位，聚合资料绑定、开放下载、合规和课程维度问题行。
-- `catalogApi.ts` 新增 `GET /api/catalog/admin/course-products/assets/governance/batch-tasks/queue-observation` 和 `GET /api/catalog/admin/course-products/assets/learning-material-report`，分别受 `catalog:review` 和 `catalog:read` 边界保护。
-- 前端 repository 和 `/admin/courses` 已展示队列观测区与学习资料运营报表区，运营可看到排队/执行/失败/可重试压力、资料槽位绑定率、开放下载、资料治理问题和高问题课程行。
-- 测试覆盖队列 job 列表、队列观测 service、学习资料报表 service、API 权限边界、前端仓储解析和共享契约；本阶段不新增批量写动作，不自动删除、不合并引用、不物理清理对象。
+- `shared/domain/courseProduct.ts` 新增 `CourseProductAssetGovernanceBatchActionPlan*` 契约，统一描述动作筛选、重复素材分组、主素材建议、引用合并影响、软删影响、风险等级、安全提示和只读执行边界。
+- 新增 `courseProductAssetGovernanceBatchActionPlan.ts`，复用素材治理快照、课程详情内容和素材引用表，生成重复 `contentHash` 主素材建议、需要合并的引用列表、软删除候选风险和学习下载/成交展示位使用识别。
+- `catalogApi.ts` 新增 `GET /api/catalog/admin/course-products/assets/governance/batch-action-plan`，仅允许具备 `catalog:review` 的后台账号读取；返回结果固定声明 `previewOnly=true`、`executable=false`、`willModifyAssetStore=false`、`willWriteAuditEvents=false`。
+- 前端 repository 和 `/admin/courses` 已展示“高风险批量动作只读预案”，运营可看到重复素材组、待合并引用、软删候选、安全软删数量、高风险数量和不可执行状态。
+- 测试覆盖只读 service、API 权限边界、前端仓储解析、共享契约和“不写入素材 Store/不写审计”的安全边界；本阶段仍不自动删除、不合并引用、不物理清理对象。
 
-### 后台待续：CUX-I-B-B-S 课程素材治理批量软删与引用合并只读预案
+### 后台待续：CUX-I-B-B-T 课程素材治理高风险动作执行开关与二次审批边界
 
 业务目标：
 
-CUX-I-B-B-R 已让运营看见队列健康和学习资料治理价值。下一步可以开始为更高风险的批量动作做“只读预案”，先把批量软删除、重复素材主素材选择和章节引用合并的影响范围展示清楚，但仍不直接执行真实写入，继续保持审批、预检和审计优先。
+CUX-I-B-B-S 已让运营在不写入的前提下看清批量软删和引用合并风险。下一步不应直接放开真实处理，而是先补高风险动作的执行开关、二次审批、执行前二次预检、灰度开关和审计留痕设计，确保未来真实合并引用或软删除素材时可以被明确授权、可回滚定位、可观测失败。
 
 建议实施范围：
 
-- 扩展批量治理预案的动作类型只读模拟，支持 `mark_duplicate_primary` 与 `mark_soft_deleted` 的候选分组和风险摘要，但保存/执行仍先保持灰度关闭或只读。
-- 为重复 contentHash 素材生成主素材建议、受影响引用列表、可能需要合并的章节素材占位和人工复核原因。
-- 为软删除候选生成删除影响预案，明确是否无引用、是否已审核、是否已开放下载、是否仍被前台成交素材使用。
-- 在 `/admin/courses` 批量任务详情中展示高风险动作的只读预案、风险等级和“不可执行/待后续开关”状态。
-- 增加测试覆盖重复素材分组、软删影响预案、权限边界和不写入素材 Store 的安全边界。
+- 增加高风险动作 feature flag/config，默认关闭真实 `mark_duplicate_primary`、引用重定向和 `mark_soft_deleted` 批量写入。
+- 设计并落地高风险动作 intent/approval 契约，区分预案生成、发起执行申请、二次审批、执行前二次预检和执行结果复盘。
+- 扩展批量任务 Store 或新增高风险动作 Store 草案，保存预案快照、审批人、审批原因、执行人、二次预检摘要和幂等键。
+- 在 `/admin/courses` 为高风险预案补“申请执行/二次审批”不可误触交互，继续默认不可执行，只有 feature flag 打开且权限满足时才出现下一步动作。
+- 增加测试覆盖开关关闭、权限不足、自己审批限制、预案漂移、二次预检失败和不写素材 Store 的默认边界。
 
 ## 执行不变量
 
@@ -740,4 +740,4 @@ CUX-I-B-B-R 已让运营看见队列健康和学习资料治理价值。下一�
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 CUX-I-B-B-S 课程素材治理批量软删与引用合并只读预案，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 CUX-I-B-B-T 课程素材治理高风险动作执行开关与二次审批边界，会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

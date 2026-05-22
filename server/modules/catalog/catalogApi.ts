@@ -11,6 +11,8 @@ import {
   CourseProductAssetFileUploadRequestSchema,
   CourseProductAssetGovernanceActionRequestSchema,
   CourseProductAssetGovernanceActionResultSchema,
+  CourseProductAssetGovernanceBatchActionPlanQuerySchema,
+  CourseProductAssetGovernanceBatchActionPlanResultSchema,
   CourseProductAssetGovernanceBatchDraftQuerySchema,
   CourseProductAssetGovernanceBatchDraftResultSchema,
   CourseProductAssetGovernanceBatchTaskCancelRequestSchema,
@@ -107,6 +109,7 @@ import {
   type CourseProductAssetGovernanceBatchTaskExecutionQueue,
 } from "./courseProductAssetGovernanceBatchTaskExecutionQueue";
 import { getCourseProductLearningMaterialOperationsReport } from "./courseProductLearningMaterialOperationsReport";
+import { previewCourseProductAssetGovernanceBatchActionPlan } from "./courseProductAssetGovernanceBatchActionPlan";
 
 const CourseProductAdminListResponseSchema = ApiResponseSchema(
   CourseProductListResultSchema
@@ -162,6 +165,8 @@ const CourseProductAssetGovernanceBatchTaskQueueObservationResponseSchema =
   ApiResponseSchema(
     CourseProductAssetGovernanceBatchTaskQueueObservationResultSchema
   );
+const CourseProductAssetGovernanceBatchActionPlanResponseSchema =
+  ApiResponseSchema(CourseProductAssetGovernanceBatchActionPlanResultSchema);
 const CourseProductLearningMaterialOperationsReportResponseSchema =
   ApiResponseSchema(CourseProductLearningMaterialOperationsReportSchema);
 
@@ -198,6 +203,7 @@ type CatalogApiBody =
   | z.infer<
       typeof CourseProductAssetGovernanceBatchTaskQueueObservationResponseSchema
     >
+  | z.infer<typeof CourseProductAssetGovernanceBatchActionPlanResponseSchema>
   | z.infer<typeof CourseProductLearningMaterialOperationsReportResponseSchema>;
 type CatalogApiPayload = {
   status: number;
@@ -232,6 +238,7 @@ export const catalogOperationPermissions = {
   assetGovernanceBatchDraft: COURSE_CATALOG_PERMISSIONS.review,
   assetGovernanceBatchTaskRead: COURSE_CATALOG_PERMISSIONS.review,
   assetGovernanceBatchTaskManage: COURSE_CATALOG_PERMISSIONS.review,
+  assetGovernanceBatchActionPlanRead: COURSE_CATALOG_PERMISSIONS.review,
   assetLearningMaterialReportRead: COURSE_CATALOG_PERMISSIONS.read,
   basicInfoUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   contentUpdate: COURSE_CATALOG_PERMISSIONS.edit,
@@ -872,6 +879,56 @@ export async function getCourseProductAssetGovernanceBatchTaskQueueObservationPa
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程素材批量治理队列观测读取失败");
+  }
+}
+
+export async function getCourseProductAssetGovernanceBatchActionPlanPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  rawQuery: Record<string, unknown> = {},
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    assetStore = getCourseProductAssetStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    assetStore?: CourseProductAssetStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.assetGovernanceBatchActionPlanRead
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductAssetGovernanceBatchActionPlanQuerySchema.safeParse(rawQuery);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程素材批量高风险预案参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductAssetGovernanceBatchActionPlanResponseSchema.parse({
+        ok: true,
+        data: await previewCourseProductAssetGovernanceBatchActionPlan({
+          query: parsed.data,
+          requestedBy: actor!.id,
+          productStore,
+          contentStore,
+          assetStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程素材批量高风险预案读取失败");
   }
 }
 
@@ -1775,6 +1832,27 @@ export function registerCatalogApi(app: Express) {
   );
 
   app.get(
+    "/api/catalog/admin/course-products/assets/governance/batch-action-plan",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await getCourseProductAssetGovernanceBatchActionPlanPayload(
+            session?.user,
+            queryFromExpress(req)
+          );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量高风险预案读取失败")
+        );
+      }
+    }
+  );
+
+  app.get(
     "/api/catalog/admin/course-products/assets/governance/batch-tasks",
     async (req, res) => {
       try {
@@ -2280,6 +2358,33 @@ export function handleCatalogApiRequest(
           res,
           500,
           errorPayload("INTERNAL_ERROR", "课程素材批量治理草稿读取失败")
+        )
+      );
+    return true;
+  }
+
+  if (
+    url.pathname ===
+    "/api/catalog/admin/course-products/assets/governance/batch-action-plan"
+  ) {
+    if (req.method !== "GET") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+      return true;
+    }
+
+    void getLoginSessionFromRequest(req)
+      .then(session =>
+        getCourseProductAssetGovernanceBatchActionPlanPayload(
+          session?.user,
+          queryFromSearchParams(url.searchParams)
+        )
+      )
+      .then(payload => sendJson(res, payload.status, payload.body))
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程素材批量高风险预案读取失败")
         )
       );
     return true;

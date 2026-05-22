@@ -98,6 +98,16 @@
 - `server/modules/catalog/courseProductAssetGovernanceBatchTaskExecutionQueue.ts` 已提供 `enqueue/runNow/getJobStatus/listJobs` 最小队列接口，当前 HTTP 入口使用 `runNow` 复用同一 worker；后续接 BullMQ、Redis 队列或云任务时只替换队列实现，不改执行状态机。
 - `/admin/courses` 批量草稿区已加入“保存草案”、批量任务筛选/分页列表、通过审批、驳回、取消、已审批任务“生成执行预案/查看执行记录”和预案内“确认执行记录处理”入口，明确展示审批状态、执行状态、执行摘要、跳过/失败线索、最近失败原因、可重试提示和审计事件 ID；同一区域已展示队列观测摘要，区分最近 job、执行中、失败和可重试任务。当前批量执行只写审计和任务执行结果，不修改素材 Store、不合并引用、不软删和不物理删除对象。
 
+## 高风险批量动作只读预案
+
+`server/modules/catalog/courseProductAssetGovernanceBatchActionPlan.ts` 已建立批量软删与引用合并的只读预案 service，复用素材治理结果、课程详情内容、素材 Store 和可选引用表，不新增写入：
+
+- `CourseProductAssetGovernanceBatchActionPlan*` 契约记录动作筛选、重复素材分组、建议主素材、受影响引用、软删除影响、风险等级、安全软删数量和只读安全声明。
+- `GET /api/catalog/admin/course-products/assets/governance/batch-action-plan` 由 `catalog:review` 控制，支持 `all`、`mark_duplicate_primary`、`mark_soft_deleted`、商品 ID 和预览数量参数；接口固定返回 `previewOnly=true`、`executable=false`、`willModifyAssetStore=false`、`willWriteAuditEvents=false`。
+- 重复素材预案会按引用数量、前台成交/学习使用、合规通过、下载开放和上传时间建议主素材，并列出后续可能需要重定向的引用；跨课程、前台使用或学习下载占用会提高风险等级。
+- 软删除预案会标出是否仍有引用、是否通过审核、是否开放下载、是否在课程详情成交素材或章节资料中使用，并只把无引用、未开放下载且未被前台使用的素材标为可安全软删候选。
+- `/admin/courses` 已在素材治理面板展示“高风险批量动作只读预案”，运营可先看到重复组、合并影响、软删影响和安全提示；当前仍不可执行，不修改素材 Store、不合并引用、不软删、不写审计、不物理删除对象。
+
 ## 学习资料运营报表
 
 `server/modules/catalog/courseProductLearningMaterialOperationsReport.ts` 复用素材治理结果、课程商品 Store 和课程详情章节素材占位，提供学习资料运营只读报表：
@@ -124,3 +134,4 @@
 - `CUX-I-B-B-P`：已新增批量治理任务 PostgreSQL 表、候选快照表、执行明细表、执行审计事件 ID 表、幂等键、执行锁预留字段和查询索引，并实现 `PostgresCourseProductAssetGovernanceBatchTaskStore`。
 - `CUX-I-B-B-Q`：已新增批量执行 job 契约、最小内存队列、可复用执行 worker、执行锁 helper、内存/JSON/PostgreSQL Store 抢锁释放、失败尝试次数和最近失败原因字段，支持并发保护与失败安全重试；批量软删、引用合并、物理对象清理和队列 job 持久化继续后置。
 - `CUX-I-B-B-R`：已新增队列 job 只读观测、`listJobs`、队列观测 API、学习资料运营报表 service/API 和 `/admin/courses` 摘要展示；批量软删、引用合并、物理对象清理和队列 job 持久化继续后置。
+- `CUX-I-B-B-S`：已新增批量软删与引用合并只读预案 service/API/repository 和 `/admin/courses` 高风险批量动作预案展示，支持重复素材主素材建议、引用合并影响、软删除影响和前台展示位/学习下载占用识别；真实批量写入、引用合并落库、物理对象清理和高风险动作二次审批继续后置。

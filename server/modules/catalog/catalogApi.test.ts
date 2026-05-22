@@ -16,6 +16,7 @@ import {
   executeCourseProductAssetGovernanceBatchTaskPayload,
   getCourseProductAdminListPayload,
   getCourseProductAssetBackfillPayload,
+  getCourseProductAssetGovernanceBatchActionPlanPayload,
   getCourseProductAssetGovernanceBatchDraftPayload,
   getCourseProductAssetGovernanceBatchTaskQueueObservationPayload,
   getCourseProductAssetGovernanceBatchTaskExecutionDetailPayload,
@@ -106,6 +107,7 @@ describe("catalog admin api payloads", () => {
       assetGovernanceBatchDraft: "catalog:review",
       assetGovernanceBatchTaskRead: "catalog:review",
       assetGovernanceBatchTaskManage: "catalog:review",
+      assetGovernanceBatchActionPlanRead: "catalog:review",
       basicInfoUpdate: "catalog:edit",
       contentUpdate: "catalog:edit",
       reviewUpdate: "catalog:review",
@@ -901,6 +903,41 @@ describe("catalog admin api payloads", () => {
       }
     );
     expect(deniedDraft.status).toBe(403);
+
+    const deniedBatchActionPlan =
+      await getCourseProductAssetGovernanceBatchActionPlanPayload(
+        { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+        { action: "all" },
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          now: "2026-05-21T10:00:30.000Z",
+        }
+      );
+    expect(deniedBatchActionPlan.status).toBe(403);
+
+    const batchActionPlan =
+      await getCourseProductAssetGovernanceBatchActionPlanPayload(
+        { id: "catalog_operator_1", roles: ["catalog_operator"] },
+        { action: "mark_soft_deleted", previewSize: 5 },
+        {
+          productStore,
+          contentStore,
+          assetStore,
+          now: "2026-05-21T10:00:45.000Z",
+        }
+      );
+    expect(batchActionPlan.status).toBe(200);
+    expect(batchActionPlan.body).toMatchObject({
+      ok: true,
+      data: {
+        previewOnly: true,
+        executable: false,
+        willModifyAssetStore: false,
+        willWriteAuditEvents: false,
+      },
+    });
 
     const before = await assetStore.getAsset("asset_pending_1");
     const draft = await getCourseProductAssetGovernanceBatchDraftPayload(

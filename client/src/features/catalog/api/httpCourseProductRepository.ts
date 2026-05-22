@@ -2,6 +2,7 @@ import {
   ApiResponseSchema,
   CourseProductAssetBackfillMutationResultSchema,
   CourseProductAssetGovernanceActionResultSchema,
+  CourseProductAssetGovernanceBatchActionPlanResultSchema,
   CourseProductAssetGovernanceBatchDraftResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionDetailResultSchema,
   CourseProductAssetGovernanceBatchTaskExecutionResultSchema,
@@ -27,6 +28,8 @@ import {
   type CourseProductAssetFileUploadRequest,
   type CourseProductAssetGovernanceActionRequest,
   type CourseProductAssetGovernanceActionResult,
+  type CourseProductAssetGovernanceBatchActionPlanQuery,
+  type CourseProductAssetGovernanceBatchActionPlanResult,
   type CourseProductAssetGovernanceBatchDraftQuery,
   type CourseProductAssetGovernanceBatchDraftResult,
   type CourseProductAssetGovernanceBatchTaskCancelRequest,
@@ -113,6 +116,8 @@ const CourseProductAssetGovernanceBatchTaskQueueObservationResponseSchema =
   ApiResponseSchema(
     CourseProductAssetGovernanceBatchTaskQueueObservationResultSchema
   );
+const CourseProductAssetGovernanceBatchActionPlanResponseSchema =
+  ApiResponseSchema(CourseProductAssetGovernanceBatchActionPlanResultSchema);
 const CourseProductLearningMaterialOperationsReportResponseSchema =
   ApiResponseSchema(CourseProductLearningMaterialOperationsReportSchema);
 
@@ -285,6 +290,15 @@ export function parseCourseProductAssetGovernanceBatchTaskQueueObservationRespon
   return parsed.data;
 }
 
+export function parseCourseProductAssetGovernanceBatchActionPlanResponse(
+  payload: unknown
+): CourseProductAssetGovernanceBatchActionPlanResult {
+  const parsed =
+    CourseProductAssetGovernanceBatchActionPlanResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
 export function parseCourseProductLearningMaterialOperationsReportResponse(
   payload: unknown
 ): CourseProductLearningMaterialOperationsReport {
@@ -435,6 +449,17 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     !assetGovernanceBatchTaskQueueObservationParsed.data.ok
   ) {
     return assetGovernanceBatchTaskQueueObservationParsed.data.error.message;
+  }
+
+  const assetGovernanceBatchActionPlanParsed =
+    CourseProductAssetGovernanceBatchActionPlanResponseSchema.safeParse(
+      payload
+    );
+  if (
+    assetGovernanceBatchActionPlanParsed.success &&
+    !assetGovernanceBatchActionPlanParsed.data.ok
+  ) {
+    return assetGovernanceBatchActionPlanParsed.data.error.message;
   }
 
   const learningMaterialReportParsed =
@@ -750,6 +775,28 @@ export const httpCourseProductRepository = {
     return parseCourseProductAssetGovernanceBatchTaskQueueObservationResponse(
       payload
     );
+  },
+
+  async loadCourseProductAssetGovernanceBatchActionPlan(
+    query: Partial<CourseProductAssetGovernanceBatchActionPlanQuery> = {}
+  ): Promise<CourseProductAssetGovernanceBatchActionPlanResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/assets/governance/batch-action-plan${queryStringFromRecord(query)}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(
+        extractErrorMessage(payload, "课程素材批量高风险预案读取失败")
+      );
+    }
+    return parseCourseProductAssetGovernanceBatchActionPlanResponse(payload);
   },
 
   async createCourseProductAssetGovernanceBatchTask(
