@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`ADM-IA 后台独立化与信息架构减负`
-- 当前状态：`ADM-IA-B-C-B 课程商品基础/价格/审核动作弹窗组件化` 已完成，课程商品列表页已把基础信息、价格、审核和上下架弹窗迁入 `client/src/pages/admin/courses/*` 组件。
-- 本轮完成后下一步：执行 `ADM-IA-B-C-C 课程商品列表行与筛选组件化`
+- 当前阶段：`ADM-PRO 课程商品运营能力升级`
+- 当前状态：`ADM-PRO-A + ADM-PRO-C 新增课程商品与商品编辑工作台壳` 已完成，后台已具备新增课程商品草稿、进入独立商品编辑工作台、基础信息和价格权益保存的稳定入口。
+- 本轮完成后下一步：执行 `ADM-PRO-D + ADM-PRO-E 商品图片管理与 H5 富文本编辑器底座`
 
 ## 已完成关键能力
 
@@ -23,6 +23,7 @@
 - 完成课程商品与课程素材治理代码级拆分第二刀：`/admin/course-assets/governance` 独立拥有治理数据加载、单素材治理、批量草案、审批、取消和执行预案弹窗；`/admin/courses` 删除 `workspace` 分支，只保留商品列表、基础编辑、价格/审核/上下架入口。
 - 完成课程商品内容编辑详情页承载：新增 `/admin/courses/:courseId`，将详情文案、成交图文、章节资料、素材上传和合规处理从商品列表页迁出，并支持 `returnTo` 返回原筛选分页。
 - 完成课程商品动作弹窗组件化：基础信息、价格、审核和上下架弹窗已拆入 `client/src/pages/admin/courses/*`，列表页继续保留动作状态与刷新编排，并新增弹窗静态渲染回归。
+- 完成新增课程商品与商品编辑工作台壳：新增 `POST /api/catalog/admin/course-products`、`product_create` 审计动作、`/admin/courses/new` 与 `/admin/courses/:courseId/edit` 后台路由；课程商品列表新增“新增商品”和“工作台”入口，工作台已按基础信息、商品图片、价格权益、H5 详情和发布审核组织后续编辑能力。
 - 完成心理咨询类项目的现代化界面优化。
 - 建立产品工程路线文档、领域契约文档、数据库准备文档和课程中心 Feature 架构文档。
 - 建立课程中心、课程权益、成长档案、心理测评和咨询预约基础闭环。
@@ -754,18 +755,37 @@ ADM-IA-B-C-B 稳定切片已交付：
 - `CourseProducts.tsx` 保持 `loadProducts`、动作提交和成功后刷新逻辑不变，只负责打开弹窗、维护表单状态和编排 API 调用。
 - 新增 `CourseProductDialogs.test.tsx`，通过静态渲染覆盖四个弹窗组件的关键标题、表单项和主动作。
 
-### 后台待续：ADM-IA-B-C-C 课程商品列表行与筛选组件化
+### 最近完成阶段：ADM-PRO-A + ADM-PRO-C 新增课程商品与商品编辑工作台壳
 
 业务目标：
 
-`CourseProducts.tsx` 已迁出素材治理、内容详情页和动作弹窗，但仍包含列表行、审计摘要、筛选表单、分页、指标卡和多个格式化 helper。下一步继续把列表 UI 拆成可复用组件，让主页面最终接近“读取数据 + 组织状态 + 绑定动作”。
+课程商品后台不能只有“维护现有 seed 商品”，必须具备类似电商商品中心的新增入口和独立编辑工作台。ADM-PRO-A + ADM-PRO-C 先打通新增课程商品草稿和工作台壳，后续图片管理、富文本 H5、发布审核和营销配置都挂到同一个稳定入口上。
+
+ADM-PRO-A + ADM-PRO-C 稳定切片已交付：
+
+- `shared/domain/courseProduct.ts` 新增 `CourseProductCreateRequestSchema`、创建价格校验和 `product_create` 审计动作，新增商品价格沿用免费/付费/划线价一致性规则。
+- `server/modules/catalog/courseProductStore.ts` 新增 `createCourseProduct`，手动商品从 `courseId >= 10001` 起号，默认以 `draft + not_submitted + manual` 创建，并写入 `product_create` 审计事件。
+- `server/modules/catalog/catalogApi.ts` 新增 `POST /api/catalog/admin/course-products`，绑定 `catalog:edit` 权限，返回既有 `CourseProductMutationResponseSchema`。
+- `client/src/features/catalog/api/httpCourseProductRepository.ts` 新增 `createCourseProduct`，支持通过 POST 创建课程商品草稿。
+- `client/src/pages/admin/courses/CourseProductEditorWorkspacePage.tsx` 新增商品编辑工作台壳，按基础信息、商品图片、价格权益、H5 详情、发布审核组织表单；新增模式可创建草稿，编辑模式可保存基础信息和价格权益，并把详情内容继续链接到现有内容详情页。
+- `client/src/pages/admin/CourseProducts.tsx` 新增“新增商品”入口和行级“工作台”入口，最近审计可识别 `product_create`。
+- 新增 `server/db/migrations/0023_course_product_create_audit.sql`，让 PostgreSQL 审计动作约束允许 `product_create`。
+- 测试覆盖课程商品创建 Store/API、前端仓储 POST 行为和审计动作。
+
+### 后台待续：ADM-PRO-D + ADM-PRO-E 商品图片管理与 H5 富文本编辑器底座
+
+业务目标：
+
+新增商品和工作台壳已打通，但商品图片仍只是封面 URL 和素材详情页跳转，H5 详情仍依赖旧的内容详情页。下一步要把“电商商品管理”的核心编辑体验补起来：主图/详情图可管理、H5 级图文内容可编辑、预览和发布审核可以围绕同一工作台运转。
 
 建议实施范围：
 
-- 新增 `CourseProductListFilters.tsx`、`CourseProductMetrics.tsx`、`CourseProductAuditTrail.tsx` 和 `CourseProductTable.tsx`，优先迁出展示 JSX。
-- 将 `formatMoney`、`formatDate`、`statusClass`、`reviewClass`、`reviewActionsForItem` 等纯展示 helper 迁入 `courseProductListModel.ts`，并补纯函数测试。
-- 保持 URL query、分页、打开内容详情页和弹窗编排仍在 `CourseProducts.tsx`，避免同时改路由和 API。
-- 保留 CUX-I-B-B-T 高风险动作执行开关与二次审批为后续业务切片，待后台 IA 拆分稳定后继续。
+- 在 `CourseProductEditorWorkspacePage.tsx` 内新增商品图片管理分区，至少支持主图、轮播图、详情图、证明图的结构化编辑入口；短期可先复用 URL/已审核素材选择，后续再接真实上传组件。
+- 将旧 `/admin/courses/:courseId` 的成交素材编辑能力逐步收敛到工作台的“商品图片”和“H5 详情”两个步骤，旧详情页保留为深度内容/章节资料承载，避免一次性迁移过大。
+- 设计 `CourseProductRichTextBlock` 或等价共享契约，先支持标题、段落、图片、要点、FAQ、讲师介绍和购买须知等 H5 内容块，禁止前端保存任意不受控 HTML。
+- 新增工作台内预览区，展示移动端商品详情预览、主图完整性、H5 内容完整性和发布阻塞项。
+- 服务端写动作继续绑定 `catalog:edit`，发布/审核仍使用既有 `catalog:review` / `catalog:publish` 边界；所有结构化 H5 更新必须写入 `content_update` 或后续专用审计动作。
+- ADM-IA-B-C-C 课程商品列表行与筛选组件化暂时作为代码减负 backlog，等商品编辑主链路稳定后再执行。
 
 ## 执行不变量
 
@@ -786,4 +806,4 @@ ADM-IA-B-C-B 稳定切片已交付：
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-IA-B-C-C 课程商品列表行与筛选组件化，CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-PRO-D + ADM-PRO-E 商品图片管理与 H5 富文本编辑器底座，ADM-IA-B-C-C 课程商品列表行与筛选组件化、CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

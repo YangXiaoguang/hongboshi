@@ -37,6 +37,7 @@ import {
   CourseProductContentMutationResultSchema,
   CourseProductContentQualityBatchResultSchema,
   CourseProductContentUpdateRequestSchema,
+  CourseProductCreateRequestSchema,
   CourseProductDetailContentSchema,
   CourseProductLearningMaterialOperationsReportSchema,
   CourseProductMutationResultSchema,
@@ -52,6 +53,7 @@ import {
 } from "../../../shared/domain";
 import { getLoginSessionFromRequest } from "../auth/authSessionApi";
 import {
+  createCourseProduct,
   getCourseProductStore,
   listCourseProductsByQuery,
   updateCourseProductBasicInfo,
@@ -240,6 +242,7 @@ export const catalogOperationPermissions = {
   assetGovernanceBatchTaskManage: COURSE_CATALOG_PERMISSIONS.review,
   assetGovernanceBatchActionPlanRead: COURSE_CATALOG_PERMISSIONS.review,
   assetLearningMaterialReportRead: COURSE_CATALOG_PERMISSIONS.read,
+  productCreate: COURSE_CATALOG_PERMISSIONS.edit,
   basicInfoUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   contentUpdate: COURSE_CATALOG_PERMISSIONS.edit,
   reviewUpdate: COURSE_CATALOG_PERMISSIONS.review,
@@ -399,6 +402,44 @@ export async function updateCourseProductPricePayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程商品价格更新失败");
+  }
+}
+
+export async function createCourseProductPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  body: unknown,
+  store: CourseProductStore = getCourseProductStore(),
+  now = new Date().toISOString()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.productCreate
+  );
+  if (denied) return denied;
+
+  const parsed = CourseProductCreateRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程商品创建参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 201,
+      body: CourseProductMutationResponseSchema.parse({
+        ok: true,
+        data: await createCourseProduct({
+          request: parsed.data,
+          actorId: actor!.id,
+          store,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程商品创建失败");
   }
 }
 
@@ -1589,6 +1630,16 @@ export function registerCatalogApi(app: Express) {
     }
   });
 
+  app.post("/api/catalog/admin/course-products", async (req, res) => {
+    try {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await createCourseProductPayload(session?.user, req.body);
+      sendJson(res, payload.status, payload.body);
+    } catch {
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程商品创建失败"));
+    }
+  });
+
   app.patch(
     "/api/catalog/admin/course-products/:productId/status",
     async (req, res) => {
@@ -2179,27 +2230,45 @@ export function handleCatalogApiRequest(
   if (!url.pathname.startsWith("/api/catalog")) return false;
 
   if (url.pathname === "/api/catalog/admin/course-products") {
-    if (req.method !== "GET") {
-      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+    if (req.method === "GET") {
+      void getLoginSessionFromRequest(req)
+        .then(session =>
+          getCourseProductAdminListPayload(
+            session?.user,
+            queryFromSearchParams(url.searchParams)
+          )
+        )
+        .then(payload => sendJson(res, payload.status, payload.body))
+        .catch(() =>
+          sendJson(
+            res,
+            500,
+            errorPayload("INTERNAL_ERROR", "课程商品列表暂时不可用")
+          )
+        );
+
       return true;
     }
 
-    void getLoginSessionFromRequest(req)
-      .then(session =>
-        getCourseProductAdminListPayload(
-          session?.user,
-          queryFromSearchParams(url.searchParams)
-        )
-      )
-      .then(payload => sendJson(res, payload.status, payload.body))
-      .catch(() =>
-        sendJson(
-          res,
-          500,
-          errorPayload("INTERNAL_ERROR", "课程商品列表暂时不可用")
-        )
-      );
+    if (req.method === "POST") {
+      void readRequestBody(req)
+        .then(async body => {
+          const session = await getLoginSessionFromRequest(req);
+          const payload = await createCourseProductPayload(session?.user, body);
+          sendJson(res, payload.status, payload.body);
+        })
+        .catch(() =>
+          sendJson(res, 500, errorPayload("INTERNAL_ERROR", "课程商品创建失败"))
+        );
 
+      return true;
+    }
+
+    sendJson(
+      res,
+      405,
+      errorPayload("BAD_REQUEST", "接口仅支持 GET 或 POST 请求")
+    );
     return true;
   }
 
@@ -3000,6 +3069,13 @@ function courseProductActionFailure(
     return {
       status: 404,
       body: errorPayload("NOT_FOUND", "课程商品不存在"),
+    };
+  }
+
+  if (err instanceof Error && err.message === "COURSE_PRODUCT_ALREADY_EXISTS") {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "课程商品已存在，请刷新后重试"),
     };
   }
 

@@ -1076,6 +1076,79 @@ describe("http course product repository parsing", () => {
     );
   });
 
+  it("creates course product drafts through the admin endpoint", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        product: {
+          id: "course_product_10001",
+          courseId: 10001,
+          title: "压力管理进阶训练",
+          coverUrl:
+            "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee",
+          category: "情绪管理",
+          type: "录播",
+          instructorName: "周老师",
+          learners: 0,
+          price: {
+            amount: 199,
+            originalAmount: 399,
+            isFree: false,
+            memberIncluded: false,
+          },
+          status: "draft",
+          reviewStatus: "not_submitted",
+          source: "manual",
+          createdAt: "2026-05-23T10:00:00+08:00",
+          updatedAt: "2026-05-23T10:00:00+08:00",
+        },
+        auditEvent: {
+          id: "audit_create_course_product_10001",
+          productId: "course_product_10001",
+          productTitle: "压力管理进阶训练",
+          actorId: "operator_1",
+          action: "product_create",
+          reason: "新增压力管理课程商品草稿",
+          before: {},
+          after: { status: "draft" },
+          createdAt: "2026-05-23T10:00:00+08:00",
+        },
+        auditEvents: [],
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify(responsePayload), { status: 201 })
+      );
+
+    const result = await httpCourseProductRepository.createCourseProduct({
+      title: "压力管理进阶训练",
+      coverUrl: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee",
+      category: "情绪管理",
+      type: "录播",
+      instructorName: "周老师",
+      learners: 0,
+      price: {
+        amount: 199,
+        originalAmount: 399,
+        isFree: false,
+        memberIncluded: false,
+      },
+      reason: "新增压力管理课程商品草稿",
+    });
+
+    expect(result.product.status).toBe("draft");
+    expect(result.auditEvent.action).toBe("product_create");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("压力管理进阶训练"),
+      })
+    );
+  });
+
   it("sends review workflow mutations to the admin endpoint", async () => {
     const responsePayload = {
       ok: true,

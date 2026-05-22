@@ -41,6 +41,7 @@ export const COURSE_PRODUCT_SORTS = [
 ] as const;
 
 export const COURSE_PRODUCT_AUDIT_ACTIONS = [
+  "product_create",
   "status_update",
   "price_update",
   "info_update",
@@ -1470,6 +1471,53 @@ export const CourseProductPriceUpdateRequestSchema = z
     }
   });
 
+export const CourseProductCreatePriceSchema = z
+  .object({
+    amount: MoneyAmountSchema,
+    originalAmount: MoneyAmountSchema.optional(),
+    isFree: z.boolean(),
+    memberIncluded: z.boolean().default(false),
+  })
+  .superRefine((value, ctx) => {
+    if (value.isFree && value.amount !== 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["amount"],
+        message: "免费课程价格必须为 0",
+      });
+    }
+
+    if (!value.isFree && value.amount <= 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["amount"],
+        message: "非免费课程价格必须大于 0",
+      });
+    }
+
+    if (
+      typeof value.originalAmount === "number" &&
+      value.originalAmount < value.amount
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["originalAmount"],
+        message: "原价不能小于售价",
+      });
+    }
+  });
+
+export const CourseProductCreateRequestSchema = z.object({
+  title: z.string().trim().min(2).max(80),
+  coverUrl: z.string().trim().url(),
+  category: CourseCategorySchema,
+  type: CourseTypeSchema,
+  instructorName: z.string().trim().min(1).max(40),
+  learners: z.number().int().nonnegative().max(999999).default(0),
+  price: CourseProductCreatePriceSchema,
+  reason: z.string().trim().min(4).max(240),
+});
+
 export const CourseProductBasicInfoUpdateRequestSchema = z.object({
   title: z.string().trim().min(2).max(80),
   coverUrl: z.string().trim().url(),
@@ -1766,6 +1814,12 @@ export type CourseProductStatusUpdateRequest = z.infer<
 >;
 export type CourseProductPriceUpdateRequest = z.infer<
   typeof CourseProductPriceUpdateRequestSchema
+>;
+export type CourseProductCreatePrice = z.infer<
+  typeof CourseProductCreatePriceSchema
+>;
+export type CourseProductCreateRequest = z.infer<
+  typeof CourseProductCreateRequestSchema
 >;
 export type CourseProductBasicInfoUpdateRequest = z.infer<
   typeof CourseProductBasicInfoUpdateRequestSchema

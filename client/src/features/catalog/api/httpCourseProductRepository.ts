@@ -51,6 +51,7 @@ import {
   type CourseProductAssetMutationResult,
   type CourseProductAssetUploadRequest,
   type CourseProductContentUpdateRequest,
+  type CourseProductCreateRequest,
   type CourseProductDetailContent,
   type CourseProductLearningMaterialOperationsReport,
   type CourseProductMutationResult,
@@ -515,6 +516,17 @@ export const httpCourseProductRepository = {
       `${API_BASE}/course-products/${encodeURIComponent(productId)}/status`,
       request,
       "课程商品状态更新失败"
+    );
+  },
+
+  async createCourseProduct(
+    request: CourseProductCreateRequest
+  ): Promise<CourseProductMutationResult> {
+    return requestCourseProductMutation(
+      `${API_BASE}/course-products`,
+      request,
+      "课程商品创建失败",
+      "POST"
     );
   },
 
@@ -1104,10 +1116,11 @@ function fileToBase64(file: File) {
 async function requestCourseProductMutation(
   url: string,
   body: unknown,
-  fallback: string
+  fallback: string,
+  method = "PATCH"
 ) {
   const response = await fetch(url, {
-    method: "PATCH",
+    method,
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",

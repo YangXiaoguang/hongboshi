@@ -12,6 +12,7 @@ import {
   catalogOperationPermissions,
   applyCourseProductAssetGovernanceActionPayload,
   cancelCourseProductAssetGovernanceBatchTaskPayload,
+  createCourseProductPayload,
   createCourseProductAssetGovernanceBatchTaskPayload,
   executeCourseProductAssetGovernanceBatchTaskPayload,
   getCourseProductAdminListPayload,
@@ -258,6 +259,63 @@ describe("catalog admin api payloads", () => {
 
     expect(payload.status).toBe(400);
     expect(payload.body.ok).toBe(false);
+  });
+
+  it("creates course product drafts and records creation audit", async () => {
+    const store = createStore();
+    const forbidden = await createCourseProductPayload(
+      { id: "user_1", roles: ["member"] },
+      {
+        title: "压力管理进阶训练",
+        coverUrl:
+          "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee",
+        category: "情绪管理",
+        type: "录播",
+        instructorName: "周老师",
+        price: {
+          amount: 199,
+          originalAmount: 399,
+          isFree: false,
+          memberIncluded: false,
+        },
+        reason: "新增压力管理课程商品草稿",
+      },
+      store
+    );
+    expect(forbidden.status).toBe(403);
+
+    const payload = await createCourseProductPayload(
+      { id: "operator_1", roles: ["operator"] },
+      {
+        title: "压力管理进阶训练",
+        coverUrl:
+          "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee",
+        category: "情绪管理",
+        type: "录播",
+        instructorName: "周老师",
+        learners: 0,
+        price: {
+          amount: 199,
+          originalAmount: 399,
+          isFree: false,
+          memberIncluded: false,
+        },
+        reason: "新增压力管理课程商品草稿",
+      },
+      store,
+      "2026-05-23T10:00:00.000Z"
+    );
+
+    expect(payload.status).toBe(201);
+    expect(payload.body.ok).toBe(true);
+    if (payload.body.ok) {
+      expect(payload.body.data.product).toMatchObject({
+        status: "draft",
+        reviewStatus: "not_submitted",
+        source: "manual",
+      });
+      expect(payload.body.data.auditEvent.action).toBe("product_create");
+    }
   });
 
   it("updates course product status and records audit events", async () => {

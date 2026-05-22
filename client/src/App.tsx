@@ -19,6 +19,7 @@ import CourseLearning from "./pages/CourseLearning";
 import Courses from "./pages/Courses";
 import CourseAssetGovernancePage from "./pages/admin/course-assets/CourseAssetGovernancePage";
 import CourseProductContentEditorPage from "./pages/admin/courses/CourseProductContentEditorPage";
+import CourseProductEditorWorkspacePage from "./pages/admin/courses/CourseProductEditorWorkspacePage";
 import CourseProductsPage from "./pages/admin/courses/CourseProductsPage";
 import FinanceManagement from "./pages/admin/FinanceManagement";
 import Home from "./pages/Home";
@@ -53,6 +54,16 @@ function Router() {
       <Route path={"/admin/payments"}>
         <AdminLayout>
           <PaymentReconciliation />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/courses/new"}>
+        <AdminLayout>
+          <CourseProductEditorWorkspacePage />
+        </AdminLayout>
+      </Route>
+      <Route path={"/admin/courses/:courseId/edit"}>
+        <AdminLayout>
+          <CourseProductEditorWorkspacePage />
         </AdminLayout>
       </Route>
       <Route path={"/admin/courses/:courseId"}>

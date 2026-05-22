@@ -7,6 +7,7 @@ import { courses } from "../../../shared/data/mockCourses";
 import {
   InMemoryCourseProductStore,
   JsonFileCourseProductStore,
+  createCourseProduct,
   courseFromCourseProduct,
   courseProductFromCourse,
   coursesFromPublishedProducts,
@@ -89,6 +90,49 @@ describe("course product store mapping", () => {
     expect(summary.publishedCount).toBe(1);
     expect(summary.unpublishedCount).toBe(1);
     expect(summary.freeCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("creates manual draft products with audit events", async () => {
+    const store = new InMemoryCourseProductStore(
+      courses.slice(0, 2).map(courseProductFromCourse)
+    );
+
+    const result = await createCourseProduct({
+      request: {
+        title: "压力管理进阶训练",
+        coverUrl:
+          "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee",
+        category: "情绪管理",
+        type: "录播",
+        instructorName: "周老师",
+        learners: 0,
+        price: {
+          amount: 199,
+          originalAmount: 399,
+          isFree: false,
+          memberIncluded: false,
+        },
+        reason: "新增压力管理课程商品草稿",
+      },
+      actorId: "operator_1",
+      store,
+      now: "2026-05-23T10:00:00.000Z",
+    });
+
+    expect(result.product).toMatchObject({
+      title: "压力管理进阶训练",
+      courseId: 10001,
+      status: "draft",
+      reviewStatus: "not_submitted",
+      source: "manual",
+    });
+    expect(result.auditEvent).toMatchObject({
+      action: "product_create",
+      reason: "新增压力管理课程商品草稿",
+    });
+    await expect(store.getProduct(result.product.id)).resolves.toMatchObject({
+      title: "压力管理进阶训练",
+    });
   });
 
   it("updates status and writes an audit event", async () => {

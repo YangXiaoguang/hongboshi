@@ -17,6 +17,7 @@ import {
   type CourseProductListSummary,
   type CourseProductMutationResult,
   type CourseProductBasicInfoUpdateRequest,
+  type CourseProductCreateRequest,
   type CourseProductPriceUpdateRequest,
   type CourseProductReviewActionRequest,
   type CourseProductReviewStatus,
@@ -358,6 +359,78 @@ export async function updateCourseProductStatus({
   });
 }
 
+export async function createCourseProduct({
+  request,
+  actorId,
+  store = getCourseProductStore(),
+  now = new Date().toISOString(),
+}: {
+  request: CourseProductCreateRequest;
+  actorId: string;
+  store?: CourseProductStore;
+  now?: string;
+}): Promise<CourseProductMutationResult> {
+  const products = await store.listProducts();
+  const nextCourseId = createNextManualCourseId(products);
+  const productId = createCourseProductId(nextCourseId);
+  if (await store.getProduct(productId)) {
+    throw new Error("COURSE_PRODUCT_ALREADY_EXISTS");
+  }
+
+  const amount = request.price.isFree ? 0 : request.price.amount;
+  const originalAmount = request.price.originalAmount ?? amount;
+  const product = CourseProductListItemSchema.parse({
+    id: productId,
+    courseId: nextCourseId,
+    title: request.title,
+    coverUrl: request.coverUrl,
+    category: request.category,
+    type: request.type,
+    instructorName: request.instructorName,
+    learners: request.learners,
+    price: {
+      currency: "CNY",
+      amount,
+      originalAmount,
+      isFree: request.price.isFree,
+      memberIncluded: request.price.memberIncluded,
+    },
+    status: "draft",
+    reviewStatus: "not_submitted",
+    source: "manual",
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const auditEvent = CourseProductAuditEventSchema.parse({
+    id: createAuditEventId("create", productId, now),
+    productId,
+    productTitle: product.title,
+    actorId,
+    action: "product_create",
+    reason: request.reason,
+    before: {},
+    after: {
+      ...pickBasicInfoAuditFields(product),
+      courseId: product.courseId,
+      price: product.price,
+      status: product.status,
+      reviewStatus: product.reviewStatus,
+      source: product.source,
+    },
+    createdAt: now,
+  });
+
+  const saved = await store.saveProduct(product);
+  const savedEvent = await store.appendAuditEvent(auditEvent);
+
+  return CourseProductMutationResultSchema.parse({
+    product: saved,
+    auditEvent: savedEvent,
+    auditEvents: await store.listAuditEvents(productId),
+  });
+}
+
 export async function updateCourseProductPrice({
   productId,
   request,
@@ -653,11 +726,23 @@ function assertReviewTransitionAllowed(
 }
 
 function createAuditEventId(
-  action: "info" | "price" | "review" | "status",
+  action: "create" | "info" | "price" | "review" | "status",
   productId: string,
   now: string
 ) {
   return `audit_${action}_${productId}_${Date.parse(now) || Date.now()}`;
+}
+
+function createCourseProductId(courseId: number) {
+  return `course_product_${courseId}`;
+}
+
+function createNextManualCourseId(products: CourseProductListItem[]) {
+  const maxCourseId = products.reduce(
+    (max, product) => Math.max(max, product.courseId),
+    10000
+  );
+  return maxCourseId + 1;
 }
 
 function pickBasicInfoAuditFields(product: CourseProductListItem) {

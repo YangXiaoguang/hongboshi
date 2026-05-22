@@ -17,6 +17,7 @@ import {
   Layers3,
   ListFilter,
   Loader2,
+  Plus,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -215,6 +216,12 @@ function auditReviewStatusLabel(value: unknown) {
 }
 
 function auditChangeText(event: CourseProductAuditEvent) {
+  if (event.action === "product_create") {
+    const courseId =
+      typeof event.after.courseId === "number" ? event.after.courseId : "";
+    return courseId ? `新增课程 ID ${courseId}` : "新增课程商品草稿";
+  }
+
   if (event.action === "asset_governance") {
     const action =
       typeof event.after.governanceAction === "string"
@@ -258,6 +265,7 @@ function auditChangeText(event: CourseProductAuditEvent) {
 }
 
 function auditActionLabel(action: CourseProductAuditEvent["action"]) {
+  if (action === "product_create") return "新增商品";
   if (action === "status_update") return "状态更新";
   if (action === "price_update") return "价格更新";
   if (action === "review_update") return "审核更新";
@@ -419,6 +427,7 @@ function CourseProductRow({
   onEditInfo,
   onEditContent,
   onEditPrice,
+  onOpenWorkspace,
   onRequestReviewAction,
   onRequestStatusChange,
 }: {
@@ -434,6 +443,7 @@ function CourseProductRow({
   onEditInfo: (item: CourseProductListItem) => void;
   onEditContent: (item: CourseProductListItem) => void;
   onEditPrice: (item: CourseProductListItem) => void;
+  onOpenWorkspace: (item: CourseProductListItem) => void;
   onRequestReviewAction: (
     item: CourseProductListItem,
     action: CourseProductReviewAction,
@@ -584,6 +594,14 @@ function CourseProductRow({
           {canEdit && (
             <>
               <button
+                onClick={() => onOpenWorkspace(item)}
+                disabled={isMutating}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Layers3 className="h-3.5 w-3.5" />
+                工作台
+              </button>
+              <button
                 onClick={() => onEditInfo(item)}
                 disabled={isMutating}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
@@ -722,6 +740,14 @@ export default function CourseProducts() {
       );
     },
     [catalogPermissions.canEdit, navigate, query]
+  );
+
+  const openProductWorkspace = useCallback(
+    (item: CourseProductListItem) => {
+      if (!catalogPermissions.canEdit) return;
+      navigate(`/admin/courses/${item.courseId}/edit`);
+    },
+    [catalogPermissions.canEdit, navigate]
   );
 
   const openPriceEditor = useCallback(
@@ -947,7 +973,7 @@ export default function CourseProducts() {
   const pageEyebrow = "课程商品";
   const pageTitle = "商品列表与状态";
   const pageDescription =
-    "管理课程商品的基础信息、审核流、上架状态和价格；素材治理、批量任务与资料报表已拆到独立工作区。";
+    "管理课程商品的新建、基础信息、审核流、上架状态和价格；素材治理、批量任务与资料报表已拆到独立工作区。";
 
   if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) {
     return null;
@@ -967,18 +993,29 @@ export default function CourseProducts() {
             {pageDescription}
           </p>
         </div>
-        <button
-          onClick={() => void loadProducts()}
-          disabled={isLoading}
-          className="inline-flex h-10 w-fit items-center gap-2 rounded-lg border border-[#CFC4B5] bg-[#FFFDF8] px-4 text-sm font-semibold text-[#355F51] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
+        <div className="flex flex-wrap gap-2">
+          {catalogPermissions.canEdit && (
+            <button
+              onClick={() => navigate("/admin/courses/new")}
+              className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
+            >
+              <Plus className="h-4 w-4" />
+              新增商品
+            </button>
           )}
-          刷新
-        </button>
+          <button
+            onClick={() => void loadProducts()}
+            disabled={isLoading}
+            className="inline-flex h-10 w-fit items-center gap-2 rounded-lg border border-[#CFC4B5] bg-[#FFFDF8] px-4 text-sm font-semibold text-[#355F51] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            刷新
+          </button>
+        </div>
       </section>
 
       {error && (
@@ -1164,6 +1201,7 @@ export default function CourseProducts() {
                       onEditInfo={openInfoEditor}
                       onEditContent={openContentEditor}
                       onEditPrice={openPriceEditor}
+                      onOpenWorkspace={openProductWorkspace}
                       onRequestReviewAction={openReviewAction}
                       onRequestStatusChange={openStatusAction}
                     />
