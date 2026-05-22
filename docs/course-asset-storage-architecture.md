@@ -86,7 +86,7 @@
 
 ## 批量治理任务草案
 
-`server/modules/catalog/courseProductAssetGovernanceBatchTask.ts` 已建立批量治理任务草案 service，`server/modules/catalog/courseProductAssetGovernanceBatchTaskStore.ts` 提供内存与 JSON 文件 Store，默认文件为 `.hongboshi-data/course-product-asset-governance-batch-tasks.json`：
+`server/modules/catalog/courseProductAssetGovernanceBatchTask.ts` 已建立批量治理任务草案 service，`server/modules/catalog/courseProductAssetGovernanceBatchTaskStore.ts` 提供内存、JSON 文件与显式 PostgreSQL Store，默认文件为 `.hongboshi-data/course-product-asset-governance-batch-tasks.json`，配置 `HONGBOSHI_COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STORE=postgres` 且存在 `DATABASE_URL` 时会写入 PostgreSQL：
 
 - `CourseProductAssetGovernanceBatchTask*` 契约记录任务 ID、筛选快照、候选素材快照、候选数、问题分布、拟处理动作分布、创建人、审批状态、原因、备注、审批信息、审批前后摘要、审批前预检、取消信息、执行状态、执行原因、执行摘要、逐素材执行明细和审计事件 ID。
 - `GET/POST /api/catalog/admin/course-products/assets/governance/batch-tasks` 由 `catalog:review` 控制，列表支持按审批状态、执行状态、创建人、执行人、问题筛选、动作和日期范围检索；第一版只允许创建 `acknowledge_issue` 草案，创建时会重新计算批量草稿预览，拒绝空候选和同筛选重复待审批草案。
@@ -110,4 +110,5 @@
 - `CUX-I-B-B-L`：已接入批量治理任务审批/驳回、跨人审批限制、审批前候选漂移预检和后台审批入口；执行队列、批量写审计和真实批量处理仍后置。
 - `CUX-I-B-B-M`：已接入已审批批量任务执行只读预案、逐素材漂移跳过、风险等级、预计审计事件数量和后台预案面板。
 - `CUX-I-B-B-N`：已接入批量任务受控执行状态机、执行确认、批量 `asset_governance` 审计写入、执行明细、部分完成/失败摘要和幂等回放；异步任务队列、批量软删/引用合并和物理对象清理继续后置。
-- `CUX-I-B-B-O`：已接入批量任务执行结果历史与运营筛选，支持执行状态/操作者/时间/问题/动作筛选、执行详情读取 API、后台分页任务列表和执行明细复盘；PostgreSQL 等价 Store、查询索引和异步任务队列继续后置。
+- `CUX-I-B-B-O`：已接入批量任务执行结果历史与运营筛选，支持执行状态/操作者/时间/问题/动作筛选、执行详情读取 API、后台分页任务列表和执行明细复盘。
+- `CUX-I-B-B-P`：已新增批量治理任务 PostgreSQL 表、候选快照表、执行明细表、执行审计事件 ID 表、幂等键、执行锁预留字段和查询索引，并实现 `PostgresCourseProductAssetGovernanceBatchTaskStore`；异步任务队列、批量软删/引用合并和物理对象清理继续后置。

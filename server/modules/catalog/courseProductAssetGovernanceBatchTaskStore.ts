@@ -5,6 +5,8 @@ import {
   CourseProductAssetGovernanceBatchTaskSchema,
   type CourseProductAssetGovernanceBatchTask,
 } from "../../../shared/domain";
+import { getDatabaseUrl, getSharedPostgresPool } from "../../db/postgres";
+import { PostgresCourseProductAssetGovernanceBatchTaskStore } from "./postgresCourseProductAssetGovernanceBatchTaskStore";
 
 const CourseProductAssetGovernanceBatchTaskStoreFileSchema = z.object({
   version: z.literal(1),
@@ -17,15 +19,15 @@ type CourseProductAssetGovernanceBatchTaskStoreFile = z.infer<
 
 export interface CourseProductAssetGovernanceBatchTaskStore {
   listTasks(): Promise<CourseProductAssetGovernanceBatchTask[]>;
-  getTask(taskId: string): Promise<CourseProductAssetGovernanceBatchTask | undefined>;
+  getTask(
+    taskId: string
+  ): Promise<CourseProductAssetGovernanceBatchTask | undefined>;
   saveTask(
     task: CourseProductAssetGovernanceBatchTask
   ): Promise<CourseProductAssetGovernanceBatchTask>;
 }
 
-export class InMemoryCourseProductAssetGovernanceBatchTaskStore
-  implements CourseProductAssetGovernanceBatchTaskStore
-{
+export class InMemoryCourseProductAssetGovernanceBatchTaskStore implements CourseProductAssetGovernanceBatchTaskStore {
   private tasks = new Map<string, CourseProductAssetGovernanceBatchTask>();
 
   constructor(tasks: CourseProductAssetGovernanceBatchTask[] = []) {
@@ -51,12 +53,9 @@ export class InMemoryCourseProductAssetGovernanceBatchTaskStore
   }
 }
 
-export class JsonFileCourseProductAssetGovernanceBatchTaskStore
-  implements CourseProductAssetGovernanceBatchTaskStore
-{
+export class JsonFileCourseProductAssetGovernanceBatchTaskStore implements CourseProductAssetGovernanceBatchTaskStore {
   constructor(
-    private readonly filePath =
-      resolveCourseProductAssetGovernanceBatchTaskStorePath()
+    private readonly filePath = resolveCourseProductAssetGovernanceBatchTaskStorePath()
   ) {}
 
   async listTasks() {
@@ -109,9 +108,7 @@ export class JsonFileCourseProductAssetGovernanceBatchTaskStore
   }
 }
 
-let defaultStore:
-  | CourseProductAssetGovernanceBatchTaskStore
-  | undefined;
+let defaultStore: CourseProductAssetGovernanceBatchTaskStore | undefined;
 
 export function getCourseProductAssetGovernanceBatchTaskStore() {
   defaultStore ??= createDefaultCourseProductAssetGovernanceBatchTaskStore();
@@ -132,6 +129,20 @@ export function createDefaultCourseProductAssetGovernanceBatchTaskStore() {
       "memory"
   ) {
     return new InMemoryCourseProductAssetGovernanceBatchTaskStore();
+  }
+
+  if (
+    process.env.HONGBOSHI_COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STORE ===
+    "postgres"
+  ) {
+    if (!getDatabaseUrl()) {
+      throw new Error(
+        "HONGBOSHI_COURSE_PRODUCT_ASSET_GOVERNANCE_BATCH_TASK_STORE=postgres requires DATABASE_URL"
+      );
+    }
+    return new PostgresCourseProductAssetGovernanceBatchTaskStore(
+      getSharedPostgresPool()
+    );
   }
 
   return new JsonFileCourseProductAssetGovernanceBatchTaskStore();
@@ -157,7 +168,12 @@ function normalizeCourseProductAssetGovernanceBatchTaskStoreFile(
     version: 1,
     tasks: parsed.data.tasks
       .map(task => CourseProductAssetGovernanceBatchTaskSchema.safeParse(task))
-      .filter((result): result is z.ZodSafeParseSuccess<CourseProductAssetGovernanceBatchTask> => result.success)
+      .filter(
+        (
+          result
+        ): result is z.ZodSafeParseSuccess<CourseProductAssetGovernanceBatchTask> =>
+          result.success
+      )
       .map(result => result.data),
   } satisfies CourseProductAssetGovernanceBatchTaskStoreFile;
 }
