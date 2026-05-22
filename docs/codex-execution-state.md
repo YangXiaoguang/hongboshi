@@ -4,13 +4,13 @@
 
 ## 当前指针
 
-- 最后更新时间：2026-05-22 Asia/Shanghai
+- 最后更新时间：2026-05-23 Asia/Shanghai
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`ADM-IA 后台独立化与信息架构减负`
-- 当前状态：`ADM-IA-A 后台壳分离 + /admin/courses 减负第一刀` 已完成，后台已从用户端顶部导航中分离，课程商品页默认只加载商品列表/内容质量，素材治理迁入 `/admin/course-assets/governance` 独立工作区。
-- 本轮完成后下一步：执行 `ADM-IA-B 课程商品详情页与课程素材治理代码级拆分`
+- 当前状态：`ADM-IA-B-B 治理弹窗与治理数据加载彻底迁出` 已完成，课程商品页不再承载素材治理 workspace、治理数据加载、治理 action 状态和批量治理弹窗；素材治理工作区独立读取治理数据并承接全部治理交互。
+- 本轮完成后下一步：执行 `ADM-IA-B-C 课程商品内容编辑与商品详情承载拆分`
 
 ## 已完成关键能力
 
@@ -20,6 +20,7 @@
 - 完成后台壳分离第一刀：后台登录、无权限、授权后工作台不再复用用户端 `AppHeader`；新增后台专用顶栏、模块上下文、用户端返回入口、通知入口和退出入口。
 - `/admin/counseling` 和 `/admin/payments` 已接入统一后台 shell，原 URL 保持可用。
 - 顶部用户菜单的运营入口已统一指向 `/admin`。
+- 完成课程商品与课程素材治理代码级拆分第二刀：`/admin/course-assets/governance` 独立拥有治理数据加载、单素材治理、批量草案、审批、取消和执行预案弹窗；`/admin/courses` 删除 `workspace` 分支，只保留商品列表、基础编辑、内容编辑和价格/审核/上下架链路。
 - 完成心理咨询类项目的现代化界面优化。
 - 建立产品工程路线文档、领域契约文档、数据库准备文档和课程中心 Feature 架构文档。
 - 建立课程中心、课程权益、成长档案、心理测评和咨询预约基础闭环。
@@ -699,7 +700,7 @@ M9-E 验收结果：
 
 ## 下一步任务包
 
-### 最近完成阶段：ADM-IA-B-A 课程素材治理组件与模型拆分
+### 最近完成阶段：ADM-IA-B-B 治理弹窗与治理数据加载彻底迁出
 
 ADM-IA-A 稳定切片已交付：
 
@@ -716,18 +717,26 @@ ADM-IA-B-A 稳定切片已交付：
 - 新增 `client/src/pages/admin/courses/CourseProductsPage.tsx` 与 `client/src/pages/admin/course-assets/CourseAssetGovernancePage.tsx` 页面入口，`App.tsx` 不再直接在路由层传递 `workspace` 参数。
 - `CourseProducts.test.ts` 继续通过 `CourseProducts.tsx` re-export 使用治理 helper，外部测试契约保持稳定。
 
-### 后台待续：ADM-IA-B-B 治理弹窗与治理数据加载彻底迁出
+ADM-IA-B-B 稳定切片已交付：
+
+- `CourseAssetGovernancePage.tsx` 已升级为真实治理页面，独立拥有治理摘要、学习资料报表、治理历史、批量任务、队列观测和高风险动作预案的数据加载。
+- 单素材治理、批量草案保存、批量审批/驳回、批量取消和执行预案/执行记录弹窗已从 `CourseProducts.tsx` 迁入 `course-assets` 页面。
+- `CourseProducts.tsx` 已删除 `workspace` prop、`isAssetGovernanceWorkspace` 分支、治理状态、治理数据加载分支和治理弹窗，从 4684 行降至约 3310 行。
+- 课程商品页保留商品指标、审计摘要、筛选表格、基础信息、内容、价格、审核和上下架动作；素材治理入口以独立工作区链接承接。
+- 治理页“定位素材”改为跳转 `/admin/courses?keyword=课程标题`，商品页支持从 URL keyword 初始化搜索，避免治理页重新打开商品内容编辑弹窗。
+
+### 后台待续：ADM-IA-B-C 课程商品内容编辑与商品详情承载拆分
 
 业务目标：
 
-ADM-IA-B-A 已先完成素材治理模型、主面板和页面入口拆分，但 `CourseProducts.tsx` 仍保留治理弹窗、治理 action 状态和 asset-governance workspace 数据加载。下一步应把治理弹窗与治理数据加载彻底迁入 `course-assets` 页面，让课程商品页只拥有商品列表、商品编辑、内容编辑和价格/审核/上下架状态。
+`CourseProducts.tsx` 仍同时承载商品列表、基础信息弹窗、内容编辑长弹窗、素材上传/审核和价格/审核/状态动作。下一步应把课程商品“内容编辑/成交素材/章节资料”迁到详情路由或详情抽屉，让 `/admin/courses` 更接近商品列表工作台。
 
 建议实施范围：
 
-- 新建 `CourseAssetGovernanceDialogs.tsx` 或直接升级 `CourseAssetGovernancePage.tsx`，承接单素材治理、批量草案、审批、取消和执行预案弹窗。
-- 从 `CourseProducts.tsx` 删除 `workspace` prop、治理状态、治理加载分支和治理弹窗，仅保留 `/admin/courses` 商品管理主链路。
-- 课程商品列表下一步只保留商品表格、基础动作弹窗、审核/改价/上下架入口；内容编辑后续迁到 `/admin/courses/:courseId` 或详情抽屉。
-- 补后台页面级 loading/error/empty 规范，避免一个刷新按钮同时驱动多个不相关数据域。
+- 新增 `/admin/courses/:courseId` 或 `CourseProductDetailDrawer` 的页面级承载，先迁出内容编辑、成交素材配置、章节资料和素材上传/审核。
+- `CourseProducts.tsx` 只保留列表筛选、商品基础动作入口、价格/审核/上下架动作和进入详情的跳转。
+- 商品详情页复用现有内容表单转换逻辑，避免改动 shared/domain 契约和服务端 API。
+- 补一组页面级回归：从列表进入详情、保存内容、上传素材、返回列表后筛选/分页状态不丢失。
 - 保留 CUX-I-B-B-T 高风险动作执行开关与二次审批为后续业务切片，待后台 IA 拆分稳定后继续。
 
 ## 执行不变量
@@ -749,4 +758,4 @@ ADM-IA-B-A 已先完成素材治理模型、主面板和页面入口拆分，但
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-IA-B-B 治理弹窗与治理数据加载彻底迁出，CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-IA-B-C 课程商品内容编辑与商品详情承载拆分，CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
