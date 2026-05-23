@@ -44,10 +44,14 @@ import {
   CourseProductPriceUpdateRequestSchema,
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
+  CourseProductPublishQueueBatchTaskCancelRequestSchema,
   CourseProductPublishQueueBatchTaskCreateRequestSchema,
   CourseProductPublishQueueBatchTaskListQuerySchema,
   CourseProductPublishQueueBatchTaskListResultSchema,
   CourseProductPublishQueueBatchTaskMutationResultSchema,
+  CourseProductPublishQueueBatchTaskPreflightResultSchema,
+  CourseProductPublishQueueBatchTaskReviewRequestSchema,
+  CourseProductPublishQueueBatchTaskSubmitRequestSchema,
   CourseProductPublishQueueResultSchema,
   CourseProductReviewActionRequestSchema,
   CourseProductStatusUpdateRequestSchema,
@@ -117,9 +121,14 @@ import {
   type CourseProductAssetGovernanceBatchTaskExecutionQueue,
 } from "./courseProductAssetGovernanceBatchTaskExecutionQueue";
 import {
+  cancelCourseProductPublishQueueBatchTask,
   createCourseProductPublishQueueBatchTask,
   getCourseProductPublishQueue,
+  getCourseProductPublishQueueBatchTaskPreflight,
   listCourseProductPublishQueueBatchTasks,
+  CourseProductPublishQueueBatchTaskPreflightError,
+  reviewCourseProductPublishQueueBatchTask,
+  submitCourseProductPublishQueueBatchTask,
 } from "./courseProductPublishQueue";
 import {
   getCourseProductPublishQueueBatchTaskStore,
@@ -148,6 +157,8 @@ const CourseProductPublishQueueBatchTaskListResponseSchema = ApiResponseSchema(
 );
 const CourseProductPublishQueueBatchTaskMutationResponseSchema =
   ApiResponseSchema(CourseProductPublishQueueBatchTaskMutationResultSchema);
+const CourseProductPublishQueueBatchTaskPreflightResponseSchema =
+  ApiResponseSchema(CourseProductPublishQueueBatchTaskPreflightResultSchema);
 const CourseProductContentMutationResponseSchema = ApiResponseSchema(
   CourseProductContentMutationResultSchema
 );
@@ -211,6 +222,7 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductPublishQueueResponseSchema>
   | z.infer<typeof CourseProductPublishQueueBatchTaskListResponseSchema>
   | z.infer<typeof CourseProductPublishQueueBatchTaskMutationResponseSchema>
+  | z.infer<typeof CourseProductPublishQueueBatchTaskPreflightResponseSchema>
   | z.infer<typeof CourseProductContentMutationResponseSchema>
   | z.infer<typeof CourseProductAssetListResponseSchema>
   | z.infer<typeof CourseProductAssetMutationResponseSchema>
@@ -764,6 +776,193 @@ export async function createCourseProductPublishQueueBatchTaskPayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程发布队列草案创建失败");
+  }
+}
+
+export async function getCourseProductPublishQueueBatchTaskPreflightPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  taskId: string,
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    taskStore = getCourseProductPublishQueueBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    taskStore?: CourseProductPublishQueueBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.publishQueueBatchTaskRead
+  );
+  if (denied) return denied;
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductPublishQueueBatchTaskPreflightResponseSchema.parse({
+        ok: true,
+        data: await getCourseProductPublishQueueBatchTaskPreflight({
+          taskId,
+          productStore,
+          contentStore,
+          taskStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程发布队列草案预检失败");
+  }
+}
+
+export async function submitCourseProductPublishQueueBatchTaskPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  taskId: string,
+  body: unknown,
+  {
+    taskStore = getCourseProductPublishQueueBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    taskStore?: CourseProductPublishQueueBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.publishQueueBatchTaskManage
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductPublishQueueBatchTaskSubmitRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程发布队列草案提交参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductPublishQueueBatchTaskMutationResponseSchema.parse({
+        ok: true,
+        data: await submitCourseProductPublishQueueBatchTask({
+          taskId,
+          request: parsed.data,
+          actorId: actor!.id,
+          actorRoles: actor!.roles,
+          taskStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程发布队列草案提交失败");
+  }
+}
+
+export async function cancelCourseProductPublishQueueBatchTaskPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  taskId: string,
+  body: unknown,
+  {
+    taskStore = getCourseProductPublishQueueBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    taskStore?: CourseProductPublishQueueBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.publishQueueBatchTaskManage
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductPublishQueueBatchTaskCancelRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程发布队列草案取消参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductPublishQueueBatchTaskMutationResponseSchema.parse({
+        ok: true,
+        data: await cancelCourseProductPublishQueueBatchTask({
+          taskId,
+          request: parsed.data,
+          actorId: actor!.id,
+          actorRoles: actor!.roles,
+          taskStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程发布队列草案取消失败");
+  }
+}
+
+export async function reviewCourseProductPublishQueueBatchTaskPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  taskId: string,
+  body: unknown,
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    taskStore = getCourseProductPublishQueueBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    taskStore?: CourseProductPublishQueueBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.publishQueueBatchTaskManage
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductPublishQueueBatchTaskReviewRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程发布队列草案审批参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductPublishQueueBatchTaskMutationResponseSchema.parse({
+        ok: true,
+        data: await reviewCourseProductPublishQueueBatchTask({
+          taskId,
+          request: parsed.data,
+          actorId: actor!.id,
+          actorRoles: actor!.roles,
+          productStore,
+          contentStore,
+          taskStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程发布队列草案审批失败");
   }
 }
 
@@ -2019,6 +2218,90 @@ export function registerCatalogApi(app: Express) {
   );
 
   app.get(
+    "/api/catalog/admin/course-products/publish-queue/batch-tasks/:taskId/preflight",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await getCourseProductPublishQueueBatchTaskPreflightPayload(
+            session?.user,
+            req.params.taskId
+          );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程发布队列草案预检失败")
+        );
+      }
+    }
+  );
+
+  app.patch(
+    "/api/catalog/admin/course-products/publish-queue/batch-tasks/:taskId/submit",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await submitCourseProductPublishQueueBatchTaskPayload(
+          session?.user,
+          req.params.taskId,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程发布队列草案提交失败")
+        );
+      }
+    }
+  );
+
+  app.patch(
+    "/api/catalog/admin/course-products/publish-queue/batch-tasks/:taskId/cancel",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await cancelCourseProductPublishQueueBatchTaskPayload(
+          session?.user,
+          req.params.taskId,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程发布队列草案取消失败")
+        );
+      }
+    }
+  );
+
+  app.patch(
+    "/api/catalog/admin/course-products/publish-queue/batch-tasks/:taskId/review",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await reviewCourseProductPublishQueueBatchTaskPayload(
+          session?.user,
+          req.params.taskId,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程发布队列草案审批失败")
+        );
+      }
+    }
+  );
+
+  app.get(
     "/api/catalog/admin/course-products/assets/backfill",
     async (req, res) => {
       try {
@@ -2596,6 +2879,74 @@ export function handleCatalogApiRequest(
           res,
           500,
           errorPayload("INTERNAL_ERROR", "课程发布队列草案创建失败")
+        )
+      );
+    return true;
+  }
+
+  const publishQueueBatchTaskActionMatch = url.pathname.match(
+    /^\/api\/catalog\/admin\/course-products\/publish-queue\/batch-tasks\/([^/]+)\/(preflight|submit|cancel|review)$/
+  );
+  if (publishQueueBatchTaskActionMatch) {
+    const taskId = decodeURIComponent(publishQueueBatchTaskActionMatch[1]);
+    const action = publishQueueBatchTaskActionMatch[2];
+    if (action === "preflight") {
+      if (req.method !== "GET") {
+        sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+        return true;
+      }
+
+      void getLoginSessionFromRequest(req)
+        .then(session =>
+          getCourseProductPublishQueueBatchTaskPreflightPayload(
+            session?.user,
+            taskId
+          )
+        )
+        .then(payload => sendJson(res, payload.status, payload.body))
+        .catch(() =>
+          sendJson(
+            res,
+            500,
+            errorPayload("INTERNAL_ERROR", "课程发布队列草案预检失败")
+          )
+        );
+      return true;
+    }
+
+    if (req.method !== "PATCH") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 PATCH 请求"));
+      return true;
+    }
+
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          action === "submit"
+            ? await submitCourseProductPublishQueueBatchTaskPayload(
+                session?.user,
+                taskId,
+                body
+              )
+            : action === "cancel"
+              ? await cancelCourseProductPublishQueueBatchTaskPayload(
+                  session?.user,
+                  taskId,
+                  body
+                )
+              : await reviewCourseProductPublishQueueBatchTaskPayload(
+                  session?.user,
+                  taskId,
+                  body
+                );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程发布队列草案操作失败")
         )
       );
     return true;
@@ -3374,6 +3725,20 @@ function courseProductActionFailure(
     };
   }
 
+  if (err instanceof CourseProductPublishQueueBatchTaskPreflightError) {
+    return {
+      status: 409,
+      body: errorPayload(
+        "CONFLICT",
+        "审批前预检发现发布队列漂移，请重新生成发布草案",
+        {
+          task: err.task,
+          preflight: err.preflight,
+        }
+      ),
+    };
+  }
+
   if (err instanceof Error && err.message === "COURSE_PRODUCT_NOT_FOUND") {
     return {
       status: 404,
@@ -3538,6 +3903,67 @@ function courseProductActionFailure(
     return {
       status: 409,
       body: errorPayload("CONFLICT", "当前筛选已存在发布队列草案"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_FOUND"
+  ) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "课程发布队列草案不存在"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_SUBMITTABLE"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "当前发布草案不可提交审批"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_CANCELABLE"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "当前发布草案不可取消"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_CANCEL_FORBIDDEN"
+  ) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "仅草案创建人或管理员可以取消"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_REVIEWABLE"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "当前发布草案不可审批"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message ===
+      "COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_REVIEW_SELF_FORBIDDEN"
+  ) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "不能审批自己创建的发布队列草案"),
     };
   }
 

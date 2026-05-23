@@ -33,8 +33,11 @@ import {
   getCourseProductContentPayload,
   createCourseProductPublishQueueBatchTaskPayload,
   getCourseProductPublishQueueBatchTasksPayload,
+  getCourseProductPublishQueueBatchTaskPreflightPayload,
   getCourseProductPublishQueuePayload,
+  reviewCourseProductPublishQueueBatchTaskPayload,
   runCourseProductAssetBackfillPayload,
+  submitCourseProductPublishQueueBatchTaskPayload,
   updateCourseProductAssetCompliancePayload,
   updateCourseProductBasicInfoPayload,
   updateCourseProductContentPayload,
@@ -320,6 +323,97 @@ describe("catalog admin api payloads", () => {
           executable: false,
           candidateCount: beforeProducts.length,
           createdBy: "catalog_operator_1",
+        },
+      },
+    });
+    expect(created.body.ok).toBe(true);
+    if (!created.body.ok) throw new Error("publish queue task not created");
+    const taskId = created.body.data.task.id;
+
+    const submitted = await submitCourseProductPublishQueueBatchTaskPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      taskId,
+      {
+        reason: "提交给管理员进行发布队列审批",
+      },
+      {
+        taskStore,
+        now: "2026-05-23T10:03:00.000Z",
+      }
+    );
+    expect(submitted.status).toBe(200);
+    expect(submitted.body).toMatchObject({
+      ok: true,
+      data: {
+        task: {
+          status: "pending_approval",
+          submittedBy: "catalog_operator_1",
+        },
+      },
+    });
+
+    const preflight =
+      await getCourseProductPublishQueueBatchTaskPreflightPayload(
+        { id: "admin_1", roles: ["admin"] },
+        taskId,
+        {
+          productStore,
+          contentStore,
+          taskStore,
+          now: "2026-05-23T10:04:00.000Z",
+        }
+      );
+    expect(preflight.status).toBe(200);
+    expect(preflight.body).toMatchObject({
+      ok: true,
+      data: {
+        preflight: {
+          requiresRecreate: false,
+          currentCandidateCount: beforeProducts.length,
+        },
+      },
+    });
+
+    const selfReview = await reviewCourseProductPublishQueueBatchTaskPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      taskId,
+      {
+        action: "approve",
+        reason: "自己不能审批自己创建的草案",
+      },
+      {
+        productStore,
+        contentStore,
+        taskStore,
+        now: "2026-05-23T10:05:00.000Z",
+      }
+    );
+    expect(selfReview.status).toBe(403);
+
+    const approved = await reviewCourseProductPublishQueueBatchTaskPayload(
+      { id: "admin_1", roles: ["admin"] },
+      taskId,
+      {
+        action: "approve",
+        reason: "候选快照与发布边界一致",
+      },
+      {
+        productStore,
+        contentStore,
+        taskStore,
+        now: "2026-05-23T10:06:00.000Z",
+      }
+    );
+    expect(approved.status).toBe(200);
+    expect(approved.body).toMatchObject({
+      ok: true,
+      data: {
+        task: {
+          status: "approved",
+          reviewedBy: "admin_1",
+          approvalPreflight: {
+            requiresRecreate: false,
+          },
         },
       },
     });

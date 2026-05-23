@@ -41,8 +41,13 @@ import {
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
   CourseProductPublishQueueBatchTaskCreateRequestSchema,
+  CourseProductPublishQueueBatchTaskApprovalPreflightSchema,
+  CourseProductPublishQueueBatchTaskCancelRequestSchema,
   CourseProductPublishQueueBatchTaskListResultSchema,
   CourseProductPublishQueueBatchTaskMutationResultSchema,
+  CourseProductPublishQueueBatchTaskPreflightResultSchema,
+  CourseProductPublishQueueBatchTaskReviewRequestSchema,
+  CourseProductPublishQueueBatchTaskSubmitRequestSchema,
   CourseProductPublishQueueResultSchema,
   CourseProductReviewActionRequestSchema,
   evaluateCourseProductContentQuality,
@@ -180,6 +185,39 @@ describe("course product domain contract", () => {
         reason: "月度上架前队列复核",
       }
     );
+    const submitRequest =
+      CourseProductPublishQueueBatchTaskSubmitRequestSchema.parse({
+        reason: "提交审批前已完成候选复核",
+      });
+    const reviewRequest =
+      CourseProductPublishQueueBatchTaskReviewRequestSchema.parse({
+        action: "approve",
+        reason: "候选快照与发布边界一致",
+      });
+    const cancelRequest =
+      CourseProductPublishQueueBatchTaskCancelRequestSchema.parse({
+        reason: "本轮暂缓发布队列处理",
+      });
+    const approvalPreflight =
+      CourseProductPublishQueueBatchTaskApprovalPreflightSchema.parse({
+        taskId: "publish_queue_batch_task_1",
+        generatedAt: "2026-05-23T10:02:00.000Z",
+        originalCandidateCount: 1,
+        currentCandidateCount: 1,
+        candidateDeltaCount: 0,
+        disappearedProductIds: [],
+        newCandidateProductIds: [],
+        statusChangedProductIds: [],
+        qualityChangedProductIds: [],
+        riskChangedProductIds: [],
+        currentRiskSummary: {
+          low: 1,
+          medium: 0,
+          high: 0,
+        },
+        requiresRecreate: false,
+        notes: ["审批前预检通过"],
+      });
     const mutation =
       CourseProductPublishQueueBatchTaskMutationResultSchema.parse({
         task: {
@@ -203,6 +241,14 @@ describe("course product domain contract", () => {
           safetyNotes: ["草案不会修改课程商品"],
           createdAt: "2026-05-23T10:01:00.000Z",
           updatedAt: "2026-05-23T10:01:00.000Z",
+          submittedBy: "catalog_operator_1",
+          submittedAt: "2026-05-23T10:02:00.000Z",
+          submitReason: submitRequest.reason,
+          reviewedBy: "admin_1",
+          reviewedAt: "2026-05-23T10:03:00.000Z",
+          reviewAction: reviewRequest.action,
+          reviewReason: reviewRequest.reason,
+          approvalPreflight,
         },
         tasks: {
           generatedAt: "2026-05-23T10:01:00.000Z",
@@ -227,10 +273,17 @@ describe("course product domain contract", () => {
 
     expect(queue.previewOnly).toBe(true);
     expect(request.query.pageSize).toBe(10);
+    expect(cancelRequest.reason).toContain("暂缓");
     expect(
       CourseProductPublishQueueBatchTaskListResultSchema.parse(mutation.tasks)
         .summary.draftCount
     ).toBe(1);
+    expect(
+      CourseProductPublishQueueBatchTaskPreflightResultSchema.parse({
+        task: mutation.task,
+        preflight: approvalPreflight,
+      }).preflight.requiresRecreate
+    ).toBe(false);
   });
 
   it("rejects invalid price update requests", () => {

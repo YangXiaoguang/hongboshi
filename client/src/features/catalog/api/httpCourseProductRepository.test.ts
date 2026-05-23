@@ -22,6 +22,7 @@ import {
   parseCourseProductMutationResponse,
   parseCourseProductPublishQueueBatchTaskListResponse,
   parseCourseProductPublishQueueBatchTaskMutationResponse,
+  parseCourseProductPublishQueueBatchTaskPreflightResponse,
   parseCourseProductPublishQueueResponse,
 } from "./httpCourseProductRepository";
 
@@ -249,6 +250,52 @@ function publishQueueBatchTaskListData() {
       pageSize: 5,
       total: 1,
       totalPages: 1,
+    },
+  };
+}
+
+function publishQueueBatchTaskPreflightData() {
+  return {
+    task: {
+      ...publishQueueBatchTaskData(),
+      approvalPreflight: {
+        taskId: "publish_queue_batch_task_1",
+        generatedAt: "2026-05-23T10:02:00.000Z",
+        originalCandidateCount: 1,
+        currentCandidateCount: 1,
+        candidateDeltaCount: 0,
+        disappearedProductIds: [],
+        newCandidateProductIds: [],
+        statusChangedProductIds: [],
+        qualityChangedProductIds: [],
+        riskChangedProductIds: [],
+        currentRiskSummary: {
+          low: 0,
+          medium: 1,
+          high: 0,
+        },
+        requiresRecreate: false,
+        notes: ["审批前预检通过"],
+      },
+    },
+    preflight: {
+      taskId: "publish_queue_batch_task_1",
+      generatedAt: "2026-05-23T10:02:00.000Z",
+      originalCandidateCount: 1,
+      currentCandidateCount: 1,
+      candidateDeltaCount: 0,
+      disappearedProductIds: [],
+      newCandidateProductIds: [],
+      statusChangedProductIds: [],
+      qualityChangedProductIds: [],
+      riskChangedProductIds: [],
+      currentRiskSummary: {
+        low: 0,
+        medium: 1,
+        high: 0,
+      },
+      requiresRecreate: false,
+      notes: ["审批前预检通过"],
     },
   };
 }
@@ -1027,10 +1074,15 @@ describe("http course product repository parsing", () => {
         tasks: publishQueueBatchTaskListData(),
       },
     });
+    const preflight = parseCourseProductPublishQueueBatchTaskPreflightResponse({
+      ok: true,
+      data: publishQueueBatchTaskPreflightData(),
+    });
 
     expect(queue.summary.candidateCount).toBe(1);
     expect(list.summary.draftCount).toBe(1);
     expect(mutation.task.status).toBe("draft");
+    expect(preflight.preflight.requiresRecreate).toBe(false);
   });
 
   it("parses course product asset governance queue observations", () => {
@@ -1865,6 +1917,123 @@ describe("http course product repository parsing", () => {
       expect.objectContaining({
         method: "POST",
         body: expect.stringContaining("quality_recheck"),
+      })
+    );
+  });
+
+  it("operates course product publish queue draft approvals", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            data: publishQueueBatchTaskPreflightData(),
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            data: {
+              task: {
+                ...publishQueueBatchTaskData(),
+                status: "pending_approval",
+              },
+              tasks: publishQueueBatchTaskListData(),
+            },
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            data: {
+              task: {
+                ...publishQueueBatchTaskData(),
+                status: "canceled",
+              },
+              tasks: publishQueueBatchTaskListData(),
+            },
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            data: {
+              task: {
+                ...publishQueueBatchTaskData(),
+                status: "approved",
+                approvalPreflight:
+                  publishQueueBatchTaskPreflightData().preflight,
+              },
+              tasks: publishQueueBatchTaskListData(),
+            },
+          })
+        )
+      );
+
+    const preflight =
+      await httpCourseProductRepository.loadCourseProductPublishQueueBatchTaskPreflight(
+        "publish_queue_batch_task_1"
+      );
+    const submitted =
+      await httpCourseProductRepository.submitCourseProductPublishQueueBatchTask(
+        "publish_queue_batch_task_1",
+        { reason: "提交给管理员进行发布队列审批" }
+      );
+    const canceled =
+      await httpCourseProductRepository.cancelCourseProductPublishQueueBatchTask(
+        "publish_queue_batch_task_1",
+        { reason: "本轮暂缓发布队列处理" }
+      );
+    const reviewed =
+      await httpCourseProductRepository.reviewCourseProductPublishQueueBatchTask(
+        "publish_queue_batch_task_1",
+        {
+          action: "approve",
+          reason: "候选快照与发布边界一致",
+          requireFreshPreflight: true,
+        }
+      );
+
+    expect(preflight.preflight.currentCandidateCount).toBe(1);
+    expect(submitted.task.status).toBe("pending_approval");
+    expect(canceled.task.status).toBe("canceled");
+    expect(reviewed.task.status).toBe("approved");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/catalog/admin/course-products/publish-queue/batch-tasks/publish_queue_batch_task_1/preflight",
+      expect.objectContaining({
+        credentials: "same-origin",
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/catalog/admin/course-products/publish-queue/batch-tasks/publish_queue_batch_task_1/submit",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining("提交给管理员"),
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/catalog/admin/course-products/publish-queue/batch-tasks/publish_queue_batch_task_1/cancel",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining("暂缓"),
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/catalog/admin/course-products/publish-queue/batch-tasks/publish_queue_batch_task_1/review",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining("approve"),
       })
     );
   });

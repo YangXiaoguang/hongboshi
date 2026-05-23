@@ -22,6 +22,7 @@ import {
   CourseProductMutationResultSchema,
   CourseProductPublishQueueBatchTaskListResultSchema,
   CourseProductPublishQueueBatchTaskMutationResultSchema,
+  CourseProductPublishQueueBatchTaskPreflightResultSchema,
   CourseProductPublishQueueResultSchema,
   type CourseProductContentMutationResult,
   type CourseProductContentQualityBatchResult,
@@ -63,9 +64,13 @@ import {
   type CourseProductListQuery,
   type CourseProductListResult,
   type CourseProductPublishQueueBatchTaskCreateRequest,
+  type CourseProductPublishQueueBatchTaskCancelRequest,
   type CourseProductPublishQueueBatchTaskListQuery,
   type CourseProductPublishQueueBatchTaskListResult,
   type CourseProductPublishQueueBatchTaskMutationResult,
+  type CourseProductPublishQueueBatchTaskPreflightResult,
+  type CourseProductPublishQueueBatchTaskReviewRequest,
+  type CourseProductPublishQueueBatchTaskSubmitRequest,
   type CourseProductPublishQueueResult,
   type CourseProductReviewActionRequest,
   type CourseProductStatusUpdateRequest,
@@ -91,6 +96,8 @@ const CourseProductPublishQueueBatchTaskListResponseSchema = ApiResponseSchema(
 );
 const CourseProductPublishQueueBatchTaskMutationResponseSchema =
   ApiResponseSchema(CourseProductPublishQueueBatchTaskMutationResultSchema);
+const CourseProductPublishQueueBatchTaskPreflightResponseSchema =
+  ApiResponseSchema(CourseProductPublishQueueBatchTaskPreflightResultSchema);
 const CourseProductContentMutationResponseSchema = ApiResponseSchema(
   CourseProductContentMutationResultSchema
 );
@@ -227,6 +234,15 @@ export function parseCourseProductPublishQueueBatchTaskMutationResponse(
 ): CourseProductPublishQueueBatchTaskMutationResult {
   const parsed =
     CourseProductPublishQueueBatchTaskMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCourseProductPublishQueueBatchTaskPreflightResponse(
+  payload: unknown
+): CourseProductPublishQueueBatchTaskPreflightResult {
+  const parsed =
+    CourseProductPublishQueueBatchTaskPreflightResponseSchema.parse(payload);
   if (!parsed.ok) throw new Error(parsed.error.message);
   return parsed.data;
 }
@@ -420,6 +436,17 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     !publishQueueBatchTaskMutationParsed.data.ok
   ) {
     return publishQueueBatchTaskMutationParsed.data.error.message;
+  }
+
+  const publishQueueBatchTaskPreflightParsed =
+    CourseProductPublishQueueBatchTaskPreflightResponseSchema.safeParse(
+      payload
+    );
+  if (
+    publishQueueBatchTaskPreflightParsed.success &&
+    !publishQueueBatchTaskPreflightParsed.data.ok
+  ) {
+    return publishQueueBatchTaskPreflightParsed.data.error.message;
   }
 
   const contentMutationParsed =
@@ -784,6 +811,67 @@ export const httpCourseProductRepository = {
       throw new Error(extractErrorMessage(payload, "课程发布队列草案创建失败"));
     }
     return parseCourseProductPublishQueueBatchTaskMutationResponse(payload);
+  },
+
+  async loadCourseProductPublishQueueBatchTaskPreflight(
+    taskId: string
+  ): Promise<CourseProductPublishQueueBatchTaskPreflightResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/publish-queue/batch-tasks/${encodeURIComponent(taskId)}/preflight`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      const apiError = extractApiError(payload, "课程发布队列草案预检失败");
+      throw new CourseProductRepositoryError(apiError.message, {
+        code: apiError.code,
+        details: apiError.details,
+        status: response.status,
+      });
+    }
+    return parseCourseProductPublishQueueBatchTaskPreflightResponse(payload);
+  },
+
+  async submitCourseProductPublishQueueBatchTask(
+    taskId: string,
+    request: CourseProductPublishQueueBatchTaskSubmitRequest
+  ): Promise<CourseProductPublishQueueBatchTaskMutationResult> {
+    return requestCourseProductPublishQueueBatchTaskMutation(
+      taskId,
+      "submit",
+      request,
+      "课程发布队列草案提交失败"
+    );
+  },
+
+  async cancelCourseProductPublishQueueBatchTask(
+    taskId: string,
+    request: CourseProductPublishQueueBatchTaskCancelRequest
+  ): Promise<CourseProductPublishQueueBatchTaskMutationResult> {
+    return requestCourseProductPublishQueueBatchTaskMutation(
+      taskId,
+      "cancel",
+      request,
+      "课程发布队列草案取消失败"
+    );
+  },
+
+  async reviewCourseProductPublishQueueBatchTask(
+    taskId: string,
+    request: CourseProductPublishQueueBatchTaskReviewRequest
+  ): Promise<CourseProductPublishQueueBatchTaskMutationResult> {
+    return requestCourseProductPublishQueueBatchTaskMutation(
+      taskId,
+      "review",
+      request,
+      "课程发布队列草案审批失败"
+    );
   },
 
   async updateCourseProductContent(
@@ -1324,4 +1412,35 @@ async function requestCourseProductMutation(
     });
   }
   return parseCourseProductMutationResponse(payload);
+}
+
+async function requestCourseProductPublishQueueBatchTaskMutation(
+  taskId: string,
+  action: "submit" | "cancel" | "review",
+  body: unknown,
+  fallback: string
+) {
+  const response = await fetch(
+    `${API_BASE}/course-products/publish-queue/batch-tasks/${encodeURIComponent(taskId)}/${action}`,
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      credentials: "same-origin",
+      body: JSON.stringify(body),
+    }
+  );
+  const payload = await readJson(response);
+  if (!response.ok) {
+    const apiError = extractApiError(payload, fallback);
+    throw new CourseProductRepositoryError(apiError.message, {
+      code: apiError.code,
+      details: apiError.details,
+      status: response.status,
+    });
+  }
+  return parseCourseProductPublishQueueBatchTaskMutationResponse(payload);
 }

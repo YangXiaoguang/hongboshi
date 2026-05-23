@@ -22,6 +22,8 @@ import {
   type CourseProductPriceUpdateRequest,
   type CourseProductPublishQueueAction,
   type CourseProductPublishQueueBatchTaskListResult,
+  type CourseProductPublishQueueBatchTaskPreflightResult,
+  type CourseProductPublishQueueBatchTaskReviewAction,
   type CourseProductPublishQueueResult,
   type CourseProductReviewAction,
   type CourseProductReviewStatus,
@@ -138,6 +140,10 @@ export default function CourseProducts() {
   const [mutatingProductId, setMutatingProductId] = useState<string>();
   const [isCreatingPublishQueueTask, setIsCreatingPublishQueueTask] =
     useState(false);
+  const [mutatingPublishQueueTaskId, setMutatingPublishQueueTaskId] =
+    useState<string>();
+  const [publishQueueTaskPreflight, setPublishQueueTaskPreflight] =
+    useState<CourseProductPublishQueueBatchTaskPreflightResult>();
   const [statusAction, setStatusAction] = useState<StatusActionState>();
   const [statusReason, setStatusReason] = useState("");
   const [reviewAction, setReviewAction] = useState<ReviewActionState>();
@@ -232,6 +238,7 @@ export default function CourseProducts() {
             }
           );
         setPublishQueueBatchTasks(result.tasks);
+        setPublishQueueTaskPreflight(undefined);
         setActionMessage(
           `已生成发布队列草案，候选 ${result.task.candidateCount} 个`
         );
@@ -244,6 +251,172 @@ export default function CourseProducts() {
       }
     },
     [catalogPermissions.canReview, query]
+  );
+
+  const loadPublishQueueTaskPreflight = useCallback(
+    async (taskId: string) => {
+      if (!catalogPermissions.canReview) {
+        setActionError("当前账号暂无课程发布队列预检权限");
+        return;
+      }
+
+      setMutatingPublishQueueTaskId(taskId);
+      setActionError(undefined);
+      setActionMessage(undefined);
+      try {
+        const result =
+          await httpCourseProductRepository.loadCourseProductPublishQueueBatchTaskPreflight(
+            taskId
+          );
+        setPublishQueueTaskPreflight(result);
+        setPublishQueueBatchTasks(previous =>
+          previous
+            ? {
+                ...previous,
+                items: previous.items.map(item =>
+                  item.id === result.task.id ? result.task : item
+                ),
+              }
+            : previous
+        );
+        setActionMessage(
+          result.preflight.requiresRecreate
+            ? "预检发现发布队列漂移，请重新生成草案"
+            : "发布队列草案预检通过"
+        );
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程发布队列草案预检失败"
+        );
+      } finally {
+        setMutatingPublishQueueTaskId(undefined);
+      }
+    },
+    [catalogPermissions.canReview]
+  );
+
+  const submitPublishQueueTask = useCallback(
+    async (taskId: string, reason: string) => {
+      if (!catalogPermissions.canReview) {
+        setActionError("当前账号暂无课程发布队列草案提交权限");
+        return;
+      }
+      const normalizedReason = reason.trim();
+      if (normalizedReason.length < 4) {
+        setActionError("请填写至少 4 个字的审批原因");
+        return;
+      }
+
+      setMutatingPublishQueueTaskId(taskId);
+      setActionError(undefined);
+      setActionMessage(undefined);
+      try {
+        const result =
+          await httpCourseProductRepository.submitCourseProductPublishQueueBatchTask(
+            taskId,
+            { reason: normalizedReason }
+          );
+        setPublishQueueBatchTasks(result.tasks);
+        setPublishQueueTaskPreflight(undefined);
+        setActionMessage("发布队列草案已提交审批");
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程发布队列草案提交失败"
+        );
+      } finally {
+        setMutatingPublishQueueTaskId(undefined);
+      }
+    },
+    [catalogPermissions.canReview]
+  );
+
+  const cancelPublishQueueTask = useCallback(
+    async (taskId: string, reason: string) => {
+      if (!catalogPermissions.canReview) {
+        setActionError("当前账号暂无课程发布队列草案取消权限");
+        return;
+      }
+      const normalizedReason = reason.trim();
+      if (normalizedReason.length < 4) {
+        setActionError("请填写至少 4 个字的取消原因");
+        return;
+      }
+
+      setMutatingPublishQueueTaskId(taskId);
+      setActionError(undefined);
+      setActionMessage(undefined);
+      try {
+        const result =
+          await httpCourseProductRepository.cancelCourseProductPublishQueueBatchTask(
+            taskId,
+            { reason: normalizedReason }
+          );
+        setPublishQueueBatchTasks(result.tasks);
+        setPublishQueueTaskPreflight(previous =>
+          previous?.task.id === result.task.id ? undefined : previous
+        );
+        setActionMessage("发布队列草案已取消");
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程发布队列草案取消失败"
+        );
+      } finally {
+        setMutatingPublishQueueTaskId(undefined);
+      }
+    },
+    [catalogPermissions.canReview]
+  );
+
+  const reviewPublishQueueTask = useCallback(
+    async (
+      taskId: string,
+      action: CourseProductPublishQueueBatchTaskReviewAction,
+      reason: string
+    ) => {
+      if (!catalogPermissions.canReview) {
+        setActionError("当前账号暂无课程发布队列草案审批权限");
+        return;
+      }
+      const normalizedReason = reason.trim();
+      if (normalizedReason.length < 4) {
+        setActionError("请填写至少 4 个字的审批原因");
+        return;
+      }
+
+      setMutatingPublishQueueTaskId(taskId);
+      setActionError(undefined);
+      setActionMessage(undefined);
+      try {
+        const result =
+          await httpCourseProductRepository.reviewCourseProductPublishQueueBatchTask(
+            taskId,
+            {
+              action,
+              reason: normalizedReason,
+              requireFreshPreflight: true,
+            }
+          );
+        setPublishQueueBatchTasks(result.tasks);
+        setPublishQueueTaskPreflight(
+          result.task.approvalPreflight
+            ? {
+                task: result.task,
+                preflight: result.task.approvalPreflight,
+              }
+            : undefined
+        );
+        setActionMessage(
+          action === "approve" ? "发布队列草案已审批通过" : "发布队列草案已驳回"
+        );
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程发布队列草案审批失败"
+        );
+      } finally {
+        setMutatingPublishQueueTaskId(undefined);
+      }
+    },
+    [catalogPermissions.canReview]
   );
 
   const openPriceEditor = useCallback(
@@ -496,8 +669,14 @@ export default function CourseProducts() {
         batchTasks={publishQueueBatchTasks}
         isLoading={isLoading}
         isCreatingTask={isCreatingPublishQueueTask}
+        mutatingTaskId={mutatingPublishQueueTaskId}
+        preflight={publishQueueTaskPreflight}
         onOpenWorkspace={openProductWorkspaceByCourseId}
         onCreateTask={createPublishQueueTask}
+        onLoadTaskPreflight={loadPublishQueueTaskPreflight}
+        onSubmitTask={submitPublishQueueTask}
+        onCancelTask={cancelPublishQueueTask}
+        onReviewTask={reviewPublishQueueTask}
       />
 
       <CourseProductAuditTrail events={auditEvents} />

@@ -1,15 +1,22 @@
 import { createHash } from "crypto";
 import {
   CourseProductListQuerySchema,
+  CourseProductPublishQueueBatchTaskApprovalPreflightSchema,
+  CourseProductPublishQueueBatchTaskCancelRequestSchema,
   CourseProductPublishQueueBatchTaskCreateRequestSchema,
   CourseProductPublishQueueBatchTaskListQuerySchema,
   CourseProductPublishQueueBatchTaskListResultSchema,
   CourseProductPublishQueueBatchTaskMutationResultSchema,
+  CourseProductPublishQueueBatchTaskPreflightResultSchema,
+  CourseProductPublishQueueBatchTaskReviewRequestSchema,
+  CourseProductPublishQueueBatchTaskReviewSummarySchema,
   CourseProductPublishQueueBatchTaskSchema,
+  CourseProductPublishQueueBatchTaskSubmitRequestSchema,
   CourseProductPublishQueueResultSchema,
-  type CourseProductContentQualityResult,
   type CourseProductListItem,
+  type CourseProductContentQualityResult,
   type CourseProductListQuery,
+  type CourseProductPublishQueueBatchTaskApprovalPreflight,
   type CourseProductPublishQueueAction,
   type CourseProductPublishQueueBatchTask,
   type CourseProductPublishQueueBatchTaskCreateRequest,
@@ -90,6 +97,17 @@ const groupDefinitions: Record<
   },
 };
 
+export class CourseProductPublishQueueBatchTaskPreflightError extends Error {
+  constructor(
+    public readonly task: CourseProductPublishQueueBatchTask,
+    public readonly preflight: CourseProductPublishQueueBatchTaskApprovalPreflight
+  ) {
+    super(
+      "COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_PREFLIGHT_RECREATE_REQUIRED"
+    );
+  }
+}
+
 export async function getCourseProductPublishQueue({
   query,
   productStore = getCourseProductStore(),
@@ -120,6 +138,41 @@ export async function getCourseProductPublishQueue({
     qualityByProductId,
     query: parsedQuery,
     now,
+  });
+}
+
+export async function getCourseProductPublishQueueBatchTaskPreflight({
+  taskId,
+  productStore = getCourseProductStore(),
+  contentStore = getCourseProductContentStore(),
+  taskStore = getCourseProductPublishQueueBatchTaskStore(),
+  now = new Date().toISOString(),
+}: {
+  taskId: string;
+  productStore?: CourseProductStore;
+  contentStore?: CourseProductContentStore;
+  taskStore?: CourseProductPublishQueueBatchTaskStore;
+  now?: string;
+}) {
+  const task = await taskStore.getTask(taskId);
+  if (!task) {
+    throw new Error("COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_FOUND");
+  }
+  const preflight = await buildApprovalPreflight({
+    task,
+    productStore,
+    contentStore,
+    now,
+  });
+  return CourseProductPublishQueueBatchTaskPreflightResultSchema.parse({
+    task: await taskStore.saveTask(
+      CourseProductPublishQueueBatchTaskSchema.parse({
+        ...task,
+        approvalPreflight: preflight,
+        updatedAt: now,
+      })
+    ),
+    preflight,
   });
 }
 
@@ -169,6 +222,205 @@ export async function listCourseProductPublishQueueBatchTasks({
       total: filteredTasks.length,
       totalPages,
     },
+  });
+}
+
+export async function submitCourseProductPublishQueueBatchTask({
+  taskId,
+  request,
+  actorId,
+  actorRoles = [],
+  taskStore = getCourseProductPublishQueueBatchTaskStore(),
+  now = new Date().toISOString(),
+}: {
+  taskId: string;
+  request: unknown;
+  actorId: string;
+  actorRoles?: string[];
+  taskStore?: CourseProductPublishQueueBatchTaskStore;
+  now?: string;
+}) {
+  const parsed =
+    CourseProductPublishQueueBatchTaskSubmitRequestSchema.parse(request);
+  const task = await taskStore.getTask(taskId);
+  if (!task) {
+    throw new Error("COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_FOUND");
+  }
+  if (task.status !== "draft") {
+    throw new Error("COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_SUBMITTABLE");
+  }
+
+  const submitted = await taskStore.saveTask(
+    CourseProductPublishQueueBatchTaskSchema.parse({
+      ...task,
+      status: "pending_approval",
+      submittedBy: actorId,
+      submittedByRoles: actorRoles,
+      submittedAt: now,
+      submitReason: parsed.reason,
+      submitNote: parsed.note,
+      updatedAt: now,
+    })
+  );
+
+  return batchTaskMutationResult({
+    task: submitted,
+    taskStore,
+    now,
+  });
+}
+
+export async function cancelCourseProductPublishQueueBatchTask({
+  taskId,
+  request,
+  actorId,
+  actorRoles = [],
+  taskStore = getCourseProductPublishQueueBatchTaskStore(),
+  now = new Date().toISOString(),
+}: {
+  taskId: string;
+  request: unknown;
+  actorId: string;
+  actorRoles?: string[];
+  taskStore?: CourseProductPublishQueueBatchTaskStore;
+  now?: string;
+}) {
+  const parsed =
+    CourseProductPublishQueueBatchTaskCancelRequestSchema.parse(request);
+  const task = await taskStore.getTask(taskId);
+  if (!task) {
+    throw new Error("COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_FOUND");
+  }
+  if (task.status !== "draft" && task.status !== "pending_approval") {
+    throw new Error("COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_CANCELABLE");
+  }
+  if (task.createdBy !== actorId && !actorRoles.includes("admin")) {
+    throw new Error("COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_CANCEL_FORBIDDEN");
+  }
+
+  const canceled = await taskStore.saveTask(
+    CourseProductPublishQueueBatchTaskSchema.parse({
+      ...task,
+      status: "canceled",
+      canceledBy: actorId,
+      canceledAt: now,
+      cancelReason: parsed.reason,
+      updatedAt: now,
+    })
+  );
+
+  return batchTaskMutationResult({
+    task: canceled,
+    taskStore,
+    now,
+  });
+}
+
+export async function reviewCourseProductPublishQueueBatchTask({
+  taskId,
+  request,
+  actorId,
+  actorRoles = [],
+  productStore = getCourseProductStore(),
+  contentStore = getCourseProductContentStore(),
+  taskStore = getCourseProductPublishQueueBatchTaskStore(),
+  now = new Date().toISOString(),
+}: {
+  taskId: string;
+  request: unknown;
+  actorId: string;
+  actorRoles?: string[];
+  productStore?: CourseProductStore;
+  contentStore?: CourseProductContentStore;
+  taskStore?: CourseProductPublishQueueBatchTaskStore;
+  now?: string;
+}) {
+  const parsed =
+    CourseProductPublishQueueBatchTaskReviewRequestSchema.parse(request);
+  const task = await taskStore.getTask(taskId);
+  if (!task) {
+    throw new Error("COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_FOUND");
+  }
+  if (task.status !== "pending_approval") {
+    throw new Error("COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_NOT_REVIEWABLE");
+  }
+  if (task.createdBy === actorId && !actorRoles.includes("admin")) {
+    throw new Error(
+      "COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_REVIEW_SELF_FORBIDDEN"
+    );
+  }
+
+  const beforeSummary = batchTaskReviewSummary(task);
+  if (parsed.action === "reject") {
+    const rejected = await taskStore.saveTask(
+      CourseProductPublishQueueBatchTaskSchema.parse({
+        ...task,
+        status: "rejected",
+        reviewedBy: actorId,
+        reviewedByRoles: actorRoles,
+        reviewedAt: now,
+        reviewAction: parsed.action,
+        reviewReason: parsed.reason,
+        reviewBeforeSummary: beforeSummary,
+        reviewAfterSummary: batchTaskReviewSummary({
+          ...task,
+          status: "rejected",
+        }),
+        updatedAt: now,
+      })
+    );
+    return batchTaskMutationResult({
+      task: rejected,
+      taskStore,
+      now,
+    });
+  }
+
+  const preflight = await buildApprovalPreflight({
+    task,
+    productStore,
+    contentStore,
+    now,
+  });
+  if (preflight.requiresRecreate && parsed.requireFreshPreflight) {
+    const refreshed = await taskStore.saveTask(
+      CourseProductPublishQueueBatchTaskSchema.parse({
+        ...task,
+        approvalPreflight: preflight,
+        updatedAt: now,
+      })
+    );
+    throw new CourseProductPublishQueueBatchTaskPreflightError(
+      refreshed,
+      preflight
+    );
+  }
+
+  const approved = await taskStore.saveTask(
+    CourseProductPublishQueueBatchTaskSchema.parse({
+      ...task,
+      status: "approved",
+      reviewedBy: actorId,
+      reviewedByRoles: actorRoles,
+      reviewedAt: now,
+      reviewAction: parsed.action,
+      reviewReason: parsed.reason,
+      reviewBeforeSummary: beforeSummary,
+      approvalPreflight: preflight,
+      reviewAfterSummary: batchTaskReviewSummary({
+        ...task,
+        status: "approved",
+        candidateCount: preflight.currentCandidateCount,
+        riskSummary: preflight.currentRiskSummary,
+      }),
+      updatedAt: now,
+    })
+  );
+
+  return batchTaskMutationResult({
+    task: approved,
+    taskStore,
+    now,
   });
 }
 
@@ -245,6 +497,22 @@ export async function createCourseProductPublishQueueBatchTask({
     })
   );
 
+  return batchTaskMutationResult({
+    task,
+    taskStore,
+    now,
+  });
+}
+
+async function batchTaskMutationResult({
+  task,
+  taskStore,
+  now,
+}: {
+  task: CourseProductPublishQueueBatchTask;
+  taskStore: CourseProductPublishQueueBatchTaskStore;
+  now: string;
+}) {
   return CourseProductPublishQueueBatchTaskMutationResultSchema.parse({
     task,
     tasks: await listCourseProductPublishQueueBatchTasks({
@@ -253,6 +521,209 @@ export async function createCourseProductPublishQueueBatchTask({
       now,
     }),
   });
+}
+
+function batchTaskReviewSummary(task: CourseProductPublishQueueBatchTask) {
+  return CourseProductPublishQueueBatchTaskReviewSummarySchema.parse({
+    status: task.status,
+    candidateCount: task.candidateCount,
+    blockerCount: task.blockerCount,
+    riskSummary: task.riskSummary,
+  });
+}
+
+async function buildApprovalPreflight({
+  task,
+  productStore,
+  contentStore,
+  now,
+}: {
+  task: CourseProductPublishQueueBatchTask;
+  productStore: CourseProductStore;
+  contentStore: CourseProductContentStore;
+  now: string;
+}) {
+  const preview = await getCourseProductPublishQueue({
+    query: task.query,
+    productStore,
+    contentStore,
+    now,
+  });
+  const currentActionCandidates = candidatesForAction(preview, task.action);
+  const originalProductIds = task.candidateSnapshot.map(
+    candidate => candidate.productId
+  );
+  const originalProductIdSet = new Set(originalProductIds);
+  const currentActionProductIdSet = new Set(
+    currentActionCandidates.map(candidate => candidate.productId)
+  );
+  const currentCandidateByProductId = new Map(
+    preview.candidates.map(candidate => [candidate.productId, candidate])
+  );
+  const disappearedProductIds = originalProductIds.filter(
+    productId => !currentActionProductIdSet.has(productId)
+  );
+  const newCandidateProductIds = currentActionCandidates
+    .map(candidate => candidate.productId)
+    .filter(productId => !originalProductIdSet.has(productId));
+  const commonOriginalCandidates = task.candidateSnapshot.filter(candidate =>
+    currentCandidateByProductId.has(candidate.productId)
+  );
+  const statusChanges = commonOriginalCandidates
+    .map(candidate => {
+      const current = currentCandidateByProductId.get(candidate.productId);
+      if (!current) return undefined;
+      if (
+        candidate.status === current.status &&
+        candidate.reviewStatus === current.reviewStatus
+      ) {
+        return undefined;
+      }
+      return {
+        productId: candidate.productId,
+        title: candidate.title,
+        beforeStatus: candidate.status,
+        beforeReviewStatus: candidate.reviewStatus,
+        currentStatus: current.status,
+        currentReviewStatus: current.reviewStatus,
+      };
+    })
+    .filter(isDefined);
+  const qualityChanges = commonOriginalCandidates
+    .map(candidate => {
+      const current = currentCandidateByProductId.get(candidate.productId);
+      if (!current) return undefined;
+      if (
+        candidate.contentReady === current.contentReady &&
+        candidate.contentBlockingCount === current.contentBlockingCount &&
+        candidate.contentWarningCount === current.contentWarningCount
+      ) {
+        return undefined;
+      }
+      return {
+        productId: candidate.productId,
+        title: candidate.title,
+        beforeContentReady: candidate.contentReady,
+        currentContentReady: current.contentReady,
+        beforeBlockingCount: candidate.contentBlockingCount,
+        currentBlockingCount: current.contentBlockingCount,
+        beforeWarningCount: candidate.contentWarningCount,
+        currentWarningCount: current.contentWarningCount,
+      };
+    })
+    .filter(isDefined);
+  const riskChanges = commonOriginalCandidates
+    .map(candidate => {
+      const current = currentCandidateByProductId.get(candidate.productId);
+      if (!current) return undefined;
+      if (
+        candidate.queueGroup === current.queueGroup &&
+        candidate.risk === current.risk
+      ) {
+        return undefined;
+      }
+      return {
+        productId: candidate.productId,
+        title: candidate.title,
+        beforeQueueGroup: candidate.queueGroup,
+        currentQueueGroup: current.queueGroup,
+        beforeRisk: candidate.risk,
+        currentRisk: current.risk,
+      };
+    })
+    .filter(isDefined);
+  const candidateDeltaCount =
+    currentActionCandidates.length - task.candidateCount;
+  const requiresRecreate =
+    task.candidateSnapshot.length === 0 ||
+    disappearedProductIds.length > 0 ||
+    newCandidateProductIds.length > 0 ||
+    statusChanges.length > 0 ||
+    qualityChanges.length > 0 ||
+    riskChanges.length > 0;
+
+  return CourseProductPublishQueueBatchTaskApprovalPreflightSchema.parse({
+    taskId: task.id,
+    generatedAt: now,
+    originalCandidateCount: task.candidateCount,
+    currentCandidateCount: currentActionCandidates.length,
+    candidateDeltaCount,
+    disappearedProductIds,
+    newCandidateProductIds,
+    statusChangedProductIds: statusChanges.map(change => change.productId),
+    qualityChangedProductIds: qualityChanges.map(change => change.productId),
+    riskChangedProductIds: riskChanges.map(change => change.productId),
+    statusChanges,
+    qualityChanges,
+    riskChanges,
+    currentRiskSummary: summarizeCandidateRisk(currentActionCandidates),
+    requiresRecreate,
+    notes: buildApprovalPreflightNotes({
+      hasOriginalSnapshot: task.candidateSnapshot.length > 0,
+      disappearedProductIds,
+      newCandidateProductIds,
+      statusChanges,
+      qualityChanges,
+      riskChanges,
+      candidateDeltaCount,
+      requiresRecreate,
+    }),
+  });
+}
+
+function buildApprovalPreflightNotes({
+  hasOriginalSnapshot,
+  disappearedProductIds,
+  newCandidateProductIds,
+  statusChanges,
+  qualityChanges,
+  riskChanges,
+  candidateDeltaCount,
+  requiresRecreate,
+}: {
+  hasOriginalSnapshot: boolean;
+  disappearedProductIds: string[];
+  newCandidateProductIds: string[];
+  statusChanges: Array<{ productId: string }>;
+  qualityChanges: Array<{ productId: string }>;
+  riskChanges: Array<{ productId: string }>;
+  candidateDeltaCount: number;
+  requiresRecreate: boolean;
+}) {
+  const notes: string[] = [];
+  if (!hasOriginalSnapshot) {
+    notes.push("该草案缺少候选快照，请重新生成发布队列草案。");
+  }
+  if (disappearedProductIds.length > 0) {
+    notes.push(
+      `${disappearedProductIds.length} 个原候选商品已不在当前动作队列中。`
+    );
+  }
+  if (newCandidateProductIds.length > 0) {
+    notes.push(`${newCandidateProductIds.length} 个商品成为新的动作候选。`);
+  }
+  if (statusChanges.length > 0) {
+    notes.push(`${statusChanges.length} 个候选商品的上架或审核状态已变化。`);
+  }
+  if (qualityChanges.length > 0) {
+    notes.push(`${qualityChanges.length} 个候选商品的内容质量结果已变化。`);
+  }
+  if (riskChanges.length > 0) {
+    notes.push(`${riskChanges.length} 个候选商品的队列分组或风险等级已变化。`);
+  }
+  if (candidateDeltaCount !== 0) {
+    notes.push(`当前候选数量相较草案快照变化 ${candidateDeltaCount}。`);
+  }
+  notes.push(
+    requiresRecreate
+      ? "审批前预检发现漂移，请重新生成发布队列草案后再审批。"
+      : "审批前预检通过，审批通过后仍不会自动提交审核、通过审核或上架商品。"
+  );
+  return notes;
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+  return value !== undefined;
 }
 
 function parseQueueQuery(query?: Partial<CourseProductListQuery>) {
