@@ -351,6 +351,51 @@ function upsertMediaAssetForm(
   );
 }
 
+function formatWorkspacePrice(form: PriceFormState) {
+  const price = parsePrice(form);
+  if (!price) return "价格待校验";
+  if (price.isFree || price.amount === 0) return "免费";
+  return `¥${price.amount.toFixed(Number.isInteger(price.amount) ? 0 : 2)}`;
+}
+
+function buildPublishPreflightWarnings({
+  product,
+  content,
+  form,
+  reason,
+}: {
+  product?: CourseProductListItem;
+  content?: CourseProductDetailContent;
+  form: ContentWorkbenchFormState;
+  reason: string;
+}) {
+  const warnings: string[] = [];
+  if (!product) warnings.push("课程商品尚未创建");
+  if (!content) warnings.push("课程详情内容尚未读取");
+  if (!optionalText(form.showcaseImageUrl)) warnings.push("缺少成交主视觉");
+  if (form.imageAssets.length < 1) warnings.push("缺少详情图或证明图");
+  if (splitLines(form.sellingPointsText).length < 2)
+    warnings.push("成交卖点少于 2 条");
+  if (form.richTextBlocks.length < 3) warnings.push("H5 内容块少于 3 个");
+  if (
+    form.richTextBlocks.some(block => block.type === "image" && !block.imageUrl)
+  ) {
+    warnings.push("存在未选择图片的 H5 图片块");
+  }
+  if (
+    form.imageAssets.some(
+      asset =>
+        asset.complianceStatus === "pending" ||
+        asset.complianceStatus === "rejected"
+    )
+  ) {
+    warnings.push("存在待审核或已驳回的商品图片素材");
+  }
+  if (reason.trim().length < 4) warnings.push("操作原因至少需要 4 个字");
+  if (product?.status === "archived") warnings.push("归档商品不能发布");
+  return warnings;
+}
+
 function createH5BlockForm(
   type: CourseProductRichTextBlockType
 ): H5BlockFormState {
@@ -551,9 +596,32 @@ export default function CourseProductEditorWorkspacePage() {
     () => assetLibrary.filter(isMerchandisingImageAsset),
     [assetLibrary]
   );
-  const storefrontReadyAssetCount = useMemo(
-    () => merchandisingImageAssets.filter(isStorefrontReadyAsset).length,
+  const storefrontReadyImageAssets = useMemo(
+    () => merchandisingImageAssets.filter(isStorefrontReadyAsset),
     [merchandisingImageAssets]
+  );
+  const storefrontReadyAssetCount = useMemo(
+    () => storefrontReadyImageAssets.length,
+    [storefrontReadyImageAssets]
+  );
+  const publishPreflightWarnings = useMemo(
+    () =>
+      buildPublishPreflightWarnings({
+        product,
+        content,
+        form: contentForm,
+        reason,
+      }),
+    [content, contentForm, product, reason]
+  );
+  const pendingMerchandisingAssetCount = useMemo(
+    () =>
+      contentForm.imageAssets.filter(
+        asset =>
+          asset.complianceStatus === "pending" ||
+          asset.complianceStatus === "rejected"
+      ).length,
+    [contentForm.imageAssets]
   );
 
   const loadProduct = useCallback(async () => {
@@ -807,6 +875,36 @@ export default function CourseProductEditorWorkspacePage() {
           ? "已选择成交主视觉，保存商品图片后生效"
           : "已加入详情图草稿，保存商品图片后生效"
       );
+    },
+    []
+  );
+
+  const applyAssetToH5ImageBlock = useCallback(
+    (blockIndex: number, asset: CourseProductAsset) => {
+      if (!isStorefrontReadyAsset(asset)) {
+        setActionError("H5 图片块只能选择已通过或免审素材");
+        return;
+      }
+      if (!asset.publicUrl) {
+        setActionError("该素材缺少可用于前台展示的读取地址");
+        return;
+      }
+
+      setContentForm(current => ({
+        ...current,
+        richTextBlocks: current.richTextBlocks.map((block, index) =>
+          index === blockIndex
+            ? {
+                ...block,
+                title: block.title || asset.title,
+                imageUrl: asset.publicUrl ?? block.imageUrl,
+                altText: asset.altText ?? asset.title,
+              }
+            : block
+        ),
+      }));
+      setActionError(undefined);
+      setActionMessage("已将素材填入 H5 图片块，保存 H5 详情后生效");
     },
     []
   );
@@ -1977,6 +2075,69 @@ export default function CourseProductEditorWorkspacePage() {
 
                           {block.type === "image" && (
                             <div className="mt-3 grid gap-3 md:grid-cols-2">
+                              <div className="md:col-span-2 rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <p className="text-xs font-semibold text-[#41524B]">
+                                      从素材库选择图片
+                                    </p>
+                                    <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                                      仅展示已通过或免审素材，避免 H5
+                                      图片绕过合规。
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={() => void refreshAssetLibrary()}
+                                    disabled={!product || isAssetLibraryLoading}
+                                    className="inline-flex h-8 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isAssetLibraryLoading ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <RefreshCw className="h-4 w-4" />
+                                    )}
+                                    刷新
+                                  </button>
+                                </div>
+                                {storefrontReadyImageAssets.length === 0 ? (
+                                  <div className="mt-3 rounded-lg border border-dashed border-[#D8CEC0] bg-white px-3 py-4 text-xs leading-5 text-[#6F7771]">
+                                    还没有已通过图片素材。可先在“商品图片”步骤上传并完成合规处理。
+                                  </div>
+                                ) : (
+                                  <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                                    {storefrontReadyImageAssets
+                                      .slice(0, 4)
+                                      .map(asset => (
+                                        <button
+                                          key={asset.id}
+                                          onClick={() =>
+                                            applyAssetToH5ImageBlock(
+                                              blockIndex,
+                                              asset
+                                            )
+                                          }
+                                          className="grid gap-2 rounded-lg border border-[#E1D7C8] bg-white p-2 text-left transition hover:border-[#9FB3A9] sm:grid-cols-[72px_minmax(0,1fr)]"
+                                        >
+                                          <span className="overflow-hidden rounded-md bg-[#F8F3EA]">
+                                            <img
+                                              src={asset.publicUrl}
+                                              alt={asset.altText || asset.title}
+                                              className="aspect-[4/3] w-full object-cover"
+                                            />
+                                          </span>
+                                          <span className="min-w-0">
+                                            <span className="line-clamp-1 text-xs font-semibold text-[#243B35]">
+                                              {asset.title}
+                                            </span>
+                                            <span className="mt-1 block text-[11px] text-[#8A8176]">
+                                              点击使用此图
+                                            </span>
+                                          </span>
+                                        </button>
+                                      ))}
+                                  </div>
+                                )}
+                              </div>
                               <input
                                 value={block.imageUrl}
                                 onChange={event =>
@@ -2232,6 +2393,260 @@ export default function CourseProductEditorWorkspacePage() {
                     </p>
                   </div>
                 </div>
+
+                <div className="mt-5 grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+                  <div className="h-fit rounded-[28px] border border-[#D8CEC0] bg-[#243B35] p-3">
+                    <div className="overflow-hidden rounded-[22px] bg-[#FFFDF8]">
+                      <div className="flex items-center justify-between border-b border-[#E5DCCF] px-4 py-3">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-[#6F7771]">
+                          <Smartphone className="h-4 w-4" />
+                          移动成交页预览
+                        </div>
+                        <span className="rounded-full bg-[#EEF6ED] px-2 py-1 text-[11px] font-semibold text-[#41675A]">
+                          发布前
+                        </span>
+                      </div>
+                      <img
+                        src={contentForm.showcaseImageUrl || basicForm.coverUrl}
+                        alt={contentForm.showcaseImageAlt || basicForm.title}
+                        className="aspect-[4/3] w-full object-cover"
+                      />
+                      <div className="space-y-4 px-4 py-4">
+                        <div>
+                          <p className="text-lg font-semibold leading-7 text-[#243B35]">
+                            {contentForm.headline ||
+                              basicForm.title ||
+                              "课程商品标题"}
+                          </p>
+                          <p className="mt-2 text-xs leading-5 text-[#6F7771]">
+                            {contentForm.subheadline ||
+                              contentForm.summary ||
+                              "这里展示课程详情页首屏副标题。"}
+                          </p>
+                        </div>
+                        <div className="flex items-end justify-between rounded-lg bg-[#F8F3EA] px-3 py-3">
+                          <div>
+                            <p className="text-[11px] font-semibold text-[#8A8176]">
+                              售卖价格
+                            </p>
+                            <p className="mt-1 text-xl font-semibold text-[#A65F48]">
+                              {formatWorkspacePrice(priceForm)}
+                            </p>
+                          </div>
+                          <p className="text-[11px] font-semibold text-[#41675A]">
+                            {priceForm.memberIncluded
+                              ? "会员权益内"
+                              : "单课购买"}
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          {splitLines(contentForm.sellingPointsText)
+                            .slice(0, 3)
+                            .map((point, index) => (
+                              <div
+                                key={point}
+                                className="flex items-start gap-2 text-xs leading-5 text-[#394A44]"
+                              >
+                                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#DDE8D9] text-[10px] font-semibold text-[#41675A]">
+                                  {index + 1}
+                                </span>
+                                {point}
+                              </div>
+                            ))}
+                        </div>
+                        {contentForm.imageAssets.slice(0, 2).length > 0 && (
+                          <div className="grid gap-2 grid-cols-2">
+                            {contentForm.imageAssets.slice(0, 2).map(asset => (
+                              <div
+                                key={asset.id}
+                                className="overflow-hidden rounded-lg bg-[#F8F3EA]"
+                              >
+                                {asset.imageUrl ? (
+                                  <img
+                                    src={asset.imageUrl}
+                                    alt={asset.altText || asset.title}
+                                    className="aspect-[4/3] w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex aspect-[4/3] items-center justify-center text-[#A39A90]">
+                                    <FileImage className="h-5 w-5" />
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="space-y-3 border-t border-[#EFE7DA] pt-3">
+                          {contentForm.richTextBlocks.slice(0, 5).map(block => (
+                            <div key={block.id} className="text-xs leading-5">
+                              {block.type === "section_heading" && (
+                                <p className="font-semibold text-[#243B35]">
+                                  {block.title || "段落标题"}
+                                </p>
+                              )}
+                              {[
+                                "paragraph",
+                                "instructor_intro",
+                                "purchase_note",
+                              ].includes(block.type) && (
+                                <p className="text-[#6F7771]">
+                                  {block.body || "正文内容预览"}
+                                </p>
+                              )}
+                              {block.type === "image" && (
+                                <div className="overflow-hidden rounded-lg bg-[#F8F3EA]">
+                                  {block.imageUrl ? (
+                                    <img
+                                      src={block.imageUrl}
+                                      alt={block.altText || block.title}
+                                      className="aspect-[16/9] w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex aspect-[16/9] items-center justify-center text-[#A39A90]">
+                                      <FileImage className="h-5 w-5" />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {block.type === "bullet_list" && (
+                                <ul className="space-y-1 text-[#6F7771]">
+                                  {splitLines(block.itemsText).map(item => (
+                                    <li key={item}>· {item}</li>
+                                  ))}
+                                </ul>
+                              )}
+                              {block.type === "faq" && (
+                                <div>
+                                  <p className="font-semibold text-[#243B35]">
+                                    {block.question || "常见问题"}
+                                  </p>
+                                  <p className="mt-1 text-[#6F7771]">
+                                    {block.answer || "问题回答预览"}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-[#243B35]">
+                            发布前预检
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                            聚合商品信息、图文内容、素材合规和操作原因，减少发布后返工。
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                            publishPreflightWarnings.length === 0
+                              ? "bg-[#EEF6ED] text-[#41675A]"
+                              : "bg-[#FFF4EF] text-[#A65F48]"
+                          }`}
+                        >
+                          {publishPreflightWarnings.length === 0
+                            ? "可提交审核"
+                            : `${publishPreflightWarnings.length} 项提醒`}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        <div className="rounded-lg border border-[#E1D7C8] bg-white px-4 py-3">
+                          <p className="text-xs text-[#8A8176]">商品图片</p>
+                          <p className="mt-2 text-lg font-semibold text-[#243B35]">
+                            {contentForm.imageAssets.length} 张
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                            {pendingMerchandisingAssetCount > 0
+                              ? `${pendingMerchandisingAssetCount} 张需处理合规`
+                              : "素材合规状态正常"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-[#E1D7C8] bg-white px-4 py-3">
+                          <p className="text-xs text-[#8A8176]">H5 内容</p>
+                          <p className="mt-2 text-lg font-semibold text-[#243B35]">
+                            {contentForm.richTextBlocks.length} 个内容块
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                            {
+                              contentForm.richTextBlocks.filter(
+                                block => block.type === "image"
+                              ).length
+                            }{" "}
+                            个图片块
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-[#E1D7C8] bg-white px-4 py-3">
+                          <p className="text-xs text-[#8A8176]">成交卖点</p>
+                          <p className="mt-2 text-lg font-semibold text-[#243B35]">
+                            {splitLines(contentForm.sellingPointsText).length}{" "}
+                            条
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                            建议保留 2-6 条，移动端更易扫读
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-[#E1D7C8] bg-white px-4 py-3">
+                          <p className="text-xs text-[#8A8176]">价格权益</p>
+                          <p className="mt-2 text-lg font-semibold text-[#243B35]">
+                            {formatWorkspacePrice(priceForm)}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                            {priceForm.memberIncluded
+                              ? "已纳入会员权益"
+                              : "单课售卖商品"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {publishPreflightWarnings.length > 0 ? (
+                        <div className="mt-4 space-y-2">
+                          {publishPreflightWarnings.map(warning => (
+                            <div
+                              key={warning}
+                              className="flex items-start gap-2 rounded-lg border border-[#EDCDBF] bg-white px-3 py-2 text-xs leading-5 text-[#A65F48]"
+                            >
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                              {warning}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-4 flex items-start gap-2 rounded-lg border border-[#C8D8C8] bg-white px-3 py-2 text-xs leading-5 text-[#41675A]">
+                          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                          当前商品内容、图片和操作原因已满足工作台发布前检查。
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-lg border border-[#E1D7C8] bg-white p-4">
+                      <p className="text-sm font-semibold text-[#243B35]">
+                        合规与复审边界
+                      </p>
+                      <div className="mt-3 space-y-2 text-xs leading-5 text-[#6F7771]">
+                        <p>
+                          · 商品图片、H5
+                          内容和价格信息仍需保存后再走既有审核动作。
+                        </p>
+                        <p>
+                          · 待审核或驳回素材不会被允许作为 H5
+                          图片块快速选择来源。
+                        </p>
+                        <p>
+                          ·
+                          审核、上架和批量发布动作继续由商品中心承接，避免新建流程绕过运营复核。
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="mt-5 flex items-start gap-3 rounded-lg border border-[#C8D8C8] bg-[#EEF6ED] px-4 py-3 text-sm text-[#41675A]">
                   <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>
