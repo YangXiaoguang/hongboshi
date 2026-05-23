@@ -37,6 +37,7 @@ import {
 } from "./courses/CourseProductFilters";
 import { CourseProductListRow } from "./courses/CourseProductListRow";
 import { CourseProductMetrics } from "./courses/CourseProductMetrics";
+import { CourseProductPublishQueuePanel } from "./courses/CourseProductPublishQueuePanel";
 import {
   CourseProductPriceDialog,
   type CourseProductPriceFormState,
@@ -66,6 +67,14 @@ type ReviewActionState = {
   action: CourseProductReviewAction;
   targetReviewStatus: CourseProductReviewStatus;
 };
+type PublishQueueSnapshot = {
+  items: CourseProductListItem[];
+  total: number;
+  isTruncated: boolean;
+};
+
+const COURSE_PRODUCT_PUBLISH_QUEUE_PAGE_SIZE = 50;
+const COURSE_PRODUCT_PUBLISH_QUEUE_MAX_ITEMS = 200;
 
 function courseProductListQueryFromUrl(): CourseProductListQuery {
   if (typeof window === "undefined") {
@@ -112,10 +121,48 @@ function courseProductListQueryFromUrl(): CourseProductListQuery {
   };
 }
 
+async function loadCourseProductPublishQueueSnapshot(
+  query: CourseProductListQuery
+): Promise<PublishQueueSnapshot> {
+  const pageSize = COURSE_PRODUCT_PUBLISH_QUEUE_PAGE_SIZE;
+  const firstPage = await httpCourseProductRepository.loadCourseProducts({
+    ...query,
+    page: 1,
+    pageSize,
+  });
+  const maxPages = Math.ceil(COURSE_PRODUCT_PUBLISH_QUEUE_MAX_ITEMS / pageSize);
+  const totalPagesToRead = Math.min(firstPage.meta.totalPages, maxPages);
+  const restPages =
+    totalPagesToRead > 1
+      ? await Promise.all(
+          Array.from({ length: totalPagesToRead - 1 }, (_, index) =>
+            httpCourseProductRepository.loadCourseProducts({
+              ...query,
+              page: index + 2,
+              pageSize,
+            })
+          )
+        )
+      : [];
+  const items = [firstPage, ...restPages].flatMap(result => result.items);
+
+  return {
+    items,
+    total: firstPage.meta.total,
+    isTruncated: items.length < firstPage.meta.total,
+  };
+}
+
 export default function CourseProducts() {
   const [, navigate] = useLocation();
   const { user, isLoggedIn, isAuthSyncing } = useAuth();
   const [data, setData] = useState<CourseProductListResult>();
+  const [publishQueueSnapshot, setPublishQueueSnapshot] =
+    useState<PublishQueueSnapshot>({
+      items: [],
+      total: 0,
+      isTruncated: false,
+    });
   const [contentQualityByProductId, setContentQualityByProductId] = useState<
     Record<string, CourseProductContentQualityResult>
   >({});
@@ -154,7 +201,15 @@ export default function CourseProducts() {
         httpCourseProductRepository.loadCourseProducts(query),
         httpCourseProductRepository.loadCourseProductContentQuality(),
       ]);
+      const publishQueue = await loadCourseProductPublishQueueSnapshot(
+        query
+      ).catch(() => ({
+        items: products.items,
+        total: products.meta.total,
+        isTruncated: products.items.length < products.meta.total,
+      }));
       setData(products);
+      setPublishQueueSnapshot(publishQueue);
       setContentQualityByProductId(
         Object.fromEntries(
           contentQuality.items.map(item => [item.productId, item.quality])
@@ -425,6 +480,15 @@ export default function CourseProducts() {
       )}
 
       <CourseProductMetrics data={data} />
+
+      <CourseProductPublishQueuePanel
+        items={publishQueueSnapshot.items}
+        contentQualityByProductId={contentQualityByProductId}
+        scopeTotal={publishQueueSnapshot.total}
+        isTruncated={publishQueueSnapshot.isTruncated}
+        isLoading={isLoading}
+        onOpenWorkspace={openProductWorkspace}
+      />
 
       <CourseProductAuditTrail events={auditEvents} />
 
