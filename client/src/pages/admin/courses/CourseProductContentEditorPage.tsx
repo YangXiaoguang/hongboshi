@@ -71,6 +71,7 @@ type ContentMerchandisingFormState = {
   showcaseImageAlt: string;
   sellingPointsText: string;
   imageAssets: ContentMerchandisingAssetFormState[];
+  richTextBlocks: CourseProductDetailContent["merchandising"]["richTextBlocks"];
 };
 type ContentFormState = {
   summary: string;
@@ -149,6 +150,7 @@ function contentFormFromDetail(
         complianceStatus: asset.complianceStatus,
         note: asset.note ?? "",
       })),
+      richTextBlocks: content.merchandising.richTextBlocks,
     },
     chapters: content.chapters.map(chapter => ({
       id: chapter.id,
@@ -212,6 +214,7 @@ function merchandisingFromContentForm(
       complianceStatus: asset.complianceStatus,
       note: asset.note.trim() ? asset.note.trim() : undefined,
     })),
+    richTextBlocks: merchandising.richTextBlocks,
   };
 }
 
@@ -384,6 +387,7 @@ function defaultContentForm(): ContentFormState {
       showcaseImageAlt: "",
       sellingPointsText: "",
       imageAssets: [],
+      richTextBlocks: [],
     },
     chapters: [],
     reason: "",

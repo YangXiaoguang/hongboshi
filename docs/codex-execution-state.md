@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`ADM-PRO 课程商品运营能力升级`
-- 当前状态：`ADM-PRO-A + ADM-PRO-C 新增课程商品与商品编辑工作台壳` 已完成，后台已具备新增课程商品草稿、进入独立商品编辑工作台、基础信息和价格权益保存的稳定入口。
-- 本轮完成后下一步：执行 `ADM-PRO-D + ADM-PRO-E 商品图片管理与 H5 富文本编辑器底座`
+- 当前状态：`ADM-PRO-D + ADM-PRO-E 商品图片管理与 H5 富文本编辑器底座` 已完成，商品工作台可维护成交主视觉、详情/证明图和结构化 H5 内容块，并通过既有内容更新 API 写入 `content_update` 审计。
+- 本轮完成后下一步：执行 `ADM-PRO-F 商品素材选择器与上传接入 + 前台详情消费 H5 内容块`
 
 ## 已完成关键能力
 
@@ -24,6 +24,7 @@
 - 完成课程商品内容编辑详情页承载：新增 `/admin/courses/:courseId`，将详情文案、成交图文、章节资料、素材上传和合规处理从商品列表页迁出，并支持 `returnTo` 返回原筛选分页。
 - 完成课程商品动作弹窗组件化：基础信息、价格、审核和上下架弹窗已拆入 `client/src/pages/admin/courses/*`，列表页继续保留动作状态与刷新编排，并新增弹窗静态渲染回归。
 - 完成新增课程商品与商品编辑工作台壳：新增 `POST /api/catalog/admin/course-products`、`product_create` 审计动作、`/admin/courses/new` 与 `/admin/courses/:courseId/edit` 后台路由；课程商品列表新增“新增商品”和“工作台”入口，工作台已按基础信息、商品图片、价格权益、H5 详情和发布审核组织后续编辑能力。
+- 完成商品图片管理与 H5 富文本编辑器底座：`CourseProductDetailContentSchema` 新增受控 `richTextBlocks`，支持标题、正文、图片、要点、FAQ、讲师介绍和购买须知；商品工作台会加载既有详情内容，图片步骤可维护成交主视觉、详情图和证明图，H5 步骤可维护摘要、适合人群、卖点和结构化内容块，并提供移动端预览。
 - 完成心理咨询类项目的现代化界面优化。
 - 建立产品工程路线文档、领域契约文档、数据库准备文档和课程中心 Feature 架构文档。
 - 建立课程中心、课程权益、成长档案、心理测评和咨询预约基础闭环。
@@ -772,19 +773,32 @@ ADM-PRO-A + ADM-PRO-C 稳定切片已交付：
 - 新增 `server/db/migrations/0023_course_product_create_audit.sql`，让 PostgreSQL 审计动作约束允许 `product_create`。
 - 测试覆盖课程商品创建 Store/API、前端仓储 POST 行为和审计动作。
 
-### 后台待续：ADM-PRO-D + ADM-PRO-E 商品图片管理与 H5 富文本编辑器底座
+### 最近完成阶段：ADM-PRO-D + ADM-PRO-E 商品图片管理与 H5 富文本编辑器底座
 
 业务目标：
 
 新增商品和工作台壳已打通，但商品图片仍只是封面 URL 和素材详情页跳转，H5 详情仍依赖旧的内容详情页。下一步要把“电商商品管理”的核心编辑体验补起来：主图/详情图可管理、H5 级图文内容可编辑、预览和发布审核可以围绕同一工作台运转。
 
+ADM-PRO-D + ADM-PRO-E 稳定切片已交付：
+
+- `shared/domain/courseProduct.ts` 新增 `CourseProductRichTextBlockSchema` 和 `COURSE_PRODUCT_RICH_TEXT_BLOCK_TYPES`，支持 `section_heading`、`paragraph`、`image`、`bullet_list`、`faq`、`instructor_intro` 和 `purchase_note`，通过结构化字段保存 H5 内容，不允许前端提交任意 HTML。
+- `CourseProductMerchandisingContentSchema` 新增 `richTextBlocks`，默认值保持向前兼容；内容质量校验新增 `rich_text_blocks_missing` 提醒，鼓励至少配置 3 个移动端 H5 内容块。
+- `buildDefaultCourseProductContent` 默认生成 3 个基础 H5 内容块，旧内容详情页会透传已有 `richTextBlocks`，避免旧编辑器保存时丢失工作台 H5 内容。
+- `client/src/pages/admin/courses/CourseProductEditorWorkspacePage.tsx` 会加载既有课程详情内容，商品图片步骤支持维护成交主视觉、详情图和证明图，H5 详情步骤支持维护摘要、适合人群、成交卖点、结构化内容块和移动端预览。
+- 商品图片与 H5 详情保存复用 `PATCH /api/catalog/admin/course-products/:productId/content`，继续由 `catalog:edit` 控制，并写入既有 `content_update` 审计；发布/审核仍由商品中心既有动作承接。
+
+### 后台待续：ADM-PRO-F 商品素材选择器与上传接入 + 前台详情消费 H5 内容块
+
+业务目标：
+
+当前工作台已能用 URL 管理商品图片和结构化 H5 内容块，但商品图片仍需要手工粘贴 URL，前台课程详情还没有直接消费 `richTextBlocks`。下一步要把“运营编辑 -> 商品详情成交展示”的链路真正闭合：工作台接入素材库选择/上传，前台详情页按 H5 内容块渲染移动端友好的商品介绍。
+
 建议实施范围：
 
-- 在 `CourseProductEditorWorkspacePage.tsx` 内新增商品图片管理分区，至少支持主图、轮播图、详情图、证明图的结构化编辑入口；短期可先复用 URL/已审核素材选择，后续再接真实上传组件。
-- 将旧 `/admin/courses/:courseId` 的成交素材编辑能力逐步收敛到工作台的“商品图片”和“H5 详情”两个步骤，旧详情页保留为深度内容/章节资料承载，避免一次性迁移过大。
-- 设计 `CourseProductRichTextBlock` 或等价共享契约，先支持标题、段落、图片、要点、FAQ、讲师介绍和购买须知等 H5 内容块，禁止前端保存任意不受控 HTML。
-- 新增工作台内预览区，展示移动端商品详情预览、主图完整性、H5 内容完整性和发布阻塞项。
-- 服务端写动作继续绑定 `catalog:edit`，发布/审核仍使用既有 `catalog:review` / `catalog:publish` 边界；所有结构化 H5 更新必须写入 `content_update` 或后续专用审计动作。
+- 在商品工作台图片步骤接入既有课程素材资产库，支持选择已审核的详情图/证明图，一键写入主视觉、详情图和 H5 图片块。
+- 在工作台内提供轻量上传入口，复用现有 `POST /api/catalog/admin/course-products/:productId/assets/files` 和合规状态，不新增第二套文件存储。
+- 前台 `/courses/:courseId` 课程详情消费 `merchandising.richTextBlocks`，按标题、正文、图片、要点、FAQ、讲师介绍和购买须知渲染商品 H5 内容，缺失时继续使用现有 fallback 区块。
+- 为图片选择、上传、H5 保存和前台渲染补充仓储/页面测试，并保持 `content_update` 审计与复审边界不变。
 - ADM-IA-B-C-C 课程商品列表行与筛选组件化暂时作为代码减负 backlog，等商品编辑主链路稳定后再执行。
 
 ## 执行不变量
@@ -806,4 +820,4 @@ ADM-PRO-A + ADM-PRO-C 稳定切片已交付：
 - 真实支付渠道优先接微信支付还是支付宝。退款适配接口和受理摘要已完成，建议 M6 财务账期/手续费基础稳定后选择一个渠道试点。
 - 财务账期第一版已按自然月落地；后续真实渠道结算时再决定是否引入支付渠道账单日或渠道结算周期覆盖规则。
 - 财务导出第一版已采用 CSV；后续如有财务模板要求，再补 XLSX。
-- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-PRO-D + ADM-PRO-E 商品图片管理与 H5 富文本编辑器底座，ADM-IA-B-C-C 课程商品列表行与筛选组件化、CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。
+- 交易操作 Store 已独立落表；统一审计中心第一版已先做只读聚合，M9-F 已完成归档表只读检索预览，后台专项可在用户端交易链路稳定后回到 M9-G；当前连续执行指针为 ADM-PRO-F 商品素材选择器与上传接入 + 前台详情消费 H5 内容块，ADM-IA-B-C-C 课程商品列表行与筛选组件化、CUX-I-B-B-T 高风险动作执行开关、会员待支付订单过期状态机和正式证书签发审核流需另立任务包。

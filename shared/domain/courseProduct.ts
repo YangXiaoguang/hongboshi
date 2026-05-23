@@ -203,6 +203,16 @@ export const COURSE_PRODUCT_MERCHANDISING_ASSET_USAGES = [
   "gallery",
 ] as const;
 
+export const COURSE_PRODUCT_RICH_TEXT_BLOCK_TYPES = [
+  "section_heading",
+  "paragraph",
+  "image",
+  "bullet_list",
+  "faq",
+  "instructor_intro",
+  "purchase_note",
+] as const;
+
 export const COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES = 20 * 1024 * 1024;
 
 export const COURSE_PRODUCT_CONTENT_QUALITY_ISSUE_CODES = [
@@ -210,6 +220,7 @@ export const COURSE_PRODUCT_CONTENT_QUALITY_ISSUE_CODES = [
   "summary_too_short",
   "merchandising_image_missing",
   "merchandising_points_missing",
+  "rich_text_blocks_missing",
   "merchandising_asset_pending",
   "audience_too_few",
   "chapters_too_few",
@@ -1569,6 +1580,67 @@ export const CourseProductMerchandisingAssetSchema = z.object({
   note: z.string().trim().max(200).optional(),
 });
 
+export const CourseProductRichTextBlockTypeSchema = z.enum(
+  COURSE_PRODUCT_RICH_TEXT_BLOCK_TYPES
+);
+
+export const CourseProductRichTextBlockSchema = z
+  .object({
+    id: EntityIdSchema,
+    type: CourseProductRichTextBlockTypeSchema,
+    title: z.string().trim().min(2).max(100).optional(),
+    body: z.string().trim().min(4).max(1200).optional(),
+    imageUrl: CourseProductAssetUrlSchema.optional(),
+    altText: z.string().trim().max(120).optional(),
+    items: z.array(z.string().trim().min(2).max(120)).max(12).default([]),
+    question: z.string().trim().min(4).max(160).optional(),
+    answer: z.string().trim().min(4).max(600).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.type === "section_heading" && !value.title) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["title"],
+        message: "标题块必须填写标题",
+      });
+    }
+
+    if (
+      ["paragraph", "instructor_intro", "purchase_note"].includes(value.type) &&
+      !value.body
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["body"],
+        message: "文本内容不能为空",
+      });
+    }
+
+    if (value.type === "image" && !value.imageUrl) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["imageUrl"],
+        message: "图片块必须填写图片地址",
+      });
+    }
+
+    if (value.type === "bullet_list" && value.items.length < 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["items"],
+        message: "要点列表至少需要 1 条内容",
+      });
+    }
+
+    if (value.type === "faq" && (!value.question || !value.answer)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["question"],
+        message: "FAQ 必须填写问题和回答",
+      });
+    }
+  });
+
 export const CourseProductMerchandisingContentSchema = z
   .object({
     headline: z.string().trim().min(6).max(100).optional(),
@@ -1583,10 +1655,15 @@ export const CourseProductMerchandisingContentSchema = z
       .array(CourseProductMerchandisingAssetSchema)
       .max(8)
       .default([]),
+    richTextBlocks: z
+      .array(CourseProductRichTextBlockSchema)
+      .max(24)
+      .default([]),
   })
   .default({
     sellingPoints: [],
     imageAssets: [],
+    richTextBlocks: [],
   });
 
 export const CourseProductDetailContentSchema = z.object({
@@ -1705,6 +1782,15 @@ export function evaluateCourseProductContentQuality(
       severity: "warning",
       message: "课程详情建议至少配置 2 条成交卖点，减少用户购买前的理解成本。",
       path: "merchandising.sellingPoints",
+    });
+  }
+
+  if (normalized.merchandising.richTextBlocks.length < 3) {
+    addIssue({
+      code: "rich_text_blocks_missing",
+      severity: "warning",
+      message: "课程详情建议至少配置 3 个 H5 内容块，支撑移动端商品介绍。",
+      path: "merchandising.richTextBlocks",
     });
   }
 
@@ -2085,6 +2171,9 @@ export type CourseProductAssetMutationResult = z.infer<
 export type CourseProductMerchandisingAssetUsage = z.infer<
   typeof CourseProductMerchandisingAssetUsageSchema
 >;
+export type CourseProductRichTextBlockType = z.infer<
+  typeof CourseProductRichTextBlockTypeSchema
+>;
 export type CourseProductContentQualityIssueCode = z.infer<
   typeof CourseProductContentQualityIssueCodeSchema
 >;
@@ -2099,6 +2188,9 @@ export type CourseProductContentChapter = z.infer<
 >;
 export type CourseProductMerchandisingAsset = z.infer<
   typeof CourseProductMerchandisingAssetSchema
+>;
+export type CourseProductRichTextBlock = z.infer<
+  typeof CourseProductRichTextBlockSchema
 >;
 export type CourseProductMerchandisingContent = z.infer<
   typeof CourseProductMerchandisingContentSchema

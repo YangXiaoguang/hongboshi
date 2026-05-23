@@ -13,20 +13,28 @@ import {
   ChevronLeft,
   FileImage,
   FilePenLine,
+  ImagePlus,
   Layers3,
   Loader2,
   PanelRight,
   Plus,
   Save,
   ShieldCheck,
+  Smartphone,
+  Trash2,
 } from "lucide-react";
 import {
   COURSE_CATEGORIES,
   COURSE_TYPES,
+  CourseProductContentUpdateRequestSchema,
   type CourseCategory,
+  type CourseProductContentUpdateRequest,
   type CourseProductCreateRequest,
+  type CourseProductDetailContent,
   type CourseProductListItem,
+  type CourseProductMerchandisingAssetUsage,
   type CourseProductPriceUpdateRequest,
+  type CourseProductRichTextBlockType,
   type CourseType,
 } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
@@ -55,8 +63,64 @@ type PriceFormState = {
   memberIncluded: boolean;
 };
 
+type MediaAssetFormState = {
+  id: string;
+  title: string;
+  imageUrl: string;
+  altText: string;
+  usage: CourseProductMerchandisingAssetUsage;
+  complianceStatus: "not_required" | "pending" | "approved" | "rejected";
+  note: string;
+};
+
+type H5BlockFormState = {
+  id: string;
+  type: CourseProductRichTextBlockType;
+  title: string;
+  body: string;
+  imageUrl: string;
+  altText: string;
+  itemsText: string;
+  question: string;
+  answer: string;
+};
+
+type ContentWorkbenchFormState = {
+  summary: string;
+  targetAudienceText: string;
+  headline: string;
+  subheadline: string;
+  showcaseImageUrl: string;
+  showcaseImageAlt: string;
+  sellingPointsText: string;
+  imageAssets: MediaAssetFormState[];
+  richTextBlocks: H5BlockFormState[];
+};
+
 const defaultCoverUrl =
   "https://images.unsplash.com/photo-1499209974431-9dddcece7f88";
+
+const merchandisingAssetUsageOptions: {
+  value: CourseProductMerchandisingAssetUsage;
+  label: string;
+}[] = [
+  { value: "showcase", label: "主视觉" },
+  { value: "proof", label: "证明图" },
+  { value: "gallery", label: "详情图" },
+];
+
+const h5BlockTypeOptions: {
+  value: CourseProductRichTextBlockType;
+  label: string;
+}[] = [
+  { value: "section_heading", label: "标题" },
+  { value: "paragraph", label: "正文" },
+  { value: "image", label: "图片" },
+  { value: "bullet_list", label: "要点" },
+  { value: "faq", label: "FAQ" },
+  { value: "instructor_intro", label: "讲师介绍" },
+  { value: "purchase_note", label: "购买须知" },
+];
 
 const workspaceSteps: {
   id: WorkspaceStepId;
@@ -110,6 +174,24 @@ function defaultPriceForm(): PriceFormState {
   };
 }
 
+function defaultContentWorkbenchForm(): ContentWorkbenchFormState {
+  return {
+    summary: "",
+    targetAudienceText: "",
+    headline: "",
+    subheadline: "",
+    showcaseImageUrl: defaultCoverUrl,
+    showcaseImageAlt: "",
+    sellingPointsText: "",
+    imageAssets: [],
+    richTextBlocks: [
+      createH5BlockForm("section_heading"),
+      createH5BlockForm("paragraph"),
+      createH5BlockForm("purchase_note"),
+    ],
+  };
+}
+
 function basicFormFromProduct(product: CourseProductListItem): BasicFormState {
   return {
     title: product.title,
@@ -127,6 +209,47 @@ function priceFormFromProduct(product: CourseProductListItem): PriceFormState {
     originalAmount: String(product.price.originalAmount),
     isFree: product.price.isFree,
     memberIncluded: product.price.memberIncluded,
+  };
+}
+
+function contentFormFromContent(
+  content: CourseProductDetailContent
+): ContentWorkbenchFormState {
+  return {
+    summary: content.summary,
+    targetAudienceText: content.targetAudience.join("\n"),
+    headline: content.merchandising.headline ?? "",
+    subheadline: content.merchandising.subheadline ?? "",
+    showcaseImageUrl: content.merchandising.showcaseImageUrl ?? defaultCoverUrl,
+    showcaseImageAlt: content.merchandising.showcaseImageAlt ?? "",
+    sellingPointsText: content.merchandising.sellingPoints.join("\n"),
+    imageAssets: content.merchandising.imageAssets.map(asset => ({
+      id: asset.id,
+      title: asset.title,
+      imageUrl: asset.imageUrl,
+      altText: asset.altText ?? "",
+      usage: asset.usage,
+      complianceStatus: asset.complianceStatus,
+      note: asset.note ?? "",
+    })),
+    richTextBlocks:
+      content.merchandising.richTextBlocks.length > 0
+        ? content.merchandising.richTextBlocks.map(block => ({
+            id: block.id,
+            type: block.type,
+            title: block.title ?? "",
+            body: block.body ?? "",
+            imageUrl: block.imageUrl ?? "",
+            altText: block.altText ?? "",
+            itemsText: block.items.join("\n"),
+            question: block.question ?? "",
+            answer: block.answer ?? "",
+          }))
+        : [
+            createH5BlockForm("section_heading"),
+            createH5BlockForm("paragraph"),
+            createH5BlockForm("purchase_note"),
+          ],
   };
 }
 
@@ -149,14 +272,150 @@ function parsePrice(form: PriceFormState) {
   };
 }
 
-function productCompleteness(product?: CourseProductListItem) {
-  if (!product) return { completed: 0, total: 5, label: "0/5" };
+function createDraftId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.round(Math.random() * 10000)}`;
+}
+
+function createMediaAssetForm(
+  usage: CourseProductMerchandisingAssetUsage = "gallery",
+  imageUrl = ""
+): MediaAssetFormState {
+  return {
+    id: createDraftId("merch_asset"),
+    title: usage === "proof" ? "学习反馈证明图" : "课程详情图",
+    imageUrl,
+    altText: "",
+    usage,
+    complianceStatus: "not_required",
+    note: "",
+  };
+}
+
+function createH5BlockForm(
+  type: CourseProductRichTextBlockType
+): H5BlockFormState {
+  const presets = {
+    section_heading: {
+      title: "课程能帮你解决什么",
+      body: "",
+    },
+    paragraph: {
+      title: "",
+      body: "用清晰的讲解和练习，把当下困扰拆成可理解、可执行、可复盘的步骤。",
+    },
+    image: {
+      title: "课程场景图",
+      body: "",
+    },
+    bullet_list: {
+      title: "你将获得",
+      body: "",
+    },
+    faq: {
+      title: "",
+      body: "",
+    },
+    instructor_intro: {
+      title: "讲师介绍",
+      body: "讲师会结合心理服务场景，带你完成安全、低压力的学习和练习。",
+    },
+    purchase_note: {
+      title: "购买须知",
+      body: "购买后可进入学习页查看课程章节和已开放资料，订单和售后进度可在个人中心查看。",
+    },
+  } satisfies Record<
+    CourseProductRichTextBlockType,
+    { title: string; body: string }
+  >;
+
+  return {
+    id: createDraftId("h5_block"),
+    type,
+    title: presets[type].title,
+    body: presets[type].body,
+    imageUrl: "",
+    altText: "",
+    itemsText:
+      type === "bullet_list" ? "清晰课程路径\n可落地练习\n可复盘资料" : "",
+    question: type === "faq" ? "购买后可以反复学习吗？" : "",
+    answer:
+      type === "faq" ? "课程权益有效期内可以反复进入学习页查看内容。" : "",
+  };
+}
+
+function splitLines(value: string) {
+  return value
+    .split(/\n+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function optionalText(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function buildContentUpdateRequest(
+  content: CourseProductDetailContent,
+  form: ContentWorkbenchFormState,
+  reason: string
+): CourseProductContentUpdateRequest | undefined {
+  const targetAudience = splitLines(form.targetAudienceText);
+  const sellingPoints = splitLines(form.sellingPointsText);
+  const request = {
+    summary: form.summary,
+    targetAudience,
+    merchandising: {
+      headline: optionalText(form.headline),
+      subheadline: optionalText(form.subheadline),
+      showcaseImageUrl: optionalText(form.showcaseImageUrl),
+      showcaseImageAlt: optionalText(form.showcaseImageAlt),
+      sellingPoints,
+      imageAssets: form.imageAssets.map(asset => ({
+        id: asset.id,
+        title: asset.title,
+        imageUrl: asset.imageUrl,
+        altText: optionalText(asset.altText),
+        usage: asset.usage,
+        complianceStatus: asset.complianceStatus,
+        note: optionalText(asset.note),
+      })),
+      richTextBlocks: form.richTextBlocks.map(block => ({
+        id: block.id,
+        type: block.type,
+        title: optionalText(block.title),
+        body: optionalText(block.body),
+        imageUrl: optionalText(block.imageUrl),
+        altText: optionalText(block.altText),
+        items: splitLines(block.itemsText),
+        question: optionalText(block.question),
+        answer: optionalText(block.answer),
+      })),
+    },
+    chapters: content.chapters,
+    reason,
+  };
+
+  const parsed = CourseProductContentUpdateRequestSchema.safeParse(request);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function contentWorkbenchCompleteness(
+  product?: CourseProductListItem,
+  content?: CourseProductDetailContent,
+  form?: ContentWorkbenchFormState
+) {
+  if (!product || !content || !form)
+    return { completed: 0, total: 8, label: "0/8" };
   const checks = [
     product.title.trim().length >= 2,
     product.coverUrl.trim().length > 8,
     product.instructorName.trim().length >= 1,
     product.price.isFree || product.price.amount > 0,
     product.status !== "archived",
+    Boolean(optionalText(form.showcaseImageUrl)),
+    form.imageAssets.length >= 1,
+    form.richTextBlocks.length >= 3,
   ];
   const completed = checks.filter(Boolean).length;
   return {
@@ -193,8 +452,12 @@ export default function CourseProductEditorWorkspacePage() {
   const { user, isLoggedIn, isAuthSyncing } = useAuth();
   const [activeStep, setActiveStep] = useState<WorkspaceStepId>("basic");
   const [product, setProduct] = useState<CourseProductListItem>();
+  const [content, setContent] = useState<CourseProductDetailContent>();
   const [basicForm, setBasicForm] = useState<BasicFormState>(defaultBasicForm);
   const [priceForm, setPriceForm] = useState<PriceFormState>(defaultPriceForm);
+  const [contentForm, setContentForm] = useState<ContentWorkbenchFormState>(
+    defaultContentWorkbenchForm
+  );
   const [reason, setReason] = useState("新增课程商品草稿");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -208,7 +471,11 @@ export default function CourseProductEditorWorkspacePage() {
     () => getCourseProductAdminPermissions(user),
     [user]
   );
-  const completeness = productCompleteness(product);
+  const completeness = contentWorkbenchCompleteness(
+    product,
+    content,
+    contentForm
+  );
 
   const loadProduct = useCallback(async () => {
     if (!courseId) return;
@@ -230,6 +497,10 @@ export default function CourseProductEditorWorkspacePage() {
       setProduct(matched);
       setBasicForm(basicFormFromProduct(matched));
       setPriceForm(priceFormFromProduct(matched));
+      const loadedContent =
+        await httpCourseProductRepository.loadCourseProductContent(matched.id);
+      setContent(loadedContent);
+      setContentForm(contentFormFromContent(loadedContent));
       setReason("运营工作台更新课程商品");
     } catch (err) {
       setError(err instanceof Error ? err.message : "课程商品读取失败");
@@ -242,8 +513,10 @@ export default function CourseProductEditorWorkspacePage() {
     if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) return;
     if (isNew) {
       setProduct(undefined);
+      setContent(undefined);
       setBasicForm(defaultBasicForm());
       setPriceForm(defaultPriceForm());
+      setContentForm(defaultContentWorkbenchForm());
       setReason("新增课程商品草稿");
       return;
     }
@@ -360,6 +633,46 @@ export default function CourseProductEditorWorkspacePage() {
       setIsSaving(false);
     }
   }, [catalogPermissions.canPrice, priceForm, product, reason]);
+
+  const submitContentUpdate = useCallback(
+    async (successLabel: string) => {
+      if (!product || !content) {
+        setActionError("请先创建并读取课程商品后再维护详情内容");
+        return;
+      }
+      if (!catalogPermissions.canEdit) {
+        setActionError("当前账号暂无课程商品编辑权限");
+        return;
+      }
+      const request = buildContentUpdateRequest(content, contentForm, reason);
+      if (!request) {
+        setActionError("请检查商品图片、H5 内容块、摘要和适合人群是否填写完整");
+        return;
+      }
+
+      setIsSaving(true);
+      setActionError(undefined);
+      setActionMessage(undefined);
+      try {
+        const result =
+          await httpCourseProductRepository.updateCourseProductContent(
+            product.id,
+            request
+          );
+        setProduct(result.product);
+        setContent(result.content);
+        setContentForm(contentFormFromContent(result.content));
+        setActionMessage(`${successLabel}已保存，课程商品需重新审核`);
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程商品详情内容保存失败"
+        );
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [catalogPermissions.canEdit, content, contentForm, product, reason]
+  );
 
   if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) {
     return null;
@@ -590,35 +903,254 @@ export default function CourseProductEditorWorkspacePage() {
             {activeStep === "media" && (
               <SectionShell
                 title="商品图片"
-                description="当前先承接主图管理，后续扩展为主图、详情图、证明图和视频的素材矩阵。"
+                description="维护商品封面、成交主视觉、详情图和证明图，支撑移动端购买决策。"
               >
-                <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-                  <div className="overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#F8F3EA]">
-                    <img
-                      src={basicForm.coverUrl}
-                      alt={basicForm.title || "课程商品主图"}
-                      className="aspect-[4/3] w-full object-cover"
-                    />
-                  </div>
+                <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
                   <div>
-                    <div className="flex items-center gap-2 text-sm font-semibold text-[#41524B]">
-                      <FileImage className="h-4 w-4 text-[#6F8F83]" />
-                      主图资产
+                    <div className="overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#F8F3EA]">
+                      <img
+                        src={basicForm.coverUrl}
+                        alt={basicForm.title || "课程商品主图"}
+                        className="aspect-[4/3] w-full object-cover"
+                      />
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-[#6F7771]">
-                      主图会同步用于课程列表、商品详情首屏和分享卡片。
+                    <p className="mt-3 text-xs leading-5 text-[#8A8176]">
+                      封面图来自基础信息，会用于货架卡片和订单摘要；成交主视觉用于详情页首屏。
                     </p>
                     <button
                       onClick={() =>
-                        product
-                          ? navigate(`/admin/courses/${product.courseId}`)
-                          : setActiveStep("basic")
+                        setContentForm(current => ({
+                          ...current,
+                          showcaseImageUrl: basicForm.coverUrl,
+                          showcaseImageAlt: basicForm.title,
+                        }))
                       }
-                      className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                      className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
                     >
-                      <Layers3 className="h-4 w-4" />
-                      {product ? "管理详情素材" : "先填写基础信息"}
+                      <FileImage className="h-4 w-4" />
+                      同步为成交主视觉
                     </button>
+                  </div>
+
+                  <div className="space-y-5">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="text-sm font-semibold text-[#41524B]">
+                        成交主视觉 URL
+                        <input
+                          value={contentForm.showcaseImageUrl}
+                          onChange={event =>
+                            setContentForm(current => ({
+                              ...current,
+                              showcaseImageUrl: event.target.value,
+                            }))
+                          }
+                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                        />
+                      </label>
+                      <label className="text-sm font-semibold text-[#41524B]">
+                        主视觉说明
+                        <input
+                          value={contentForm.showcaseImageAlt}
+                          onChange={event =>
+                            setContentForm(current => ({
+                              ...current,
+                              showcaseImageAlt: event.target.value,
+                            }))
+                          }
+                          placeholder="用于图片无障碍与素材备注"
+                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 text-sm font-semibold text-[#41524B]">
+                          <ImagePlus className="h-4 w-4 text-[#6F8F83]" />
+                          详情图与证明图
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                          先支持 URL
+                          和已审核素材地址，下一步接入素材选择器与上传。
+                        </p>
+                      </div>
+                      <button
+                        onClick={() =>
+                          setContentForm(current => ({
+                            ...current,
+                            imageAssets: [
+                              ...current.imageAssets,
+                              createMediaAssetForm("gallery"),
+                            ],
+                          }))
+                        }
+                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                      >
+                        <Plus className="h-4 w-4" />
+                        添加图片
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {contentForm.imageAssets.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-[#D8CEC0] bg-[#FBF7EF] px-4 py-5 text-sm text-[#6F7771]">
+                          还没有详情图。建议至少添加一张课程场景图或学习反馈证明图。
+                        </div>
+                      ) : (
+                        contentForm.imageAssets.map((asset, assetIndex) => (
+                          <div
+                            key={asset.id}
+                            className="grid gap-3 rounded-lg border border-[#E1D7C8] bg-white p-3 md:grid-cols-[120px_minmax(0,1fr)_auto]"
+                          >
+                            <div className="overflow-hidden rounded-lg bg-[#F8F3EA]">
+                              {asset.imageUrl ? (
+                                <img
+                                  src={asset.imageUrl}
+                                  alt={asset.altText || asset.title}
+                                  className="aspect-[4/3] w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex aspect-[4/3] items-center justify-center text-[#A39A90]">
+                                  <FileImage className="h-6 w-6" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <input
+                                value={asset.title}
+                                onChange={event =>
+                                  setContentForm(current => ({
+                                    ...current,
+                                    imageAssets: current.imageAssets.map(
+                                      (item, index) =>
+                                        index === assetIndex
+                                          ? {
+                                              ...item,
+                                              title: event.target.value,
+                                            }
+                                          : item
+                                    ),
+                                  }))
+                                }
+                                placeholder="图片标题"
+                                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                              />
+                              <select
+                                value={asset.usage}
+                                onChange={event =>
+                                  setContentForm(current => ({
+                                    ...current,
+                                    imageAssets: current.imageAssets.map(
+                                      (item, index) =>
+                                        index === assetIndex
+                                          ? {
+                                              ...item,
+                                              usage: event.target
+                                                .value as CourseProductMerchandisingAssetUsage,
+                                            }
+                                          : item
+                                    ),
+                                  }))
+                                }
+                                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                              >
+                                {merchandisingAssetUsageOptions.map(option => (
+                                  <option
+                                    key={option.value}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                value={asset.imageUrl}
+                                onChange={event =>
+                                  setContentForm(current => ({
+                                    ...current,
+                                    imageAssets: current.imageAssets.map(
+                                      (item, index) =>
+                                        index === assetIndex
+                                          ? {
+                                              ...item,
+                                              imageUrl: event.target.value,
+                                            }
+                                          : item
+                                    ),
+                                  }))
+                                }
+                                placeholder="https://... 或 /api/..."
+                                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83] md:col-span-2"
+                              />
+                              <input
+                                value={asset.altText}
+                                onChange={event =>
+                                  setContentForm(current => ({
+                                    ...current,
+                                    imageAssets: current.imageAssets.map(
+                                      (item, index) =>
+                                        index === assetIndex
+                                          ? {
+                                              ...item,
+                                              altText: event.target.value,
+                                            }
+                                          : item
+                                    ),
+                                  }))
+                                }
+                                placeholder="图片说明"
+                                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83] md:col-span-2"
+                              />
+                            </div>
+                            <button
+                              onClick={() =>
+                                setContentForm(current => ({
+                                  ...current,
+                                  imageAssets: current.imageAssets.filter(
+                                    item => item.id !== asset.id
+                                  ),
+                                }))
+                              }
+                              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#A65F48] transition hover:bg-[#FFF4EF]"
+                              aria-label="删除图片"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => void submitContentUpdate("商品图片")}
+                        disabled={
+                          isSaving ||
+                          !product ||
+                          !content ||
+                          !catalogPermissions.canEdit
+                        }
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isSaving ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                        保存商品图片
+                      </button>
+                      <button
+                        onClick={() =>
+                          product
+                            ? navigate(`/admin/courses/${product.courseId}`)
+                            : setActiveStep("basic")
+                        }
+                        className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                      >
+                        <Layers3 className="h-4 w-4" />
+                        {product ? "打开素材库" : "创建后管理素材"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </SectionShell>
@@ -717,30 +1249,435 @@ export default function CourseProductEditorWorkspacePage() {
             {activeStep === "content" && (
               <SectionShell
                 title="H5 详情"
-                description="详情页内容、成交图文和章节资料将在这里逐步升级为富文本与移动端预览工作流。"
+                description="用结构化内容块维护移动端商品详情，避免保存不可控 HTML。"
               >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="max-w-[640px]">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-[#41524B]">
-                      <PanelRight className="h-4 w-4 text-[#6F8F83]" />
-                      移动端详情承载
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+                  <div className="space-y-5">
+                    <label className="block text-sm font-semibold text-[#41524B]">
+                      商品摘要
+                      <textarea
+                        value={contentForm.summary}
+                        onChange={event =>
+                          setContentForm(current => ({
+                            ...current,
+                            summary: event.target.value,
+                          }))
+                        }
+                        className="mt-2 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal leading-6 outline-none transition focus:border-[#6F8F83]"
+                      />
+                    </label>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="block text-sm font-semibold text-[#41524B]">
+                        适合人群
+                        <textarea
+                          value={contentForm.targetAudienceText}
+                          onChange={event =>
+                            setContentForm(current => ({
+                              ...current,
+                              targetAudienceText: event.target.value,
+                            }))
+                          }
+                          className="mt-2 min-h-[112px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal leading-6 outline-none transition focus:border-[#6F8F83]"
+                        />
+                      </label>
+                      <label className="block text-sm font-semibold text-[#41524B]">
+                        成交卖点
+                        <textarea
+                          value={contentForm.sellingPointsText}
+                          onChange={event =>
+                            setContentForm(current => ({
+                              ...current,
+                              sellingPointsText: event.target.value,
+                            }))
+                          }
+                          className="mt-2 min-h-[112px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal leading-6 outline-none transition focus:border-[#6F8F83]"
+                        />
+                      </label>
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-[#6F7771]">
-                      当前可进入既有内容详情页维护摘要、成交素材和章节资料；下一阶段接入富文本
-                      H5 编辑器。
-                    </p>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="text-sm font-semibold text-[#41524B]">
+                        H5 标题
+                        <input
+                          value={contentForm.headline}
+                          onChange={event =>
+                            setContentForm(current => ({
+                              ...current,
+                              headline: event.target.value,
+                            }))
+                          }
+                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                        />
+                      </label>
+                      <label className="text-sm font-semibold text-[#41524B]">
+                        H5 副标题
+                        <input
+                          value={contentForm.subheadline}
+                          onChange={event =>
+                            setContentForm(current => ({
+                              ...current,
+                              subheadline: event.target.value,
+                            }))
+                          }
+                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E5DCCF] pt-5">
+                      <div>
+                        <div className="flex items-center gap-2 text-sm font-semibold text-[#41524B]">
+                          <PanelRight className="h-4 w-4 text-[#6F8F83]" />
+                          H5 内容块
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                          支持标题、正文、图片、要点、FAQ、讲师介绍和购买须知。
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() =>
+                            setContentForm(current => ({
+                              ...current,
+                              richTextBlocks: [
+                                ...current.richTextBlocks,
+                                createH5BlockForm("paragraph"),
+                              ],
+                            }))
+                          }
+                          className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                        >
+                          <Plus className="h-4 w-4" />
+                          添加内容块
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {contentForm.richTextBlocks.map((block, blockIndex) => (
+                        <div
+                          key={block.id}
+                          className="rounded-lg border border-[#E1D7C8] bg-white p-4"
+                        >
+                          <div className="flex flex-wrap items-center gap-3">
+                            <select
+                              value={block.type}
+                              onChange={event =>
+                                setContentForm(current => ({
+                                  ...current,
+                                  richTextBlocks: current.richTextBlocks.map(
+                                    (item, index) =>
+                                      index === blockIndex
+                                        ? {
+                                            ...createH5BlockForm(
+                                              event.target
+                                                .value as CourseProductRichTextBlockType
+                                            ),
+                                            id: item.id,
+                                          }
+                                        : item
+                                  ),
+                                }))
+                              }
+                              className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                            >
+                              {h5BlockTypeOptions.map(option => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() =>
+                                setContentForm(current => ({
+                                  ...current,
+                                  richTextBlocks: current.richTextBlocks.filter(
+                                    item => item.id !== block.id
+                                  ),
+                                }))
+                              }
+                              className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#A65F48] transition hover:bg-[#FFF4EF]"
+                              aria-label="删除内容块"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+
+                          {block.type !== "paragraph" &&
+                            block.type !== "purchase_note" &&
+                            block.type !== "faq" && (
+                              <input
+                                value={block.title}
+                                onChange={event =>
+                                  setContentForm(current => ({
+                                    ...current,
+                                    richTextBlocks: current.richTextBlocks.map(
+                                      (item, index) =>
+                                        index === blockIndex
+                                          ? {
+                                              ...item,
+                                              title: event.target.value,
+                                            }
+                                          : item
+                                    ),
+                                  }))
+                                }
+                                placeholder="内容块标题"
+                                className="mt-3 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                              />
+                            )}
+
+                          {[
+                            "paragraph",
+                            "instructor_intro",
+                            "purchase_note",
+                          ].includes(block.type) && (
+                            <textarea
+                              value={block.body}
+                              onChange={event =>
+                                setContentForm(current => ({
+                                  ...current,
+                                  richTextBlocks: current.richTextBlocks.map(
+                                    (item, index) =>
+                                      index === blockIndex
+                                        ? {
+                                            ...item,
+                                            body: event.target.value,
+                                          }
+                                        : item
+                                  ),
+                                }))
+                              }
+                              placeholder="正文内容"
+                              className="mt-3 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm leading-6 outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                            />
+                          )}
+
+                          {block.type === "image" && (
+                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                              <input
+                                value={block.imageUrl}
+                                onChange={event =>
+                                  setContentForm(current => ({
+                                    ...current,
+                                    richTextBlocks: current.richTextBlocks.map(
+                                      (item, index) =>
+                                        index === blockIndex
+                                          ? {
+                                              ...item,
+                                              imageUrl: event.target.value,
+                                            }
+                                          : item
+                                    ),
+                                  }))
+                                }
+                                placeholder="图片 URL"
+                                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                              />
+                              <input
+                                value={block.altText}
+                                onChange={event =>
+                                  setContentForm(current => ({
+                                    ...current,
+                                    richTextBlocks: current.richTextBlocks.map(
+                                      (item, index) =>
+                                        index === blockIndex
+                                          ? {
+                                              ...item,
+                                              altText: event.target.value,
+                                            }
+                                          : item
+                                    ),
+                                  }))
+                                }
+                                placeholder="图片说明"
+                                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                              />
+                            </div>
+                          )}
+
+                          {block.type === "bullet_list" && (
+                            <textarea
+                              value={block.itemsText}
+                              onChange={event =>
+                                setContentForm(current => ({
+                                  ...current,
+                                  richTextBlocks: current.richTextBlocks.map(
+                                    (item, index) =>
+                                      index === blockIndex
+                                        ? {
+                                            ...item,
+                                            itemsText: event.target.value,
+                                          }
+                                        : item
+                                  ),
+                                }))
+                              }
+                              placeholder="每行一条要点"
+                              className="mt-3 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm leading-6 outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                            />
+                          )}
+
+                          {block.type === "faq" && (
+                            <div className="mt-3 grid gap-3">
+                              <input
+                                value={block.question}
+                                onChange={event =>
+                                  setContentForm(current => ({
+                                    ...current,
+                                    richTextBlocks: current.richTextBlocks.map(
+                                      (item, index) =>
+                                        index === blockIndex
+                                          ? {
+                                              ...item,
+                                              question: event.target.value,
+                                            }
+                                          : item
+                                    ),
+                                  }))
+                                }
+                                placeholder="用户常见问题"
+                                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                              />
+                              <textarea
+                                value={block.answer}
+                                onChange={event =>
+                                  setContentForm(current => ({
+                                    ...current,
+                                    richTextBlocks: current.richTextBlocks.map(
+                                      (item, index) =>
+                                        index === blockIndex
+                                          ? {
+                                              ...item,
+                                              answer: event.target.value,
+                                            }
+                                          : item
+                                    ),
+                                  }))
+                                }
+                                placeholder="回答"
+                                className="min-h-[80px] rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm leading-6 outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => void submitContentUpdate("H5 详情")}
+                        disabled={
+                          isSaving ||
+                          !product ||
+                          !content ||
+                          !catalogPermissions.canEdit
+                        }
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isSaving ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                        保存 H5 详情
+                      </button>
+                      <button
+                        onClick={() =>
+                          product
+                            ? navigate(`/admin/courses/${product.courseId}`)
+                            : setActiveStep("basic")
+                        }
+                        className="inline-flex h-10 w-fit items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                      >
+                        <FilePenLine className="h-4 w-4" />
+                        {product ? "打开章节资料" : "创建后编辑详情"}
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() =>
-                      product
-                        ? navigate(`/admin/courses/${product.courseId}`)
-                        : setActiveStep("basic")
-                    }
-                    className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047]"
-                  >
-                    <FilePenLine className="h-4 w-4" />
-                    {product ? "打开内容详情" : "创建后编辑详情"}
-                  </button>
+
+                  <div className="h-fit rounded-[28px] border border-[#D8CEC0] bg-[#243B35] p-3">
+                    <div className="overflow-hidden rounded-[22px] bg-[#FFFDF8]">
+                      <div className="flex items-center gap-2 border-b border-[#E5DCCF] px-4 py-3 text-xs font-semibold text-[#6F7771]">
+                        <Smartphone className="h-4 w-4" />
+                        移动端预览
+                      </div>
+                      <img
+                        src={contentForm.showcaseImageUrl || basicForm.coverUrl}
+                        alt={contentForm.showcaseImageAlt || basicForm.title}
+                        className="aspect-[4/3] w-full object-cover"
+                      />
+                      <div className="space-y-3 px-4 py-4">
+                        <p className="text-lg font-semibold leading-7 text-[#243B35]">
+                          {contentForm.headline || basicForm.title || "H5 标题"}
+                        </p>
+                        <p className="text-xs leading-5 text-[#6F7771]">
+                          {contentForm.subheadline ||
+                            "这里展示移动端商品详情的副标题。"}
+                        </p>
+                        {contentForm.richTextBlocks.slice(0, 4).map(block => (
+                          <div
+                            key={block.id}
+                            className="border-t border-[#EFE7DA] pt-3"
+                          >
+                            {block.type === "section_heading" && (
+                              <p className="text-sm font-semibold text-[#243B35]">
+                                {block.title || "段落标题"}
+                              </p>
+                            )}
+                            {block.type === "paragraph" && (
+                              <p className="text-xs leading-5 text-[#6F7771]">
+                                {block.body || "正文内容预览"}
+                              </p>
+                            )}
+                            {block.type === "purchase_note" && (
+                              <p className="text-xs leading-5 text-[#8B7E6D]">
+                                {block.body || "购买须知预览"}
+                              </p>
+                            )}
+                            {block.type === "bullet_list" && (
+                              <ul className="space-y-1 text-xs text-[#6F7771]">
+                                {splitLines(block.itemsText).map(item => (
+                                  <li key={item}>· {item}</li>
+                                ))}
+                              </ul>
+                            )}
+                            {block.type === "faq" && (
+                              <div className="text-xs leading-5">
+                                <p className="font-semibold text-[#243B35]">
+                                  {block.question || "常见问题"}
+                                </p>
+                                <p className="mt-1 text-[#6F7771]">
+                                  {block.answer || "问题回答预览"}
+                                </p>
+                              </div>
+                            )}
+                            {block.type === "image" && (
+                              <div className="overflow-hidden rounded-lg bg-[#F8F3EA]">
+                                {block.imageUrl ? (
+                                  <img
+                                    src={block.imageUrl}
+                                    alt={block.altText || block.title}
+                                    className="aspect-[4/3] w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex aspect-[4/3] items-center justify-center text-[#A39A90]">
+                                    <FileImage className="h-5 w-5" />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {block.type === "instructor_intro" && (
+                              <p className="text-xs leading-5 text-[#6F7771]">
+                                {block.body || "讲师介绍预览"}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </SectionShell>
             )}
@@ -823,6 +1760,8 @@ export default function CourseProductEditorWorkspacePage() {
                   ? courseProductReviewCopy[product.reviewStatus]
                   : "未提交"}
               </p>
+              <p>商品图片：{contentForm.imageAssets.length} 张详情/证明图</p>
+              <p>H5 内容：{contentForm.richTextBlocks.length} 个内容块</p>
             </div>
           </aside>
         </div>

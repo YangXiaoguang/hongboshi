@@ -1199,6 +1199,7 @@ describe("course product domain contract", () => {
     });
 
     expect(parsed.merchandising.imageAssets).toEqual([]);
+    expect(parsed.merchandising.richTextBlocks).toEqual([]);
     expect(parsed.chapters[0]?.materialPlaceholders[0]?.status).toBe("pending");
     expect(parsed.chapters[0]?.materialPlaceholders[0]?.assetId).toBe(
       "asset_emotion_intro_1"
@@ -1221,6 +1222,26 @@ describe("course product domain contract", () => {
     const parsed = CourseProductContentUpdateRequestSchema.parse({
       summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
       targetAudience: ["希望提升情绪调节能力的学习者"],
+      merchandising: {
+        richTextBlocks: [
+          {
+            id: "h5_heading_1",
+            type: "section_heading",
+            title: "先理解情绪，再开始练习",
+          },
+          {
+            id: "h5_paragraph_1",
+            type: "paragraph",
+            body: "课程会通过短讲和练习，帮助学习者建立日常可持续的调节路径。",
+          },
+          {
+            id: "h5_faq_1",
+            type: "faq",
+            question: "购买后可以反复学习吗？",
+            answer: "课程权益有效期内可以反复进入学习页查看章节和资料。",
+          },
+        ],
+      },
       chapters: [
         {
           id: "chapter_1",
@@ -1240,6 +1261,21 @@ describe("course product domain contract", () => {
     });
 
     expect(parsed.chapters[0]?.durationMinutes).toBe(36);
+    expect(parsed.merchandising.richTextBlocks[2]?.type).toBe("faq");
+    expect(
+      CourseProductContentUpdateRequestSchema.safeParse({
+        ...parsed,
+        merchandising: {
+          richTextBlocks: [
+            {
+              id: "h5_image_1",
+              type: "image",
+              title: "缺少图片地址",
+            },
+          ],
+        },
+      }).success
+    ).toBe(false);
     expect(
       CourseProductContentUpdateRequestSchema.safeParse({
         ...parsed,
@@ -1275,6 +1311,23 @@ describe("course product domain contract", () => {
             imageUrl: "https://cdn.example.com/assets/emotion-showcase.jpg",
             usage: "showcase",
             complianceStatus: "approved",
+          },
+        ],
+        richTextBlocks: [
+          {
+            id: "h5_heading_1",
+            type: "section_heading",
+            title: "先稳住，再行动",
+          },
+          {
+            id: "h5_paragraph_1",
+            type: "paragraph",
+            body: "课程将情绪调节拆成识别、停顿、表达和复盘四个动作。",
+          },
+          {
+            id: "h5_note_1",
+            type: "purchase_note",
+            body: "适合希望用碎片时间建立稳定练习节奏的学习者。",
           },
         ],
       },

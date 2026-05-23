@@ -25,6 +25,7 @@ describe("course product content store", () => {
     expect(content.summary).toContain(product.title);
     expect(content.merchandising.showcaseImageUrl).toBe(product.coverUrl);
     expect(content.merchandising.sellingPoints.length).toBeGreaterThan(1);
+    expect(content.merchandising.richTextBlocks).toHaveLength(3);
     expect(content.chapters).toHaveLength(3);
   });
 

@@ -331,6 +331,23 @@ export function buildDefaultCourseProductContent(
           complianceStatus: "not_required",
         },
       ],
+      richTextBlocks: [
+        {
+          id: `${product.id}_h5_heading_1`,
+          type: "section_heading",
+          title: "适合先从一个可练习的改变开始",
+        },
+        {
+          id: `${product.id}_h5_paragraph_1`,
+          type: "paragraph",
+          body: `${product.title}会把${product.category}中的典型困扰拆成可理解的场景、可执行的练习和可复盘的行动。`,
+        },
+        {
+          id: `${product.id}_h5_purchase_note_1`,
+          type: "purchase_note",
+          body: "购买后可进入课程学习页查看章节、练习和已开放资料；如遇服务问题，可在个人中心订单详情发起售后。",
+        },
+      ],
     },
     chapters: [
       {
@@ -386,6 +403,7 @@ function pickContentAuditFields(content: CourseProductDetailContent) {
       content.merchandising.imageAssets.length +
       (content.merchandising.showcaseImageUrl ? 1 : 0),
     merchandisingSellingPointCount: content.merchandising.sellingPoints.length,
+    richTextBlockCount: content.merchandising.richTextBlocks.length,
     chapterCount: content.chapters.length,
     materialCount: content.chapters.reduce(
       (total, chapter) => total + chapter.materialPlaceholders.length,
