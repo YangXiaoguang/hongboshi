@@ -18,16 +18,19 @@ import {
   Loader2,
   PanelRight,
   Plus,
+  RefreshCw,
   Save,
   ShieldCheck,
   Smartphone,
   Trash2,
+  Upload,
 } from "lucide-react";
 import {
   COURSE_CATEGORIES,
   COURSE_TYPES,
   CourseProductContentUpdateRequestSchema,
   type CourseCategory,
+  type CourseProductAsset,
   type CourseProductContentUpdateRequest,
   type CourseProductCreateRequest,
   type CourseProductDetailContent,
@@ -108,6 +111,13 @@ const merchandisingAssetUsageOptions: {
   { value: "proof", label: "证明图" },
   { value: "gallery", label: "详情图" },
 ];
+
+const assetComplianceStatusCopy = {
+  not_required: "免审",
+  pending: "待审核",
+  approved: "已通过",
+  rejected: "已驳回",
+} satisfies Record<MediaAssetFormState["complianceStatus"], string>;
 
 const h5BlockTypeOptions: {
   value: CourseProductRichTextBlockType;
@@ -291,6 +301,56 @@ function createMediaAssetForm(
   };
 }
 
+function isMerchandisingImageAsset(asset: CourseProductAsset) {
+  return (
+    !asset.deletedAt &&
+    Boolean(asset.publicUrl) &&
+    (asset.kind === "detail_image" || asset.kind === "proof_image")
+  );
+}
+
+function isStorefrontReadyAsset(asset: CourseProductAsset) {
+  return (
+    asset.complianceStatus === "approved" ||
+    asset.complianceStatus === "not_required"
+  );
+}
+
+function usageFromCourseProductAsset(
+  asset: CourseProductAsset
+): CourseProductMerchandisingAssetUsage {
+  return asset.usage ?? (asset.kind === "proof_image" ? "proof" : "gallery");
+}
+
+function mediaAssetFormFromCourseProductAsset(
+  asset: CourseProductAsset,
+  usage: CourseProductMerchandisingAssetUsage = usageFromCourseProductAsset(
+    asset
+  )
+): MediaAssetFormState | undefined {
+  if (!asset.publicUrl) return undefined;
+  return {
+    id: asset.id,
+    title: asset.title,
+    imageUrl: asset.publicUrl,
+    altText: asset.altText ?? asset.title,
+    usage,
+    complianceStatus: asset.complianceStatus,
+    note: asset.note ?? "",
+  };
+}
+
+function upsertMediaAssetForm(
+  assets: MediaAssetFormState[],
+  nextAsset: MediaAssetFormState
+) {
+  const existingIndex = assets.findIndex(asset => asset.id === nextAsset.id);
+  if (existingIndex < 0) return [nextAsset, ...assets];
+  return assets.map((asset, index) =>
+    index === existingIndex ? nextAsset : asset
+  );
+}
+
 function createH5BlockForm(
   type: CourseProductRichTextBlockType
 ): H5BlockFormState {
@@ -461,6 +521,14 @@ export default function CourseProductEditorWorkspacePage() {
   const [contentForm, setContentForm] = useState<ContentWorkbenchFormState>(
     defaultContentWorkbenchForm
   );
+  const [assetLibrary, setAssetLibrary] = useState<CourseProductAsset[]>([]);
+  const [isAssetLibraryLoading, setIsAssetLibraryLoading] = useState(false);
+  const [isAssetUploading, setIsAssetUploading] = useState(false);
+  const [assetUploadFile, setAssetUploadFile] = useState<File>();
+  const [assetUploadTitle, setAssetUploadTitle] = useState("");
+  const [assetUploadUsage, setAssetUploadUsage] =
+    useState<CourseProductMerchandisingAssetUsage>("gallery");
+  const [assetUploadInputKey, setAssetUploadInputKey] = useState(0);
   const [reason, setReason] = useState("新增课程商品草稿");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -478,6 +546,14 @@ export default function CourseProductEditorWorkspacePage() {
     product,
     content,
     contentForm
+  );
+  const merchandisingImageAssets = useMemo(
+    () => assetLibrary.filter(isMerchandisingImageAsset),
+    [assetLibrary]
+  );
+  const storefrontReadyAssetCount = useMemo(
+    () => merchandisingImageAssets.filter(isStorefrontReadyAsset).length,
+    [merchandisingImageAssets]
   );
 
   const loadProduct = useCallback(async () => {
@@ -500,14 +576,19 @@ export default function CourseProductEditorWorkspacePage() {
       setProduct(matched);
       setBasicForm(basicFormFromProduct(matched));
       setPriceForm(priceFormFromProduct(matched));
-      const loadedContent =
-        await httpCourseProductRepository.loadCourseProductContent(matched.id);
+      setIsAssetLibraryLoading(true);
+      const [loadedContent, loadedAssets] = await Promise.all([
+        httpCourseProductRepository.loadCourseProductContent(matched.id),
+        httpCourseProductRepository.loadCourseProductAssets(matched.id),
+      ]);
       setContent(loadedContent);
       setContentForm(contentFormFromContent(loadedContent));
+      setAssetLibrary(loadedAssets.items);
       setReason("运营工作台更新课程商品");
     } catch (err) {
       setError(err instanceof Error ? err.message : "课程商品读取失败");
     } finally {
+      setIsAssetLibraryLoading(false);
       setIsLoading(false);
     }
   }, [courseId]);
@@ -520,6 +601,10 @@ export default function CourseProductEditorWorkspacePage() {
       setBasicForm(defaultBasicForm());
       setPriceForm(defaultPriceForm());
       setContentForm(defaultContentWorkbenchForm());
+      setAssetLibrary([]);
+      setAssetUploadFile(undefined);
+      setAssetUploadTitle("");
+      setAssetUploadUsage("gallery");
       setReason("新增课程商品草稿");
       return;
     }
@@ -676,6 +761,128 @@ export default function CourseProductEditorWorkspacePage() {
     },
     [catalogPermissions.canEdit, content, contentForm, product, reason]
   );
+
+  const refreshAssetLibrary = useCallback(async () => {
+    if (!product) return;
+    setIsAssetLibraryLoading(true);
+    setActionError(undefined);
+    try {
+      const result = await httpCourseProductRepository.loadCourseProductAssets(
+        product.id
+      );
+      setAssetLibrary(result.items);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "课程素材读取失败");
+    } finally {
+      setIsAssetLibraryLoading(false);
+    }
+  }, [product]);
+
+  const applyAssetToContentForm = useCallback(
+    (
+      asset: CourseProductAsset,
+      usage: CourseProductMerchandisingAssetUsage
+    ) => {
+      const formAsset = mediaAssetFormFromCourseProductAsset(asset, usage);
+      if (!formAsset) {
+        setActionError("该素材缺少可用于前台展示的读取地址");
+        return;
+      }
+      if (usage === "showcase" && !isStorefrontReadyAsset(asset)) {
+        setActionError("待审核或驳回素材不能直接设为成交主视觉");
+        return;
+      }
+
+      setContentForm(current => ({
+        ...current,
+        showcaseImageUrl:
+          usage === "showcase" ? formAsset.imageUrl : current.showcaseImageUrl,
+        showcaseImageAlt:
+          usage === "showcase" ? formAsset.altText : current.showcaseImageAlt,
+        imageAssets: upsertMediaAssetForm(current.imageAssets, formAsset),
+      }));
+      setActionError(undefined);
+      setActionMessage(
+        usage === "showcase"
+          ? "已选择成交主视觉，保存商品图片后生效"
+          : "已加入详情图草稿，保存商品图片后生效"
+      );
+    },
+    []
+  );
+
+  const uploadMerchandisingAsset = useCallback(async () => {
+    if (!product) {
+      setActionError("请先创建课程商品后再上传素材");
+      return;
+    }
+    if (!catalogPermissions.canEdit) {
+      setActionError("当前账号暂无课程商品编辑权限");
+      return;
+    }
+    if (!assetUploadFile) {
+      setActionError("请先选择一张图片文件");
+      return;
+    }
+    if (!assetUploadFile.type.startsWith("image/")) {
+      setActionError("商品图文素材仅支持图片文件");
+      return;
+    }
+
+    setIsAssetUploading(true);
+    setActionError(undefined);
+    setActionMessage(undefined);
+    try {
+      const title =
+        assetUploadTitle.trim() ||
+        assetUploadFile.name.replace(/\.[^.]+$/, "") ||
+        "课程商品图片";
+      const result =
+        await httpCourseProductRepository.uploadCourseProductAssetFile(
+          product.id,
+          {
+            kind: assetUploadUsage === "proof" ? "proof_image" : "detail_image",
+            title,
+            fileName: assetUploadFile.name,
+            mimeType: assetUploadFile.type,
+            sizeBytes: assetUploadFile.size,
+            file: assetUploadFile,
+            usage: assetUploadUsage,
+            altText: title,
+            note: "商品工作台上传",
+            reason,
+          }
+        );
+      setAssetLibrary(result.assets);
+      const formAsset = mediaAssetFormFromCourseProductAsset(
+        result.asset,
+        assetUploadUsage
+      );
+      if (formAsset) {
+        setContentForm(current => ({
+          ...current,
+          imageAssets: upsertMediaAssetForm(current.imageAssets, formAsset),
+        }));
+      }
+      setAssetUploadFile(undefined);
+      setAssetUploadTitle("");
+      setAssetUploadInputKey(current => current + 1);
+      setActionMessage(
+        "素材已上传并加入商品图片草稿，审核通过后会在前台详情中展示"
+      );
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "课程素材上传失败");
+    } finally {
+      setIsAssetUploading(false);
+    }
+  }, [
+    assetUploadFile,
+    assetUploadTitle,
+    assetUploadUsage,
+    catalogPermissions.canEdit,
+    product,
+    reason,
+  ]);
 
   if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) {
     return null;
@@ -1077,6 +1284,191 @@ export default function CourseProductEditorWorkspacePage() {
                       </label>
                     </div>
 
+                    <div className="rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 text-sm font-semibold text-[#41524B]">
+                            <ImagePlus className="h-4 w-4 text-[#6F8F83]" />
+                            商品素材选择器
+                          </div>
+                          <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                            复用课程素材库图片，已审核素材可直接设为主视觉或加入详情图。
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => void refreshAssetLibrary()}
+                          disabled={!product || isAssetLibraryLoading}
+                          className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isAssetLibraryLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4" />
+                          )}
+                          刷新素材
+                        </button>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                        <div>
+                          {isAssetLibraryLoading ? (
+                            <div className="flex min-h-[136px] items-center justify-center rounded-lg border border-dashed border-[#D8CEC0] bg-white text-sm text-[#6F7771]">
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              正在读取素材库
+                            </div>
+                          ) : merchandisingImageAssets.length === 0 ? (
+                            <div className="rounded-lg border border-dashed border-[#D8CEC0] bg-white px-4 py-5 text-sm text-[#6F7771]">
+                              暂无可用于商品展示的图片素材，可以先上传一张课程场景图。
+                            </div>
+                          ) : (
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {merchandisingImageAssets
+                                .slice(0, 6)
+                                .map(asset => {
+                                  const ready = isStorefrontReadyAsset(asset);
+                                  return (
+                                    <div
+                                      key={asset.id}
+                                      className="grid gap-3 rounded-lg border border-[#E1D7C8] bg-white p-3 sm:grid-cols-[96px_minmax(0,1fr)]"
+                                    >
+                                      <div className="overflow-hidden rounded-lg bg-[#F8F3EA]">
+                                        <img
+                                          src={asset.publicUrl}
+                                          alt={asset.altText || asset.title}
+                                          className="aspect-[4/3] w-full object-cover"
+                                        />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="flex items-start justify-between gap-2">
+                                          <p className="line-clamp-2 text-sm font-semibold leading-5 text-[#243B35]">
+                                            {asset.title}
+                                          </p>
+                                          <span
+                                            className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${
+                                              ready
+                                                ? "bg-[#EEF6ED] text-[#41675A]"
+                                                : "bg-[#FFF4EF] text-[#A65F48]"
+                                            }`}
+                                          >
+                                            {
+                                              assetComplianceStatusCopy[
+                                                asset.complianceStatus
+                                              ]
+                                            }
+                                          </span>
+                                        </div>
+                                        <p className="mt-1 text-xs text-[#8A8176]">
+                                          {asset.kind === "proof_image"
+                                            ? "证明图"
+                                            : "详情图"}{" "}
+                                          · {asset.fileName}
+                                        </p>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          <button
+                                            onClick={() =>
+                                              applyAssetToContentForm(
+                                                asset,
+                                                "gallery"
+                                              )
+                                            }
+                                            className="inline-flex h-8 items-center rounded-lg border border-[#D8CEC0] px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                                          >
+                                            加入详情图
+                                          </button>
+                                          <button
+                                            onClick={() =>
+                                              applyAssetToContentForm(
+                                                asset,
+                                                "showcase"
+                                              )
+                                            }
+                                            disabled={!ready}
+                                            className="inline-flex h-8 items-center rounded-lg bg-[#243B35] px-2.5 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-45"
+                                          >
+                                            设为主视觉
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )}
+                          <p className="mt-3 text-xs text-[#8A8176]">
+                            素材库共 {merchandisingImageAssets.length} 张图片，
+                            {storefrontReadyAssetCount} 张已可前台展示。
+                          </p>
+                        </div>
+
+                        <div className="rounded-lg border border-[#E1D7C8] bg-white p-3">
+                          <p className="text-sm font-semibold text-[#41524B]">
+                            上传商品图片
+                          </p>
+                          <input
+                            key={assetUploadInputKey}
+                            type="file"
+                            accept="image/*"
+                            onChange={event => {
+                              const file = event.target.files?.[0];
+                              setAssetUploadFile(file);
+                              if (file && !assetUploadTitle.trim()) {
+                                setAssetUploadTitle(
+                                  file.name.replace(/\.[^.]+$/, "")
+                                );
+                              }
+                            }}
+                            className="mt-3 w-full rounded-lg border border-[#D8CEC0] bg-[#FFFDF8] px-3 py-2 text-xs text-[#6F7771] file:mr-3 file:rounded-md file:border-0 file:bg-[#243B35] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
+                          />
+                          <input
+                            value={assetUploadTitle}
+                            onChange={event =>
+                              setAssetUploadTitle(event.target.value)
+                            }
+                            placeholder="素材标题"
+                            className="mt-3 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                          />
+                          <select
+                            value={assetUploadUsage}
+                            onChange={event =>
+                              setAssetUploadUsage(
+                                event.target
+                                  .value as CourseProductMerchandisingAssetUsage
+                              )
+                            }
+                            className="mt-3 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition focus:border-[#6F8F83]"
+                          >
+                            {merchandisingAssetUsageOptions
+                              .filter(option => option.value !== "showcase")
+                              .map(option => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            onClick={() => void uploadMerchandisingAsset()}
+                            disabled={
+                              !product ||
+                              !assetUploadFile ||
+                              isAssetUploading ||
+                              !catalogPermissions.canEdit
+                            }
+                            className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isAssetUploading ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Upload className="h-4 w-4" />
+                            )}
+                            上传并加入草稿
+                          </button>
+                          <p className="mt-3 text-xs leading-5 text-[#8A8176]">
+                            新上传素材默认待审核，保存商品图片后会进入内容复审。
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <div className="flex items-center gap-2 text-sm font-semibold text-[#41524B]">
@@ -1084,8 +1476,7 @@ export default function CourseProductEditorWorkspacePage() {
                           详情图与证明图
                         </div>
                         <p className="mt-1 text-xs leading-5 text-[#8A8176]">
-                          先支持 URL
-                          和已审核素材地址，下一步接入素材选择器与上传。
+                          支持手动 URL、已审核素材和工作台上传素材。
                         </p>
                       </div>
                       <button
@@ -1215,6 +1606,22 @@ export default function CourseProductEditorWorkspacePage() {
                                 placeholder="图片说明"
                                 className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83] md:col-span-2"
                               />
+                              <div className="md:col-span-2">
+                                <span
+                                  className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    asset.complianceStatus === "approved" ||
+                                    asset.complianceStatus === "not_required"
+                                      ? "bg-[#EEF6ED] text-[#41675A]"
+                                      : "bg-[#FFF4EF] text-[#A65F48]"
+                                  }`}
+                                >
+                                  {
+                                    assetComplianceStatusCopy[
+                                      asset.complianceStatus
+                                    ]
+                                  }
+                                </span>
+                              </div>
                             </div>
                             <button
                               onClick={() =>

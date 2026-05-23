@@ -1640,6 +1640,33 @@ function CourseContentShowcase({
             </div>
           )}
 
+          {profile.richTextBlocks.length > 0 && (
+            <div className="mt-8 border-t border-[#E1D7C7] pt-8">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-[#8C6E4A]">
+                    商品详情
+                  </p>
+                  <h3 className="mt-2 text-xl font-semibold text-[#243B35]">
+                    课程图文介绍
+                  </h3>
+                </div>
+                <span className="rounded-full bg-[#EEF6ED] px-3 py-1.5 text-xs font-semibold text-[#41675A]">
+                  H5 内容
+                </span>
+              </div>
+              <div className="mt-5 space-y-4">
+                {profile.richTextBlocks.map((block, index) => (
+                  <CourseH5DetailBlock
+                    key={block.id}
+                    block={block}
+                    index={index}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <button
               onClick={onPrimaryAction}
@@ -1659,6 +1686,103 @@ function CourseContentShowcase({
         </div>
       </div>
     </section>
+  );
+}
+
+function CourseH5DetailBlock({
+  block,
+  index,
+}: {
+  block: CourseMerchandisingProfile["richTextBlocks"][number];
+  index: number;
+}) {
+  if (block.type === "section_heading") {
+    return (
+      <div className="rounded-[20px] bg-[#EEF6ED] px-5 py-4">
+        <p className="text-xs font-semibold text-[#6F8F83]">
+          {String(index + 1).padStart(2, "0")}
+        </p>
+        <h4 className="mt-2 text-lg font-semibold text-[#243B35]">
+          {block.title}
+        </h4>
+      </div>
+    );
+  }
+
+  if (block.type === "image" && block.imageUrl) {
+    return (
+      <figure className="overflow-hidden rounded-[22px] border border-[#E4DCCF] bg-[#FFFDF8]">
+        <img
+          src={block.imageUrl}
+          alt={block.altText || block.title || "课程详情图"}
+          className="aspect-[16/9] w-full object-cover"
+        />
+        {(block.title || block.altText) && (
+          <figcaption className="px-4 py-3 text-xs leading-5 text-[#6D746F]">
+            {block.title || block.altText}
+          </figcaption>
+        )}
+      </figure>
+    );
+  }
+
+  if (block.type === "bullet_list") {
+    return (
+      <div className="rounded-[20px] border border-[#E4DCCF] bg-[#FFFDF8] p-5">
+        {block.title && (
+          <h4 className="text-base font-semibold text-[#243B35]">
+            {block.title}
+          </h4>
+        )}
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {block.items.map(item => (
+            <div key={item} className="flex items-start gap-2 text-sm">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#6F8F83]" />
+              <span className="leading-6 text-[#394A44]">{item}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (block.type === "faq") {
+    return (
+      <div className="rounded-[20px] border border-[#E4DCCF] bg-[#FFFDF8] p-5">
+        <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+          <CircleHelp className="h-4 w-4 text-[#6F8F83]" />
+          {block.question}
+        </div>
+        <p className="mt-3 text-sm leading-7 text-[#6D746F]">{block.answer}</p>
+      </div>
+    );
+  }
+
+  const iconByType: Partial<
+    Record<
+      CourseMerchandisingProfile["richTextBlocks"][number]["type"],
+      LucideIcon
+    >
+  > = {
+    paragraph: FileText,
+    instructor_intro: UserCheck,
+    purchase_note: BadgeCheck,
+  };
+  const Icon = iconByType[block.type] ?? FileText;
+
+  return (
+    <div className="rounded-[20px] border border-[#E4DCCF] bg-[#FFFDF8] p-5">
+      <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+        <Icon className="h-4 w-4 text-[#6F8F83]" />
+        {block.title ||
+          (block.type === "purchase_note"
+            ? "购买须知"
+            : block.type === "instructor_intro"
+              ? "讲师介绍"
+              : "课程说明")}
+      </div>
+      <p className="mt-3 text-sm leading-7 text-[#6D746F]">{block.body}</p>
+    </div>
   );
 }
 

@@ -40,6 +40,7 @@ describe("courseMerchandising", () => {
     expect(profile.buyerQuestion).toContain(detail.suitableFor[0].title);
     expect(profile.proofPoints.map(item => item.label)).toContain("内容规模");
     expect(profile.sellingPoints).toEqual(detail.outcomes.slice(0, 4));
+    expect(profile.richTextBlocks).toEqual([]);
   });
 
   it("lets admin-managed merchandising content override the default sales copy", () => {
@@ -72,6 +73,28 @@ describe("courseMerchandising", () => {
             complianceStatus: "pending",
           },
         ],
+        richTextBlocks: [
+          {
+            id: "h5_heading_1",
+            type: "section_heading",
+            title: "后台维护的 H5 标题",
+            items: [],
+          },
+          {
+            id: "h5_paragraph_1",
+            type: "paragraph",
+            body: "后台维护的图文详情正文。",
+            items: [],
+          },
+          {
+            id: "h5_image_1",
+            type: "image",
+            title: "后台维护的图文图片",
+            imageUrl: "https://example.com/h5.jpg",
+            altText: "图文详情图片",
+            items: [],
+          },
+        ],
       },
       totalDuration: 136,
       totalLessons: 13,
@@ -92,6 +115,11 @@ describe("courseMerchandising", () => {
         usage: "proof",
         altText: "课程练习卡片预览",
       },
+    ]);
+    expect(profile.richTextBlocks.map(block => block.id)).toEqual([
+      "h5_heading_1",
+      "h5_paragraph_1",
+      "h5_image_1",
     ]);
   });
 

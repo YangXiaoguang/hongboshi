@@ -4,6 +4,7 @@ import type {
   CourseDetail,
   CourseProductMerchandisingAsset,
   CourseProductMerchandisingContent,
+  CourseProductRichTextBlock,
 } from "@shared/domain";
 import type { CourseLearningPath } from "./coursePath";
 
@@ -30,6 +31,7 @@ export interface CourseMerchandisingProfile {
   proofPoints: CourseMerchandisingProof[];
   sellingPoints: string[];
   visualAssets: CourseMerchandisingVisualAsset[];
+  richTextBlocks: CourseProductRichTextBlock[];
 }
 
 const showcaseImages: Record<CourseCategory, string> = {
@@ -125,6 +127,14 @@ function isPublicVisualAsset(
   return asset.usage !== "showcase" && isPublicMerchandisingAsset(asset);
 }
 
+function isRenderableRichTextBlock(block: CourseProductRichTextBlock) {
+  if (block.type === "image") return Boolean(block.imageUrl);
+  if (block.type === "bullet_list") return block.items.length > 0;
+  if (block.type === "faq") return Boolean(block.question && block.answer);
+  if (block.type === "section_heading") return Boolean(block.title);
+  return Boolean(block.body);
+}
+
 export function createCourseMerchandisingProfile({
   course,
   learningPath,
@@ -166,6 +176,10 @@ export function createCourseMerchandisingProfile({
     (primaryAudience
       ? `如果你正在经历「${primaryAudience.title}」，这门课会先帮你把困扰拆成能练习的小步骤。`
       : "先看清这门课解决什么，再决定是否下单。");
+  const richTextBlocks =
+    merchandising?.richTextBlocks
+      .filter(isRenderableRichTextBlock)
+      .slice(0, 12) ?? [];
 
   return {
     promise: merchandising?.headline ?? categoryPromises[course.category],
@@ -202,5 +216,6 @@ export function createCourseMerchandisingProfile({
     ],
     sellingPoints,
     visualAssets,
+    richTextBlocks,
   };
 }
