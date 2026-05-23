@@ -435,10 +435,12 @@ function SectionShell({
   children: ReactNode;
 }) {
   return (
-    <section className="border-b border-[#E5DCCF] bg-[#FFFDF8] px-5 py-5 last:border-b-0">
+    <section className="border-b border-[#E5DCCF] bg-[#FFFDF8] px-5 py-5 last:border-b-0 sm:px-6 lg:px-7">
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-[#243B35]">{title}</h2>
-        <p className="mt-1 text-sm leading-6 text-[#6F7771]">{description}</p>
+        <p className="mt-1 max-w-[860px] text-sm leading-6 text-[#6F7771]">
+          {description}
+        </p>
       </div>
       {children}
     </section>
@@ -451,6 +453,7 @@ export default function CourseProductEditorWorkspacePage() {
   const [, editParams] = useRoute("/admin/courses/:courseId/edit");
   const { user, isLoggedIn, isAuthSyncing } = useAuth();
   const [activeStep, setActiveStep] = useState<WorkspaceStepId>("basic");
+  const [isPublishSummaryOpen, setIsPublishSummaryOpen] = useState(false);
   const [product, setProduct] = useState<CourseProductListItem>();
   const [content, setContent] = useState<CourseProductDetailContent>();
   const [basicForm, setBasicForm] = useState<BasicFormState>(defaultBasicForm);
@@ -679,6 +682,10 @@ export default function CourseProductEditorWorkspacePage() {
   }
 
   const savePrimaryAction = isNew ? submitCreate : submitBasicUpdate;
+  const activeStepIndex = Math.max(
+    0,
+    workspaceSteps.findIndex(step => step.id === activeStep)
+  );
 
   return (
     <div className="text-[#243B35]">
@@ -761,30 +768,137 @@ export default function CourseProductEditorWorkspacePage() {
           正在读取课程商品
         </div>
       ) : (
-        <div className="mt-6 grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
-          <aside className="h-fit overflow-hidden rounded-lg border border-[#E1D7C8] bg-[#FFFDF8]">
-            {workspaceSteps.map((step, index) => (
+        <div className="mt-6 space-y-4">
+          <section className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] px-3 py-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3 px-1">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                <Layers3 className="h-4 w-4 text-[#6F8F83]" />
+                编辑流程
+              </div>
+              <p className="text-xs text-[#8A8176]">
+                当前第 {activeStepIndex + 1} 步 / 共 {workspaceSteps.length} 步
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              {workspaceSteps.map((step, index) => {
+                const isActive = activeStep === step.id;
+                return (
+                  <button
+                    key={step.id}
+                    onClick={() => setActiveStep(step.id)}
+                    className={`min-h-[62px] rounded-lg border px-3 py-2 text-left transition ${
+                      isActive
+                        ? "border-[#7FA394] bg-[#EEF6ED] shadow-sm"
+                        : "border-[#E8DED0] bg-white hover:border-[#B8C7BC]"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                          isActive
+                            ? "bg-[#243B35] text-white"
+                            : "bg-[#F2EADF] text-[#6F7771]"
+                        }`}
+                      >
+                        {index + 1}
+                      </span>
+                      <span className="min-w-0 truncate text-sm font-semibold text-[#243B35]">
+                        {step.label}
+                      </span>
+                    </span>
+                    <span className="mt-1 block truncate text-xs leading-5 text-[#8A8176]">
+                      {step.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] px-4 py-3">
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(320px,460px)_auto] xl:items-center">
+              <div className="flex min-w-0 items-center gap-3">
+                <img
+                  src={basicForm.coverUrl}
+                  alt={basicForm.title || "课程商品主图"}
+                  className="h-14 w-20 shrink-0 rounded-lg object-cover"
+                />
+                <div className="min-w-0">
+                  <p className="line-clamp-1 text-sm font-semibold text-[#243B35]">
+                    {basicForm.title || "未命名课程商品"}
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-[#8A8176]">
+                    <span>{basicForm.category}</span>
+                    <span>·</span>
+                    <span>{basicForm.type}</span>
+                    <span>·</span>
+                    <span>完整度 {completeness.label}</span>
+                  </div>
+                </div>
+              </div>
+
+              <label className="block text-xs font-semibold text-[#41524B]">
+                操作原因
+                <input
+                  value={reason}
+                  onChange={event => setReason(event.target.value)}
+                  className="mt-1 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                />
+              </label>
+
               <button
-                key={step.id}
-                onClick={() => setActiveStep(step.id)}
-                className={`flex w-full items-start gap-3 border-b border-[#E8DED0] px-4 py-4 text-left last:border-b-0 ${
-                  activeStep === step.id ? "bg-[#EEF6ED]" : "hover:bg-[#FBF7EF]"
-                }`}
+                onClick={() => setIsPublishSummaryOpen(current => !current)}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
               >
-                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#243B35] text-xs font-semibold text-white">
-                  {index + 1}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[#243B35]">
-                    {step.label}
-                  </span>
-                  <span className="mt-1 block text-xs leading-5 text-[#8A8176]">
-                    {step.description}
-                  </span>
-                </span>
+                <PanelRight className="h-4 w-4" />
+                {isPublishSummaryOpen ? "收起发布信息" : "查看发布信息"}
               </button>
-            ))}
-          </aside>
+            </div>
+
+            {isPublishSummaryOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.18 }}
+                className="mt-3 grid gap-3 border-t border-[#E5DCCF] pt-3 text-xs leading-5 text-[#6F7771] md:grid-cols-5"
+              >
+                <p>
+                  <span className="block text-[#8A8176]">课程 ID</span>
+                  <span className="font-semibold text-[#243B35]">
+                    {product?.courseId ?? "创建后生成"}
+                  </span>
+                </p>
+                <p>
+                  <span className="block text-[#8A8176]">商品状态</span>
+                  <span className="font-semibold text-[#243B35]">
+                    {product
+                      ? courseProductStatusCopy[product.status]
+                      : "草稿待创建"}
+                  </span>
+                </p>
+                <p>
+                  <span className="block text-[#8A8176]">审核状态</span>
+                  <span className="font-semibold text-[#243B35]">
+                    {product
+                      ? courseProductReviewCopy[product.reviewStatus]
+                      : "未提交"}
+                  </span>
+                </p>
+                <p>
+                  <span className="block text-[#8A8176]">商品图片</span>
+                  <span className="font-semibold text-[#243B35]">
+                    {contentForm.imageAssets.length} 张详情/证明图
+                  </span>
+                </p>
+                <p>
+                  <span className="block text-[#8A8176]">H5 内容</span>
+                  <span className="font-semibold text-[#243B35]">
+                    {contentForm.richTextBlocks.length} 个内容块
+                  </span>
+                </p>
+              </motion.div>
+            )}
+          </section>
 
           <motion.main
             key={activeStep}
@@ -1720,50 +1834,6 @@ export default function CourseProductEditorWorkspacePage() {
               </SectionShell>
             )}
           </motion.main>
-
-          <aside className="h-fit rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] px-4 py-4">
-            <p className="text-sm font-semibold text-[#243B35]">发布面板</p>
-            <div className="mt-4 overflow-hidden rounded-lg border border-[#E1D7C8]">
-              <img
-                src={basicForm.coverUrl}
-                alt={basicForm.title || "课程商品主图"}
-                className="aspect-[4/3] w-full object-cover"
-              />
-              <div className="bg-[#FBF7EF] px-3 py-3">
-                <p className="line-clamp-2 text-sm font-semibold text-[#243B35]">
-                  {basicForm.title || "未命名课程商品"}
-                </p>
-                <p className="mt-1 text-xs text-[#8A8176]">
-                  {basicForm.category} · {basicForm.type}
-                </p>
-              </div>
-            </div>
-            <label className="mt-4 block text-sm font-semibold text-[#41524B]">
-              操作原因
-              <textarea
-                value={reason}
-                onChange={event => setReason(event.target.value)}
-                className="mt-2 min-h-[92px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
-              />
-            </label>
-            <div className="mt-4 space-y-2 text-xs leading-5 text-[#8A8176]">
-              <p>课程 ID：{product?.courseId ?? "创建后生成"}</p>
-              <p>
-                商品状态：
-                {product
-                  ? courseProductStatusCopy[product.status]
-                  : "草稿待创建"}
-              </p>
-              <p>
-                审核状态：
-                {product
-                  ? courseProductReviewCopy[product.reviewStatus]
-                  : "未提交"}
-              </p>
-              <p>商品图片：{contentForm.imageAssets.length} 张详情/证明图</p>
-              <p>H5 内容：{contentForm.richTextBlocks.length} 个内容块</p>
-            </div>
-          </aside>
         </div>
       )}
     </div>
