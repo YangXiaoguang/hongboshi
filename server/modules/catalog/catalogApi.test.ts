@@ -492,6 +492,22 @@ describe("catalog admin api payloads", () => {
     expect(blocked.body.ok).toBe(false);
     if (!blocked.body.ok) {
       expect(blocked.body.error.message).toContain("校验未通过");
+      expect(blocked.body.error.details).toMatchObject({
+        quality: {
+          ready: false,
+          blockingCount: expect.any(Number),
+          issues: expect.arrayContaining([
+            expect.objectContaining({
+              code: "audience_too_few",
+              path: "targetAudience",
+            }),
+            expect.objectContaining({
+              code: "chapter_duration_too_short",
+              path: "chapters.0.durationMinutes",
+            }),
+          ]),
+        },
+      });
     }
   });
 

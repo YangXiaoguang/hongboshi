@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CourseProductRepositoryError,
   httpCourseProductRepository,
   parseCourseProductAssetBackfillResponse,
   parseCourseProductAssetGovernanceActionResponse,
@@ -1209,6 +1210,62 @@ describe("http course product repository parsing", () => {
         body: expect.stringContaining("submit"),
       })
     );
+  });
+
+  it("preserves structured content quality details from review failures", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error: {
+            code: "CONFLICT",
+            message: "课程详情内容校验未通过，暂不能提交审核",
+            details: {
+              quality: {
+                ready: false,
+                issueCount: 1,
+                blockingCount: 1,
+                warningCount: 0,
+                issues: [
+                  {
+                    code: "summary_too_short",
+                    severity: "blocking",
+                    message: "课程摘要需要至少 40 个字，才能支撑审核判断。",
+                    path: "summary",
+                  },
+                ],
+              },
+            },
+          },
+        }),
+        { status: 409 }
+      )
+    );
+
+    try {
+      await httpCourseProductRepository.updateCourseProductReview(
+        "course_product_1",
+        {
+          action: "submit",
+          reason: "提交审核前进行内容校验",
+        }
+      );
+      throw new Error("expected review submission to fail");
+    } catch (err) {
+      expect(err).toBeInstanceOf(CourseProductRepositoryError);
+      expect((err as CourseProductRepositoryError).status).toBe(409);
+      expect((err as CourseProductRepositoryError).details).toMatchObject({
+        quality: {
+          ready: false,
+          issues: [
+            expect.objectContaining({
+              code: "summary_too_short",
+              path: "summary",
+            }),
+          ],
+        },
+      });
+    }
   });
 
   it("parses and updates course product detail content", async () => {

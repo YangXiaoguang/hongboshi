@@ -124,6 +124,31 @@ const CourseProductLearningMaterialOperationsReportResponseSchema =
 
 const API_BASE = "/api/catalog/admin";
 
+export class CourseProductRepositoryError extends Error {
+  readonly code?: string;
+  readonly details?: unknown;
+  readonly status: number;
+
+  constructor(
+    message: string,
+    {
+      code,
+      details,
+      status,
+    }: {
+      code?: string;
+      details?: unknown;
+      status: number;
+    }
+  ) {
+    super(message);
+    this.name = "CourseProductRepositoryError";
+    this.code = code;
+    this.details = details;
+    this.status = status;
+  }
+}
+
 async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
@@ -475,6 +500,37 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   }
 
   return fallback;
+}
+
+function extractApiError(payload: unknown, fallback: string) {
+  if (payload && typeof payload === "object" && "ok" in payload) {
+    const error = (payload as { ok?: unknown; error?: unknown }).error;
+    if (
+      (payload as { ok?: unknown }).ok === false &&
+      error &&
+      typeof error === "object"
+    ) {
+      const apiError = error as {
+        code?: unknown;
+        message?: unknown;
+        details?: unknown;
+      };
+      return {
+        code: typeof apiError.code === "string" ? apiError.code : undefined,
+        details: apiError.details,
+        message:
+          typeof apiError.message === "string"
+            ? apiError.message
+            : extractErrorMessage(payload, fallback),
+      };
+    }
+  }
+
+  return {
+    code: undefined,
+    details: undefined,
+    message: extractErrorMessage(payload, fallback),
+  };
 }
 
 function queryStringFromRecord(query: Record<string, unknown>) {
@@ -1131,7 +1187,12 @@ async function requestCourseProductMutation(
   });
   const payload = await readJson(response);
   if (!response.ok) {
-    throw new Error(extractErrorMessage(payload, fallback));
+    const apiError = extractApiError(payload, fallback);
+    throw new CourseProductRepositoryError(apiError.message, {
+      code: apiError.code,
+      details: apiError.details,
+      status: response.status,
+    });
   }
   return parseCourseProductMutationResponse(payload);
 }

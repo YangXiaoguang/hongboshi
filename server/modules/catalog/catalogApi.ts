@@ -49,6 +49,7 @@ import {
   evaluateCourseProductContentQuality,
   userCan,
   type AuthPermission,
+  type CourseProductContentQualityResult,
   type LoginSession,
 } from "../../../shared/domain";
 import { getLoginSessionFromRequest } from "../auth/authSessionApi";
@@ -225,6 +226,12 @@ type CatalogAssetFilePayload =
         sizeBytes: number;
       };
     };
+
+class CourseProductContentQualityBlockedError extends Error {
+  constructor(readonly quality: CourseProductContentQualityResult) {
+    super("COURSE_PRODUCT_CONTENT_QUALITY_BLOCKED");
+  }
+}
 
 export const catalogOperationPermissions = {
   list: COURSE_CATALOG_PERMISSIONS.read,
@@ -515,7 +522,7 @@ export async function updateCourseProductReviewPayload(
       });
       const quality = evaluateCourseProductContentQuality(content);
       if (!quality.ready) {
-        throw new Error("COURSE_PRODUCT_CONTENT_QUALITY_BLOCKED");
+        throw new CourseProductContentQualityBlockedError(quality);
       }
     }
 
@@ -3371,13 +3378,12 @@ function courseProductActionFailure(
     };
   }
 
-  if (
-    err instanceof Error &&
-    err.message === "COURSE_PRODUCT_CONTENT_QUALITY_BLOCKED"
-  ) {
+  if (err instanceof CourseProductContentQualityBlockedError) {
     return {
       status: 409,
-      body: errorPayload("CONFLICT", "课程详情内容校验未通过，暂不能提交审核"),
+      body: errorPayload("CONFLICT", "课程详情内容校验未通过，暂不能提交审核", {
+        quality: err.quality,
+      }),
     };
   }
 
