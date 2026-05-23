@@ -13,6 +13,8 @@ import {
   ChevronLeft,
   ClipboardCheck,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileImage,
   FilePenLine,
   ImagePlus,
@@ -49,6 +51,7 @@ import {
   type CourseProductReviewAction,
   type CourseProductReviewStatus,
   type CourseProductRichTextBlockType,
+  type CourseProductStatus,
   type CourseType,
 } from "@shared/domain";
 import { useAuth } from "@/contexts/AuthContext";
@@ -178,6 +181,14 @@ const workspaceSteps: {
     description: "完整度、审核和上架状态",
   },
 ];
+
+function workspaceStepFromUrl(): WorkspaceStepId {
+  if (typeof window === "undefined") return "basic";
+  const rawStep = new URLSearchParams(window.location.search).get("step");
+  return workspaceSteps.some(step => step.id === rawStep)
+    ? (rawStep as WorkspaceStepId)
+    : "basic";
+}
 
 function defaultBasicForm(): BasicFormState {
   return {
@@ -457,6 +468,59 @@ function iconForReviewAction(action: CourseProductReviewAction) {
   return ClipboardCheck;
 }
 
+function statusActionForProduct(product?: CourseProductListItem):
+  | {
+      targetStatus: CourseProductStatus;
+      label: string;
+      description: string;
+    }
+  | undefined {
+  if (!product || product.status === "archived") return undefined;
+  if (product.status === "published") {
+    return {
+      targetStatus: "unpublished",
+      label: "下架商品",
+      description: "下架后前台课程货架和详情购买入口会停止曝光。",
+    };
+  }
+  if (product.reviewStatus === "approved") {
+    return {
+      targetStatus: "published",
+      label: "上架商品",
+      description: "上架后前台只会展示审核通过且已上架的课程商品。",
+    };
+  }
+  return undefined;
+}
+
+function publishFlowItems(product?: CourseProductListItem) {
+  const hasProduct = Boolean(product);
+  const reviewPassed = product?.reviewStatus === "approved";
+  const published = product?.status === "published";
+  return [
+    {
+      label: "商品草稿",
+      value: hasProduct ? "已创建" : "待创建",
+      active: hasProduct,
+    },
+    {
+      label: "内容审核",
+      value: product ? courseProductReviewCopy[product.reviewStatus] : "待创建",
+      active: reviewPassed,
+    },
+    {
+      label: "上架状态",
+      value: product ? courseProductStatusCopy[product.status] : "待创建",
+      active: published,
+    },
+    {
+      label: "前台可售",
+      value: reviewPassed && published ? "可展示" : "未展示",
+      active: reviewPassed && published,
+    },
+  ];
+}
+
 function contentQualityIssueTarget(issue: CourseProductContentQualityIssue): {
   step: WorkspaceStepId;
   label: string;
@@ -662,7 +726,8 @@ export default function CourseProductEditorWorkspacePage() {
   const [isNewRoute] = useRoute("/admin/courses/new");
   const [, editParams] = useRoute("/admin/courses/:courseId/edit");
   const { user, isLoggedIn, isAuthSyncing } = useAuth();
-  const [activeStep, setActiveStep] = useState<WorkspaceStepId>("basic");
+  const [activeStep, setActiveStep] =
+    useState<WorkspaceStepId>(workspaceStepFromUrl);
   const [isPublishSummaryOpen, setIsPublishSummaryOpen] = useState(false);
   const [product, setProduct] = useState<CourseProductListItem>();
   const [content, setContent] = useState<CourseProductDetailContent>();
@@ -734,6 +799,11 @@ export default function CourseProductEditorWorkspacePage() {
     () => reviewActionsForProduct(product),
     [product]
   );
+  const availableStatusAction = useMemo(
+    () => statusActionForProduct(product),
+    [product]
+  );
+  const publishFlow = useMemo(() => publishFlowItems(product), [product]);
 
   const loadProduct = useCallback(async () => {
     if (!courseId) return;
@@ -1144,6 +1214,44 @@ export default function CourseProductEditorWorkspacePage() {
       }
     },
     [catalogPermissions.canReview, content, product, reason]
+  );
+
+  const submitStatusAction = useCallback(
+    async (targetStatus: CourseProductStatus) => {
+      if (!product) {
+        setActionError("请先创建课程商品后再执行上架动作");
+        return;
+      }
+      if (!catalogPermissions.canPublish) {
+        setActionError("当前账号暂无课程商品发布权限");
+        return;
+      }
+
+      setIsSaving(true);
+      setActionError(undefined);
+      setActionMessage(undefined);
+      try {
+        const result =
+          await httpCourseProductRepository.updateCourseProductStatus(
+            product.id,
+            {
+              status: targetStatus,
+              reason,
+            }
+          );
+        setProduct(result.product);
+        setActionMessage(
+          `${result.product.title} 已${targetStatus === "published" ? "上架" : "下架"}`
+        );
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程商品上架状态更新失败"
+        );
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [catalogPermissions.canPublish, product, reason]
   );
 
   if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) {
@@ -2956,6 +3064,93 @@ export default function CourseProductEditorWorkspacePage() {
                     </div>
 
                     <div className="rounded-lg border border-[#E1D7C8] bg-white p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-[#243B35]">
+                            上架状态
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                            审核通过后可在工作台执行上架或下架；操作原因复用顶部输入。
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-[#F1E8DC] px-3 py-1.5 text-xs font-semibold text-[#756B60]">
+                          {product
+                            ? courseProductStatusCopy[product.status]
+                            : "待创建"}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                        {publishFlow.map(item => (
+                          <div
+                            key={item.label}
+                            className={`border-l-2 py-1.5 pl-3 ${
+                              item.active
+                                ? "border-[#6F8F83]"
+                                : "border-[#E5DCCF]"
+                            }`}
+                          >
+                            <p className="text-[11px] font-semibold text-[#8A8176]">
+                              {item.label}
+                            </p>
+                            <p
+                              className={`mt-1 text-sm font-semibold ${
+                                item.active
+                                  ? "text-[#243B35]"
+                                  : "text-[#7B817C]"
+                              }`}
+                            >
+                              {item.value}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {availableStatusAction ? (
+                        <div className="mt-4 flex flex-wrap items-center gap-3">
+                          <button
+                            onClick={() =>
+                              void submitStatusAction(
+                                availableStatusAction.targetStatus
+                              )
+                            }
+                            disabled={
+                              isSaving ||
+                              !catalogPermissions.canPublish ||
+                              reason.trim().length < 4
+                            }
+                            className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                              availableStatusAction.targetStatus === "published"
+                                ? "bg-[#243B35] text-white hover:bg-[#315047]"
+                                : "border border-[#D8CEC0] bg-[#FFFDF8] text-[#41524B] hover:border-[#9FB3A9]"
+                            }`}
+                          >
+                            {isSaving ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : availableStatusAction.targetStatus ===
+                              "published" ? (
+                              <Eye className="h-4 w-4" />
+                            ) : (
+                              <EyeOff className="h-4 w-4" />
+                            )}
+                            {availableStatusAction.label}
+                          </button>
+                          <p className="max-w-[520px] text-xs leading-5 text-[#6F7771]">
+                            {availableStatusAction.description}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mt-4 rounded-lg border border-dashed border-[#D8CEC0] bg-[#FBF7EF] px-3 py-3 text-xs leading-5 text-[#6F7771]">
+                          {product?.status === "archived"
+                            ? "归档商品不能再执行上架状态动作。"
+                            : product?.reviewStatus === "approved"
+                              ? "当前上架状态暂无可执行动作。"
+                              : "内容审核通过后才会出现上架动作。"}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-lg border border-[#E1D7C8] bg-white p-4">
                       <p className="text-sm font-semibold text-[#243B35]">
                         合规与复审边界
                       </p>
@@ -2970,7 +3165,7 @@ export default function CourseProductEditorWorkspacePage() {
                         </p>
                         <p>
                           ·
-                          上架和批量发布动作继续由商品中心承接，避免工作台绕过运营复核。
+                          审核和上架动作复用既有权限、状态机和审计，不绕过运营复核。
                         </p>
                       </div>
                     </div>
@@ -2980,7 +3175,7 @@ export default function CourseProductEditorWorkspacePage() {
                 <div className="mt-5 flex items-start gap-3 rounded-lg border border-[#C8D8C8] bg-[#EEF6ED] px-4 py-3 text-sm text-[#41675A]">
                   <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>
-                    审核动作已接入商品工作台；上架和批量发布继续由商品中心承接。
+                    审核与上架动作已接入商品工作台；商品中心继续作为筛选和队列入口。
                   </span>
                 </div>
               </SectionShell>

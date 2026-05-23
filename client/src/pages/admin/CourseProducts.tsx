@@ -12,7 +12,6 @@ import {
   Edit3,
   Eye,
   EyeOff,
-  FilePenLine,
   History,
   Layers3,
   ListFilter,
@@ -28,9 +27,7 @@ import {
   ALL_COURSE_PRODUCT_STATUS,
   COURSE_CATEGORIES,
   COURSE_PRODUCT_PAGE_SIZE,
-  COURSE_TYPES,
   type CourseProductAuditEvent,
-  type CourseProductBasicInfoUpdateRequest,
   type CourseProductContentQualityResult,
   type CourseProductListItem,
   type CourseProductListQuery,
@@ -44,10 +41,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { httpCourseProductRepository } from "@/features/catalog";
 import { getCourseProductAdminPermissions } from "@/features/catalog/model/courseProductAdminPermissions";
 import { assetGovernanceActionCopy } from "./course-assets/courseAssetGovernanceModel";
-import {
-  CourseProductBasicInfoDialog,
-  type CourseProductBasicInfoFormState,
-} from "./courses/CourseProductBasicInfoDialog";
 import {
   CourseProductPriceDialog,
   type CourseProductPriceFormState,
@@ -82,6 +75,12 @@ type ReviewActionState = {
   action: CourseProductReviewAction;
   targetReviewStatus: CourseProductReviewStatus;
 };
+type CourseProductWorkspaceStep =
+  | "basic"
+  | "media"
+  | "price"
+  | "content"
+  | "publish";
 
 const statusFilters: {
   value: CourseProductStatusFilter;
@@ -424,8 +423,6 @@ function CourseProductRow({
   canPublish,
   canPrice,
   reviewBlockReason,
-  onEditInfo,
-  onEditContent,
   onEditPrice,
   onOpenWorkspace,
   onRequestReviewAction,
@@ -440,10 +437,11 @@ function CourseProductRow({
   canPublish: boolean;
   canPrice: boolean;
   reviewBlockReason?: string;
-  onEditInfo: (item: CourseProductListItem) => void;
-  onEditContent: (item: CourseProductListItem) => void;
   onEditPrice: (item: CourseProductListItem) => void;
-  onOpenWorkspace: (item: CourseProductListItem) => void;
+  onOpenWorkspace: (
+    item: CourseProductListItem,
+    step?: CourseProductWorkspaceStep
+  ) => void;
   onRequestReviewAction: (
     item: CourseProductListItem,
     action: CourseProductReviewAction,
@@ -462,7 +460,8 @@ function CourseProductRow({
       item.reviewStatus === "approved");
   const StatusIcon = item.status === "published" ? EyeOff : Eye;
   const reviewActions = reviewActionsForItem(item);
-  const hasVisibleActions = canEdit || canReview || canPublish || canPrice;
+  const hasPublishQueueAction = canReview || canPublish;
+  const hasVisibleActions = canEdit || hasPublishQueueAction || canPrice;
 
   return (
     <motion.tr
@@ -562,8 +561,8 @@ function CourseProductRow({
         </div>
       </td>
       <td className="px-5 py-4">
-        <div className="flex min-w-[300px] flex-wrap gap-2">
-          {canPublish && (
+        <div className="flex min-w-[220px] flex-wrap gap-2">
+          {canPublish && !canEdit && (
             <button
               onClick={() => onRequestStatusChange(item, targetStatus)}
               disabled={!canToggleStatus || isMutating}
@@ -574,6 +573,7 @@ function CourseProductRow({
             </button>
           )}
           {canReview &&
+            !canEdit &&
             reviewActions.map(action => (
               <button
                 key={action.action}
@@ -592,34 +592,26 @@ function CourseProductRow({
               </button>
             ))}
           {canEdit && (
-            <>
-              <button
-                onClick={() => onOpenWorkspace(item)}
-                disabled={isMutating}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <Layers3 className="h-3.5 w-3.5" />
-                工作台
-              </button>
-              <button
-                onClick={() => onEditInfo(item)}
-                disabled={isMutating}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                编辑
-              </button>
-              <button
-                onClick={() => onEditContent(item)}
-                disabled={isMutating}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <FilePenLine className="h-3.5 w-3.5" />
-                内容
-              </button>
-            </>
+            <button
+              onClick={() => onOpenWorkspace(item)}
+              disabled={isMutating}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Layers3 className="h-3.5 w-3.5" />
+              工作台
+            </button>
           )}
-          {canPrice && (
+          {canEdit && hasPublishQueueAction && (
+            <button
+              onClick={() => onOpenWorkspace(item, "publish")}
+              disabled={isMutating}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#243B35] px-2.5 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <ClipboardCheck className="h-3.5 w-3.5" />
+              发布管理
+            </button>
+          )}
+          {canPrice && !canEdit && (
             <button
               onClick={() => onEditPrice(item)}
               disabled={isMutating}
@@ -660,16 +652,6 @@ export default function CourseProducts() {
   const [statusReason, setStatusReason] = useState("");
   const [reviewAction, setReviewAction] = useState<ReviewActionState>();
   const [reviewReason, setReviewReason] = useState("");
-  const [infoEditor, setInfoEditor] = useState<CourseProductListItem>();
-  const [infoForm, setInfoForm] = useState<CourseProductBasicInfoFormState>({
-    title: "",
-    coverUrl: "",
-    category: COURSE_CATEGORIES[0],
-    type: COURSE_TYPES[0],
-    instructorName: "",
-    learners: "0",
-    reason: "",
-  });
   const [priceEditor, setPriceEditor] = useState<CourseProductListItem>();
   const [priceForm, setPriceForm] = useState<CourseProductPriceFormState>({
     amount: "",
@@ -710,42 +692,11 @@ export default function CourseProducts() {
     void loadProducts();
   }, [catalogPermissions.canRead, isAuthSyncing, isLoggedIn, loadProducts]);
 
-  const openInfoEditor = useCallback(
-    (item: CourseProductListItem) => {
-      if (!catalogPermissions.canEdit) return;
-      setActionError(undefined);
-      setActionMessage(undefined);
-      setInfoEditor(item);
-      setInfoForm({
-        title: item.title,
-        coverUrl: item.coverUrl,
-        category: item.category,
-        type: item.type,
-        instructorName: item.instructorName,
-        learners: String(item.learners),
-        reason: "",
-      });
-    },
-    [catalogPermissions.canEdit]
-  );
-
-  const openContentEditor = useCallback(
-    (item: CourseProductListItem) => {
-      if (!catalogPermissions.canEdit) return;
-      const returnTo = courseProductListPathFromQuery(query);
-      navigate(
-        `/admin/courses/${item.courseId}?returnTo=${encodeURIComponent(
-          returnTo
-        )}`
-      );
-    },
-    [catalogPermissions.canEdit, navigate, query]
-  );
-
   const openProductWorkspace = useCallback(
-    (item: CourseProductListItem) => {
+    (item: CourseProductListItem, step?: CourseProductWorkspaceStep) => {
       if (!catalogPermissions.canEdit) return;
-      navigate(`/admin/courses/${item.courseId}/edit`);
+      const queryString = step ? `?step=${step}` : "";
+      navigate(`/admin/courses/${item.courseId}/edit${queryString}`);
     },
     [catalogPermissions.canEdit, navigate]
   );
@@ -859,50 +810,6 @@ export default function CourseProducts() {
     }
   }, [catalogPermissions.canReview, loadProducts, reviewAction, reviewReason]);
 
-  const submitBasicInfoUpdate = useCallback(async () => {
-    if (!infoEditor) return;
-    if (!catalogPermissions.canEdit) {
-      setActionError("当前账号暂无课程商品编辑权限");
-      return;
-    }
-
-    const learners = Number(infoForm.learners);
-    if (!Number.isInteger(learners) || learners < 0) {
-      setActionError("请填写有效的学习人数");
-      return;
-    }
-
-    const request: CourseProductBasicInfoUpdateRequest = {
-      title: infoForm.title,
-      coverUrl: infoForm.coverUrl,
-      category: infoForm.category,
-      type: infoForm.type,
-      instructorName: infoForm.instructorName,
-      learners,
-      reason: infoForm.reason,
-    };
-
-    setMutatingProductId(infoEditor.id);
-    setActionError(undefined);
-    setActionMessage(undefined);
-
-    try {
-      await httpCourseProductRepository.updateCourseProductBasicInfo(
-        infoEditor.id,
-        request
-      );
-      setActionMessage(`${infoEditor.title} 基础信息已更新`);
-      setInfoEditor(undefined);
-      await loadProducts();
-    } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : "课程商品基础信息更新失败"
-      );
-    } finally {
-      setMutatingProductId(undefined);
-    }
-  }, [catalogPermissions.canEdit, infoEditor, infoForm, loadProducts]);
-
   const submitPriceUpdate = useCallback(async () => {
     if (!priceEditor) return;
     if (!catalogPermissions.canPrice) {
@@ -973,7 +880,7 @@ export default function CourseProducts() {
   const pageEyebrow = "课程商品";
   const pageTitle = "商品列表与状态";
   const pageDescription =
-    "管理课程商品的新建、基础信息、审核流、上架状态和价格；素材治理、批量任务与资料报表已拆到独立工作区。";
+    "按状态、审核和内容质量筛选商品队列；单商品编辑、审核和上架优先进入工作台处理。";
 
   if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) {
     return null;
@@ -1198,8 +1105,6 @@ export default function CourseProducts() {
                       canPublish={catalogPermissions.canPublish}
                       canPrice={catalogPermissions.canPrice}
                       reviewBlockReason={rejectedReviewReasons.get(item.id)}
-                      onEditInfo={openInfoEditor}
-                      onEditContent={openContentEditor}
                       onEditPrice={openPriceEditor}
                       onOpenWorkspace={openProductWorkspace}
                       onRequestReviewAction={openReviewAction}
@@ -1278,17 +1183,6 @@ export default function CourseProducts() {
           onReasonChange={setReviewReason}
           onCancel={() => setReviewAction(undefined)}
           onSubmit={() => void submitReviewAction()}
-        />
-      )}
-
-      {infoEditor && (
-        <CourseProductBasicInfoDialog
-          product={infoEditor}
-          form={infoForm}
-          isSubmitting={Boolean(mutatingProductId)}
-          onFormChange={setInfoForm}
-          onCancel={() => setInfoEditor(undefined)}
-          onSubmit={() => void submitBasicInfoUpdate()}
         />
       )}
 
