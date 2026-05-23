@@ -40,6 +40,40 @@ export const COURSE_PRODUCT_SORTS = [
   "price_desc",
 ] as const;
 
+export const COURSE_PRODUCT_PUBLISH_QUEUE_GROUPS = [
+  "content_blocked",
+  "ready_to_submit",
+  "pending_review",
+  "approved_unpublished",
+  "published_watch",
+] as const;
+
+export const COURSE_PRODUCT_PUBLISH_QUEUE_RISKS = [
+  "low",
+  "medium",
+  "high",
+] as const;
+
+export const COURSE_PRODUCT_PUBLISH_QUEUE_ACTIONS = [
+  "submit_review",
+  "review_followup",
+  "publish",
+  "quality_recheck",
+] as const;
+
+export const COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_STATUSES = [
+  "draft",
+  "pending_approval",
+  "approved",
+  "rejected",
+  "canceled",
+] as const;
+
+export const COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_STATUS_FILTERS = [
+  "all",
+  ...COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_STATUSES,
+] as const;
+
 export const COURSE_PRODUCT_AUDIT_ACTIONS = [
   "product_create",
   "status_update",
@@ -242,6 +276,26 @@ export const CourseProductReviewStatusSchema = z.enum(
 
 export const CourseProductSortSchema = z.enum(COURSE_PRODUCT_SORTS);
 
+export const CourseProductPublishQueueGroupIdSchema = z.enum(
+  COURSE_PRODUCT_PUBLISH_QUEUE_GROUPS
+);
+
+export const CourseProductPublishQueueRiskSchema = z.enum(
+  COURSE_PRODUCT_PUBLISH_QUEUE_RISKS
+);
+
+export const CourseProductPublishQueueActionSchema = z.enum(
+  COURSE_PRODUCT_PUBLISH_QUEUE_ACTIONS
+);
+
+export const CourseProductPublishQueueBatchTaskStatusSchema = z.enum(
+  COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_STATUSES
+);
+
+export const CourseProductPublishQueueBatchTaskStatusFilterSchema = z.enum(
+  COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_STATUS_FILTERS
+);
+
 export const CourseProductAuditActionSchema = z.enum(
   COURSE_PRODUCT_AUDIT_ACTIONS
 );
@@ -392,6 +446,127 @@ export const CourseProductListSummarySchema = z.object({
   archivedCount: z.number().int().nonnegative(),
   freeCount: z.number().int().nonnegative(),
   memberIncludedCount: z.number().int().nonnegative(),
+});
+
+export const CourseProductPublishQueueRiskSummarySchema = z.object({
+  low: z.number().int().nonnegative(),
+  medium: z.number().int().nonnegative(),
+  high: z.number().int().nonnegative(),
+});
+
+export const CourseProductPublishQueueCandidateSchema = z.object({
+  productId: EntityIdSchema,
+  courseId: LegacyNumericIdSchema,
+  title: z.string().trim().min(1).max(160),
+  coverUrl: z.string().trim().url(),
+  status: CourseProductStatusSchema,
+  reviewStatus: CourseProductReviewStatusSchema,
+  queueGroup: CourseProductPublishQueueGroupIdSchema,
+  recommendedAction: CourseProductPublishQueueActionSchema,
+  risk: CourseProductPublishQueueRiskSchema,
+  reason: z.string().trim().min(1).max(240),
+  contentReady: z.boolean(),
+  contentBlockingCount: z.number().int().nonnegative(),
+  contentWarningCount: z.number().int().nonnegative(),
+  updatedAt: DateTimeLikeSchema,
+});
+
+export const CourseProductPublishQueueGroupSchema = z.object({
+  id: CourseProductPublishQueueGroupIdSchema,
+  label: z.string().trim().min(1).max(40),
+  description: z.string().trim().min(1).max(180),
+  workspaceStep: z.enum(["content", "publish"]),
+  risk: CourseProductPublishQueueRiskSchema,
+  totalCount: z.number().int().nonnegative(),
+  previewItems: z.array(CourseProductPublishQueueCandidateSchema).default([]),
+});
+
+export const CourseProductPublishQueueActionPlanSchema = z.object({
+  id: CourseProductPublishQueueActionSchema,
+  label: z.string().trim().min(1).max(60),
+  description: z.string().trim().min(1).max(220),
+  candidateCount: z.number().int().nonnegative(),
+  blockerCount: z.number().int().nonnegative(),
+  risk: CourseProductPublishQueueRiskSchema,
+});
+
+export const CourseProductPublishQueueSummarySchema = z.object({
+  totalScannedCount: z.number().int().nonnegative(),
+  totalInScope: z.number().int().nonnegative(),
+  archivedCount: z.number().int().nonnegative(),
+  candidateCount: z.number().int().nonnegative(),
+  blockerCount: z.number().int().nonnegative(),
+  riskSummary: CourseProductPublishQueueRiskSummarySchema,
+});
+
+export const CourseProductPublishQueueResultSchema = z.object({
+  generatedAt: DateTimeLikeSchema,
+  query: CourseProductListQuerySchema,
+  previewOnly: z.literal(true).default(true),
+  executable: z.literal(false).default(false),
+  summary: CourseProductPublishQueueSummarySchema,
+  groups: z.array(CourseProductPublishQueueGroupSchema),
+  actions: z.array(CourseProductPublishQueueActionPlanSchema),
+  candidates: z.array(CourseProductPublishQueueCandidateSchema),
+  safetyNotes: z.array(z.string().trim().min(1).max(240)).default([]),
+});
+
+export const CourseProductPublishQueueBatchTaskCreateRequestSchema = z.object({
+  action: CourseProductPublishQueueActionSchema,
+  query: z.preprocess(value => value ?? {}, CourseProductListQuerySchema),
+  reason: z.string().trim().min(4).max(240),
+  note: z.string().trim().max(240).optional(),
+});
+
+export const CourseProductPublishQueueBatchTaskListQuerySchema =
+  PaginationQuerySchema.extend({
+    status: CourseProductPublishQueueBatchTaskStatusFilterSchema.default("all"),
+    action: z
+      .union([CourseProductPublishQueueActionSchema, z.literal("all")])
+      .default("all"),
+    pageSize: z.number().int().min(1).max(50).default(10),
+  });
+
+export const CourseProductPublishQueueBatchTaskSchema = z.object({
+  id: EntityIdSchema,
+  action: CourseProductPublishQueueActionSchema,
+  status: CourseProductPublishQueueBatchTaskStatusSchema.default("draft"),
+  query: CourseProductListQuerySchema,
+  reason: z.string().trim().min(4).max(240),
+  note: z.string().trim().max(240).optional(),
+  previewOnly: z.literal(true).default(true),
+  executable: z.literal(false).default(false),
+  createdBy: EntityIdSchema,
+  createdByRoles: z.array(EntityIdSchema).default([]),
+  candidateCount: z.number().int().nonnegative(),
+  blockerCount: z.number().int().nonnegative(),
+  riskSummary: CourseProductPublishQueueRiskSummarySchema,
+  candidateSnapshot: z
+    .array(CourseProductPublishQueueCandidateSchema)
+    .default([]),
+  safetyNotes: z.array(z.string().trim().min(1).max(240)).default([]),
+  createdAt: DateTimeLikeSchema,
+  updatedAt: DateTimeLikeSchema,
+});
+
+export const CourseProductPublishQueueBatchTaskListResultSchema = z.object({
+  generatedAt: DateTimeLikeSchema,
+  query: CourseProductPublishQueueBatchTaskListQuerySchema,
+  summary: z.object({
+    totalTaskCount: z.number().int().nonnegative(),
+    draftCount: z.number().int().nonnegative(),
+    pendingApprovalCount: z.number().int().nonnegative(),
+    approvedCount: z.number().int().nonnegative(),
+    rejectedCount: z.number().int().nonnegative(),
+    canceledCount: z.number().int().nonnegative(),
+  }),
+  items: z.array(CourseProductPublishQueueBatchTaskSchema),
+  meta: PageMetaSchema,
+});
+
+export const CourseProductPublishQueueBatchTaskMutationResultSchema = z.object({
+  task: CourseProductPublishQueueBatchTaskSchema,
+  tasks: CourseProductPublishQueueBatchTaskListResultSchema,
 });
 
 export const CourseProductAuditEventSchema = z.object({
@@ -1885,6 +2060,48 @@ export type CourseProductListQuery = z.infer<
 >;
 export type CourseProductListSummary = z.infer<
   typeof CourseProductListSummarySchema
+>;
+export type CourseProductPublishQueueGroupId = z.infer<
+  typeof CourseProductPublishQueueGroupIdSchema
+>;
+export type CourseProductPublishQueueRisk = z.infer<
+  typeof CourseProductPublishQueueRiskSchema
+>;
+export type CourseProductPublishQueueAction = z.infer<
+  typeof CourseProductPublishQueueActionSchema
+>;
+export type CourseProductPublishQueueBatchTaskStatus = z.infer<
+  typeof CourseProductPublishQueueBatchTaskStatusSchema
+>;
+export type CourseProductPublishQueueCandidate = z.infer<
+  typeof CourseProductPublishQueueCandidateSchema
+>;
+export type CourseProductPublishQueueGroup = z.infer<
+  typeof CourseProductPublishQueueGroupSchema
+>;
+export type CourseProductPublishQueueActionPlan = z.infer<
+  typeof CourseProductPublishQueueActionPlanSchema
+>;
+export type CourseProductPublishQueueSummary = z.infer<
+  typeof CourseProductPublishQueueSummarySchema
+>;
+export type CourseProductPublishQueueResult = z.infer<
+  typeof CourseProductPublishQueueResultSchema
+>;
+export type CourseProductPublishQueueBatchTaskCreateRequest = z.infer<
+  typeof CourseProductPublishQueueBatchTaskCreateRequestSchema
+>;
+export type CourseProductPublishQueueBatchTaskListQuery = z.infer<
+  typeof CourseProductPublishQueueBatchTaskListQuerySchema
+>;
+export type CourseProductPublishQueueBatchTask = z.infer<
+  typeof CourseProductPublishQueueBatchTaskSchema
+>;
+export type CourseProductPublishQueueBatchTaskListResult = z.infer<
+  typeof CourseProductPublishQueueBatchTaskListResultSchema
+>;
+export type CourseProductPublishQueueBatchTaskMutationResult = z.infer<
+  typeof CourseProductPublishQueueBatchTaskMutationResultSchema
 >;
 export type CourseProductAuditEvent = z.infer<
   typeof CourseProductAuditEventSchema

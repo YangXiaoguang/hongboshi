@@ -40,6 +40,10 @@ import {
   CourseProductLearningMaterialOperationsReportSchema,
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
+  CourseProductPublishQueueBatchTaskCreateRequestSchema,
+  CourseProductPublishQueueBatchTaskListResultSchema,
+  CourseProductPublishQueueBatchTaskMutationResultSchema,
+  CourseProductPublishQueueResultSchema,
   CourseProductReviewActionRequestSchema,
   evaluateCourseProductContentQuality,
 } from "./courseProduct";
@@ -109,6 +113,124 @@ describe("course product domain contract", () => {
 
     expect(parsed.query.category).toBe(ALL_COURSE_PRODUCT_CATEGORY);
     expect(parsed.items[0]?.price.currency).toBe("CNY");
+  });
+
+  it("validates course product publish queue contracts", () => {
+    const queue = CourseProductPublishQueueResultSchema.parse({
+      generatedAt: "2026-05-23T10:00:00.000Z",
+      query: {},
+      previewOnly: true,
+      executable: false,
+      summary: {
+        totalScannedCount: 1,
+        totalInScope: 1,
+        archivedCount: 0,
+        candidateCount: 1,
+        blockerCount: 0,
+        riskSummary: {
+          low: 1,
+          medium: 0,
+          high: 0,
+        },
+      },
+      groups: [
+        {
+          id: "ready_to_submit",
+          label: "待提交审核",
+          description: "内容已达标，可进入提交审核候选池。",
+          workspaceStep: "publish",
+          risk: "low",
+          totalCount: 1,
+          previewItems: [
+            {
+              productId: "course_product_1",
+              courseId: 1,
+              title: "情绪管理入门",
+              coverUrl:
+                "https://images.unsplash.com/photo-1499209974431-9dddcece7f88",
+              status: "draft",
+              reviewStatus: "not_submitted",
+              queueGroup: "ready_to_submit",
+              recommendedAction: "submit_review",
+              risk: "low",
+              reason: "内容质量已达标",
+              contentReady: true,
+              contentBlockingCount: 0,
+              contentWarningCount: 0,
+              updatedAt: "2026-05-23T09:00:00.000Z",
+            },
+          ],
+        },
+      ],
+      actions: [
+        {
+          id: "submit_review",
+          label: "批量提交审核草案",
+          description: "保存内容达标商品的提交审核候选快照。",
+          candidateCount: 1,
+          blockerCount: 0,
+          risk: "medium",
+        },
+      ],
+      candidates: [],
+    });
+    const request = CourseProductPublishQueueBatchTaskCreateRequestSchema.parse(
+      {
+        action: "submit_review",
+        reason: "月度上架前队列复核",
+      }
+    );
+    const mutation =
+      CourseProductPublishQueueBatchTaskMutationResultSchema.parse({
+        task: {
+          id: "publish_queue_batch_task_1",
+          action: "submit_review",
+          status: "draft",
+          query: {},
+          reason: "月度上架前队列复核",
+          previewOnly: true,
+          executable: false,
+          createdBy: "catalog_operator_1",
+          createdByRoles: ["catalog_operator"],
+          candidateCount: 1,
+          blockerCount: 0,
+          riskSummary: {
+            low: 1,
+            medium: 0,
+            high: 0,
+          },
+          candidateSnapshot: queue.groups[0]?.previewItems ?? [],
+          safetyNotes: ["草案不会修改课程商品"],
+          createdAt: "2026-05-23T10:01:00.000Z",
+          updatedAt: "2026-05-23T10:01:00.000Z",
+        },
+        tasks: {
+          generatedAt: "2026-05-23T10:01:00.000Z",
+          query: {},
+          summary: {
+            totalTaskCount: 1,
+            draftCount: 1,
+            pendingApprovalCount: 0,
+            approvedCount: 0,
+            rejectedCount: 0,
+            canceledCount: 0,
+          },
+          items: [],
+          meta: {
+            page: 1,
+            pageSize: 10,
+            total: 1,
+            totalPages: 1,
+          },
+        },
+      });
+
+    expect(queue.previewOnly).toBe(true);
+    expect(request.query.pageSize).toBe(10);
+    expect(
+      CourseProductPublishQueueBatchTaskListResultSchema.parse(mutation.tasks)
+        .summary.draftCount
+    ).toBe(1);
   });
 
   it("rejects invalid price update requests", () => {

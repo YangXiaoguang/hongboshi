@@ -20,6 +20,9 @@ import {
   CourseProductLearningMaterialOperationsReportSchema,
   CourseProductListResultSchema,
   CourseProductMutationResultSchema,
+  CourseProductPublishQueueBatchTaskListResultSchema,
+  CourseProductPublishQueueBatchTaskMutationResultSchema,
+  CourseProductPublishQueueResultSchema,
   type CourseProductContentMutationResult,
   type CourseProductContentQualityBatchResult,
   type CourseProductAssetBackfillMutationResult,
@@ -59,6 +62,11 @@ import {
   type CourseProductPriceUpdateRequest,
   type CourseProductListQuery,
   type CourseProductListResult,
+  type CourseProductPublishQueueBatchTaskCreateRequest,
+  type CourseProductPublishQueueBatchTaskListQuery,
+  type CourseProductPublishQueueBatchTaskListResult,
+  type CourseProductPublishQueueBatchTaskMutationResult,
+  type CourseProductPublishQueueResult,
   type CourseProductReviewActionRequest,
   type CourseProductStatusUpdateRequest,
 } from "@shared/domain";
@@ -75,6 +83,14 @@ const CourseProductContentResponseSchema = ApiResponseSchema(
 const CourseProductContentQualityResponseSchema = ApiResponseSchema(
   CourseProductContentQualityBatchResultSchema
 );
+const CourseProductPublishQueueResponseSchema = ApiResponseSchema(
+  CourseProductPublishQueueResultSchema
+);
+const CourseProductPublishQueueBatchTaskListResponseSchema = ApiResponseSchema(
+  CourseProductPublishQueueBatchTaskListResultSchema
+);
+const CourseProductPublishQueueBatchTaskMutationResponseSchema =
+  ApiResponseSchema(CourseProductPublishQueueBatchTaskMutationResultSchema);
 const CourseProductContentMutationResponseSchema = ApiResponseSchema(
   CourseProductContentMutationResultSchema
 );
@@ -185,6 +201,32 @@ export function parseCourseProductContentQualityResponse(
   payload: unknown
 ): CourseProductContentQualityBatchResult {
   const parsed = CourseProductContentQualityResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCourseProductPublishQueueResponse(
+  payload: unknown
+): CourseProductPublishQueueResult {
+  const parsed = CourseProductPublishQueueResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCourseProductPublishQueueBatchTaskListResponse(
+  payload: unknown
+): CourseProductPublishQueueBatchTaskListResult {
+  const parsed =
+    CourseProductPublishQueueBatchTaskListResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCourseProductPublishQueueBatchTaskMutationResponse(
+  payload: unknown
+): CourseProductPublishQueueBatchTaskMutationResult {
+  const parsed =
+    CourseProductPublishQueueBatchTaskMutationResponseSchema.parse(payload);
   if (!parsed.ok) throw new Error(parsed.error.message);
   return parsed.data;
 }
@@ -354,6 +396,30 @@ function extractErrorMessage(payload: unknown, fallback: string) {
     CourseProductContentQualityResponseSchema.safeParse(payload);
   if (contentQualityParsed.success && !contentQualityParsed.data.ok) {
     return contentQualityParsed.data.error.message;
+  }
+
+  const publishQueueParsed =
+    CourseProductPublishQueueResponseSchema.safeParse(payload);
+  if (publishQueueParsed.success && !publishQueueParsed.data.ok) {
+    return publishQueueParsed.data.error.message;
+  }
+
+  const publishQueueBatchTaskListParsed =
+    CourseProductPublishQueueBatchTaskListResponseSchema.safeParse(payload);
+  if (
+    publishQueueBatchTaskListParsed.success &&
+    !publishQueueBatchTaskListParsed.data.ok
+  ) {
+    return publishQueueBatchTaskListParsed.data.error.message;
+  }
+
+  const publishQueueBatchTaskMutationParsed =
+    CourseProductPublishQueueBatchTaskMutationResponseSchema.safeParse(payload);
+  if (
+    publishQueueBatchTaskMutationParsed.success &&
+    !publishQueueBatchTaskMutationParsed.data.ok
+  ) {
+    return publishQueueBatchTaskMutationParsed.data.error.message;
   }
 
   const contentMutationParsed =
@@ -655,6 +721,69 @@ export const httpCourseProductRepository = {
       throw new Error(extractErrorMessage(payload, "课程商品内容校验失败"));
     }
     return parseCourseProductContentQualityResponse(payload);
+  },
+
+  async loadCourseProductPublishQueue(
+    query: Partial<CourseProductListQuery> = {}
+  ): Promise<CourseProductPublishQueueResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/publish-queue${queryStringFromRecord(query)}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "课程发布队列读取失败"));
+    }
+    return parseCourseProductPublishQueueResponse(payload);
+  },
+
+  async loadCourseProductPublishQueueBatchTasks(
+    query: Partial<CourseProductPublishQueueBatchTaskListQuery> = {}
+  ): Promise<CourseProductPublishQueueBatchTaskListResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/publish-queue/batch-tasks${queryStringFromRecord(query)}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "课程发布队列草案读取失败"));
+    }
+    return parseCourseProductPublishQueueBatchTaskListResponse(payload);
+  },
+
+  async createCourseProductPublishQueueBatchTask(
+    request: CourseProductPublishQueueBatchTaskCreateRequest
+  ): Promise<CourseProductPublishQueueBatchTaskMutationResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/publish-queue/batch-tasks`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify(request),
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "课程发布队列草案创建失败"));
+    }
+    return parseCourseProductPublishQueueBatchTaskMutationResponse(payload);
   },
 
   async updateCourseProductContent(

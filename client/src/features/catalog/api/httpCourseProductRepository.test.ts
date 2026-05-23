@@ -20,6 +20,9 @@ import {
   parseCourseProductLearningMaterialOperationsReportResponse,
   parseCourseProductListResponse,
   parseCourseProductMutationResponse,
+  parseCourseProductPublishQueueBatchTaskListResponse,
+  parseCourseProductPublishQueueBatchTaskMutationResponse,
+  parseCourseProductPublishQueueResponse,
 } from "./httpCourseProductRepository";
 
 function batchTaskData() {
@@ -125,6 +128,128 @@ function batchTaskQueueObservationData() {
       },
     ],
     notes: ["当前队列观测基于内存 job 状态，服务重启后只保留任务执行字段"],
+  };
+}
+
+function publishQueueCandidateData() {
+  return {
+    productId: "course_product_1",
+    courseId: 1,
+    title: "情绪管理入门",
+    coverUrl: "https://images.unsplash.com/photo-1499209974431-9dddcece7f88",
+    status: "published",
+    reviewStatus: "approved",
+    queueGroup: "published_watch",
+    recommendedAction: "quality_recheck",
+    risk: "medium",
+    reason: "课程详情建议配置成交主视觉，提升商品介绍的吸引力。",
+    contentReady: true,
+    contentBlockingCount: 0,
+    contentWarningCount: 1,
+    updatedAt: "2026-05-23T09:00:00.000Z",
+  };
+}
+
+function publishQueueData() {
+  return {
+    generatedAt: "2026-05-23T10:00:00.000Z",
+    query: {
+      keyword: "",
+      category: "全部",
+      status: "all",
+      sort: "updated_desc",
+      page: 1,
+      pageSize: 50,
+    },
+    previewOnly: true,
+    executable: false,
+    summary: {
+      totalScannedCount: 1,
+      totalInScope: 1,
+      archivedCount: 0,
+      candidateCount: 1,
+      blockerCount: 0,
+      riskSummary: {
+        low: 0,
+        medium: 1,
+        high: 0,
+      },
+    },
+    groups: [
+      {
+        id: "published_watch",
+        label: "已上架复查",
+        description: "已前台可售但仍有内容提醒，建议复查成交素材。",
+        workspaceStep: "publish",
+        risk: "medium",
+        totalCount: 1,
+        previewItems: [publishQueueCandidateData()],
+      },
+    ],
+    actions: [
+      {
+        id: "quality_recheck",
+        label: "已发布复查草案",
+        description: "保存已上架商品的内容提醒快照，不改变发布状态。",
+        candidateCount: 1,
+        blockerCount: 0,
+        risk: "low",
+      },
+    ],
+    candidates: [publishQueueCandidateData()],
+    safetyNotes: ["当前发布队列为服务端聚合预案"],
+  };
+}
+
+function publishQueueBatchTaskData() {
+  return {
+    id: "publish_queue_batch_task_1",
+    action: "quality_recheck",
+    status: "draft",
+    query: publishQueueData().query,
+    reason: "月度上架前队列复核",
+    previewOnly: true,
+    executable: false,
+    createdBy: "catalog_operator_1",
+    createdByRoles: ["catalog_operator"],
+    candidateCount: 1,
+    blockerCount: 0,
+    riskSummary: {
+      low: 0,
+      medium: 1,
+      high: 0,
+    },
+    candidateSnapshot: [publishQueueCandidateData()],
+    safetyNotes: ["草案不会修改课程商品"],
+    createdAt: "2026-05-23T10:01:00.000Z",
+    updatedAt: "2026-05-23T10:01:00.000Z",
+  };
+}
+
+function publishQueueBatchTaskListData() {
+  return {
+    generatedAt: "2026-05-23T10:01:00.000Z",
+    query: {
+      status: "all",
+      action: "all",
+      page: 1,
+      pageSize: 5,
+    },
+    summary: {
+      totalTaskCount: 1,
+      draftCount: 1,
+      pendingApprovalCount: 0,
+      approvedCount: 0,
+      rejectedCount: 0,
+      canceledCount: 0,
+    },
+    items: [publishQueueBatchTaskData()],
+    meta: {
+      page: 1,
+      pageSize: 5,
+      total: 1,
+      totalPages: 1,
+    },
   };
 }
 
@@ -886,6 +1011,28 @@ describe("http course product repository parsing", () => {
     expect(mutation.task.approvalStatus).toBe("pending_approval");
   });
 
+  it("parses course product publish queue responses", () => {
+    const queue = parseCourseProductPublishQueueResponse({
+      ok: true,
+      data: publishQueueData(),
+    });
+    const list = parseCourseProductPublishQueueBatchTaskListResponse({
+      ok: true,
+      data: publishQueueBatchTaskListData(),
+    });
+    const mutation = parseCourseProductPublishQueueBatchTaskMutationResponse({
+      ok: true,
+      data: {
+        task: publishQueueBatchTaskData(),
+        tasks: publishQueueBatchTaskListData(),
+      },
+    });
+
+    expect(queue.summary.candidateCount).toBe(1);
+    expect(list.summary.draftCount).toBe(1);
+    expect(mutation.task.status).toBe("draft");
+  });
+
   it("parses course product asset governance queue observations", () => {
     const parsed =
       parseCourseProductAssetGovernanceBatchTaskQueueObservationResponse({
@@ -1635,6 +1782,89 @@ describe("http course product repository parsing", () => {
       "/api/catalog/admin/course-products/assets/governance/batch-tasks?approvalStatus=pending_approval&pageSize=5",
       expect.objectContaining({
         credentials: "same-origin",
+      })
+    );
+  });
+
+  it("loads course product publish queue from server aggregation", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: publishQueueData(),
+        })
+      )
+    );
+
+    const result =
+      await httpCourseProductRepository.loadCourseProductPublishQueue({
+        status: "published",
+        pageSize: 10,
+      });
+
+    expect(result.summary.candidateCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/catalog/admin/course-products/publish-queue?status=published&pageSize=10",
+      expect.objectContaining({
+        credentials: "same-origin",
+      })
+    );
+  });
+
+  it("loads and creates course product publish queue draft tasks", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            data: publishQueueBatchTaskListData(),
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            data: {
+              task: publishQueueBatchTaskData(),
+              tasks: publishQueueBatchTaskListData(),
+            },
+          })
+        )
+      );
+
+    const list =
+      await httpCourseProductRepository.loadCourseProductPublishQueueBatchTasks(
+        {
+          status: "draft",
+          pageSize: 5,
+        }
+      );
+    const mutation =
+      await httpCourseProductRepository.createCourseProductPublishQueueBatchTask(
+        {
+          action: "quality_recheck",
+          query: { status: "published" },
+          reason: "月度上架前队列复核",
+        }
+      );
+
+    expect(list.summary.draftCount).toBe(1);
+    expect(mutation.task.candidateCount).toBe(1);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/catalog/admin/course-products/publish-queue/batch-tasks?status=draft&pageSize=5",
+      expect.objectContaining({
+        credentials: "same-origin",
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/catalog/admin/course-products/publish-queue/batch-tasks",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("quality_recheck"),
       })
     );
   });

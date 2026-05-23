@@ -44,6 +44,11 @@ import {
   CourseProductPriceUpdateRequestSchema,
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
+  CourseProductPublishQueueBatchTaskCreateRequestSchema,
+  CourseProductPublishQueueBatchTaskListQuerySchema,
+  CourseProductPublishQueueBatchTaskListResultSchema,
+  CourseProductPublishQueueBatchTaskMutationResultSchema,
+  CourseProductPublishQueueResultSchema,
   CourseProductReviewActionRequestSchema,
   CourseProductStatusUpdateRequestSchema,
   evaluateCourseProductContentQuality,
@@ -111,6 +116,15 @@ import {
   getCourseProductAssetGovernanceBatchTaskExecutionQueue,
   type CourseProductAssetGovernanceBatchTaskExecutionQueue,
 } from "./courseProductAssetGovernanceBatchTaskExecutionQueue";
+import {
+  createCourseProductPublishQueueBatchTask,
+  getCourseProductPublishQueue,
+  listCourseProductPublishQueueBatchTasks,
+} from "./courseProductPublishQueue";
+import {
+  getCourseProductPublishQueueBatchTaskStore,
+  type CourseProductPublishQueueBatchTaskStore,
+} from "./courseProductPublishQueueTaskStore";
 import { getCourseProductLearningMaterialOperationsReport } from "./courseProductLearningMaterialOperationsReport";
 import { previewCourseProductAssetGovernanceBatchActionPlan } from "./courseProductAssetGovernanceBatchActionPlan";
 
@@ -126,6 +140,14 @@ const CourseProductContentResponseSchema = ApiResponseSchema(
 const CourseProductContentQualityResponseSchema = ApiResponseSchema(
   CourseProductContentQualityBatchResultSchema
 );
+const CourseProductPublishQueueResponseSchema = ApiResponseSchema(
+  CourseProductPublishQueueResultSchema
+);
+const CourseProductPublishQueueBatchTaskListResponseSchema = ApiResponseSchema(
+  CourseProductPublishQueueBatchTaskListResultSchema
+);
+const CourseProductPublishQueueBatchTaskMutationResponseSchema =
+  ApiResponseSchema(CourseProductPublishQueueBatchTaskMutationResultSchema);
 const CourseProductContentMutationResponseSchema = ApiResponseSchema(
   CourseProductContentMutationResultSchema
 );
@@ -186,6 +208,9 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductMutationResponseSchema>
   | z.infer<typeof CourseProductContentResponseSchema>
   | z.infer<typeof CourseProductContentQualityResponseSchema>
+  | z.infer<typeof CourseProductPublishQueueResponseSchema>
+  | z.infer<typeof CourseProductPublishQueueBatchTaskListResponseSchema>
+  | z.infer<typeof CourseProductPublishQueueBatchTaskMutationResponseSchema>
   | z.infer<typeof CourseProductContentMutationResponseSchema>
   | z.infer<typeof CourseProductAssetListResponseSchema>
   | z.infer<typeof CourseProductAssetMutationResponseSchema>
@@ -237,6 +262,9 @@ export const catalogOperationPermissions = {
   list: COURSE_CATALOG_PERMISSIONS.read,
   contentRead: COURSE_CATALOG_PERMISSIONS.read,
   contentQualityRead: COURSE_CATALOG_PERMISSIONS.read,
+  publishQueueRead: COURSE_CATALOG_PERMISSIONS.read,
+  publishQueueBatchTaskRead: COURSE_CATALOG_PERMISSIONS.review,
+  publishQueueBatchTaskManage: COURSE_CATALOG_PERMISSIONS.review,
   assetRead: COURSE_CATALOG_PERMISSIONS.read,
   assetUpload: COURSE_CATALOG_PERMISSIONS.edit,
   assetReview: COURSE_CATALOG_PERMISSIONS.review,
@@ -597,6 +625,145 @@ export async function getCourseProductContentQualityPayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程商品内容校验失败");
+  }
+}
+
+export async function getCourseProductPublishQueuePayload(
+  actor: CatalogOperationsActor | null | undefined,
+  rawQuery: Record<string, unknown> = {},
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.publishQueueRead
+  );
+  if (denied) return denied;
+
+  const parsed = CourseProductListQuerySchema.safeParse(rawQuery);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程发布队列查询参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductPublishQueueResponseSchema.parse({
+        ok: true,
+        data: await getCourseProductPublishQueue({
+          query: parsed.data,
+          productStore,
+          contentStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程发布队列读取失败");
+  }
+}
+
+export async function getCourseProductPublishQueueBatchTasksPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  rawQuery: Record<string, unknown> = {},
+  {
+    taskStore = getCourseProductPublishQueueBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    taskStore?: CourseProductPublishQueueBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.publishQueueBatchTaskRead
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductPublishQueueBatchTaskListQuerySchema.safeParse(rawQuery);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程发布队列草案查询参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductPublishQueueBatchTaskListResponseSchema.parse({
+        ok: true,
+        data: await listCourseProductPublishQueueBatchTasks({
+          query: parsed.data,
+          store: taskStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程发布队列草案读取失败");
+  }
+}
+
+export async function createCourseProductPublishQueueBatchTaskPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  body: unknown,
+  {
+    productStore = getCourseProductStore(),
+    contentStore = getCourseProductContentStore(),
+    taskStore = getCourseProductPublishQueueBatchTaskStore(),
+    now = new Date().toISOString(),
+  }: {
+    productStore?: CourseProductStore;
+    contentStore?: CourseProductContentStore;
+    taskStore?: CourseProductPublishQueueBatchTaskStore;
+    now?: string;
+  } = {}
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.publishQueueBatchTaskManage
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductPublishQueueBatchTaskCreateRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程发布队列草案参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductPublishQueueBatchTaskMutationResponseSchema.parse({
+        ok: true,
+        data: await createCourseProductPublishQueueBatchTask({
+          request: parsed.data,
+          actorId: actor!.id,
+          actorRoles: actor!.roles,
+          productStore,
+          contentStore,
+          taskStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程发布队列草案创建失败");
   }
 }
 
@@ -1792,6 +1959,66 @@ export function registerCatalogApi(app: Express) {
   );
 
   app.get(
+    "/api/catalog/admin/course-products/publish-queue",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await getCourseProductPublishQueuePayload(
+          session?.user,
+          queryFromExpress(req)
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程发布队列读取失败")
+        );
+      }
+    }
+  );
+
+  app.get(
+    "/api/catalog/admin/course-products/publish-queue/batch-tasks",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await getCourseProductPublishQueueBatchTasksPayload(
+          session?.user,
+          queryFromExpress(req)
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程发布队列草案读取失败")
+        );
+      }
+    }
+  );
+
+  app.post(
+    "/api/catalog/admin/course-products/publish-queue/batch-tasks",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await createCourseProductPublishQueueBatchTaskPayload(
+          session?.user,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程发布队列草案创建失败")
+        );
+      }
+    }
+  );
+
+  app.get(
     "/api/catalog/admin/course-products/assets/backfill",
     async (req, res) => {
       try {
@@ -2296,6 +2523,81 @@ export function handleCatalogApiRequest(
         )
       );
 
+    return true;
+  }
+
+  if (url.pathname === "/api/catalog/admin/course-products/publish-queue") {
+    if (req.method !== "GET") {
+      sendJson(res, 405, errorPayload("BAD_REQUEST", "接口仅支持 GET 请求"));
+      return true;
+    }
+
+    void getLoginSessionFromRequest(req)
+      .then(session =>
+        getCourseProductPublishQueuePayload(
+          session?.user,
+          queryFromSearchParams(url.searchParams)
+        )
+      )
+      .then(payload => sendJson(res, payload.status, payload.body))
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程发布队列读取失败")
+        )
+      );
+    return true;
+  }
+
+  if (
+    url.pathname ===
+    "/api/catalog/admin/course-products/publish-queue/batch-tasks"
+  ) {
+    if (req.method !== "GET" && req.method !== "POST") {
+      sendJson(
+        res,
+        405,
+        errorPayload("BAD_REQUEST", "接口仅支持 GET/POST 请求")
+      );
+      return true;
+    }
+
+    if (req.method === "GET") {
+      void getLoginSessionFromRequest(req)
+        .then(session =>
+          getCourseProductPublishQueueBatchTasksPayload(
+            session?.user,
+            queryFromSearchParams(url.searchParams)
+          )
+        )
+        .then(payload => sendJson(res, payload.status, payload.body))
+        .catch(() =>
+          sendJson(
+            res,
+            500,
+            errorPayload("INTERNAL_ERROR", "课程发布队列草案读取失败")
+          )
+        );
+      return true;
+    }
+
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await createCourseProductPublishQueueBatchTaskPayload(
+          session?.user,
+          body
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程发布队列草案创建失败")
+        )
+      );
     return true;
   }
 
@@ -3216,6 +3518,26 @@ function courseProductActionFailure(
     return {
       status: 409,
       body: errorPayload("CONFLICT", "当前筛选已存在待审批批量治理草案"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_EMPTY"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "当前筛选没有可保存的发布候选"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_PUBLISH_QUEUE_BATCH_TASK_DUPLICATE"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "当前筛选已存在发布队列草案"),
     };
   }
 

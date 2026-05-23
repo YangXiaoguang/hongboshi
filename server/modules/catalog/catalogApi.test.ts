@@ -31,6 +31,9 @@ import {
   reviewCourseProductAssetGovernanceBatchTaskPayload,
   getCourseProductContentQualityPayload,
   getCourseProductContentPayload,
+  createCourseProductPublishQueueBatchTaskPayload,
+  getCourseProductPublishQueueBatchTasksPayload,
+  getCourseProductPublishQueuePayload,
   runCourseProductAssetBackfillPayload,
   updateCourseProductAssetCompliancePayload,
   updateCourseProductBasicInfoPayload,
@@ -49,6 +52,7 @@ import {
 } from "./courseProductAssetStore";
 import { InMemoryCourseProductAssetGovernanceBatchTaskStore } from "./courseProductAssetGovernanceBatchTaskStore";
 import { InMemoryCourseProductAssetGovernanceBatchTaskExecutionQueue } from "./courseProductAssetGovernanceBatchTaskExecutionQueue";
+import { InMemoryCourseProductPublishQueueBatchTaskStore } from "./courseProductPublishQueueTaskStore";
 
 const products = courses.slice(0, 4).map(courseProductFromCourse);
 const createStore = () => new InMemoryCourseProductStore(products);
@@ -98,6 +102,9 @@ describe("catalog admin api payloads", () => {
       list: "catalog:read",
       contentRead: "catalog:read",
       contentQualityRead: "catalog:read",
+      publishQueueRead: "catalog:read",
+      publishQueueBatchTaskRead: "catalog:review",
+      publishQueueBatchTaskManage: "catalog:review",
       assetRead: "catalog:read",
       assetUpload: "catalog:edit",
       assetReview: "catalog:review",
@@ -247,6 +254,76 @@ describe("catalog admin api payloads", () => {
       deniedReview.status,
       deniedContent.status,
     ]).toEqual([403, 403, 403, 403, 403]);
+  });
+
+  it("serves publish queue aggregation and saves draft tasks without mutating products", async () => {
+    const productStore = createStore();
+    const contentStore = new InMemoryCourseProductContentStore();
+    const taskStore = new InMemoryCourseProductPublishQueueBatchTaskStore();
+    const beforeProducts = await productStore.listProducts();
+
+    const queue = await getCourseProductPublishQueuePayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      { pageSize: 10 },
+      {
+        productStore,
+        contentStore,
+        now: "2026-05-23T10:00:00.000Z",
+      }
+    );
+    expect(queue.status).toBe(200);
+    expect(queue.body).toMatchObject({
+      ok: true,
+      data: {
+        previewOnly: true,
+        executable: false,
+        summary: {
+          totalScannedCount: beforeProducts.length,
+          candidateCount: beforeProducts.length,
+        },
+      },
+    });
+
+    const deniedTasks = await getCourseProductPublishQueueBatchTasksPayload(
+      { id: "catalog_viewer_1", roles: ["catalog_viewer"] },
+      {},
+      {
+        taskStore,
+        now: "2026-05-23T10:01:00.000Z",
+      }
+    );
+    expect(deniedTasks.status).toBe(403);
+
+    const created = await createCourseProductPublishQueueBatchTaskPayload(
+      { id: "catalog_operator_1", roles: ["catalog_operator"] },
+      {
+        action: "quality_recheck",
+        query: { pageSize: 10 },
+        reason: "月度上架前队列复核",
+      },
+      {
+        productStore,
+        contentStore,
+        taskStore,
+        now: "2026-05-23T10:02:00.000Z",
+      }
+    );
+
+    expect(created.status).toBe(200);
+    expect(created.body).toMatchObject({
+      ok: true,
+      data: {
+        task: {
+          action: "quality_recheck",
+          status: "draft",
+          previewOnly: true,
+          executable: false,
+          candidateCount: beforeProducts.length,
+          createdBy: "catalog_operator_1",
+        },
+      },
+    });
+    expect(await productStore.listProducts()).toEqual(beforeProducts);
   });
 
   it("rejects invalid list query values", async () => {

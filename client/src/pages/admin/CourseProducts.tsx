@@ -20,6 +20,9 @@ import {
   type CourseProductListQuery,
   type CourseProductListResult,
   type CourseProductPriceUpdateRequest,
+  type CourseProductPublishQueueAction,
+  type CourseProductPublishQueueBatchTaskListResult,
+  type CourseProductPublishQueueResult,
   type CourseProductReviewAction,
   type CourseProductReviewStatus,
   type CourseProductStatus,
@@ -67,14 +70,6 @@ type ReviewActionState = {
   action: CourseProductReviewAction;
   targetReviewStatus: CourseProductReviewStatus;
 };
-type PublishQueueSnapshot = {
-  items: CourseProductListItem[];
-  total: number;
-  isTruncated: boolean;
-};
-
-const COURSE_PRODUCT_PUBLISH_QUEUE_PAGE_SIZE = 50;
-const COURSE_PRODUCT_PUBLISH_QUEUE_MAX_ITEMS = 200;
 
 function courseProductListQueryFromUrl(): CourseProductListQuery {
   if (typeof window === "undefined") {
@@ -121,48 +116,14 @@ function courseProductListQueryFromUrl(): CourseProductListQuery {
   };
 }
 
-async function loadCourseProductPublishQueueSnapshot(
-  query: CourseProductListQuery
-): Promise<PublishQueueSnapshot> {
-  const pageSize = COURSE_PRODUCT_PUBLISH_QUEUE_PAGE_SIZE;
-  const firstPage = await httpCourseProductRepository.loadCourseProducts({
-    ...query,
-    page: 1,
-    pageSize,
-  });
-  const maxPages = Math.ceil(COURSE_PRODUCT_PUBLISH_QUEUE_MAX_ITEMS / pageSize);
-  const totalPagesToRead = Math.min(firstPage.meta.totalPages, maxPages);
-  const restPages =
-    totalPagesToRead > 1
-      ? await Promise.all(
-          Array.from({ length: totalPagesToRead - 1 }, (_, index) =>
-            httpCourseProductRepository.loadCourseProducts({
-              ...query,
-              page: index + 2,
-              pageSize,
-            })
-          )
-        )
-      : [];
-  const items = [firstPage, ...restPages].flatMap(result => result.items);
-
-  return {
-    items,
-    total: firstPage.meta.total,
-    isTruncated: items.length < firstPage.meta.total,
-  };
-}
-
 export default function CourseProducts() {
   const [, navigate] = useLocation();
   const { user, isLoggedIn, isAuthSyncing } = useAuth();
   const [data, setData] = useState<CourseProductListResult>();
-  const [publishQueueSnapshot, setPublishQueueSnapshot] =
-    useState<PublishQueueSnapshot>({
-      items: [],
-      total: 0,
-      isTruncated: false,
-    });
+  const [publishQueue, setPublishQueue] =
+    useState<CourseProductPublishQueueResult>();
+  const [publishQueueBatchTasks, setPublishQueueBatchTasks] =
+    useState<CourseProductPublishQueueBatchTaskListResult>();
   const [contentQualityByProductId, setContentQualityByProductId] = useState<
     Record<string, CourseProductContentQualityResult>
   >({});
@@ -175,6 +136,8 @@ export default function CourseProducts() {
   const [actionError, setActionError] = useState<string>();
   const [actionMessage, setActionMessage] = useState<string>();
   const [mutatingProductId, setMutatingProductId] = useState<string>();
+  const [isCreatingPublishQueueTask, setIsCreatingPublishQueueTask] =
+    useState(false);
   const [statusAction, setStatusAction] = useState<StatusActionState>();
   const [statusReason, setStatusReason] = useState("");
   const [reviewAction, setReviewAction] = useState<ReviewActionState>();
@@ -197,19 +160,17 @@ export default function CourseProducts() {
     setIsLoading(true);
     setError(undefined);
     try {
-      const [products, contentQuality] = await Promise.all([
+      const [products, contentQuality, queue, queueTasks] = await Promise.all([
         httpCourseProductRepository.loadCourseProducts(query),
         httpCourseProductRepository.loadCourseProductContentQuality(),
+        httpCourseProductRepository.loadCourseProductPublishQueue(query),
+        httpCourseProductRepository.loadCourseProductPublishQueueBatchTasks({
+          pageSize: 5,
+        }),
       ]);
-      const publishQueue = await loadCourseProductPublishQueueSnapshot(
-        query
-      ).catch(() => ({
-        items: products.items,
-        total: products.meta.total,
-        isTruncated: products.items.length < products.meta.total,
-      }));
       setData(products);
-      setPublishQueueSnapshot(publishQueue);
+      setPublishQueue(queue);
+      setPublishQueueBatchTasks(queueTasks);
       setContentQualityByProductId(
         Object.fromEntries(
           contentQuality.items.map(item => [item.productId, item.quality])
@@ -234,6 +195,55 @@ export default function CourseProducts() {
       navigate(`/admin/courses/${item.courseId}/edit${queryString}`);
     },
     [catalogPermissions.canEdit, navigate]
+  );
+
+  const openProductWorkspaceByCourseId = useCallback(
+    (courseId: number, step?: CourseProductWorkspaceStep) => {
+      if (!catalogPermissions.canEdit) return;
+      const queryString = step ? `?step=${step}` : "";
+      navigate(`/admin/courses/${courseId}/edit${queryString}`);
+    },
+    [catalogPermissions.canEdit, navigate]
+  );
+
+  const createPublishQueueTask = useCallback(
+    async (action: CourseProductPublishQueueAction, reason: string) => {
+      if (!catalogPermissions.canReview) {
+        setActionError("当前账号暂无课程发布队列草案权限");
+        return;
+      }
+
+      const normalizedReason = reason.trim();
+      if (normalizedReason.length < 4) {
+        setActionError("请填写至少 4 个字的草案原因");
+        return;
+      }
+
+      setIsCreatingPublishQueueTask(true);
+      setActionError(undefined);
+      setActionMessage(undefined);
+      try {
+        const result =
+          await httpCourseProductRepository.createCourseProductPublishQueueBatchTask(
+            {
+              action,
+              query,
+              reason: normalizedReason,
+            }
+          );
+        setPublishQueueBatchTasks(result.tasks);
+        setActionMessage(
+          `已生成发布队列草案，候选 ${result.task.candidateCount} 个`
+        );
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程发布队列草案创建失败"
+        );
+      } finally {
+        setIsCreatingPublishQueueTask(false);
+      }
+    },
+    [catalogPermissions.canReview, query]
   );
 
   const openPriceEditor = useCallback(
@@ -482,12 +492,12 @@ export default function CourseProducts() {
       <CourseProductMetrics data={data} />
 
       <CourseProductPublishQueuePanel
-        items={publishQueueSnapshot.items}
-        contentQualityByProductId={contentQualityByProductId}
-        scopeTotal={publishQueueSnapshot.total}
-        isTruncated={publishQueueSnapshot.isTruncated}
+        queue={publishQueue}
+        batchTasks={publishQueueBatchTasks}
         isLoading={isLoading}
-        onOpenWorkspace={openProductWorkspace}
+        isCreatingTask={isCreatingPublishQueueTask}
+        onOpenWorkspace={openProductWorkspaceByCourseId}
+        onCreateTask={createPublishQueueTask}
       />
 
       <CourseProductAuditTrail events={auditEvents} />
