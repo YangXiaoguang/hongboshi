@@ -1398,11 +1398,33 @@ describe("course product domain contract", () => {
       summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
       targetAudience: ["希望提升情绪调节能力的学习者"],
       merchandising: {
+        imageAssets: [
+          {
+            id: "sales_asset_1",
+            title: "课程详情图",
+            imageUrl: "https://cdn.example.com/assets/emotion-detail.jpg",
+            usage: "gallery",
+            complianceStatus: "approved",
+            style: {
+              tone: "warm",
+              spacing: "relaxed",
+              radius: "large",
+              imageAspectRatio: "16:9",
+              imageFit: "cover",
+              captionMode: "overlay",
+            },
+          },
+        ],
         richTextBlocks: [
           {
             id: "h5_heading_1",
             type: "section_heading",
             title: "先理解情绪，再开始练习",
+            style: {
+              tone: "fresh",
+              spacing: "normal",
+              radius: "medium",
+            },
           },
           {
             id: "h5_paragraph_1",
@@ -1436,6 +1458,10 @@ describe("course product domain contract", () => {
     });
 
     expect(parsed.chapters[0]?.durationMinutes).toBe(36);
+    expect(parsed.merchandising.imageAssets[0]?.style?.captionMode).toBe(
+      "overlay"
+    );
+    expect(parsed.merchandising.richTextBlocks[0]?.style?.tone).toBe("fresh");
     expect(parsed.merchandising.richTextBlocks[2]?.type).toBe("faq");
     expect(
       CourseProductContentUpdateRequestSchema.safeParse({

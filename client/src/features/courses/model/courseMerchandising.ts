@@ -20,6 +20,7 @@ export interface CourseMerchandisingVisualAsset {
   imageUrl: string;
   altText: string;
   usage: "proof" | "gallery";
+  style?: CourseProductMerchandisingAsset["style"];
   note?: string;
 }
 
@@ -165,6 +166,7 @@ export function createCourseMerchandisingProfile({
           altText: asset.altText ?? asset.title,
           usage: asset.usage,
         };
+        if (asset.style) visualAsset.style = asset.style;
         if (asset.note) visualAsset.note = asset.note;
         return visualAsset;
       }) ?? [];

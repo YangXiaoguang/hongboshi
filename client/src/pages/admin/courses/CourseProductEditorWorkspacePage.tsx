@@ -93,6 +93,7 @@ type MediaAssetFormState = {
   usage: CourseProductMerchandisingAssetUsage;
   complianceStatus: "not_required" | "pending" | "approved" | "rejected";
   note: string;
+  style: DetailBlockStyleState;
 };
 
 type H5BlockFormState = {
@@ -105,6 +106,7 @@ type H5BlockFormState = {
   itemsText: string;
   question: string;
   answer: string;
+  style: DetailBlockStyleState;
 };
 
 type ContentWorkbenchFormState = {
@@ -119,10 +121,91 @@ type ContentWorkbenchFormState = {
   richTextBlocks: H5BlockFormState[];
 };
 
+type DetailBlockStyleState = {
+  tone: "plain" | "warm" | "fresh" | "deep";
+  spacing: "compact" | "normal" | "relaxed";
+  radius: "none" | "small" | "medium" | "large";
+  imageAspectRatio: "auto" | "1:1" | "4:3" | "16:9" | "3:4" | "long";
+  imageFit: "cover" | "contain";
+  captionMode: "hidden" | "below" | "overlay";
+};
+
+type DetailDesignerSelection =
+  | { kind: "overview" }
+  | { kind: "asset"; id: string }
+  | { kind: "block"; id: string };
+
 const defaultCoverUrl =
   "https://images.unsplash.com/photo-1499209974431-9dddcece7f88";
 const defaultAssetUploadReason = "商品图片上传";
 const defaultContentUpdateReason = "课程商品内容更新";
+
+const detailBlockStyleDefaults: DetailBlockStyleState = {
+  tone: "plain",
+  spacing: "normal",
+  radius: "medium",
+  imageAspectRatio: "4:3",
+  imageFit: "cover",
+  captionMode: "below",
+};
+
+const styleToneOptions: {
+  value: DetailBlockStyleState["tone"];
+  label: string;
+}[] = [
+  { value: "plain", label: "清爽" },
+  { value: "warm", label: "温暖" },
+  { value: "fresh", label: "清新" },
+  { value: "deep", label: "深色" },
+];
+
+const styleSpacingOptions: {
+  value: DetailBlockStyleState["spacing"];
+  label: string;
+}[] = [
+  { value: "compact", label: "紧凑" },
+  { value: "normal", label: "标准" },
+  { value: "relaxed", label: "舒展" },
+];
+
+const styleRadiusOptions: {
+  value: DetailBlockStyleState["radius"];
+  label: string;
+}[] = [
+  { value: "none", label: "直角" },
+  { value: "small", label: "小圆角" },
+  { value: "medium", label: "中圆角" },
+  { value: "large", label: "大圆角" },
+];
+
+const imageAspectRatioOptions: {
+  value: DetailBlockStyleState["imageAspectRatio"];
+  label: string;
+}[] = [
+  { value: "auto", label: "原图" },
+  { value: "1:1", label: "方图" },
+  { value: "4:3", label: "商品图" },
+  { value: "16:9", label: "横幅" },
+  { value: "3:4", label: "竖图" },
+  { value: "long", label: "长图" },
+];
+
+const imageFitOptions: {
+  value: DetailBlockStyleState["imageFit"];
+  label: string;
+}[] = [
+  { value: "cover", label: "铺满" },
+  { value: "contain", label: "完整显示" },
+];
+
+const imageCaptionModeOptions: {
+  value: DetailBlockStyleState["captionMode"];
+  label: string;
+}[] = [
+  { value: "below", label: "图下说明" },
+  { value: "overlay", label: "图上浮层" },
+  { value: "hidden", label: "隐藏说明" },
+];
 
 const merchandisingAssetUsageOptions: {
   value: CourseProductMerchandisingAssetUsage;
@@ -251,6 +334,15 @@ function priceFormFromProduct(product: CourseProductListItem): PriceFormState {
   };
 }
 
+function detailBlockStyleFromValue(
+  style?: Partial<DetailBlockStyleState>
+): DetailBlockStyleState {
+  return {
+    ...detailBlockStyleDefaults,
+    ...style,
+  };
+}
+
 function contentFormFromContent(
   content: CourseProductDetailContent
 ): ContentWorkbenchFormState {
@@ -270,6 +362,7 @@ function contentFormFromContent(
       usage: asset.usage,
       complianceStatus: asset.complianceStatus,
       note: asset.note ?? "",
+      style: detailBlockStyleFromValue(asset.style),
     })),
     richTextBlocks:
       content.merchandising.richTextBlocks.length > 0
@@ -283,6 +376,7 @@ function contentFormFromContent(
             itemsText: block.items.join("\n"),
             question: block.question ?? "",
             answer: block.answer ?? "",
+            style: detailBlockStyleFromValue(block.style),
           }))
         : [
             createH5BlockForm("section_heading"),
@@ -327,6 +421,11 @@ function createMediaAssetForm(
     usage,
     complianceStatus: "not_required",
     note: "",
+    style: detailBlockStyleFromValue(
+      usage === "showcase"
+        ? { imageAspectRatio: "16:9", radius: "large", tone: "warm" }
+        : undefined
+    ),
   };
 }
 
@@ -366,6 +465,11 @@ function mediaAssetFormFromCourseProductAsset(
     usage,
     complianceStatus: asset.complianceStatus,
     note: asset.note ?? "",
+    style: detailBlockStyleFromValue(
+      usage === "showcase"
+        ? { imageAspectRatio: "16:9", radius: "large", tone: "warm" }
+        : undefined
+    ),
   };
 }
 
@@ -620,6 +724,11 @@ function createH5BlockForm(
     question: type === "faq" ? "购买后可以反复学习吗？" : "",
     answer:
       type === "faq" ? "课程权益有效期内可以反复进入学习页查看内容。" : "",
+    style: detailBlockStyleFromValue(
+      type === "image"
+        ? { imageAspectRatio: "16:9", radius: "large", tone: "warm" }
+        : undefined
+    ),
   };
 }
 
@@ -694,6 +803,47 @@ function formatFileSize(bytes: number) {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+function detailStyleToneClass(style: DetailBlockStyleState) {
+  return {
+    plain: "border-[#EFE7DA] bg-white",
+    warm: "border-[#E7D2BA] bg-[#FFF8EE]",
+    fresh: "border-[#C9D8C2] bg-[#F2F8F1]",
+    deep: "border-[#243B35] bg-[#243B35] text-white",
+  }[style.tone];
+}
+
+function detailStylePaddingClass(style: DetailBlockStyleState) {
+  return {
+    compact: "p-3",
+    normal: "p-4",
+    relaxed: "p-5",
+  }[style.spacing];
+}
+
+function detailStyleRadiusClass(style: DetailBlockStyleState) {
+  return {
+    none: "rounded-none",
+    small: "rounded-md",
+    medium: "rounded-xl",
+    large: "rounded-2xl",
+  }[style.radius];
+}
+
+function detailImageAspectClass(style: DetailBlockStyleState) {
+  return {
+    auto: "h-auto",
+    "1:1": "aspect-square",
+    "4:3": "aspect-[4/3]",
+    "16:9": "aspect-video",
+    "3:4": "aspect-[3/4]",
+    long: "aspect-[3/5]",
+  }[style.imageAspectRatio];
+}
+
+function detailImageFitClass(style: DetailBlockStyleState) {
+  return style.imageFit === "contain" ? "object-contain" : "object-cover";
+}
+
 function splitLines(value: string) {
   return value
     .split(/\n+/)
@@ -732,6 +882,7 @@ function buildContentUpdateRequest(
         usage: asset.usage,
         complianceStatus: asset.complianceStatus,
         note: optionalText(asset.note),
+        style: asset.style,
       })),
       richTextBlocks: richTextBlocks.map(block => ({
         id: block.id,
@@ -743,6 +894,7 @@ function buildContentUpdateRequest(
         items: splitLines(block.itemsText),
         question: optionalText(block.question),
         answer: optionalText(block.answer),
+        style: block.style,
       })),
     },
     chapters: content.chapters,
@@ -827,6 +979,8 @@ export default function CourseProductEditorWorkspacePage() {
   const [assetUploadInputKey, setAssetUploadInputKey] = useState(0);
   const [reason, setReason] = useState("新增课程商品草稿");
   const [isAdvancedH5Editing, setIsAdvancedH5Editing] = useState(false);
+  const [detailDesignerSelection, setDetailDesignerSelection] =
+    useState<DetailDesignerSelection>({ kind: "overview" });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -848,6 +1002,29 @@ export default function CourseProductEditorWorkspacePage() {
     () => h5BlockFormsForSave(contentForm, !isAdvancedH5Editing),
     [contentForm, isAdvancedH5Editing]
   );
+  const selectedDesignerAsset =
+    detailDesignerSelection.kind === "asset"
+      ? contentForm.imageAssets.find(
+          asset => asset.id === detailDesignerSelection.id
+        )
+      : undefined;
+  const selectedDesignerBlock =
+    detailDesignerSelection.kind === "block"
+      ? contentForm.richTextBlocks.find(
+          block => block.id === detailDesignerSelection.id
+        )
+      : undefined;
+  const selectedDesignerStyle =
+    selectedDesignerAsset?.style ??
+    selectedDesignerBlock?.style ??
+    detailBlockStyleDefaults;
+  const selectedDesignerIsImage = Boolean(
+    selectedDesignerAsset || selectedDesignerBlock?.type === "image"
+  );
+  const selectedDesignerTitle =
+    selectedDesignerAsset?.title ??
+    selectedDesignerBlock?.title ??
+    (detailDesignerSelection.kind === "overview" ? "整体详情" : "已选模块");
   const merchandisingImageAssets = useMemo(
     () => assetLibrary.filter(isMerchandisingImageAsset),
     [assetLibrary]
@@ -917,6 +1094,7 @@ export default function CourseProductEditorWorkspacePage() {
       setContent(loadedContent);
       setContentForm(contentFormFromContent(loadedContent));
       setIsAdvancedH5Editing(false);
+      setDetailDesignerSelection({ kind: "overview" });
       setServerContentQuality(
         evaluateCourseProductContentQuality(loadedContent)
       );
@@ -943,6 +1121,7 @@ export default function CourseProductEditorWorkspacePage() {
       setAssetUploadFile(undefined);
       setAssetUploadTitle("");
       setAssetUploadUsage("gallery");
+      setDetailDesignerSelection({ kind: "overview" });
       setReason("新增课程商品草稿");
       return;
     }
@@ -1251,6 +1430,62 @@ export default function CourseProductEditorWorkspacePage() {
     product?.title,
     product?.type,
   ]);
+
+  const updateSelectedDesignerStyle = useCallback(
+    (patch: Partial<DetailBlockStyleState>) => {
+      setContentForm(current => {
+        if (detailDesignerSelection.kind === "asset") {
+          return {
+            ...current,
+            imageAssets: current.imageAssets.map(asset =>
+              asset.id === detailDesignerSelection.id
+                ? {
+                    ...asset,
+                    style: detailBlockStyleFromValue({
+                      ...asset.style,
+                      ...patch,
+                    }),
+                  }
+                : asset
+            ),
+          };
+        }
+
+        if (detailDesignerSelection.kind === "block") {
+          return {
+            ...current,
+            richTextBlocks: current.richTextBlocks.map(block =>
+              block.id === detailDesignerSelection.id
+                ? {
+                    ...block,
+                    style: detailBlockStyleFromValue({
+                      ...block.style,
+                      ...patch,
+                    }),
+                  }
+                : block
+            ),
+          };
+        }
+
+        return current;
+      });
+    },
+    [detailDesignerSelection]
+  );
+
+  const addDesignerBlock = useCallback(
+    (type: CourseProductRichTextBlockType) => {
+      const nextBlock = createH5BlockForm(type);
+      setContentForm(current => ({
+        ...current,
+        richTextBlocks: [...current.richTextBlocks, nextBlock],
+      }));
+      setIsAdvancedH5Editing(true);
+      setDetailDesignerSelection({ kind: "block", id: nextBlock.id });
+    },
+    []
+  );
 
   const uploadMerchandisingAsset = useCallback(async () => {
     if (!product) {
@@ -2305,10 +2540,142 @@ export default function CourseProductEditorWorkspacePage() {
 
             {activeStep === "content" && (
               <SectionShell
-                title="图文内容"
-                description="维护摘要、适合人群、卖点和移动端成交页预览；需要精细排版时再打开高级内容块。"
+                title="详情装修器"
+                description="按区块编辑课程商品详情，左侧管理结构，中间维护内容，右侧调整所选图片或段落样式。"
               >
-                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-5 xl:grid-cols-[248px_minmax(0,1fr)_320px]">
+                  <div className="h-fit rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-3">
+                    <div className="flex items-center gap-2 px-1 text-sm font-semibold text-[#243B35]">
+                      <Layers3 className="h-4 w-4 text-[#6F8F83]" />
+                      页面结构
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <button
+                        onClick={() =>
+                          setDetailDesignerSelection({ kind: "overview" })
+                        }
+                        className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${
+                          detailDesignerSelection.kind === "overview"
+                            ? "border-[#6F8F83] bg-[#EEF6ED] text-[#243B35]"
+                            : "border-[#E1D7C8] bg-white text-[#6F7771] hover:border-[#9FB3A9]"
+                        }`}
+                      >
+                        <span className="block font-semibold">
+                          商品基础说明
+                        </span>
+                        <span className="mt-1 block leading-5">
+                          摘要、适合人群、卖点、标题
+                        </span>
+                      </button>
+
+                      {contentForm.imageAssets.map(asset => (
+                        <button
+                          key={asset.id}
+                          onClick={() =>
+                            setDetailDesignerSelection({
+                              kind: "asset",
+                              id: asset.id,
+                            })
+                          }
+                          className={`grid w-full grid-cols-[44px_minmax(0,1fr)] gap-2 rounded-lg border p-2 text-left text-xs transition ${
+                            detailDesignerSelection.kind === "asset" &&
+                            detailDesignerSelection.id === asset.id
+                              ? "border-[#6F8F83] bg-[#EEF6ED] text-[#243B35]"
+                              : "border-[#E1D7C8] bg-white text-[#6F7771] hover:border-[#9FB3A9]"
+                          }`}
+                        >
+                          <span className="overflow-hidden rounded-md bg-[#F8F3EA]">
+                            {asset.imageUrl ? (
+                              <img
+                                src={asset.imageUrl}
+                                alt=""
+                                className="aspect-square w-full object-cover"
+                              />
+                            ) : (
+                              <span className="flex aspect-square items-center justify-center">
+                                <FileImage className="h-4 w-4" />
+                              </span>
+                            )}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="line-clamp-1 block font-semibold text-[#243B35]">
+                              {asset.title}
+                            </span>
+                            <span className="mt-1 block">
+                              {merchandisingAssetUsageOptions.find(
+                                item => item.value === asset.usage
+                              )?.label ?? "详情图"}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+
+                      <div className="border-t border-[#E1D7C8] pt-3">
+                        <p className="px-1 text-xs font-semibold text-[#8A8176]">
+                          详情段落
+                        </p>
+                        <div className="mt-2 space-y-2">
+                          {contentForm.richTextBlocks.map((block, index) => (
+                            <button
+                              key={block.id}
+                              onClick={() =>
+                                setDetailDesignerSelection({
+                                  kind: "block",
+                                  id: block.id,
+                                })
+                              }
+                              className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${
+                                detailDesignerSelection.kind === "block" &&
+                                detailDesignerSelection.id === block.id
+                                  ? "border-[#6F8F83] bg-[#EEF6ED] text-[#243B35]"
+                                  : "border-[#E1D7C8] bg-white text-[#6F7771] hover:border-[#9FB3A9]"
+                              }`}
+                            >
+                              <span className="block font-semibold text-[#243B35]">
+                                {index + 1}.{" "}
+                                {h5BlockTypeOptions.find(
+                                  item => item.value === block.type
+                                )?.label ?? "内容块"}
+                              </span>
+                              <span className="mt-1 line-clamp-1 block">
+                                {block.title ||
+                                  block.question ||
+                                  block.body ||
+                                  "待填写"}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="border-t border-[#E1D7C8] pt-3">
+                        <p className="px-1 text-xs font-semibold text-[#8A8176]">
+                          添加模块
+                        </p>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {[
+                            ["paragraph", "正文"],
+                            ["image", "图片"],
+                            ["bullet_list", "要点"],
+                            ["faq", "FAQ"],
+                          ].map(([type, label]) => (
+                            <button
+                              key={type}
+                              onClick={() =>
+                                addDesignerBlock(
+                                  type as CourseProductRichTextBlockType
+                                )
+                              }
+                              className="rounded-lg border border-[#E1D7C8] bg-white px-2 py-2 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="space-y-5">
                     <div className="flex flex-col gap-3 border border-[#E1D7C8] bg-[#FBF7EF] p-4 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
@@ -2447,15 +2814,7 @@ export default function CourseProductEditorWorkspacePage() {
                           </div>
                           <div className="flex flex-wrap gap-2">
                             <button
-                              onClick={() =>
-                                setContentForm(current => ({
-                                  ...current,
-                                  richTextBlocks: [
-                                    ...current.richTextBlocks,
-                                    createH5BlockForm("paragraph"),
-                                  ],
-                                }))
-                              }
+                              onClick={() => addDesignerBlock("paragraph")}
                               className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
                             >
                               <Plus className="h-4 w-4" />
@@ -2487,6 +2846,7 @@ export default function CourseProductEditorWorkspacePage() {
                                                         .value as CourseProductRichTextBlockType
                                                     ),
                                                     id: item.id,
+                                                    style: item.style,
                                                   }
                                                 : item
                                           ),
@@ -2799,84 +3159,338 @@ export default function CourseProductEditorWorkspacePage() {
                     </div>
                   </div>
 
-                  <div className="h-fit rounded-[28px] border border-[#D8CEC0] bg-[#243B35] p-3">
-                    <div className="overflow-hidden rounded-[22px] bg-[#FFFDF8]">
-                      <div className="flex items-center gap-2 border-b border-[#E5DCCF] px-4 py-3 text-xs font-semibold text-[#6F7771]">
-                        <Smartphone className="h-4 w-4" />
-                        移动端预览
-                      </div>
-                      <img
-                        src={contentForm.showcaseImageUrl || basicForm.coverUrl}
-                        alt={contentForm.showcaseImageAlt || basicForm.title}
-                        className="aspect-[4/3] w-full object-cover"
-                      />
-                      <div className="space-y-3 px-4 py-4">
-                        <p className="text-lg font-semibold leading-7 text-[#243B35]">
-                          {contentForm.headline || basicForm.title || "H5 标题"}
-                        </p>
-                        <p className="text-xs leading-5 text-[#6F7771]">
-                          {contentForm.subheadline ||
-                            "这里展示移动端商品详情的副标题。"}
-                        </p>
-                        {previewRichTextBlocks.slice(0, 4).map(block => (
-                          <div
-                            key={block.id}
-                            className="border-t border-[#EFE7DA] pt-3"
-                          >
-                            {block.type === "section_heading" && (
-                              <p className="text-sm font-semibold text-[#243B35]">
-                                {block.title || "段落标题"}
-                              </p>
-                            )}
-                            {block.type === "paragraph" && (
-                              <p className="text-xs leading-5 text-[#6F7771]">
-                                {block.body || "正文内容预览"}
-                              </p>
-                            )}
-                            {block.type === "purchase_note" && (
-                              <p className="text-xs leading-5 text-[#8B7E6D]">
-                                {block.body || "购买须知预览"}
-                              </p>
-                            )}
-                            {block.type === "bullet_list" && (
-                              <ul className="space-y-1 text-xs text-[#6F7771]">
-                                {splitLines(block.itemsText).map(item => (
-                                  <li key={item}>· {item}</li>
-                                ))}
-                              </ul>
-                            )}
-                            {block.type === "faq" && (
-                              <div className="text-xs leading-5">
-                                <p className="font-semibold text-[#243B35]">
-                                  {block.question || "常见问题"}
-                                </p>
-                                <p className="mt-1 text-[#6F7771]">
-                                  {block.answer || "问题回答预览"}
-                                </p>
-                              </div>
-                            )}
-                            {block.type === "image" && (
-                              <div className="overflow-hidden rounded-lg bg-[#F8F3EA]">
-                                {block.imageUrl ? (
-                                  <img
-                                    src={block.imageUrl}
-                                    alt={block.altText || block.title}
-                                    className="aspect-[4/3] w-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="flex aspect-[4/3] items-center justify-center text-[#A39A90]">
-                                    <FileImage className="h-5 w-5" />
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {block.type === "instructor_intro" && (
-                              <p className="text-xs leading-5 text-[#6F7771]">
-                                {block.body || "讲师介绍预览"}
-                              </p>
-                            )}
+                  <div className="space-y-4">
+                    <div className="rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                            <PanelRight className="h-4 w-4 text-[#6F8F83]" />
+                            样式
                           </div>
-                        ))}
+                          <p className="mt-1 line-clamp-1 text-xs text-[#6F7771]">
+                            {selectedDesignerTitle}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-[#6F8F83]">
+                          {detailDesignerSelection.kind === "overview"
+                            ? "整体"
+                            : selectedDesignerIsImage
+                              ? "图片"
+                              : "段落"}
+                        </span>
+                      </div>
+
+                      {detailDesignerSelection.kind === "overview" ? (
+                        <div className="mt-4 space-y-3 text-xs leading-5 text-[#6F7771]">
+                          <p>
+                            选择左侧图片或详情段落后，可单独调整比例、圆角、留白和说明样式。
+                          </p>
+                          <button
+                            onClick={applyCommerceContentTemplate}
+                            className="inline-flex h-9 items-center rounded-lg bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047]"
+                          >
+                            套用温暖课程模板
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-4 grid gap-3">
+                          <label className="text-xs font-semibold text-[#41524B]">
+                            风格
+                            <select
+                              value={selectedDesignerStyle.tone}
+                              onChange={event =>
+                                updateSelectedDesignerStyle({
+                                  tone: event.target
+                                    .value as DetailBlockStyleState["tone"],
+                                })
+                              }
+                              className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
+                            >
+                              {styleToneOptions.map(option => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <label className="text-xs font-semibold text-[#41524B]">
+                              留白
+                              <select
+                                value={selectedDesignerStyle.spacing}
+                                onChange={event =>
+                                  updateSelectedDesignerStyle({
+                                    spacing: event.target
+                                      .value as DetailBlockStyleState["spacing"],
+                                  })
+                                }
+                                className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
+                              >
+                                {styleSpacingOptions.map(option => (
+                                  <option
+                                    key={option.value}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="text-xs font-semibold text-[#41524B]">
+                              圆角
+                              <select
+                                value={selectedDesignerStyle.radius}
+                                onChange={event =>
+                                  updateSelectedDesignerStyle({
+                                    radius: event.target
+                                      .value as DetailBlockStyleState["radius"],
+                                  })
+                                }
+                                className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
+                              >
+                                {styleRadiusOptions.map(option => (
+                                  <option
+                                    key={option.value}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          {selectedDesignerIsImage && (
+                            <>
+                              <label className="text-xs font-semibold text-[#41524B]">
+                                图片比例
+                                <select
+                                  value={selectedDesignerStyle.imageAspectRatio}
+                                  onChange={event =>
+                                    updateSelectedDesignerStyle({
+                                      imageAspectRatio: event.target
+                                        .value as DetailBlockStyleState["imageAspectRatio"],
+                                    })
+                                  }
+                                  className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
+                                >
+                                  {imageAspectRatioOptions.map(option => (
+                                    <option
+                                      key={option.value}
+                                      value={option.value}
+                                    >
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <label className="text-xs font-semibold text-[#41524B]">
+                                  显示
+                                  <select
+                                    value={selectedDesignerStyle.imageFit}
+                                    onChange={event =>
+                                      updateSelectedDesignerStyle({
+                                        imageFit: event.target
+                                          .value as DetailBlockStyleState["imageFit"],
+                                      })
+                                    }
+                                    className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
+                                  >
+                                    {imageFitOptions.map(option => (
+                                      <option
+                                        key={option.value}
+                                        value={option.value}
+                                      >
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="text-xs font-semibold text-[#41524B]">
+                                  说明
+                                  <select
+                                    value={selectedDesignerStyle.captionMode}
+                                    onChange={event =>
+                                      updateSelectedDesignerStyle({
+                                        captionMode: event.target
+                                          .value as DetailBlockStyleState["captionMode"],
+                                      })
+                                    }
+                                    className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
+                                  >
+                                    {imageCaptionModeOptions.map(option => (
+                                      <option
+                                        key={option.value}
+                                        value={option.value}
+                                      >
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="h-fit rounded-[28px] border border-[#D8CEC0] bg-[#243B35] p-3">
+                      <div className="overflow-hidden rounded-[22px] bg-[#FFFDF8]">
+                        <div className="flex items-center gap-2 border-b border-[#E5DCCF] px-4 py-3 text-xs font-semibold text-[#6F7771]">
+                          <Smartphone className="h-4 w-4" />
+                          移动端预览
+                        </div>
+                        <img
+                          src={
+                            contentForm.showcaseImageUrl || basicForm.coverUrl
+                          }
+                          alt={contentForm.showcaseImageAlt || basicForm.title}
+                          className="aspect-[4/3] w-full object-cover"
+                        />
+                        <div className="space-y-3 px-4 py-4">
+                          <p className="text-lg font-semibold leading-7 text-[#243B35]">
+                            {contentForm.headline ||
+                              basicForm.title ||
+                              "H5 标题"}
+                          </p>
+                          <p className="text-xs leading-5 text-[#6F7771]">
+                            {contentForm.subheadline ||
+                              "这里展示移动端商品详情的副标题。"}
+                          </p>
+                          {contentForm.imageAssets.slice(0, 3).map(asset => (
+                            <figure
+                              key={asset.id}
+                              className={`${detailStyleToneClass(asset.style)} ${detailStylePaddingClass(asset.style)} ${detailStyleRadiusClass(asset.style)} overflow-hidden border`}
+                            >
+                              {asset.imageUrl ? (
+                                <img
+                                  src={asset.imageUrl}
+                                  alt={asset.altText || asset.title}
+                                  className={`${detailImageAspectClass(asset.style)} w-full ${detailImageFitClass(asset.style)} bg-[#F8F3EA]`}
+                                />
+                              ) : (
+                                <div
+                                  className={`${detailImageAspectClass(asset.style)} flex w-full items-center justify-center bg-[#F8F3EA] text-[#A39A90]`}
+                                >
+                                  <FileImage className="h-5 w-5" />
+                                </div>
+                              )}
+                              {asset.style.captionMode !== "hidden" && (
+                                <figcaption
+                                  className={`mt-2 text-xs leading-5 ${
+                                    asset.style.tone === "deep"
+                                      ? "text-white/72"
+                                      : "text-[#6F7771]"
+                                  }`}
+                                >
+                                  {asset.altText || asset.title}
+                                </figcaption>
+                              )}
+                            </figure>
+                          ))}
+                          {previewRichTextBlocks.slice(0, 4).map(block => (
+                            <div
+                              key={block.id}
+                              className={`${detailStyleToneClass(block.style)} ${detailStylePaddingClass(block.style)} ${detailStyleRadiusClass(block.style)} border`}
+                            >
+                              {block.type === "section_heading" && (
+                                <p
+                                  className={`text-sm font-semibold ${
+                                    block.style.tone === "deep"
+                                      ? "text-white"
+                                      : "text-[#243B35]"
+                                  }`}
+                                >
+                                  {block.title || "段落标题"}
+                                </p>
+                              )}
+                              {block.type === "paragraph" && (
+                                <p
+                                  className={`text-xs leading-5 ${
+                                    block.style.tone === "deep"
+                                      ? "text-white/72"
+                                      : "text-[#6F7771]"
+                                  }`}
+                                >
+                                  {block.body || "正文内容预览"}
+                                </p>
+                              )}
+                              {block.type === "purchase_note" && (
+                                <p
+                                  className={`text-xs leading-5 ${
+                                    block.style.tone === "deep"
+                                      ? "text-white/72"
+                                      : "text-[#8B7E6D]"
+                                  }`}
+                                >
+                                  {block.body || "购买须知预览"}
+                                </p>
+                              )}
+                              {block.type === "bullet_list" && (
+                                <ul className="space-y-1 text-xs text-[#6F7771]">
+                                  {splitLines(block.itemsText).map(item => (
+                                    <li key={item}>· {item}</li>
+                                  ))}
+                                </ul>
+                              )}
+                              {block.type === "faq" && (
+                                <div className="text-xs leading-5">
+                                  <p className="font-semibold text-[#243B35]">
+                                    {block.question || "常见问题"}
+                                  </p>
+                                  <p className="mt-1 text-[#6F7771]">
+                                    {block.answer || "问题回答预览"}
+                                  </p>
+                                </div>
+                              )}
+                              {block.type === "image" && (
+                                <figure className="overflow-hidden">
+                                  {block.imageUrl ? (
+                                    <img
+                                      src={block.imageUrl}
+                                      alt={block.altText || block.title}
+                                      className={`${detailImageAspectClass(block.style)} w-full ${detailImageFitClass(block.style)} bg-[#F8F3EA]`}
+                                    />
+                                  ) : (
+                                    <div
+                                      className={`${detailImageAspectClass(block.style)} flex w-full items-center justify-center bg-[#F8F3EA] text-[#A39A90]`}
+                                    >
+                                      <FileImage className="h-5 w-5" />
+                                    </div>
+                                  )}
+                                  {block.style.captionMode !== "hidden" && (
+                                    <figcaption
+                                      className={`mt-2 text-xs leading-5 ${
+                                        block.style.tone === "deep"
+                                          ? "text-white/72"
+                                          : "text-[#6F7771]"
+                                      }`}
+                                    >
+                                      {block.altText ||
+                                        block.title ||
+                                        "课程详情图"}
+                                    </figcaption>
+                                  )}
+                                </figure>
+                              )}
+                              {block.type === "instructor_intro" && (
+                                <p
+                                  className={`text-xs leading-5 ${
+                                    block.style.tone === "deep"
+                                      ? "text-white/72"
+                                      : "text-[#6F7771]"
+                                  }`}
+                                >
+                                  {block.body || "讲师介绍预览"}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>

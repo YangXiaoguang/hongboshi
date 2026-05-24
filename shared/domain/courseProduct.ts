@@ -1865,6 +1865,18 @@ export const CourseProductMerchandisingAssetSchema = z.object({
   complianceStatus:
     CourseProductContentAssetReviewStatusSchema.default("not_required"),
   note: z.string().trim().max(200).optional(),
+  style: z
+    .object({
+      tone: z.enum(["plain", "warm", "fresh", "deep"]).optional(),
+      spacing: z.enum(["compact", "normal", "relaxed"]).optional(),
+      radius: z.enum(["none", "small", "medium", "large"]).optional(),
+      imageAspectRatio: z
+        .enum(["auto", "1:1", "4:3", "16:9", "3:4", "long"])
+        .optional(),
+      imageFit: z.enum(["cover", "contain"]).optional(),
+      captionMode: z.enum(["hidden", "below", "overlay"]).optional(),
+    })
+    .optional(),
 });
 
 export const CourseProductRichTextBlockTypeSchema = z.enum(
@@ -1882,6 +1894,18 @@ export const CourseProductRichTextBlockSchema = z
     items: z.array(z.string().trim().min(2).max(120)).max(12).default([]),
     question: z.string().trim().min(4).max(160).optional(),
     answer: z.string().trim().min(4).max(600).optional(),
+    style: z
+      .object({
+        tone: z.enum(["plain", "warm", "fresh", "deep"]).optional(),
+        spacing: z.enum(["compact", "normal", "relaxed"]).optional(),
+        radius: z.enum(["none", "small", "medium", "large"]).optional(),
+        imageAspectRatio: z
+          .enum(["auto", "1:1", "4:3", "16:9", "3:4", "long"])
+          .optional(),
+        imageFit: z.enum(["cover", "contain"]).optional(),
+        captionMode: z.enum(["hidden", "below", "overlay"]).optional(),
+      })
+      .optional(),
   })
   .superRefine((value, ctx) => {
     if (value.type === "section_heading" && !value.title) {

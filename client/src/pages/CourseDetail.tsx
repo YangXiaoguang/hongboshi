@@ -93,6 +93,90 @@ function formatPrice(course: Course): string {
   return `${prefix}${formatCheckoutMoney(promotion.coursePayableAmount)}`;
 }
 
+type CourseDetailVisualStyle = {
+  tone?: "plain" | "warm" | "fresh" | "deep";
+  spacing?: "compact" | "normal" | "relaxed";
+  radius?: "none" | "small" | "medium" | "large";
+  imageAspectRatio?: "auto" | "1:1" | "4:3" | "16:9" | "3:4" | "long";
+  imageFit?: "cover" | "contain";
+  captionMode?: "hidden" | "below" | "overlay";
+};
+
+const courseDetailStyleDefaults = {
+  tone: "plain",
+  spacing: "normal",
+  radius: "medium",
+  imageAspectRatio: "4:3",
+  imageFit: "cover",
+  captionMode: "below",
+} satisfies Required<CourseDetailVisualStyle>;
+
+function normalizeCourseDetailStyle(style?: CourseDetailVisualStyle) {
+  return {
+    ...courseDetailStyleDefaults,
+    ...style,
+  };
+}
+
+function courseDetailToneClass(style?: CourseDetailVisualStyle) {
+  const normalized = normalizeCourseDetailStyle(style);
+  return {
+    plain: "border-[#E4DCCF] bg-[#FFFDF8]",
+    warm: "border-[#E7D2BA] bg-[#FFF8EE]",
+    fresh: "border-[#C9D8C2] bg-[#F2F8F1]",
+    deep: "border-[#243B35] bg-[#243B35] text-white",
+  }[normalized.tone];
+}
+
+function courseDetailPaddingClass(style?: CourseDetailVisualStyle) {
+  const normalized = normalizeCourseDetailStyle(style);
+  return {
+    compact: "p-4",
+    normal: "p-5",
+    relaxed: "p-6",
+  }[normalized.spacing];
+}
+
+function courseDetailRadiusClass(style?: CourseDetailVisualStyle) {
+  const normalized = normalizeCourseDetailStyle(style);
+  return {
+    none: "rounded-none",
+    small: "rounded-[12px]",
+    medium: "rounded-[20px]",
+    large: "rounded-[28px]",
+  }[normalized.radius];
+}
+
+function courseDetailImageAspectClass(style?: CourseDetailVisualStyle) {
+  const normalized = normalizeCourseDetailStyle(style);
+  return {
+    auto: "h-auto",
+    "1:1": "aspect-square",
+    "4:3": "aspect-[4/3]",
+    "16:9": "aspect-video",
+    "3:4": "aspect-[3/4]",
+    long: "aspect-[3/5]",
+  }[normalized.imageAspectRatio];
+}
+
+function courseDetailImageFitClass(style?: CourseDetailVisualStyle) {
+  return normalizeCourseDetailStyle(style).imageFit === "contain"
+    ? "object-contain"
+    : "object-cover";
+}
+
+function courseDetailTextClass(style?: CourseDetailVisualStyle) {
+  return normalizeCourseDetailStyle(style).tone === "deep"
+    ? "text-white/76"
+    : "text-[#6D746F]";
+}
+
+function courseDetailHeadingClass(style?: CourseDetailVisualStyle) {
+  return normalizeCourseDetailStyle(style).tone === "deep"
+    ? "text-white"
+    : "text-[#243B35]";
+}
+
 const accessCopy = {
   free: "免费学习",
   owned: "已解锁",
@@ -1646,23 +1730,40 @@ function CourseContentShowcase({
               {profile.visualAssets.map(asset => (
                 <figure
                   key={asset.id}
-                  className="overflow-hidden rounded-[18px] border border-[#E4DCCF] bg-[#FFFDF8]"
+                  className={`${courseDetailToneClass(asset.style)} ${courseDetailPaddingClass(asset.style)} ${courseDetailRadiusClass(asset.style)} overflow-hidden border`}
                 >
-                  <img
-                    src={asset.imageUrl}
-                    alt={asset.altText}
-                    className="aspect-[4/3] w-full object-cover"
-                  />
-                  <figcaption className="px-3 py-3">
-                    <p className="line-clamp-1 text-xs font-semibold text-[#243B35]">
-                      {asset.title}
-                    </p>
-                    {asset.note && (
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#7B817C]">
-                        {asset.note}
-                      </p>
+                  <div className="relative overflow-hidden rounded-[14px] bg-[#F4EFE6]">
+                    <img
+                      src={asset.imageUrl}
+                      alt={asset.altText}
+                      className={`${courseDetailImageAspectClass(asset.style)} w-full ${courseDetailImageFitClass(asset.style)}`}
+                    />
+                    {normalizeCourseDetailStyle(asset.style).captionMode ===
+                      "overlay" && (
+                      <div className="absolute inset-x-0 bottom-0 bg-[#13211D]/70 px-3 py-2 text-white backdrop-blur">
+                        <p className="line-clamp-1 text-xs font-semibold">
+                          {asset.title}
+                        </p>
+                      </div>
                     )}
-                  </figcaption>
+                  </div>
+                  {normalizeCourseDetailStyle(asset.style).captionMode ===
+                    "below" && (
+                    <figcaption className="pt-3">
+                      <p
+                        className={`line-clamp-1 text-xs font-semibold ${courseDetailHeadingClass(asset.style)}`}
+                      >
+                        {asset.title}
+                      </p>
+                      {asset.note && (
+                        <p
+                          className={`mt-1 line-clamp-2 text-xs leading-5 ${courseDetailTextClass(asset.style)}`}
+                        >
+                          {asset.note}
+                        </p>
+                      )}
+                    </figcaption>
+                  )}
                 </figure>
               ))}
             </div>
@@ -1852,11 +1953,15 @@ function CourseH5DetailBlock({
 }) {
   if (block.type === "section_heading") {
     return (
-      <div className="rounded-[20px] bg-[#EEF6ED] px-5 py-4">
+      <div
+        className={`${courseDetailToneClass(block.style)} ${courseDetailPaddingClass(block.style)} ${courseDetailRadiusClass(block.style)} border`}
+      >
         <p className="text-xs font-semibold text-[#6F8F83]">
           {String(index + 1).padStart(2, "0")}
         </p>
-        <h4 className="mt-2 text-lg font-semibold text-[#243B35]">
+        <h4
+          className={`mt-2 text-lg font-semibold ${courseDetailHeadingClass(block.style)}`}
+        >
           {block.title}
         </h4>
       </div>
@@ -1864,27 +1969,45 @@ function CourseH5DetailBlock({
   }
 
   if (block.type === "image" && block.imageUrl) {
+    const normalizedStyle = normalizeCourseDetailStyle(block.style);
     return (
-      <figure className="overflow-hidden rounded-[22px] border border-[#E4DCCF] bg-[#FFFDF8]">
-        <img
-          src={block.imageUrl}
-          alt={block.altText || block.title || "课程详情图"}
-          className="aspect-[16/9] w-full object-cover"
-        />
-        {(block.title || block.altText) && (
-          <figcaption className="px-4 py-3 text-xs leading-5 text-[#6D746F]">
-            {block.title || block.altText}
-          </figcaption>
-        )}
+      <figure
+        className={`${courseDetailToneClass(block.style)} ${courseDetailPaddingClass(block.style)} ${courseDetailRadiusClass(block.style)} overflow-hidden border`}
+      >
+        <div className="relative overflow-hidden rounded-[16px] bg-[#F4EFE6]">
+          <img
+            src={block.imageUrl}
+            alt={block.altText || block.title || "课程详情图"}
+            className={`${courseDetailImageAspectClass(block.style)} w-full ${courseDetailImageFitClass(block.style)}`}
+          />
+          {normalizedStyle.captionMode === "overlay" &&
+            (block.title || block.altText) && (
+              <figcaption className="absolute inset-x-0 bottom-0 bg-[#13211D]/70 px-4 py-3 text-xs leading-5 text-white backdrop-blur">
+                {block.title || block.altText}
+              </figcaption>
+            )}
+        </div>
+        {normalizedStyle.captionMode === "below" &&
+          (block.title || block.altText) && (
+            <figcaption
+              className={`pt-3 text-xs leading-5 ${courseDetailTextClass(block.style)}`}
+            >
+              {block.title || block.altText}
+            </figcaption>
+          )}
       </figure>
     );
   }
 
   if (block.type === "bullet_list") {
     return (
-      <div className="rounded-[20px] border border-[#E4DCCF] bg-[#FFFDF8] p-5">
+      <div
+        className={`${courseDetailToneClass(block.style)} ${courseDetailPaddingClass(block.style)} ${courseDetailRadiusClass(block.style)} border`}
+      >
         {block.title && (
-          <h4 className="text-base font-semibold text-[#243B35]">
+          <h4
+            className={`text-base font-semibold ${courseDetailHeadingClass(block.style)}`}
+          >
             {block.title}
           </h4>
         )}
@@ -1892,7 +2015,15 @@ function CourseH5DetailBlock({
           {block.items.map(item => (
             <div key={item} className="flex items-start gap-2 text-sm">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#6F8F83]" />
-              <span className="leading-6 text-[#394A44]">{item}</span>
+              <span
+                className={`leading-6 ${
+                  normalizeCourseDetailStyle(block.style).tone === "deep"
+                    ? "text-white/78"
+                    : "text-[#394A44]"
+                }`}
+              >
+                {item}
+              </span>
             </div>
           ))}
         </div>
@@ -1902,12 +2033,20 @@ function CourseH5DetailBlock({
 
   if (block.type === "faq") {
     return (
-      <div className="rounded-[20px] border border-[#E4DCCF] bg-[#FFFDF8] p-5">
-        <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+      <div
+        className={`${courseDetailToneClass(block.style)} ${courseDetailPaddingClass(block.style)} ${courseDetailRadiusClass(block.style)} border`}
+      >
+        <div
+          className={`flex items-center gap-2 text-sm font-semibold ${courseDetailHeadingClass(block.style)}`}
+        >
           <CircleHelp className="h-4 w-4 text-[#6F8F83]" />
           {block.question}
         </div>
-        <p className="mt-3 text-sm leading-7 text-[#6D746F]">{block.answer}</p>
+        <p
+          className={`mt-3 text-sm leading-7 ${courseDetailTextClass(block.style)}`}
+        >
+          {block.answer}
+        </p>
       </div>
     );
   }
@@ -1925,8 +2064,12 @@ function CourseH5DetailBlock({
   const Icon = iconByType[block.type] ?? FileText;
 
   return (
-    <div className="rounded-[20px] border border-[#E4DCCF] bg-[#FFFDF8] p-5">
-      <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+    <div
+      className={`${courseDetailToneClass(block.style)} ${courseDetailPaddingClass(block.style)} ${courseDetailRadiusClass(block.style)} border`}
+    >
+      <div
+        className={`flex items-center gap-2 text-sm font-semibold ${courseDetailHeadingClass(block.style)}`}
+      >
         <Icon className="h-4 w-4 text-[#6F8F83]" />
         {block.title ||
           (block.type === "purchase_note"
@@ -1935,7 +2078,11 @@ function CourseH5DetailBlock({
               ? "讲师介绍"
               : "课程说明")}
       </div>
-      <p className="mt-3 text-sm leading-7 text-[#6D746F]">{block.body}</p>
+      <p
+        className={`mt-3 text-sm leading-7 ${courseDetailTextClass(block.style)}`}
+      >
+        {block.body}
+      </p>
     </div>
   );
 }

@@ -63,6 +63,7 @@ type ContentMerchandisingAssetFormState = {
   usage: CourseProductMerchandisingAssetUsage;
   complianceStatus: CourseProductContentAssetReviewStatus;
   note: string;
+  style?: CourseProductDetailContent["merchandising"]["imageAssets"][number]["style"];
 };
 type ContentMerchandisingFormState = {
   headline: string;
@@ -149,6 +150,7 @@ function contentFormFromDetail(
         usage: asset.usage,
         complianceStatus: asset.complianceStatus,
         note: asset.note ?? "",
+        style: asset.style,
       })),
       richTextBlocks: content.merchandising.richTextBlocks,
     },
@@ -213,6 +215,7 @@ function merchandisingFromContentForm(
       usage: asset.usage,
       complianceStatus: asset.complianceStatus,
       note: asset.note.trim() ? asset.note.trim() : undefined,
+      style: asset.style,
     })),
     richTextBlocks: merchandising.richTextBlocks,
   };
