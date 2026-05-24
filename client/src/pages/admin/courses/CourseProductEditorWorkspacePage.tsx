@@ -66,6 +66,34 @@ import {
   courseProductReviewCopy,
   courseProductStatusCopy,
 } from "./courseProductAdminLabels";
+import {
+  CourseProductDetailStructurePanel,
+  CourseProductDetailStylePanel,
+} from "./CourseProductDetailDesignerPanels";
+import {
+  applyDetailContentTemplate,
+  createDefaultContentWorkbenchForm,
+  createDetailDraftId,
+  createH5BlockForm,
+  detailBlockStyleDefaults,
+  detailBlockStyleFromValue,
+  detailContentTemplateDefinitions,
+  detailImageAspectClass,
+  detailImageFitClass,
+  detailStylePaddingClass,
+  detailStyleRadiusClass,
+  detailStyleToneClass,
+  h5BlockFormsForSave,
+  h5BlockTypeOptions,
+  merchandisingAssetUsageOptions,
+  optionalText,
+  splitLines,
+  type ContentWorkbenchFormState,
+  type DetailBlockStyleState,
+  type DetailContentTemplateId,
+  type DetailDesignerSelection,
+  type MediaAssetFormState,
+} from "./courseProductDetailDesigner";
 
 type WorkspaceStepId = "basic" | "media" | "price" | "content" | "publish";
 
@@ -85,136 +113,10 @@ type PriceFormState = {
   memberIncluded: boolean;
 };
 
-type MediaAssetFormState = {
-  id: string;
-  title: string;
-  imageUrl: string;
-  altText: string;
-  usage: CourseProductMerchandisingAssetUsage;
-  complianceStatus: "not_required" | "pending" | "approved" | "rejected";
-  note: string;
-  style: DetailBlockStyleState;
-};
-
-type H5BlockFormState = {
-  id: string;
-  type: CourseProductRichTextBlockType;
-  title: string;
-  body: string;
-  imageUrl: string;
-  altText: string;
-  itemsText: string;
-  question: string;
-  answer: string;
-  style: DetailBlockStyleState;
-};
-
-type ContentWorkbenchFormState = {
-  summary: string;
-  targetAudienceText: string;
-  headline: string;
-  subheadline: string;
-  showcaseImageUrl: string;
-  showcaseImageAlt: string;
-  sellingPointsText: string;
-  imageAssets: MediaAssetFormState[];
-  richTextBlocks: H5BlockFormState[];
-};
-
-type DetailBlockStyleState = {
-  tone: "plain" | "warm" | "fresh" | "deep";
-  spacing: "compact" | "normal" | "relaxed";
-  radius: "none" | "small" | "medium" | "large";
-  imageAspectRatio: "auto" | "1:1" | "4:3" | "16:9" | "3:4" | "long";
-  imageFit: "cover" | "contain";
-  captionMode: "hidden" | "below" | "overlay";
-};
-
-type DetailDesignerSelection =
-  | { kind: "overview" }
-  | { kind: "asset"; id: string }
-  | { kind: "block"; id: string };
-
 const defaultCoverUrl =
   "https://images.unsplash.com/photo-1499209974431-9dddcece7f88";
 const defaultAssetUploadReason = "商品图片上传";
 const defaultContentUpdateReason = "课程商品内容更新";
-
-const detailBlockStyleDefaults: DetailBlockStyleState = {
-  tone: "plain",
-  spacing: "normal",
-  radius: "medium",
-  imageAspectRatio: "4:3",
-  imageFit: "cover",
-  captionMode: "below",
-};
-
-const styleToneOptions: {
-  value: DetailBlockStyleState["tone"];
-  label: string;
-}[] = [
-  { value: "plain", label: "清爽" },
-  { value: "warm", label: "温暖" },
-  { value: "fresh", label: "清新" },
-  { value: "deep", label: "深色" },
-];
-
-const styleSpacingOptions: {
-  value: DetailBlockStyleState["spacing"];
-  label: string;
-}[] = [
-  { value: "compact", label: "紧凑" },
-  { value: "normal", label: "标准" },
-  { value: "relaxed", label: "舒展" },
-];
-
-const styleRadiusOptions: {
-  value: DetailBlockStyleState["radius"];
-  label: string;
-}[] = [
-  { value: "none", label: "直角" },
-  { value: "small", label: "小圆角" },
-  { value: "medium", label: "中圆角" },
-  { value: "large", label: "大圆角" },
-];
-
-const imageAspectRatioOptions: {
-  value: DetailBlockStyleState["imageAspectRatio"];
-  label: string;
-}[] = [
-  { value: "auto", label: "原图" },
-  { value: "1:1", label: "方图" },
-  { value: "4:3", label: "商品图" },
-  { value: "16:9", label: "横幅" },
-  { value: "3:4", label: "竖图" },
-  { value: "long", label: "长图" },
-];
-
-const imageFitOptions: {
-  value: DetailBlockStyleState["imageFit"];
-  label: string;
-}[] = [
-  { value: "cover", label: "铺满" },
-  { value: "contain", label: "完整显示" },
-];
-
-const imageCaptionModeOptions: {
-  value: DetailBlockStyleState["captionMode"];
-  label: string;
-}[] = [
-  { value: "below", label: "图下说明" },
-  { value: "overlay", label: "图上浮层" },
-  { value: "hidden", label: "隐藏说明" },
-];
-
-const merchandisingAssetUsageOptions: {
-  value: CourseProductMerchandisingAssetUsage;
-  label: string;
-}[] = [
-  { value: "showcase", label: "主视觉" },
-  { value: "proof", label: "证明图" },
-  { value: "gallery", label: "详情图" },
-];
 
 const assetComplianceStatusCopy = {
   not_required: "免审",
@@ -222,19 +124,6 @@ const assetComplianceStatusCopy = {
   approved: "已通过",
   rejected: "已驳回",
 } satisfies Record<MediaAssetFormState["complianceStatus"], string>;
-
-const h5BlockTypeOptions: {
-  value: CourseProductRichTextBlockType;
-  label: string;
-}[] = [
-  { value: "section_heading", label: "标题" },
-  { value: "paragraph", label: "正文" },
-  { value: "image", label: "图片" },
-  { value: "bullet_list", label: "要点" },
-  { value: "faq", label: "FAQ" },
-  { value: "instructor_intro", label: "讲师介绍" },
-  { value: "purchase_note", label: "购买须知" },
-];
 
 const workspaceSteps: {
   id: WorkspaceStepId;
@@ -297,21 +186,7 @@ function defaultPriceForm(): PriceFormState {
 }
 
 function defaultContentWorkbenchForm(): ContentWorkbenchFormState {
-  return {
-    summary: "",
-    targetAudienceText: "",
-    headline: "",
-    subheadline: "",
-    showcaseImageUrl: defaultCoverUrl,
-    showcaseImageAlt: "",
-    sellingPointsText: "",
-    imageAssets: [],
-    richTextBlocks: [
-      createH5BlockForm("section_heading"),
-      createH5BlockForm("paragraph"),
-      createH5BlockForm("purchase_note"),
-    ],
-  };
+  return createDefaultContentWorkbenchForm(defaultCoverUrl);
 }
 
 function basicFormFromProduct(product: CourseProductListItem): BasicFormState {
@@ -331,15 +206,6 @@ function priceFormFromProduct(product: CourseProductListItem): PriceFormState {
     originalAmount: String(product.price.originalAmount),
     isFree: product.price.isFree,
     memberIncluded: product.price.memberIncluded,
-  };
-}
-
-function detailBlockStyleFromValue(
-  style?: Partial<DetailBlockStyleState>
-): DetailBlockStyleState {
-  return {
-    ...detailBlockStyleDefaults,
-    ...style,
   };
 }
 
@@ -405,16 +271,12 @@ function parsePrice(form: PriceFormState) {
   };
 }
 
-function createDraftId(prefix: string) {
-  return `${prefix}_${Date.now()}_${Math.round(Math.random() * 10000)}`;
-}
-
 function createMediaAssetForm(
   usage: CourseProductMerchandisingAssetUsage = "gallery",
   imageUrl = ""
 ): MediaAssetFormState {
   return {
-    id: createDraftId("merch_asset"),
+    id: createDetailDraftId("merch_asset"),
     title: usage === "proof" ? "学习反馈证明图" : "课程详情图",
     imageUrl,
     altText: "",
@@ -675,110 +537,6 @@ function contentQualityFromError(
   return parsed.success ? parsed.data : undefined;
 }
 
-function createH5BlockForm(
-  type: CourseProductRichTextBlockType
-): H5BlockFormState {
-  const presets = {
-    section_heading: {
-      title: "课程能帮你解决什么",
-      body: "",
-    },
-    paragraph: {
-      title: "",
-      body: "用清晰的讲解和练习，把当下困扰拆成可理解、可执行、可复盘的步骤。",
-    },
-    image: {
-      title: "课程场景图",
-      body: "",
-    },
-    bullet_list: {
-      title: "你将获得",
-      body: "",
-    },
-    faq: {
-      title: "",
-      body: "",
-    },
-    instructor_intro: {
-      title: "讲师介绍",
-      body: "讲师会结合心理服务场景，带你完成安全、低压力的学习和练习。",
-    },
-    purchase_note: {
-      title: "购买须知",
-      body: "购买后可进入学习页查看课程章节和已开放资料，订单和售后进度可在个人中心查看。",
-    },
-  } satisfies Record<
-    CourseProductRichTextBlockType,
-    { title: string; body: string }
-  >;
-
-  return {
-    id: createDraftId("h5_block"),
-    type,
-    title: presets[type].title,
-    body: presets[type].body,
-    imageUrl: "",
-    altText: "",
-    itemsText:
-      type === "bullet_list" ? "清晰课程路径\n可落地练习\n可复盘资料" : "",
-    question: type === "faq" ? "购买后可以反复学习吗？" : "",
-    answer:
-      type === "faq" ? "课程权益有效期内可以反复进入学习页查看内容。" : "",
-    style: detailBlockStyleFromValue(
-      type === "image"
-        ? { imageAspectRatio: "16:9", radius: "large", tone: "warm" }
-        : undefined
-    ),
-  };
-}
-
-function autoGeneratedH5BlockForms(
-  form: ContentWorkbenchFormState
-): H5BlockFormState[] {
-  const sellingPoints = splitLines(form.sellingPointsText);
-  const audience = splitLines(form.targetAudienceText);
-  const bulletItems = sellingPoints.length
-    ? sellingPoints
-    : audience.length
-      ? audience.map(item => `适合${item}`)
-      : ["明确学习目标", "跟随课程练习", "在个人中心复盘进度"];
-
-  return [
-    {
-      ...createH5BlockForm("section_heading"),
-      id: "auto_h5_heading",
-      title: optionalText(form.headline) ?? "课程能帮你解决什么",
-    },
-    {
-      ...createH5BlockForm("paragraph"),
-      id: "auto_h5_summary",
-      body:
-        optionalText(form.summary) ??
-        "这门课程会把关键心理议题拆成容易理解的知识、练习和复盘步骤，适合希望稳步改善当下状态的学习者。",
-    },
-    {
-      ...createH5BlockForm("bullet_list"),
-      id: "auto_h5_points",
-      title: "你将获得",
-      itemsText: bulletItems.slice(0, 6).join("\n"),
-    },
-    {
-      ...createH5BlockForm("purchase_note"),
-      id: "auto_h5_purchase_note",
-      body: "购买后可在学习页查看课程章节和已开放资料，订单、学习进度和售后状态可在个人中心查看。",
-    },
-  ];
-}
-
-function h5BlockFormsForSave(
-  form: ContentWorkbenchFormState,
-  useSimpleContentMode: boolean
-) {
-  return useSimpleContentMode
-    ? autoGeneratedH5BlockForms(form)
-    : form.richTextBlocks;
-}
-
 function normalizedOperationReason(value: string, fallback: string) {
   const trimmed = value.trim();
   return trimmed.length >= 4 ? trimmed : fallback;
@@ -801,59 +559,6 @@ function resolveImageMimeType(file: File) {
 function formatFileSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
-function detailStyleToneClass(style: DetailBlockStyleState) {
-  return {
-    plain: "border-[#EFE7DA] bg-white",
-    warm: "border-[#E7D2BA] bg-[#FFF8EE]",
-    fresh: "border-[#C9D8C2] bg-[#F2F8F1]",
-    deep: "border-[#243B35] bg-[#243B35] text-white",
-  }[style.tone];
-}
-
-function detailStylePaddingClass(style: DetailBlockStyleState) {
-  return {
-    compact: "p-3",
-    normal: "p-4",
-    relaxed: "p-5",
-  }[style.spacing];
-}
-
-function detailStyleRadiusClass(style: DetailBlockStyleState) {
-  return {
-    none: "rounded-none",
-    small: "rounded-md",
-    medium: "rounded-xl",
-    large: "rounded-2xl",
-  }[style.radius];
-}
-
-function detailImageAspectClass(style: DetailBlockStyleState) {
-  return {
-    auto: "h-auto",
-    "1:1": "aspect-square",
-    "4:3": "aspect-[4/3]",
-    "16:9": "aspect-video",
-    "3:4": "aspect-[3/4]",
-    long: "aspect-[3/5]",
-  }[style.imageAspectRatio];
-}
-
-function detailImageFitClass(style: DetailBlockStyleState) {
-  return style.imageFit === "contain" ? "object-contain" : "object-cover";
-}
-
-function splitLines(value: string) {
-  return value
-    .split(/\n+/)
-    .map(item => item.trim())
-    .filter(Boolean);
-}
-
-function optionalText(value: string) {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function buildContentUpdateRequest(
@@ -981,6 +686,8 @@ export default function CourseProductEditorWorkspacePage() {
   const [isAdvancedH5Editing, setIsAdvancedH5Editing] = useState(false);
   const [detailDesignerSelection, setDetailDesignerSelection] =
     useState<DetailDesignerSelection>({ kind: "overview" });
+  const [activeDetailTemplateId, setActiveDetailTemplateId] =
+    useState<DetailContentTemplateId>();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -1065,6 +772,25 @@ export default function CourseProductEditorWorkspacePage() {
     [product]
   );
   const publishFlow = useMemo(() => publishFlowItems(product), [product]);
+  const detailTemplateContext = useMemo(
+    () => ({
+      title: basicForm.title.trim() || product?.title || "这门课程",
+      instructorName:
+        basicForm.instructorName.trim() || product?.instructorName || "讲师",
+      category: basicForm.category || product?.category || "心理成长",
+      type: basicForm.type || product?.type || "课程",
+    }),
+    [
+      basicForm.category,
+      basicForm.instructorName,
+      basicForm.title,
+      basicForm.type,
+      product?.category,
+      product?.instructorName,
+      product?.title,
+      product?.type,
+    ]
+  );
 
   const loadProduct = useCallback(async () => {
     if (!courseId) return;
@@ -1095,6 +821,7 @@ export default function CourseProductEditorWorkspacePage() {
       setContentForm(contentFormFromContent(loadedContent));
       setIsAdvancedH5Editing(false);
       setDetailDesignerSelection({ kind: "overview" });
+      setActiveDetailTemplateId(undefined);
       setServerContentQuality(
         evaluateCourseProductContentQuality(loadedContent)
       );
@@ -1122,6 +849,7 @@ export default function CourseProductEditorWorkspacePage() {
       setAssetUploadTitle("");
       setAssetUploadUsage("gallery");
       setDetailDesignerSelection({ kind: "overview" });
+      setActiveDetailTemplateId(undefined);
       setReason("新增课程商品草稿");
       return;
     }
@@ -1373,63 +1101,30 @@ export default function CourseProductEditorWorkspacePage() {
     []
   );
 
+  const applyDesignerTemplate = useCallback(
+    (templateId: DetailContentTemplateId) => {
+      setContentForm(current =>
+        applyDetailContentTemplate(current, detailTemplateContext, templateId)
+      );
+      setIsAdvancedH5Editing(true);
+      setDetailDesignerSelection({ kind: "overview" });
+      setActiveDetailTemplateId(templateId);
+      setReason(current =>
+        normalizedOperationReason(current, "课程商品详情模板更新")
+      );
+      setActionError(undefined);
+      const templateLabel =
+        detailContentTemplateDefinitions.find(
+          template => template.id === templateId
+        )?.label ?? "详情模板";
+      setActionMessage(`已套用${templateLabel}，可继续局部调整后保存`);
+    },
+    [detailTemplateContext]
+  );
+
   const applyCommerceContentTemplate = useCallback(() => {
-    const title = basicForm.title.trim() || product?.title || "这门课程";
-    const instructor =
-      basicForm.instructorName.trim() || product?.instructorName || "讲师";
-    const category = basicForm.category || product?.category || "心理成长";
-    const type = basicForm.type || product?.type || "课程";
-
-    setContentForm(current => {
-      const hasAudience = splitLines(current.targetAudienceText).length > 0;
-      const hasSellingPoints =
-        splitLines(current.sellingPointsText).length >= 2;
-
-      return {
-        ...current,
-        summary:
-          optionalText(current.summary) ??
-          `${title}围绕${category}主题设计，把心理成长内容拆成可理解、可练习、可复盘的学习步骤，适合希望用${type}方式稳定推进自我调整的用户。`,
-        targetAudienceText: hasAudience
-          ? current.targetAudienceText
-          : [
-              `正在关注${category}议题，希望先用课程建立清晰认识的人`,
-              "想按章节练习、逐步把方法落到生活场景的人",
-              "希望学习记录、资料和订单都能在个人中心统一管理的人",
-            ].join("\n"),
-        sellingPointsText: hasSellingPoints
-          ? current.sellingPointsText
-          : [
-              "从真实生活场景切入，先理解问题，再进入练习",
-              "章节节奏清晰，适合碎片时间逐步完成",
-              "购买后同步课程权益、资料与学习档案，减少找入口成本",
-              "可衔接测评和咨询支持，学习后仍有承接路径",
-            ].join("\n"),
-        headline:
-          optionalText(current.headline) ??
-          `${title}：把${category}变成可练习的成长路径`,
-        subheadline:
-          optionalText(current.subheadline) ??
-          `${instructor}带你用清晰的${type}节奏完成学习、练习和复盘。`,
-        showcaseImageAlt: optionalText(current.showcaseImageAlt) ?? title,
-      };
-    });
-    setIsAdvancedH5Editing(false);
-    setReason(current =>
-      normalizedOperationReason(current, "课程商品运营内容快填")
-    );
-    setActionError(undefined);
-    setActionMessage("已生成电商运营版核心内容，可直接保存图文内容");
-  }, [
-    basicForm.category,
-    basicForm.instructorName,
-    basicForm.title,
-    basicForm.type,
-    product?.category,
-    product?.instructorName,
-    product?.title,
-    product?.type,
-  ]);
+    applyDesignerTemplate("warm_course");
+  }, [applyDesignerTemplate]);
 
   const updateSelectedDesignerStyle = useCallback(
     (patch: Partial<DetailBlockStyleState>) => {
@@ -2544,137 +2239,13 @@ export default function CourseProductEditorWorkspacePage() {
                 description="按区块编辑课程商品详情，左侧管理结构，中间维护内容，右侧调整所选图片或段落样式。"
               >
                 <div className="grid gap-5 xl:grid-cols-[248px_minmax(0,1fr)_320px]">
-                  <div className="h-fit rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-3">
-                    <div className="flex items-center gap-2 px-1 text-sm font-semibold text-[#243B35]">
-                      <Layers3 className="h-4 w-4 text-[#6F8F83]" />
-                      页面结构
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      <button
-                        onClick={() =>
-                          setDetailDesignerSelection({ kind: "overview" })
-                        }
-                        className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${
-                          detailDesignerSelection.kind === "overview"
-                            ? "border-[#6F8F83] bg-[#EEF6ED] text-[#243B35]"
-                            : "border-[#E1D7C8] bg-white text-[#6F7771] hover:border-[#9FB3A9]"
-                        }`}
-                      >
-                        <span className="block font-semibold">
-                          商品基础说明
-                        </span>
-                        <span className="mt-1 block leading-5">
-                          摘要、适合人群、卖点、标题
-                        </span>
-                      </button>
-
-                      {contentForm.imageAssets.map(asset => (
-                        <button
-                          key={asset.id}
-                          onClick={() =>
-                            setDetailDesignerSelection({
-                              kind: "asset",
-                              id: asset.id,
-                            })
-                          }
-                          className={`grid w-full grid-cols-[44px_minmax(0,1fr)] gap-2 rounded-lg border p-2 text-left text-xs transition ${
-                            detailDesignerSelection.kind === "asset" &&
-                            detailDesignerSelection.id === asset.id
-                              ? "border-[#6F8F83] bg-[#EEF6ED] text-[#243B35]"
-                              : "border-[#E1D7C8] bg-white text-[#6F7771] hover:border-[#9FB3A9]"
-                          }`}
-                        >
-                          <span className="overflow-hidden rounded-md bg-[#F8F3EA]">
-                            {asset.imageUrl ? (
-                              <img
-                                src={asset.imageUrl}
-                                alt=""
-                                className="aspect-square w-full object-cover"
-                              />
-                            ) : (
-                              <span className="flex aspect-square items-center justify-center">
-                                <FileImage className="h-4 w-4" />
-                              </span>
-                            )}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="line-clamp-1 block font-semibold text-[#243B35]">
-                              {asset.title}
-                            </span>
-                            <span className="mt-1 block">
-                              {merchandisingAssetUsageOptions.find(
-                                item => item.value === asset.usage
-                              )?.label ?? "详情图"}
-                            </span>
-                          </span>
-                        </button>
-                      ))}
-
-                      <div className="border-t border-[#E1D7C8] pt-3">
-                        <p className="px-1 text-xs font-semibold text-[#8A8176]">
-                          详情段落
-                        </p>
-                        <div className="mt-2 space-y-2">
-                          {contentForm.richTextBlocks.map((block, index) => (
-                            <button
-                              key={block.id}
-                              onClick={() =>
-                                setDetailDesignerSelection({
-                                  kind: "block",
-                                  id: block.id,
-                                })
-                              }
-                              className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${
-                                detailDesignerSelection.kind === "block" &&
-                                detailDesignerSelection.id === block.id
-                                  ? "border-[#6F8F83] bg-[#EEF6ED] text-[#243B35]"
-                                  : "border-[#E1D7C8] bg-white text-[#6F7771] hover:border-[#9FB3A9]"
-                              }`}
-                            >
-                              <span className="block font-semibold text-[#243B35]">
-                                {index + 1}.{" "}
-                                {h5BlockTypeOptions.find(
-                                  item => item.value === block.type
-                                )?.label ?? "内容块"}
-                              </span>
-                              <span className="mt-1 line-clamp-1 block">
-                                {block.title ||
-                                  block.question ||
-                                  block.body ||
-                                  "待填写"}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="border-t border-[#E1D7C8] pt-3">
-                        <p className="px-1 text-xs font-semibold text-[#8A8176]">
-                          添加模块
-                        </p>
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          {[
-                            ["paragraph", "正文"],
-                            ["image", "图片"],
-                            ["bullet_list", "要点"],
-                            ["faq", "FAQ"],
-                          ].map(([type, label]) => (
-                            <button
-                              key={type}
-                              onClick={() =>
-                                addDesignerBlock(
-                                  type as CourseProductRichTextBlockType
-                                )
-                              }
-                              className="rounded-lg border border-[#E1D7C8] bg-white px-2 py-2 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <CourseProductDetailStructurePanel
+                    selection={detailDesignerSelection}
+                    imageAssets={contentForm.imageAssets}
+                    richTextBlocks={contentForm.richTextBlocks}
+                    onSelectionChange={setDetailDesignerSelection}
+                    onAddBlock={addDesignerBlock}
+                  />
 
                   <div className="space-y-5">
                     <div className="flex flex-col gap-3 border border-[#E1D7C8] bg-[#FBF7EF] p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -3160,183 +2731,15 @@ export default function CourseProductEditorWorkspacePage() {
                   </div>
 
                   <div className="space-y-4">
-                    <div className="rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
-                            <PanelRight className="h-4 w-4 text-[#6F8F83]" />
-                            样式
-                          </div>
-                          <p className="mt-1 line-clamp-1 text-xs text-[#6F7771]">
-                            {selectedDesignerTitle}
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-[#6F8F83]">
-                          {detailDesignerSelection.kind === "overview"
-                            ? "整体"
-                            : selectedDesignerIsImage
-                              ? "图片"
-                              : "段落"}
-                        </span>
-                      </div>
-
-                      {detailDesignerSelection.kind === "overview" ? (
-                        <div className="mt-4 space-y-3 text-xs leading-5 text-[#6F7771]">
-                          <p>
-                            选择左侧图片或详情段落后，可单独调整比例、圆角、留白和说明样式。
-                          </p>
-                          <button
-                            onClick={applyCommerceContentTemplate}
-                            className="inline-flex h-9 items-center rounded-lg bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047]"
-                          >
-                            套用温暖课程模板
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="mt-4 grid gap-3">
-                          <label className="text-xs font-semibold text-[#41524B]">
-                            风格
-                            <select
-                              value={selectedDesignerStyle.tone}
-                              onChange={event =>
-                                updateSelectedDesignerStyle({
-                                  tone: event.target
-                                    .value as DetailBlockStyleState["tone"],
-                                })
-                              }
-                              className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
-                            >
-                              {styleToneOptions.map(option => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <label className="text-xs font-semibold text-[#41524B]">
-                              留白
-                              <select
-                                value={selectedDesignerStyle.spacing}
-                                onChange={event =>
-                                  updateSelectedDesignerStyle({
-                                    spacing: event.target
-                                      .value as DetailBlockStyleState["spacing"],
-                                  })
-                                }
-                                className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
-                              >
-                                {styleSpacingOptions.map(option => (
-                                  <option
-                                    key={option.value}
-                                    value={option.value}
-                                  >
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="text-xs font-semibold text-[#41524B]">
-                              圆角
-                              <select
-                                value={selectedDesignerStyle.radius}
-                                onChange={event =>
-                                  updateSelectedDesignerStyle({
-                                    radius: event.target
-                                      .value as DetailBlockStyleState["radius"],
-                                  })
-                                }
-                                className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
-                              >
-                                {styleRadiusOptions.map(option => (
-                                  <option
-                                    key={option.value}
-                                    value={option.value}
-                                  >
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-
-                          {selectedDesignerIsImage && (
-                            <>
-                              <label className="text-xs font-semibold text-[#41524B]">
-                                图片比例
-                                <select
-                                  value={selectedDesignerStyle.imageAspectRatio}
-                                  onChange={event =>
-                                    updateSelectedDesignerStyle({
-                                      imageAspectRatio: event.target
-                                        .value as DetailBlockStyleState["imageAspectRatio"],
-                                    })
-                                  }
-                                  className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
-                                >
-                                  {imageAspectRatioOptions.map(option => (
-                                    <option
-                                      key={option.value}
-                                      value={option.value}
-                                    >
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-
-                              <div className="grid grid-cols-2 gap-3">
-                                <label className="text-xs font-semibold text-[#41524B]">
-                                  显示
-                                  <select
-                                    value={selectedDesignerStyle.imageFit}
-                                    onChange={event =>
-                                      updateSelectedDesignerStyle({
-                                        imageFit: event.target
-                                          .value as DetailBlockStyleState["imageFit"],
-                                      })
-                                    }
-                                    className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
-                                  >
-                                    {imageFitOptions.map(option => (
-                                      <option
-                                        key={option.value}
-                                        value={option.value}
-                                      >
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                                <label className="text-xs font-semibold text-[#41524B]">
-                                  说明
-                                  <select
-                                    value={selectedDesignerStyle.captionMode}
-                                    onChange={event =>
-                                      updateSelectedDesignerStyle({
-                                        captionMode: event.target
-                                          .value as DetailBlockStyleState["captionMode"],
-                                      })
-                                    }
-                                    className="mt-1 h-9 w-full rounded-lg border border-[#D8CEC0] bg-white px-2 text-xs outline-none focus:border-[#6F8F83]"
-                                  >
-                                    {imageCaptionModeOptions.map(option => (
-                                      <option
-                                        key={option.value}
-                                        value={option.value}
-                                      >
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <CourseProductDetailStylePanel
+                      selection={detailDesignerSelection}
+                      selectedTitle={selectedDesignerTitle}
+                      selectedStyle={selectedDesignerStyle}
+                      selectedIsImage={selectedDesignerIsImage}
+                      activeTemplateId={activeDetailTemplateId}
+                      onStyleChange={updateSelectedDesignerStyle}
+                      onTemplateApply={applyDesignerTemplate}
+                    />
 
                     <div className="h-fit rounded-[28px] border border-[#D8CEC0] bg-[#243B35] p-3">
                       <div className="overflow-hidden rounded-[22px] bg-[#FFFDF8]">
