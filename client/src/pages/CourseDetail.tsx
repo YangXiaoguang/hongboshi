@@ -903,6 +903,27 @@ export default function CourseDetail() {
           />
         )}
 
+        <CourseCommerceDecisionBand
+          course={course}
+          locked={locked}
+          primaryActionLabel={effectivePrimaryActionLabel}
+          promotion={promotionSummary}
+          totalDuration={totalDuration}
+          totalLessons={totalLessons}
+          onConsult={() => navigate("/consulting")}
+          onPrimaryAction={() => handlePrimaryAction("course_detail_panel")}
+          onViewCatalog={() =>
+            document
+              .getElementById("course-catalog")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
+          onViewContent={() =>
+            document
+              .getElementById("course-content")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
+        />
+
         <CourseDetailAnchorNav
           locked={locked}
           primaryActionLabel={effectivePrimaryActionLabel}
@@ -1536,6 +1557,13 @@ function CourseContentShowcase({
   onPrimaryAction: () => void;
   onViewCatalog: () => void;
 }) {
+  const [showAllRichTextBlocks, setShowAllRichTextBlocks] = useState(false);
+  const visibleRichTextBlocks = showAllRichTextBlocks
+    ? profile.richTextBlocks
+    : profile.richTextBlocks.slice(0, 3);
+  const hiddenRichTextBlockCount =
+    profile.richTextBlocks.length - visibleRichTextBlocks.length;
+
   return (
     <section
       id="course-content"
@@ -1656,7 +1684,7 @@ function CourseContentShowcase({
                 </span>
               </div>
               <div className="mt-5 space-y-4">
-                {profile.richTextBlocks.map((block, index) => (
+                {visibleRichTextBlocks.map((block, index) => (
                   <CourseH5DetailBlock
                     key={block.id}
                     block={block}
@@ -1664,6 +1692,21 @@ function CourseContentShowcase({
                   />
                 ))}
               </div>
+              {profile.richTextBlocks.length > 3 && (
+                <button
+                  onClick={() => setShowAllRichTextBlocks(current => !current)}
+                  className="mt-5 inline-flex h-10 items-center rounded-full border border-[#D8CDBD] px-4 text-xs font-semibold text-[#41675A] transition hover:bg-[#FFFDF8]"
+                >
+                  {showAllRichTextBlocks
+                    ? "收起图文详情"
+                    : `展开剩余 ${hiddenRichTextBlockCount} 段详情`}
+                  <ArrowRight
+                    className={`ml-2 h-4 w-4 transition ${
+                      showAllRichTextBlocks ? "-rotate-90" : "rotate-90"
+                    }`}
+                  />
+                </button>
+              )}
             </div>
           )}
 
@@ -1683,6 +1726,117 @@ function CourseContentShowcase({
               <ArrowRight className="ml-2 h-4 w-4" />
             </button>
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CourseCommerceDecisionBand({
+  course,
+  locked,
+  primaryActionLabel,
+  promotion,
+  totalDuration,
+  totalLessons,
+  onConsult,
+  onPrimaryAction,
+  onViewCatalog,
+  onViewContent,
+}: {
+  course: CourseDetailData;
+  locked: boolean;
+  primaryActionLabel: string;
+  promotion: CoursePromotionSummary;
+  totalDuration: number;
+  totalLessons: number;
+  onConsult: () => void;
+  onPrimaryAction: () => void;
+  onViewCatalog: () => void;
+  onViewContent: () => void;
+}) {
+  const priceLabel = course.isFree
+    ? "免费"
+    : formatCheckoutMoney(promotion.coursePayableAmount);
+  const priceEyebrow =
+    !course.isFree && promotion.courseCouponAmount > 0 ? "券后价" : "课程价";
+  const quickFacts = [
+    {
+      icon: BookOpen,
+      label: "买后内容",
+      value: `${totalLessons} 节 / ${course.chapters.length} 阶段`,
+    },
+    {
+      icon: Clock3,
+      label: "预计学习",
+      value: `${totalDuration} 分钟`,
+    },
+    {
+      icon: ShieldCheck,
+      label: "交付保障",
+      value: "权益到账 + 订单可追踪",
+    },
+  ];
+
+  return (
+    <section className="border-b border-[#E4DCCF] bg-[#FFFDF8] px-5 py-5 sm:px-8 lg:px-12">
+      <div className="mx-auto grid max-w-[1200px] gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="grid gap-3 md:grid-cols-[1.05fr_1fr_1fr_1.12fr]">
+          <div className="border-l border-[#E4DCCF] pl-4 md:border-l-0 md:pl-0">
+            <p className="text-xs font-semibold text-[#A65F48]">
+              {priceEyebrow}
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-[#A65F48]">
+              {priceLabel}
+            </p>
+            {!course.isFree && promotion.courseCouponAmount > 0 && (
+              <p className="mt-1 text-xs text-[#8A8176]">
+                已省 {formatCheckoutMoney(promotion.courseCouponAmount)}
+              </p>
+            )}
+          </div>
+          {quickFacts.map(item => {
+            const Icon = item.icon;
+            return (
+              <div key={item.label} className="border-l border-[#E4DCCF] pl-4">
+                <Icon className="h-4 w-4 text-[#6F8F83]" />
+                <p className="mt-2 text-xs font-semibold text-[#7B817C]">
+                  {item.label}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-[#243B35]">
+                  {item.value}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap gap-2 lg:justify-end">
+          <button
+            onClick={onPrimaryAction}
+            className="inline-flex h-11 items-center justify-center rounded-full bg-[#243B35] px-5 text-sm font-semibold text-white transition hover:bg-[#315047]"
+          >
+            <ShoppingBag className="mr-2 h-4 w-4" />
+            {locked ? primaryActionLabel : "进入学习"}
+          </button>
+          <button
+            onClick={onViewContent}
+            className="inline-flex h-11 items-center justify-center rounded-full bg-[#E6EDDF] px-4 text-sm font-semibold text-[#41675A] transition hover:bg-[#DDE8D9]"
+          >
+            看介绍
+          </button>
+          <button
+            onClick={onViewCatalog}
+            className="inline-flex h-11 items-center justify-center rounded-full border border-[#D8CDBD] px-4 text-sm font-semibold text-[#41675A] transition hover:bg-[#F7F1E8]"
+          >
+            看目录
+          </button>
+          <button
+            onClick={onConsult}
+            className="inline-flex h-11 items-center justify-center rounded-full border border-[#D8CDBD] px-4 text-sm font-semibold text-[#41675A] transition hover:bg-[#F7F1E8]"
+          >
+            咨询
+          </button>
         </div>
       </div>
     </section>

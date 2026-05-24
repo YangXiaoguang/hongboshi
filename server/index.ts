@@ -39,7 +39,7 @@ async function startServer() {
   const server = createServer(app);
 
   app.use(
-    express.json({ limit: "25mb", verify: capturePaymentWebhookRawBody })
+    express.json({ limit: "35mb", verify: capturePaymentWebhookRawBody })
   );
   registerAuthApi(app);
   registerAuditAdminApi(app);
