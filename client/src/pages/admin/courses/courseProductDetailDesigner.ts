@@ -1,7 +1,10 @@
 import type {
   CourseProductDetailTemplate,
+  CourseProductDetailTemplateAuditAction,
+  CourseProductDetailTemplateAuditEvent,
   CourseProductDetailTemplateBlock,
   CourseProductDetailTemplateContent,
+  CourseProductDetailTemplateScope,
   CourseProductMerchandisingAssetUsage,
   CourseProductRichTextBlockType,
 } from "@shared/domain";
@@ -67,6 +70,10 @@ export type DetailContentTemplateContext = {
   category: string;
   type: string;
 };
+
+export type DetailTemplateLibraryScopeFilter =
+  | "all"
+  | CourseProductDetailTemplateScope;
 
 export type DetailDesignerSavedTemplate = {
   id: string;
@@ -163,6 +170,16 @@ export const merchandisingAssetUsageOptions: {
   { value: "showcase", label: "主视觉" },
   { value: "proof", label: "证明图" },
   { value: "gallery", label: "详情图" },
+];
+
+export const detailTemplateLibraryScopeOptions: {
+  value: DetailTemplateLibraryScopeFilter;
+  label: string;
+}[] = [
+  { value: "all", label: "全部" },
+  { value: "system", label: "系统" },
+  { value: "team", label: "团队" },
+  { value: "personal", label: "个人" },
 ];
 
 export const h5BlockTypeOptions: {
@@ -456,6 +473,92 @@ export function applyCourseProductDetailTemplateToForm(
       detailTemplateBlockToFormBlock
     ),
   };
+}
+
+export function detailTemplateScopeLabel(
+  scope: CourseProductDetailTemplateScope
+) {
+  return {
+    system: "系统模板",
+    team: "团队模板",
+    personal: "个人模板",
+  }[scope];
+}
+
+export function detailTemplateShareStatusLabel(
+  template: Pick<CourseProductDetailTemplate, "scope" | "shareStatus">
+) {
+  if (template.scope === "system") return "系统维护";
+  if (template.scope === "team") return "团队共享";
+  return {
+    private: "仅自己可见",
+    pending_team_review: "待团队复核",
+    team_shared: "已共享",
+  }[template.shareStatus];
+}
+
+export function detailTemplateAuditActionLabel(
+  action: CourseProductDetailTemplateAuditAction
+) {
+  return {
+    template_create: "保存模板",
+    template_delete: "删除模板",
+    template_apply: "套用模板",
+    template_share_request: "申请共享",
+  }[action];
+}
+
+export function summarizeCourseProductDetailTemplates(
+  templates: CourseProductDetailTemplate[]
+) {
+  return {
+    totalCount: templates.length,
+    systemCount: templates.filter(template => template.scope === "system")
+      .length,
+    teamCount: templates.filter(template => template.scope === "team").length,
+    personalCount: templates.filter(template => template.scope === "personal")
+      .length,
+    pendingShareRequestCount: templates.filter(
+      template => template.shareStatus === "pending_team_review"
+    ).length,
+  };
+}
+
+export function filterCourseProductDetailTemplates({
+  templates,
+  scope,
+  keyword,
+}: {
+  templates: CourseProductDetailTemplate[];
+  scope: DetailTemplateLibraryScopeFilter;
+  keyword: string;
+}) {
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  return templates.filter(template => {
+    const scopeMatched = scope === "all" || template.scope === scope;
+    if (!scopeMatched) return false;
+    if (!normalizedKeyword) return true;
+    return [
+      template.name,
+      template.description ?? "",
+      template.content.headline,
+      template.content.summary,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedKeyword);
+  });
+}
+
+export function detailTemplateAuditEventsForTemplate(
+  auditEvents: CourseProductDetailTemplateAuditEvent[],
+  templateId: string
+) {
+  return auditEvents
+    .filter(event => event.templateId === templateId)
+    .sort(
+      (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
+    );
 }
 
 function detailTemplateBlockToFormBlock(

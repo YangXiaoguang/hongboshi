@@ -50,6 +50,7 @@ import {
   type CourseProductCreateRequest,
   type CourseProductDetailContent,
   type CourseProductDetailTemplate,
+  type CourseProductDetailTemplateAuditEvent,
   type CourseProductListItem,
   type CourseProductMerchandisingAssetUsage,
   type CourseProductPriceUpdateRequest,
@@ -73,6 +74,7 @@ import {
 import {
   CourseProductDetailStructurePanel,
   CourseProductDetailStylePanel,
+  CourseProductDetailTemplateManagerDialog,
 } from "./CourseProductDetailDesignerPanels";
 import {
   applyCourseProductDetailTemplateToForm,
@@ -702,6 +704,11 @@ export default function CourseProductEditorWorkspacePage() {
   const [savedDetailTemplates, setSavedDetailTemplates] = useState<
     CourseProductDetailTemplate[]
   >([]);
+  const [detailTemplateAuditEvents, setDetailTemplateAuditEvents] = useState<
+    CourseProductDetailTemplateAuditEvent[]
+  >([]);
+  const [isDetailTemplateManagerOpen, setIsDetailTemplateManagerOpen] =
+    useState(false);
   const [templateDraftName, setTemplateDraftName] = useState("");
   const [isDetailTemplateLoading, setIsDetailTemplateLoading] = useState(false);
   const [isDetailTemplateSaving, setIsDetailTemplateSaving] = useState(false);
@@ -860,6 +867,7 @@ export default function CourseProductEditorWorkspacePage() {
       const result =
         await httpCourseProductRepository.loadCourseProductDetailTemplates();
       setSavedDetailTemplates(result.items);
+      setDetailTemplateAuditEvents(result.auditEvents);
     } catch (err) {
       setActionError(
         err instanceof Error ? err.message : "课程详情模板读取失败"
@@ -894,6 +902,7 @@ export default function CourseProductEditorWorkspacePage() {
       setAssetUploadUsage("gallery");
       setDetailDesignerSelection({ kind: "overview" });
       setActiveDetailTemplateId(undefined);
+      setDetailTemplateAuditEvents([]);
       setReason("新增课程商品草稿");
       return;
     }
@@ -1311,6 +1320,7 @@ export default function CourseProductEditorWorkspacePage() {
           reason: normalizedOperationReason(reason, "保存课程详情运营模板"),
         });
       setSavedDetailTemplates(result.templates.items);
+      setDetailTemplateAuditEvents(result.templates.auditEvents);
       setTemplateDraftName("");
       setActionError(undefined);
       setActionMessage("运营模板已保存到服务端模板库，可跨设备继续套用");
@@ -1357,6 +1367,7 @@ export default function CourseProductEditorWorkspacePage() {
             }
           );
         setSavedDetailTemplates(result.templates.items);
+        setDetailTemplateAuditEvents(result.templates.auditEvents);
         setContentForm(current =>
           applyCourseProductDetailTemplateToForm(current, result.template)
         );
@@ -1409,11 +1420,58 @@ export default function CourseProductEditorWorkspacePage() {
             }
           );
         setSavedDetailTemplates(result.templates.items);
+        setDetailTemplateAuditEvents(result.templates.auditEvents);
         setActionError(undefined);
         setActionMessage("模板草案已删除");
       } catch (err) {
         setActionError(
           err instanceof Error ? err.message : "课程详情模板删除失败"
+        );
+      }
+    },
+    [catalogPermissions.canEdit, reason, savedDetailTemplates]
+  );
+
+  const requestShareDetailTemplate = useCallback(
+    async (templateId: string) => {
+      if (!catalogPermissions.canEdit) {
+        setActionError("当前账号暂无课程详情模板共享申请权限");
+        return;
+      }
+      const template = savedDetailTemplates.find(
+        item => item.id === templateId
+      );
+      if (!template) {
+        setActionError("未找到该课程详情模板");
+        return;
+      }
+      if (template.scope !== "personal") {
+        setActionError("仅个人模板可以申请团队共享");
+        return;
+      }
+      if (template.shareStatus === "pending_team_review") {
+        setActionMessage("该模板已在团队共享审核中");
+        return;
+      }
+
+      try {
+        const result =
+          await httpCourseProductRepository.requestCourseProductDetailTemplateTeamShare(
+            template.id,
+            {
+              reason: normalizedOperationReason(
+                reason,
+                `申请团队共享课程详情模板「${template.name}」`
+              ),
+            }
+          );
+        setSavedDetailTemplates(result.templates.items);
+        setDetailTemplateAuditEvents(result.templates.auditEvents);
+        setActionError(undefined);
+        setActionMessage("已提交团队共享申请，后续可在模板库查看审计记录");
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程详情模板共享申请失败"
         );
       }
     },
@@ -3018,6 +3076,9 @@ export default function CourseProductEditorWorkspacePage() {
                       onTemplateApply={applyDesignerTemplate}
                       onTemplateDraftNameChange={setTemplateDraftName}
                       onTemplateSave={saveCurrentDetailTemplate}
+                      onTemplateManagerOpen={() =>
+                        setIsDetailTemplateManagerOpen(true)
+                      }
                       onSavedTemplateApply={applySavedDetailTemplate}
                       onSavedTemplateDelete={deleteSavedDetailTemplate}
                     />
@@ -3778,6 +3839,17 @@ export default function CourseProductEditorWorkspacePage() {
           </motion.div>
         </div>
       )}
+
+      <CourseProductDetailTemplateManagerDialog
+        isOpen={isDetailTemplateManagerOpen}
+        templates={savedDetailTemplates}
+        auditEvents={detailTemplateAuditEvents}
+        isTemplateLoading={isDetailTemplateLoading}
+        onClose={() => setIsDetailTemplateManagerOpen(false)}
+        onTemplateApply={applySavedDetailTemplate}
+        onTemplateDelete={deleteSavedDetailTemplate}
+        onTemplateShareRequest={requestShareDetailTemplate}
+      />
     </div>
   );
 }

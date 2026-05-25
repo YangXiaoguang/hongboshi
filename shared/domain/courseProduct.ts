@@ -262,6 +262,13 @@ export const COURSE_PRODUCT_DETAIL_TEMPLATE_AUDIT_ACTIONS = [
   "template_create",
   "template_delete",
   "template_apply",
+  "template_share_request",
+] as const;
+
+export const COURSE_PRODUCT_DETAIL_TEMPLATE_SHARE_STATUSES = [
+  "private",
+  "pending_team_review",
+  "team_shared",
 ] as const;
 
 export const COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES = 20 * 1024 * 1024;
@@ -1903,6 +1910,10 @@ export const CourseProductDetailTemplateAuditActionSchema = z.enum(
   COURSE_PRODUCT_DETAIL_TEMPLATE_AUDIT_ACTIONS
 );
 
+export const CourseProductDetailTemplateShareStatusSchema = z.enum(
+  COURSE_PRODUCT_DETAIL_TEMPLATE_SHARE_STATUSES
+);
+
 export const CourseProductRichTextBlockSchema = z
   .object({
     id: EntityIdSchema,
@@ -2055,8 +2066,11 @@ export const CourseProductDetailTemplateSchema = z.object({
   name: z.string().trim().min(2).max(80),
   description: z.string().trim().max(240).optional(),
   scope: CourseProductDetailTemplateScopeSchema,
+  shareStatus: CourseProductDetailTemplateShareStatusSchema.default("private"),
   ownerId: EntityIdSchema.optional(),
   sourceProductId: EntityIdSchema.optional(),
+  teamShareRequestedBy: EntityIdSchema.optional(),
+  teamShareRequestedAt: DateTimeLikeSchema.optional(),
   content: CourseProductDetailTemplateContentSchema,
   createdAt: DateTimeLikeSchema,
   updatedAt: DateTimeLikeSchema,
@@ -2080,6 +2094,7 @@ export const CourseProductDetailTemplateListResultSchema = z.object({
     systemCount: z.number().int().nonnegative(),
     teamCount: z.number().int().nonnegative(),
     personalCount: z.number().int().nonnegative(),
+    pendingShareRequestCount: z.number().int().nonnegative().default(0),
   }),
   auditEvents: z.array(CourseProductDetailTemplateAuditEventSchema).default([]),
 });
@@ -2099,6 +2114,10 @@ export const CourseProductDetailTemplateDeleteRequestSchema = z.object({
 
 export const CourseProductDetailTemplateApplyRequestSchema = z.object({
   productId: EntityIdSchema.optional(),
+  reason: z.string().trim().min(4).max(240),
+});
+
+export const CourseProductDetailTemplateShareRequestSchema = z.object({
   reason: z.string().trim().min(4).max(240),
 });
 
@@ -2665,6 +2684,9 @@ export type CourseProductDetailTemplateScope = z.infer<
 export type CourseProductDetailTemplateAuditAction = z.infer<
   typeof CourseProductDetailTemplateAuditActionSchema
 >;
+export type CourseProductDetailTemplateShareStatus = z.infer<
+  typeof CourseProductDetailTemplateShareStatusSchema
+>;
 export type CourseProductContentQualityIssueCode = z.infer<
   typeof CourseProductContentQualityIssueCodeSchema
 >;
@@ -2715,6 +2737,9 @@ export type CourseProductDetailTemplateDeleteRequest = z.infer<
 >;
 export type CourseProductDetailTemplateApplyRequest = z.infer<
   typeof CourseProductDetailTemplateApplyRequestSchema
+>;
+export type CourseProductDetailTemplateShareRequest = z.infer<
+  typeof CourseProductDetailTemplateShareRequestSchema
 >;
 export type CourseProductDetailTemplateMutationResult = z.infer<
   typeof CourseProductDetailTemplateMutationResultSchema

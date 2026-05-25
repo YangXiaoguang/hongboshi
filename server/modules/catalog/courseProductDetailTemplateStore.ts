@@ -7,6 +7,7 @@ import {
   CourseProductDetailTemplateCreateRequestSchema,
   CourseProductDetailTemplateListResultSchema,
   CourseProductDetailTemplateMutationResultSchema,
+  CourseProductDetailTemplateShareRequestSchema,
   CourseProductDetailTemplateSchema,
   type CourseProductDetailTemplate,
   type CourseProductDetailTemplateApplyRequest,
@@ -15,6 +16,7 @@ import {
   type CourseProductDetailTemplateCreateRequest,
   type CourseProductDetailTemplateListResult,
   type CourseProductDetailTemplateMutationResult,
+  type CourseProductDetailTemplateShareRequest,
 } from "../../../shared/domain";
 
 const systemTemplateTimestamp = "2026-05-01T00:00:00.000Z";
@@ -257,8 +259,11 @@ export async function createCourseProductDetailTemplate({
     name: parsedRequest.name,
     description: parsedRequest.description,
     scope: "personal",
+    shareStatus: existingTemplate?.shareStatus ?? "private",
     ownerId: actorId,
     sourceProductId: parsedRequest.sourceProductId,
+    teamShareRequestedBy: existingTemplate?.teamShareRequestedBy,
+    teamShareRequestedAt: existingTemplate?.teamShareRequestedAt,
     content: parsedRequest.content,
     createdAt: existingTemplate?.createdAt ?? now,
     updatedAt: now,
@@ -358,6 +363,54 @@ export async function applyCourseProductDetailTemplate({
   });
 }
 
+export async function requestCourseProductDetailTemplateTeamShare({
+  actorId,
+  templateId,
+  request,
+  store = getCourseProductDetailTemplateStore(),
+  now = new Date().toISOString(),
+}: {
+  actorId: string;
+  templateId: string;
+  request: CourseProductDetailTemplateShareRequest;
+  store?: CourseProductDetailTemplateStore;
+  now?: string;
+}): Promise<CourseProductDetailTemplateMutationResult> {
+  const parsedRequest =
+    CourseProductDetailTemplateShareRequestSchema.parse(request);
+  const template = await getVisibleDetailTemplate(templateId, actorId, store);
+  if (template.scope !== "personal") {
+    throw new Error("COURSE_PRODUCT_DETAIL_TEMPLATE_SHARE_UNAVAILABLE");
+  }
+  if (template.ownerId !== actorId) {
+    throw new Error("COURSE_PRODUCT_DETAIL_TEMPLATE_FORBIDDEN");
+  }
+
+  const nextTemplate = CourseProductDetailTemplateSchema.parse({
+    ...template,
+    shareStatus: "pending_team_review",
+    teamShareRequestedBy: actorId,
+    teamShareRequestedAt: now,
+    updatedAt: now,
+  });
+  const savedTemplate = await store.saveTemplate(nextTemplate);
+  const auditEvent = await store.appendAuditEvent(
+    createDetailTemplateAuditEvent({
+      action: "template_share_request",
+      actorId,
+      template: savedTemplate,
+      reason: parsedRequest.reason,
+      now,
+    })
+  );
+
+  return CourseProductDetailTemplateMutationResultSchema.parse({
+    template: savedTemplate,
+    templates: await listCourseProductDetailTemplates({ actorId, store }),
+    auditEvent,
+  });
+}
+
 function defaultSystemDetailTemplates(): CourseProductDetailTemplate[] {
   return [
     {
@@ -366,6 +419,7 @@ function defaultSystemDetailTemplates(): CourseProductDetailTemplate[] {
       description:
         "将适合人群、核心收获、FAQ 和购买须知前置，适合多数课程商品。",
       scope: "system",
+      shareStatus: "team_shared",
       content: {
         summary:
           "用买前决策视角快速解释课程适合谁、解决什么问题、购买后会获得什么。",
@@ -416,6 +470,7 @@ function defaultSystemDetailTemplates(): CourseProductDetailTemplate[] {
       name: "图文故事页",
       description: "适合素材较充分的课程，用多段图文讲清场景、方法和学习结果。",
       scope: "system",
+      shareStatus: "team_shared",
       content: {
         summary:
           "用图文分段展示课程场景、练习路径和预期收获，适合提升移动端停留。",
@@ -504,6 +559,9 @@ function summarizeTemplates(templates: CourseProductDetailTemplate[]) {
     teamCount: templates.filter(template => template.scope === "team").length,
     personalCount: templates.filter(template => template.scope === "personal")
       .length,
+    pendingShareRequestCount: templates.filter(
+      template => template.shareStatus === "pending_team_review"
+    ).length,
   };
 }
 

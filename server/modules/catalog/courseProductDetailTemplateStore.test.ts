@@ -9,6 +9,7 @@ import {
   createCourseProductDetailTemplate,
   deleteCourseProductDetailTemplate,
   listCourseProductDetailTemplates,
+  requestCourseProductDetailTemplateTeamShare,
 } from "./courseProductDetailTemplateStore";
 
 const templateContent = {
@@ -54,10 +55,55 @@ describe("course product detail template store", () => {
     expect(result.template).toMatchObject({
       name: "情绪课程成交模板",
       scope: "personal",
+      shareStatus: "private",
       ownerId: "operator_1",
     });
     expect(result.auditEvent.action).toBe("template_create");
     expect(result.templates.summary.personalCount).toBe(1);
+  });
+
+  it("requests team share review for personal templates", async () => {
+    const store = new InMemoryCourseProductDetailTemplateStore();
+    const created = await createCourseProductDetailTemplate({
+      actorId: "operator_1",
+      store,
+      now: "2026-05-25T10:00:00.000Z",
+      request: {
+        name: "情绪课程成交模板",
+        scope: "personal",
+        content: templateContent,
+        reason: "沉淀可复用详情模板",
+      },
+    });
+
+    const requested = await requestCourseProductDetailTemplateTeamShare({
+      actorId: "operator_1",
+      templateId: created.template.id,
+      store,
+      now: "2026-05-25T10:05:00.000Z",
+      request: { reason: "申请团队共享该成交模板" },
+    });
+
+    expect(requested.template).toMatchObject({
+      id: created.template.id,
+      shareStatus: "pending_team_review",
+      teamShareRequestedBy: "operator_1",
+      teamShareRequestedAt: "2026-05-25T10:05:00.000Z",
+    });
+    expect(requested.auditEvent.action).toBe("template_share_request");
+    expect(requested.templates.summary.pendingShareRequestCount).toBe(1);
+
+    const systemTemplate = requested.templates.items.find(
+      template => template.scope === "system"
+    );
+    await expect(
+      requestCourseProductDetailTemplateTeamShare({
+        actorId: "operator_1",
+        templateId: systemTemplate!.id,
+        store,
+        request: { reason: "系统模板不能重复申请共享" },
+      })
+    ).rejects.toThrow("COURSE_PRODUCT_DETAIL_TEMPLATE_SHARE_UNAVAILABLE");
   });
 
   it("records apply audit and prevents deleting system templates", async () => {

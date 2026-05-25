@@ -39,6 +39,7 @@ import {
   getCourseProductPublishQueueBatchTasksPayload,
   getCourseProductPublishQueueBatchTaskPreflightPayload,
   getCourseProductPublishQueuePayload,
+  requestCourseProductDetailTemplateTeamSharePayload,
   reviewCourseProductPublishQueueBatchTaskPayload,
   runCourseProductAssetBackfillPayload,
   submitCourseProductPublishQueueBatchTaskPayload,
@@ -341,6 +342,26 @@ describe("catalog admin api payloads", () => {
       created.body.ok && created.body.data.template.id
         ? created.body.data.template.id
         : "";
+
+    const shareRequested =
+      await requestCourseProductDetailTemplateTeamSharePayload(
+        operator,
+        templateId,
+        { reason: "申请团队共享运营成交模板" },
+        templateStore,
+        "2026-05-25T10:00:30.000Z"
+      );
+    expect(shareRequested.status).toBe(200);
+    expect(
+      shareRequested.body.ok && shareRequested.body.data.template.shareStatus
+    ).toBe("pending_team_review");
+    expect(
+      shareRequested.body.ok && shareRequested.body.data.auditEvent.action
+    ).toBe("template_share_request");
+    expect(
+      shareRequested.body.ok &&
+        shareRequested.body.data.templates.summary.pendingShareRequestCount
+    ).toBe(1);
 
     const applied = await applyCourseProductDetailTemplatePayload(
       operator,

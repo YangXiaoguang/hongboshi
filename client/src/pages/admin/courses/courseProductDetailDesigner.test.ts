@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type {
+  CourseProductDetailTemplate,
+  CourseProductDetailTemplateAuditEvent,
+} from "@shared/domain";
 import {
   applyCourseProductDetailTemplateToForm,
   applyDetailContentTemplate,
@@ -9,11 +13,17 @@ import {
   createDefaultContentWorkbenchForm,
   createH5BlockForm,
   detailBlockStyleDefaults,
+  detailTemplateAuditActionLabel,
+  detailTemplateAuditEventsForTemplate,
+  detailTemplateScopeLabel,
+  detailTemplateShareStatusLabel,
+  filterCourseProductDetailTemplates,
   h5BlockFormsForSave,
   insertH5BlockAfter,
   moveH5BlockForm,
   parseDetailDesignerSavedTemplates,
   removeH5BlockForm,
+  summarizeCourseProductDetailTemplates,
 } from "./courseProductDetailDesigner";
 
 describe("course product detail designer", () => {
@@ -170,6 +180,7 @@ describe("course product detail designer", () => {
         id: "template_1",
         name: "服务端成交模板",
         scope: "personal",
+        shareStatus: "private",
         ownerId: "operator_1",
         content,
         createdAt: "2026-05-25T09:00:00.000Z",
@@ -181,5 +192,102 @@ describe("course product detail designer", () => {
     expect(applied.targetAudienceText).toContain("购买前看清权益");
     expect(applied.richTextBlocks[0]?.id).not.toBe("source_points");
     expect(applied.richTextBlocks[0]?.itemsText).toContain("低压力练习");
+  });
+
+  it("summarizes, filters and labels server template library records", () => {
+    const templates: CourseProductDetailTemplate[] = [
+      {
+        id: "system_template",
+        name: "系统成交页",
+        scope: "system",
+        shareStatus: "team_shared",
+        content: {
+          summary: "系统内置的课程成交详情结构。",
+          targetAudience: ["希望快速判断课程的人"],
+          headline: "先看清问题",
+          subheadline: "系统模板副标题",
+          sellingPoints: ["结构稳定"],
+          richTextBlocks: [
+            {
+              id: "block_system",
+              type: "section_heading",
+              title: "系统标题",
+            },
+          ],
+        },
+        createdAt: "2026-05-25T09:00:00.000Z",
+        updatedAt: "2026-05-25T09:00:00.000Z",
+      },
+      {
+        id: "personal_template",
+        name: "情绪课程个人模板",
+        scope: "personal",
+        shareStatus: "pending_team_review",
+        ownerId: "operator_1",
+        teamShareRequestedBy: "operator_1",
+        teamShareRequestedAt: "2026-05-25T09:05:00.000Z",
+        content: {
+          summary: "适合情绪管理课程的成交详情结构。",
+          targetAudience: ["需要情绪练习的人"],
+          headline: "情绪课程详情",
+          subheadline: "个人模板副标题",
+          sellingPoints: ["适合人群清晰"],
+          richTextBlocks: [
+            {
+              id: "block_personal",
+              type: "paragraph",
+              body: "把课程价值讲清楚。",
+            },
+          ],
+        },
+        createdAt: "2026-05-25T09:01:00.000Z",
+        updatedAt: "2026-05-25T09:05:00.000Z",
+      },
+    ];
+    const auditEvents: CourseProductDetailTemplateAuditEvent[] = [
+      {
+        id: "audit_old",
+        templateId: "personal_template",
+        templateName: "情绪课程个人模板",
+        actorId: "operator_1",
+        action: "template_create",
+        reason: "保存个人模板",
+        createdAt: "2026-05-25T09:01:00.000Z",
+      },
+      {
+        id: "audit_new",
+        templateId: "personal_template",
+        templateName: "情绪课程个人模板",
+        actorId: "operator_1",
+        action: "template_share_request",
+        reason: "申请团队共享模板",
+        createdAt: "2026-05-25T09:05:00.000Z",
+      },
+    ];
+
+    expect(summarizeCourseProductDetailTemplates(templates)).toMatchObject({
+      totalCount: 2,
+      systemCount: 1,
+      personalCount: 1,
+      pendingShareRequestCount: 1,
+    });
+    expect(
+      filterCourseProductDetailTemplates({
+        templates,
+        scope: "personal",
+        keyword: "情绪",
+      }).map(template => template.id)
+    ).toEqual(["personal_template"]);
+    expect(detailTemplateScopeLabel("personal")).toBe("个人模板");
+    expect(detailTemplateShareStatusLabel(templates[1]!)).toBe("待团队复核");
+    expect(detailTemplateAuditActionLabel("template_share_request")).toBe(
+      "申请共享"
+    );
+    expect(
+      detailTemplateAuditEventsForTemplate(
+        auditEvents,
+        "personal_template"
+      ).map(event => event.id)
+    ).toEqual(["audit_new", "audit_old"]);
   });
 });

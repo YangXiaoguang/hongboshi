@@ -43,6 +43,7 @@ import {
   CourseProductDetailTemplateDeleteRequestSchema,
   CourseProductDetailTemplateListResultSchema,
   CourseProductDetailTemplateMutationResultSchema,
+  CourseProductDetailTemplateShareRequestSchema,
   CourseProductDetailContentSchema,
   CourseProductLearningMaterialOperationsReportSchema,
   CourseProductMutationResultSchema,
@@ -90,6 +91,7 @@ import {
   deleteCourseProductDetailTemplate,
   getCourseProductDetailTemplateStore,
   listCourseProductDetailTemplates,
+  requestCourseProductDetailTemplateTeamShare,
   type CourseProductDetailTemplateStore,
 } from "./courseProductDetailTemplateStore";
 import {
@@ -804,6 +806,46 @@ export async function applyCourseProductDetailTemplatePayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程详情模板套用失败");
+  }
+}
+
+export async function requestCourseProductDetailTemplateTeamSharePayload(
+  actor: CatalogOperationsActor | null | undefined,
+  templateId: string,
+  body: unknown,
+  templateStore: CourseProductDetailTemplateStore = getCourseProductDetailTemplateStore(),
+  now = new Date().toISOString()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.detailTemplateManage
+  );
+  if (denied) return denied;
+
+  const parsed = CourseProductDetailTemplateShareRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程详情模板共享申请参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductDetailTemplateMutationResponseSchema.parse({
+        ok: true,
+        data: await requestCourseProductDetailTemplateTeamShare({
+          actorId: actor!.id,
+          templateId,
+          request: parsed.data,
+          store: templateStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程详情模板共享申请失败");
   }
 }
 
@@ -2386,6 +2428,28 @@ export function registerCatalogApi(app: Express) {
     }
   );
 
+  app.post(
+    "/api/catalog/admin/course-products/detail-templates/:templateId/share-request",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          await requestCourseProductDetailTemplateTeamSharePayload(
+            session?.user,
+            req.params.templateId,
+            req.body
+          );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程详情模板共享申请失败")
+        );
+      }
+    }
+  );
+
   app.get(
     "/api/catalog/admin/course-products/content-quality",
     async (req, res) => {
@@ -3101,12 +3165,12 @@ export function handleCatalogApiRequest(
   }
 
   const detailTemplateActionMatch = url.pathname.match(
-    /^\/api\/catalog\/admin\/course-products\/detail-templates\/([^/]+)(?:\/(apply))?$/
+    /^\/api\/catalog\/admin\/course-products\/detail-templates\/([^/]+)(?:\/(apply|share-request))?$/
   );
   if (detailTemplateActionMatch?.[1]) {
     const templateId = decodeURIComponent(detailTemplateActionMatch[1]);
     const action = detailTemplateActionMatch[2];
-    const expectedMethod = action === "apply" ? "POST" : "DELETE";
+    const expectedMethod = action ? "POST" : "DELETE";
 
     if (req.method !== expectedMethod) {
       sendJson(
@@ -3127,11 +3191,17 @@ export function handleCatalogApiRequest(
                 templateId,
                 body
               )
-            : await deleteCourseProductDetailTemplatePayload(
-                session?.user,
-                templateId,
-                body
-              );
+            : action === "share-request"
+              ? await requestCourseProductDetailTemplateTeamSharePayload(
+                  session?.user,
+                  templateId,
+                  body
+                )
+              : await deleteCourseProductDetailTemplatePayload(
+                  session?.user,
+                  templateId,
+                  body
+                );
         sendJson(res, payload.status, payload.body);
       })
       .catch(() =>
@@ -4108,6 +4178,16 @@ function courseProductActionFailure(
     return {
       status: 403,
       body: errorPayload("FORBIDDEN", "不能操作其他管理员的个人模板"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_DETAIL_TEMPLATE_SHARE_UNAVAILABLE"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "仅个人模板可以申请团队共享"),
     };
   }
 
