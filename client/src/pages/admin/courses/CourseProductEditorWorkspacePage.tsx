@@ -49,6 +49,7 @@ import {
   type CourseProductContentUpdateRequest,
   type CourseProductCreateRequest,
   type CourseProductDetailContent,
+  type CourseProductDetailTemplate,
   type CourseProductListItem,
   type CourseProductMerchandisingAssetUsage,
   type CourseProductPriceUpdateRequest,
@@ -74,12 +75,12 @@ import {
   CourseProductDetailStylePanel,
 } from "./CourseProductDetailDesignerPanels";
 import {
+  applyCourseProductDetailTemplateToForm,
   applyDetailContentTemplate,
-  applyDetailDesignerSavedTemplate,
   cloneH5BlockForm,
+  createCourseProductDetailTemplateContent,
   createDefaultContentWorkbenchForm,
   createDetailDraftId,
-  createDetailDesignerSavedTemplate,
   createH5BlockForm,
   detailBlockStyleDefaults,
   detailBlockStyleFromValue,
@@ -92,18 +93,15 @@ import {
   h5BlockFormsForSave,
   h5BlockTypeOptions,
   insertH5BlockAfter,
-  loadDetailDesignerSavedTemplates,
   merchandisingAssetUsageOptions,
   moveH5BlockForm,
   optionalText,
   removeH5BlockForm,
-  saveDetailDesignerSavedTemplates,
   splitLines,
   type ContentWorkbenchFormState,
   type DetailBlockStyleState,
   type DetailContentTemplateId,
   type DetailDesignerSelection,
-  type DetailDesignerSavedTemplate,
   type H5BlockFormState,
   type MediaAssetFormState,
 } from "./courseProductDetailDesigner";
@@ -702,9 +700,11 @@ export default function CourseProductEditorWorkspacePage() {
   const [activeDetailTemplateId, setActiveDetailTemplateId] =
     useState<DetailContentTemplateId>();
   const [savedDetailTemplates, setSavedDetailTemplates] = useState<
-    DetailDesignerSavedTemplate[]
+    CourseProductDetailTemplate[]
   >([]);
   const [templateDraftName, setTemplateDraftName] = useState("");
+  const [isDetailTemplateLoading, setIsDetailTemplateLoading] = useState(false);
+  const [isDetailTemplateSaving, setIsDetailTemplateSaving] = useState(false);
   const [pendingBlockDelete, setPendingBlockDelete] =
     useState<H5BlockFormState>();
   const [isLoading, setIsLoading] = useState(false);
@@ -854,22 +854,30 @@ export default function CourseProductEditorWorkspacePage() {
     }
   }, [courseId]);
 
-  const persistDetailTemplates = useCallback(
-    (templates: DetailDesignerSavedTemplate[]) => {
-      setSavedDetailTemplates(templates);
-      if (typeof window !== "undefined") {
-        saveDetailDesignerSavedTemplates(window.localStorage, templates);
-      }
-    },
-    []
-  );
+  const loadDetailTemplates = useCallback(async () => {
+    setIsDetailTemplateLoading(true);
+    try {
+      const result =
+        await httpCourseProductRepository.loadCourseProductDetailTemplates();
+      setSavedDetailTemplates(result.items);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "课程详情模板读取失败"
+      );
+    } finally {
+      setIsDetailTemplateLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    setSavedDetailTemplates(
-      loadDetailDesignerSavedTemplates(window.localStorage)
-    );
-  }, []);
+    if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) return;
+    void loadDetailTemplates();
+  }, [
+    catalogPermissions.canRead,
+    isAuthSyncing,
+    isLoggedIn,
+    loadDetailTemplates,
+  ]);
 
   useEffect(() => {
     if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) return;
@@ -1284,67 +1292,104 @@ export default function CourseProductEditorWorkspacePage() {
     setActionMessage("内容块已删除，保存图文内容后生效");
   }, [pendingBlockDelete]);
 
-  const saveCurrentDetailTemplate = useCallback(() => {
+  const saveCurrentDetailTemplate = useCallback(async () => {
+    if (!catalogPermissions.canEdit) {
+      setActionError("当前账号暂无课程详情模板编辑权限");
+      return;
+    }
     const trimmedName =
       templateDraftName.trim() ||
       `${basicForm.title.trim() || product?.title || "课程详情"}模板`;
-    const existingTemplate = savedDetailTemplates.find(
-      template => template.name === trimmedName
-    );
-    const template = createDetailDesignerSavedTemplate(
-      contentForm,
-      trimmedName,
-      {
-        id: existingTemplate?.id,
-        createdAt: existingTemplate?.createdAt,
-      }
-    );
-    const nextTemplates = [
-      template,
-      ...savedDetailTemplates.filter(item => item.id !== template.id),
-    ].slice(0, 12);
-    persistDetailTemplates(nextTemplates);
-    setTemplateDraftName("");
-    setActionError(undefined);
-    setActionMessage("运营模板草案已保存，可在本机继续套用");
+    setIsDetailTemplateSaving(true);
+    try {
+      const result =
+        await httpCourseProductRepository.createCourseProductDetailTemplate({
+          name: trimmedName,
+          scope: "personal",
+          sourceProductId: product?.id,
+          content: createCourseProductDetailTemplateContent(contentForm),
+          reason: normalizedOperationReason(reason, "保存课程详情运营模板"),
+        });
+      setSavedDetailTemplates(result.templates.items);
+      setTemplateDraftName("");
+      setActionError(undefined);
+      setActionMessage("运营模板已保存到服务端模板库，可跨设备继续套用");
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "课程详情模板保存失败"
+      );
+    } finally {
+      setIsDetailTemplateSaving(false);
+    }
   }, [
     basicForm.title,
+    catalogPermissions.canEdit,
     contentForm,
-    persistDetailTemplates,
     product?.title,
-    savedDetailTemplates,
+    product?.id,
+    reason,
     templateDraftName,
   ]);
 
   const applySavedDetailTemplate = useCallback(
-    (templateId: string) => {
+    async (templateId: string) => {
+      if (!catalogPermissions.canEdit) {
+        setActionError("当前账号暂无课程详情模板套用权限");
+        return;
+      }
       const template = savedDetailTemplates.find(
         item => item.id === templateId
       );
       if (!template) {
-        setActionError("未找到该模板草案");
+        setActionError("未找到该课程详情模板");
         return;
       }
-      setContentForm(current =>
-        applyDetailDesignerSavedTemplate(current, template)
-      );
-      setIsAdvancedH5Editing(true);
-      setDetailDesignerSelection({ kind: "overview" });
-      setActiveDetailTemplateId(undefined);
-      setReason(current =>
-        normalizedOperationReason(current, "课程商品详情模板草案更新")
-      );
-      setActionError(undefined);
-      setActionMessage(`已套用「${template.name}」，保存图文内容后生效`);
+      try {
+        const result =
+          await httpCourseProductRepository.applyCourseProductDetailTemplate(
+            template.id,
+            {
+              productId: product?.id,
+              reason: normalizedOperationReason(
+                reason,
+                `套用课程详情模板「${template.name}」`
+              ),
+            }
+          );
+        setSavedDetailTemplates(result.templates.items);
+        setContentForm(current =>
+          applyCourseProductDetailTemplateToForm(current, result.template)
+        );
+        setIsAdvancedH5Editing(true);
+        setDetailDesignerSelection({ kind: "overview" });
+        setActiveDetailTemplateId(undefined);
+        setReason(current =>
+          normalizedOperationReason(current, "课程商品详情模板更新")
+        );
+        setActionError(undefined);
+        setActionMessage(`已套用「${template.name}」，保存图文内容后生效`);
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程详情模板套用失败"
+        );
+      }
     },
-    [savedDetailTemplates]
+    [catalogPermissions.canEdit, product?.id, reason, savedDetailTemplates]
   );
 
   const deleteSavedDetailTemplate = useCallback(
-    (templateId: string) => {
+    async (templateId: string) => {
+      if (!catalogPermissions.canEdit) {
+        setActionError("当前账号暂无课程详情模板删除权限");
+        return;
+      }
       const template = savedDetailTemplates.find(
         item => item.id === templateId
       );
+      if (template?.scope === "system") {
+        setActionError("系统模板不能删除");
+        return;
+      }
       if (
         template &&
         typeof window !== "undefined" &&
@@ -1352,13 +1397,27 @@ export default function CourseProductEditorWorkspacePage() {
       ) {
         return;
       }
-      persistDetailTemplates(
-        savedDetailTemplates.filter(item => item.id !== templateId)
-      );
-      setActionError(undefined);
-      setActionMessage("模板草案已删除");
+      try {
+        const result =
+          await httpCourseProductRepository.deleteCourseProductDetailTemplate(
+            templateId,
+            {
+              reason: normalizedOperationReason(
+                reason,
+                `删除课程详情模板「${template?.name ?? templateId}」`
+              ),
+            }
+          );
+        setSavedDetailTemplates(result.templates.items);
+        setActionError(undefined);
+        setActionMessage("模板草案已删除");
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程详情模板删除失败"
+        );
+      }
     },
-    [persistDetailTemplates, savedDetailTemplates]
+    [catalogPermissions.canEdit, reason, savedDetailTemplates]
   );
 
   const uploadMerchandisingAsset = useCallback(async () => {
@@ -2953,6 +3012,8 @@ export default function CourseProductEditorWorkspacePage() {
                       activeTemplateId={activeDetailTemplateId}
                       savedTemplates={savedDetailTemplates}
                       templateDraftName={templateDraftName}
+                      isTemplateLoading={isDetailTemplateLoading}
+                      isTemplateSaving={isDetailTemplateSaving}
                       onStyleChange={updateSelectedDesignerStyle}
                       onTemplateApply={applyDesignerTemplate}
                       onTemplateDraftNameChange={setTemplateDraftName}

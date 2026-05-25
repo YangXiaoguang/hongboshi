@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyCourseProductDetailTemplateToForm,
   applyDetailContentTemplate,
   applyDetailDesignerSavedTemplate,
   cloneH5BlockForm,
+  createCourseProductDetailTemplateContent,
   createDetailDesignerSavedTemplate,
   createDefaultContentWorkbenchForm,
   createH5BlockForm,
@@ -131,5 +133,53 @@ describe("course product detail designer", () => {
       "faq",
     ]);
     expect(applied.richTextBlocks[0]?.id).not.toBe("source_heading");
+  });
+
+  it("converts server detail templates to and from the editor form", () => {
+    const form = {
+      ...createDefaultContentWorkbenchForm("https://example.com/a.jpg"),
+      summary: "服务端模板摘要",
+      targetAudienceText:
+        "希望快速判断课程是否适合的人\n需要购买前看清权益的人",
+      headline: "服务端模板标题",
+      subheadline: "服务端模板副标题",
+      sellingPointsText: "适合人群清晰\n购买权益明确",
+      richTextBlocks: [
+        {
+          ...createH5BlockForm("bullet_list"),
+          id: "source_points",
+          title: "你将获得",
+          itemsText: "清晰学习路径\n低压力练习",
+        },
+      ],
+    };
+    const content = createCourseProductDetailTemplateContent(form);
+
+    expect(content.targetAudience).toEqual([
+      "希望快速判断课程是否适合的人",
+      "需要购买前看清权益的人",
+    ]);
+    expect(content.richTextBlocks[0]?.items).toEqual([
+      "清晰学习路径",
+      "低压力练习",
+    ]);
+
+    const applied = applyCourseProductDetailTemplateToForm(
+      createDefaultContentWorkbenchForm("https://example.com/a.jpg"),
+      {
+        id: "template_1",
+        name: "服务端成交模板",
+        scope: "personal",
+        ownerId: "operator_1",
+        content,
+        createdAt: "2026-05-25T09:00:00.000Z",
+        updatedAt: "2026-05-25T09:00:00.000Z",
+      }
+    );
+
+    expect(applied.headline).toBe("服务端模板标题");
+    expect(applied.targetAudienceText).toContain("购买前看清权益");
+    expect(applied.richTextBlocks[0]?.id).not.toBe("source_points");
+    expect(applied.richTextBlocks[0]?.itemsText).toContain("低压力练习");
   });
 });

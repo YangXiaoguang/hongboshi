@@ -17,6 +17,8 @@ import {
   parseCourseProductAssetListResponse,
   parseCourseProductAssetMutationResponse,
   parseCourseProductContentResponse,
+  parseCourseProductDetailTemplateListResponse,
+  parseCourseProductDetailTemplateMutationResponse,
   parseCourseProductLearningMaterialOperationsReportResponse,
   parseCourseProductListResponse,
   parseCourseProductMutationResponse,
@@ -701,6 +703,64 @@ describe("http course product repository parsing", () => {
     ).toThrow("当前账号暂无课程商品管理权限");
   });
 
+  it("parses course product detail template responses", () => {
+    const list = parseCourseProductDetailTemplateListResponse({
+      ok: true,
+      data: {
+        items: [
+          {
+            id: "template_1",
+            name: "成交模板",
+            scope: "personal",
+            ownerId: "operator_1",
+            content: {
+              summary: "用于课程详情成交页的服务端模板。",
+              targetAudience: ["希望买前快速判断课程的人"],
+              headline: "先看清问题，再开始练习",
+              subheadline: "把课程价值和购买权益放在详情页前半段。",
+              sellingPoints: ["适合人群清晰"],
+              richTextBlocks: [
+                {
+                  id: "block_1",
+                  type: "section_heading",
+                  title: "适合先从一个改变开始",
+                },
+              ],
+            },
+            createdAt: "2026-05-25T09:00:00.000Z",
+            updatedAt: "2026-05-25T09:00:00.000Z",
+          },
+        ],
+        summary: {
+          totalCount: 1,
+          systemCount: 0,
+          teamCount: 0,
+          personalCount: 1,
+        },
+        auditEvents: [],
+      },
+    });
+    expect(list.items[0]?.content.richTextBlocks).toHaveLength(1);
+
+    const mutation = parseCourseProductDetailTemplateMutationResponse({
+      ok: true,
+      data: {
+        template: list.items[0],
+        templates: list,
+        auditEvent: {
+          id: "audit_template_1",
+          templateId: "template_1",
+          templateName: "成交模板",
+          actorId: "operator_1",
+          action: "template_apply",
+          reason: "套用课程详情模板",
+          createdAt: "2026-05-25T09:01:00.000Z",
+        },
+      },
+    });
+    expect(mutation.auditEvent.action).toBe("template_apply");
+  });
+
   it("parses course product asset responses", () => {
     const list = parseCourseProductAssetListResponse({
       ok: true,
@@ -1249,7 +1309,9 @@ describe("http course product repository parsing", () => {
     };
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+      .mockImplementation(() =>
+        Promise.resolve(new Response(JSON.stringify(responsePayload)))
+      );
 
     const result =
       await httpCourseProductRepository.updateCourseProductBasicInfo(
@@ -1391,7 +1453,9 @@ describe("http course product repository parsing", () => {
     };
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify(responsePayload)));
+      .mockImplementation(() =>
+        Promise.resolve(new Response(JSON.stringify(responsePayload)))
+      );
 
     const result = await httpCourseProductRepository.updateCourseProductReview(
       "course_product_1",
@@ -1580,6 +1644,101 @@ describe("http course product repository parsing", () => {
         method: "PATCH",
         body: expect.stringContaining("认识情绪反应"),
       })
+    );
+  });
+
+  it("uses service endpoints for detail template library actions", async () => {
+    const responsePayload = {
+      ok: true,
+      data: {
+        template: {
+          id: "template_1",
+          name: "成交模板",
+          scope: "personal",
+          ownerId: "operator_1",
+          content: {
+            summary: "用于课程详情成交页的服务端模板。",
+            richTextBlocks: [
+              {
+                id: "block_1",
+                type: "section_heading",
+                title: "适合先从一个改变开始",
+              },
+            ],
+          },
+          createdAt: "2026-05-25T09:00:00.000Z",
+          updatedAt: "2026-05-25T09:00:00.000Z",
+        },
+        templates: {
+          items: [],
+          summary: {
+            totalCount: 0,
+            systemCount: 0,
+            teamCount: 0,
+            personalCount: 0,
+          },
+          auditEvents: [],
+        },
+        auditEvent: {
+          id: "audit_template_1",
+          templateId: "template_1",
+          templateName: "成交模板",
+          actorId: "operator_1",
+          action: "template_create",
+          reason: "保存课程详情模板",
+          createdAt: "2026-05-25T09:01:00.000Z",
+        },
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() =>
+        Promise.resolve(new Response(JSON.stringify(responsePayload)))
+      );
+
+    await httpCourseProductRepository.createCourseProductDetailTemplate({
+      name: "成交模板",
+      scope: "personal",
+      content: {
+        summary: "用于课程详情成交页的服务端模板。",
+        richTextBlocks: [
+          {
+            id: "block_1",
+            type: "section_heading",
+            title: "适合先从一个改变开始",
+          },
+        ],
+      },
+      reason: "保存课程详情模板",
+    });
+    await httpCourseProductRepository.applyCourseProductDetailTemplate(
+      "template_1",
+      {
+        productId: "course_product_1",
+        reason: "套用课程详情模板",
+      }
+    );
+    await httpCourseProductRepository.deleteCourseProductDetailTemplate(
+      "template_1",
+      {
+        reason: "删除课程详情模板",
+      }
+    );
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/catalog/admin/course-products/detail-templates",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/catalog/admin/course-products/detail-templates/template_1/apply",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/catalog/admin/course-products/detail-templates/template_1",
+      expect.objectContaining({ method: "DELETE" })
     );
   });
 

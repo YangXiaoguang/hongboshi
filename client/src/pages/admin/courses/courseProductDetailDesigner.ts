@@ -1,4 +1,7 @@
 import type {
+  CourseProductDetailTemplate,
+  CourseProductDetailTemplateBlock,
+  CourseProductDetailTemplateContent,
   CourseProductMerchandisingAssetUsage,
   CourseProductRichTextBlockType,
 } from "@shared/domain";
@@ -411,6 +414,64 @@ export function applyDetailDesignerSavedTemplate(
       ...block,
       id: createDetailDraftId("saved_template_block"),
     })),
+  };
+}
+
+export function createCourseProductDetailTemplateContent(
+  form: ContentWorkbenchFormState
+): CourseProductDetailTemplateContent {
+  return {
+    summary: form.summary.trim(),
+    targetAudience: splitLines(form.targetAudienceText),
+    headline: form.headline.trim(),
+    subheadline: form.subheadline.trim(),
+    sellingPoints: splitLines(form.sellingPointsText),
+    richTextBlocks: form.richTextBlocks.map(block => ({
+      id: createDetailDraftId("template_block"),
+      type: block.type,
+      title: optionalText(block.title),
+      body: optionalText(block.body),
+      imageUrl: optionalText(block.imageUrl),
+      altText: optionalText(block.altText),
+      items: splitLines(block.itemsText),
+      question: optionalText(block.question),
+      answer: optionalText(block.answer),
+      style: block.style,
+    })),
+  };
+}
+
+export function applyCourseProductDetailTemplateToForm(
+  form: ContentWorkbenchFormState,
+  template: CourseProductDetailTemplate
+): ContentWorkbenchFormState {
+  return {
+    ...form,
+    summary: template.content.summary,
+    targetAudienceText: template.content.targetAudience.join("\n"),
+    headline: template.content.headline,
+    subheadline: template.content.subheadline,
+    sellingPointsText: template.content.sellingPoints.join("\n"),
+    richTextBlocks: template.content.richTextBlocks.map(
+      detailTemplateBlockToFormBlock
+    ),
+  };
+}
+
+function detailTemplateBlockToFormBlock(
+  block: CourseProductDetailTemplateBlock
+): H5BlockFormState {
+  return {
+    id: createDetailDraftId("server_template_block"),
+    type: block.type,
+    title: block.title ?? "",
+    body: block.body ?? "",
+    imageUrl: block.imageUrl ?? "",
+    altText: block.altText ?? "",
+    itemsText: block.items.join("\n"),
+    question: block.question ?? "",
+    answer: block.answer ?? "",
+    style: detailBlockStyleFromValue(block.style),
   };
 }
 

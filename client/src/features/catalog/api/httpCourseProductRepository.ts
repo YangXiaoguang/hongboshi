@@ -16,6 +16,8 @@ import {
   CourseProductAssetMutationResultSchema,
   CourseProductContentMutationResultSchema,
   CourseProductContentQualityBatchResultSchema,
+  CourseProductDetailTemplateListResultSchema,
+  CourseProductDetailTemplateMutationResultSchema,
   CourseProductDetailContentSchema,
   CourseProductLearningMaterialOperationsReportSchema,
   CourseProductListResultSchema,
@@ -56,6 +58,11 @@ import {
   type CourseProductAssetUploadRequest,
   type CourseProductContentUpdateRequest,
   type CourseProductCreateRequest,
+  type CourseProductDetailTemplateApplyRequest,
+  type CourseProductDetailTemplateCreateRequest,
+  type CourseProductDetailTemplateDeleteRequest,
+  type CourseProductDetailTemplateListResult,
+  type CourseProductDetailTemplateMutationResult,
   type CourseProductDetailContent,
   type CourseProductLearningMaterialOperationsReport,
   type CourseProductMutationResult,
@@ -100,6 +107,12 @@ const CourseProductPublishQueueBatchTaskPreflightResponseSchema =
   ApiResponseSchema(CourseProductPublishQueueBatchTaskPreflightResultSchema);
 const CourseProductContentMutationResponseSchema = ApiResponseSchema(
   CourseProductContentMutationResultSchema
+);
+const CourseProductDetailTemplateListResponseSchema = ApiResponseSchema(
+  CourseProductDetailTemplateListResultSchema
+);
+const CourseProductDetailTemplateMutationResponseSchema = ApiResponseSchema(
+  CourseProductDetailTemplateMutationResultSchema
 );
 const CourseProductAssetListResponseSchema = ApiResponseSchema(
   CourseProductAssetListResultSchema
@@ -251,6 +264,23 @@ export function parseCourseProductContentMutationResponse(
   payload: unknown
 ): CourseProductContentMutationResult {
   const parsed = CourseProductContentMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCourseProductDetailTemplateListResponse(
+  payload: unknown
+): CourseProductDetailTemplateListResult {
+  const parsed = CourseProductDetailTemplateListResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCourseProductDetailTemplateMutationResponse(
+  payload: unknown
+): CourseProductDetailTemplateMutationResult {
+  const parsed =
+    CourseProductDetailTemplateMutationResponseSchema.parse(payload);
   if (!parsed.ok) throw new Error(parsed.error.message);
   return parsed.data;
 }
@@ -748,6 +778,64 @@ export const httpCourseProductRepository = {
       throw new Error(extractErrorMessage(payload, "课程商品内容校验失败"));
     }
     return parseCourseProductContentQualityResponse(payload);
+  },
+
+  async loadCourseProductDetailTemplates(): Promise<CourseProductDetailTemplateListResult> {
+    const response = await fetch(
+      `${API_BASE}/course-products/detail-templates`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        credentials: "same-origin",
+      }
+    );
+    const payload = await readJson(response);
+    if (!response.ok) {
+      const apiError = extractApiError(payload, "课程详情模板读取失败");
+      throw new CourseProductRepositoryError(apiError.message, {
+        code: apiError.code,
+        details: apiError.details,
+        status: response.status,
+      });
+    }
+    return parseCourseProductDetailTemplateListResponse(payload);
+  },
+
+  async createCourseProductDetailTemplate(
+    request: CourseProductDetailTemplateCreateRequest
+  ): Promise<CourseProductDetailTemplateMutationResult> {
+    return requestCourseProductDetailTemplateMutation(
+      `${API_BASE}/course-products/detail-templates`,
+      request,
+      "课程详情模板保存失败",
+      "POST"
+    );
+  },
+
+  async deleteCourseProductDetailTemplate(
+    templateId: string,
+    request: CourseProductDetailTemplateDeleteRequest
+  ): Promise<CourseProductDetailTemplateMutationResult> {
+    return requestCourseProductDetailTemplateMutation(
+      `${API_BASE}/course-products/detail-templates/${encodeURIComponent(templateId)}`,
+      request,
+      "课程详情模板删除失败",
+      "DELETE"
+    );
+  },
+
+  async applyCourseProductDetailTemplate(
+    templateId: string,
+    request: CourseProductDetailTemplateApplyRequest
+  ): Promise<CourseProductDetailTemplateMutationResult> {
+    return requestCourseProductDetailTemplateMutation(
+      `${API_BASE}/course-products/detail-templates/${encodeURIComponent(templateId)}/apply`,
+      request,
+      "课程详情模板套用失败",
+      "POST"
+    );
   },
 
   async loadCourseProductPublishQueue(
@@ -1412,6 +1500,34 @@ async function requestCourseProductMutation(
     });
   }
   return parseCourseProductMutationResponse(payload);
+}
+
+async function requestCourseProductDetailTemplateMutation(
+  url: string,
+  body: unknown,
+  fallback: string,
+  method: "POST" | "DELETE"
+) {
+  const response = await fetch(url, {
+    method,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    credentials: "same-origin",
+    body: JSON.stringify(body),
+  });
+  const payload = await readJson(response);
+  if (!response.ok) {
+    const apiError = extractApiError(payload, fallback);
+    throw new CourseProductRepositoryError(apiError.message, {
+      code: apiError.code,
+      details: apiError.details,
+      status: response.status,
+    });
+  }
+  return parseCourseProductDetailTemplateMutationResponse(payload);
 }
 
 async function requestCourseProductPublishQueueBatchTaskMutation(

@@ -46,6 +46,13 @@ export const persistenceStoreSpecs = [
     supportedModes: ["memory", "file", "postgres"],
   },
   {
+    envName: "HONGBOSHI_COURSE_PRODUCT_DETAIL_TEMPLATE_STORE",
+    label: "课程商品详情模板库",
+    fallbackMode: "file",
+    autoPostgresWithDatabaseUrl: false,
+    supportedModes: ["memory", "file"],
+  },
+  {
     envName: "HONGBOSHI_COURSE_PRODUCT_ASSET_STORE",
     label: "课程商品素材资产",
     fallbackMode: "file",

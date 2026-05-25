@@ -252,6 +252,18 @@ export const COURSE_PRODUCT_RICH_TEXT_BLOCK_TYPES = [
   "purchase_note",
 ] as const;
 
+export const COURSE_PRODUCT_DETAIL_TEMPLATE_SCOPES = [
+  "system",
+  "team",
+  "personal",
+] as const;
+
+export const COURSE_PRODUCT_DETAIL_TEMPLATE_AUDIT_ACTIONS = [
+  "template_create",
+  "template_delete",
+  "template_apply",
+] as const;
+
 export const COURSE_PRODUCT_ASSET_MAX_SIZE_BYTES = 20 * 1024 * 1024;
 
 export const COURSE_PRODUCT_CONTENT_QUALITY_ISSUE_CODES = [
@@ -1883,6 +1895,14 @@ export const CourseProductRichTextBlockTypeSchema = z.enum(
   COURSE_PRODUCT_RICH_TEXT_BLOCK_TYPES
 );
 
+export const CourseProductDetailTemplateScopeSchema = z.enum(
+  COURSE_PRODUCT_DETAIL_TEMPLATE_SCOPES
+);
+
+export const CourseProductDetailTemplateAuditActionSchema = z.enum(
+  COURSE_PRODUCT_DETAIL_TEMPLATE_AUDIT_ACTIONS
+);
+
 export const CourseProductRichTextBlockSchema = z
   .object({
     id: EntityIdSchema,
@@ -1993,6 +2013,100 @@ export const CourseProductContentUpdateRequestSchema =
   }).extend({
     reason: z.string().trim().min(4).max(240),
   });
+
+export const CourseProductDetailTemplateBlockSchema = z.object({
+  id: EntityIdSchema,
+  type: CourseProductRichTextBlockTypeSchema,
+  title: z.string().trim().max(100).optional(),
+  body: z.string().trim().max(1200).optional(),
+  imageUrl: CourseProductAssetUrlSchema.optional(),
+  altText: z.string().trim().max(120).optional(),
+  items: z.array(z.string().trim().min(1).max(120)).max(12).default([]),
+  question: z.string().trim().max(160).optional(),
+  answer: z.string().trim().max(600).optional(),
+  style: z
+    .object({
+      tone: z.enum(["plain", "warm", "fresh", "deep"]).optional(),
+      spacing: z.enum(["compact", "normal", "relaxed"]).optional(),
+      radius: z.enum(["none", "small", "medium", "large"]).optional(),
+      imageAspectRatio: z
+        .enum(["auto", "1:1", "4:3", "16:9", "3:4", "long"])
+        .optional(),
+      imageFit: z.enum(["cover", "contain"]).optional(),
+      captionMode: z.enum(["hidden", "below", "overlay"]).optional(),
+    })
+    .optional(),
+});
+
+export const CourseProductDetailTemplateContentSchema = z.object({
+  summary: z.string().trim().max(500).default(""),
+  targetAudience: z.array(z.string().trim().min(1).max(80)).max(8).default([]),
+  headline: z.string().trim().max(100).default(""),
+  subheadline: z.string().trim().max(240).default(""),
+  sellingPoints: z.array(z.string().trim().min(1).max(120)).max(6).default([]),
+  richTextBlocks: z
+    .array(CourseProductDetailTemplateBlockSchema)
+    .min(1)
+    .max(24),
+});
+
+export const CourseProductDetailTemplateSchema = z.object({
+  id: EntityIdSchema,
+  name: z.string().trim().min(2).max(80),
+  description: z.string().trim().max(240).optional(),
+  scope: CourseProductDetailTemplateScopeSchema,
+  ownerId: EntityIdSchema.optional(),
+  sourceProductId: EntityIdSchema.optional(),
+  content: CourseProductDetailTemplateContentSchema,
+  createdAt: DateTimeLikeSchema,
+  updatedAt: DateTimeLikeSchema,
+});
+
+export const CourseProductDetailTemplateAuditEventSchema = z.object({
+  id: EntityIdSchema,
+  templateId: EntityIdSchema,
+  templateName: z.string().trim().min(2).max(80),
+  productId: EntityIdSchema.optional(),
+  actorId: EntityIdSchema,
+  action: CourseProductDetailTemplateAuditActionSchema,
+  reason: z.string().trim().min(4).max(240),
+  createdAt: DateTimeLikeSchema,
+});
+
+export const CourseProductDetailTemplateListResultSchema = z.object({
+  items: z.array(CourseProductDetailTemplateSchema),
+  summary: z.object({
+    totalCount: z.number().int().nonnegative(),
+    systemCount: z.number().int().nonnegative(),
+    teamCount: z.number().int().nonnegative(),
+    personalCount: z.number().int().nonnegative(),
+  }),
+  auditEvents: z.array(CourseProductDetailTemplateAuditEventSchema).default([]),
+});
+
+export const CourseProductDetailTemplateCreateRequestSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  description: z.string().trim().max(240).optional(),
+  scope: z.enum(["personal"]).default("personal"),
+  sourceProductId: EntityIdSchema.optional(),
+  content: CourseProductDetailTemplateContentSchema,
+  reason: z.string().trim().min(4).max(240),
+});
+
+export const CourseProductDetailTemplateDeleteRequestSchema = z.object({
+  reason: z.string().trim().min(4).max(240),
+});
+
+export const CourseProductDetailTemplateApplyRequestSchema = z.object({
+  productId: EntityIdSchema.optional(),
+  reason: z.string().trim().min(4).max(240),
+});
+
+export const CourseProductDetailTemplateMutationResultSchema = z.object({
+  template: CourseProductDetailTemplateSchema,
+  templates: CourseProductDetailTemplateListResultSchema,
+  auditEvent: CourseProductDetailTemplateAuditEventSchema,
+});
 
 export const CourseProductContentQualityIssueSchema = z.object({
   code: CourseProductContentQualityIssueCodeSchema,
@@ -2545,6 +2659,12 @@ export type CourseProductMerchandisingAssetUsage = z.infer<
 export type CourseProductRichTextBlockType = z.infer<
   typeof CourseProductRichTextBlockTypeSchema
 >;
+export type CourseProductDetailTemplateScope = z.infer<
+  typeof CourseProductDetailTemplateScopeSchema
+>;
+export type CourseProductDetailTemplateAuditAction = z.infer<
+  typeof CourseProductDetailTemplateAuditActionSchema
+>;
 export type CourseProductContentQualityIssueCode = z.infer<
   typeof CourseProductContentQualityIssueCodeSchema
 >;
@@ -2571,6 +2691,33 @@ export type CourseProductDetailContent = z.infer<
 >;
 export type CourseProductContentUpdateRequest = z.infer<
   typeof CourseProductContentUpdateRequestSchema
+>;
+export type CourseProductDetailTemplateBlock = z.infer<
+  typeof CourseProductDetailTemplateBlockSchema
+>;
+export type CourseProductDetailTemplateContent = z.infer<
+  typeof CourseProductDetailTemplateContentSchema
+>;
+export type CourseProductDetailTemplate = z.infer<
+  typeof CourseProductDetailTemplateSchema
+>;
+export type CourseProductDetailTemplateAuditEvent = z.infer<
+  typeof CourseProductDetailTemplateAuditEventSchema
+>;
+export type CourseProductDetailTemplateListResult = z.infer<
+  typeof CourseProductDetailTemplateListResultSchema
+>;
+export type CourseProductDetailTemplateCreateRequest = z.infer<
+  typeof CourseProductDetailTemplateCreateRequestSchema
+>;
+export type CourseProductDetailTemplateDeleteRequest = z.infer<
+  typeof CourseProductDetailTemplateDeleteRequestSchema
+>;
+export type CourseProductDetailTemplateApplyRequest = z.infer<
+  typeof CourseProductDetailTemplateApplyRequestSchema
+>;
+export type CourseProductDetailTemplateMutationResult = z.infer<
+  typeof CourseProductDetailTemplateMutationResultSchema
 >;
 export type CourseProductContentQualityIssue = z.infer<
   typeof CourseProductContentQualityIssueSchema

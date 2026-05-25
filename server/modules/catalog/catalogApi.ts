@@ -38,6 +38,11 @@ import {
   CourseProductContentQualityBatchResultSchema,
   CourseProductContentUpdateRequestSchema,
   CourseProductCreateRequestSchema,
+  CourseProductDetailTemplateApplyRequestSchema,
+  CourseProductDetailTemplateCreateRequestSchema,
+  CourseProductDetailTemplateDeleteRequestSchema,
+  CourseProductDetailTemplateListResultSchema,
+  CourseProductDetailTemplateMutationResultSchema,
   CourseProductDetailContentSchema,
   CourseProductLearningMaterialOperationsReportSchema,
   CourseProductMutationResultSchema,
@@ -79,6 +84,14 @@ import {
   updateCourseProductContent,
   type CourseProductContentStore,
 } from "./courseProductContentStore";
+import {
+  applyCourseProductDetailTemplate,
+  createCourseProductDetailTemplate,
+  deleteCourseProductDetailTemplate,
+  getCourseProductDetailTemplateStore,
+  listCourseProductDetailTemplates,
+  type CourseProductDetailTemplateStore,
+} from "./courseProductDetailTemplateStore";
 import {
   getCourseProductAssetStore,
   getCourseProductAssetFileStorage,
@@ -162,6 +175,12 @@ const CourseProductPublishQueueBatchTaskPreflightResponseSchema =
 const CourseProductContentMutationResponseSchema = ApiResponseSchema(
   CourseProductContentMutationResultSchema
 );
+const CourseProductDetailTemplateListResponseSchema = ApiResponseSchema(
+  CourseProductDetailTemplateListResultSchema
+);
+const CourseProductDetailTemplateMutationResponseSchema = ApiResponseSchema(
+  CourseProductDetailTemplateMutationResultSchema
+);
 const CourseProductAssetListResponseSchema = ApiResponseSchema(
   CourseProductAssetListResultSchema
 );
@@ -224,6 +243,8 @@ type CatalogApiBody =
   | z.infer<typeof CourseProductPublishQueueBatchTaskMutationResponseSchema>
   | z.infer<typeof CourseProductPublishQueueBatchTaskPreflightResponseSchema>
   | z.infer<typeof CourseProductContentMutationResponseSchema>
+  | z.infer<typeof CourseProductDetailTemplateListResponseSchema>
+  | z.infer<typeof CourseProductDetailTemplateMutationResponseSchema>
   | z.infer<typeof CourseProductAssetListResponseSchema>
   | z.infer<typeof CourseProductAssetMutationResponseSchema>
   | z.infer<typeof CourseProductAssetBackfillResponseSchema>
@@ -274,6 +295,8 @@ export const catalogOperationPermissions = {
   list: COURSE_CATALOG_PERMISSIONS.read,
   contentRead: COURSE_CATALOG_PERMISSIONS.read,
   contentQualityRead: COURSE_CATALOG_PERMISSIONS.read,
+  detailTemplateRead: COURSE_CATALOG_PERMISSIONS.read,
+  detailTemplateManage: COURSE_CATALOG_PERMISSIONS.edit,
   publishQueueRead: COURSE_CATALOG_PERMISSIONS.read,
   publishQueueBatchTaskRead: COURSE_CATALOG_PERMISSIONS.review,
   publishQueueBatchTaskManage: COURSE_CATALOG_PERMISSIONS.review,
@@ -637,6 +660,150 @@ export async function getCourseProductContentQualityPayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程商品内容校验失败");
+  }
+}
+
+export async function getCourseProductDetailTemplatesPayload(
+  actor: CatalogOperationsActor | null | undefined,
+  templateStore: CourseProductDetailTemplateStore = getCourseProductDetailTemplateStore()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.detailTemplateRead
+  );
+  if (denied) return denied;
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductDetailTemplateListResponseSchema.parse({
+        ok: true,
+        data: await listCourseProductDetailTemplates({
+          actorId: actor!.id,
+          store: templateStore,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程详情模板读取失败");
+  }
+}
+
+export async function createCourseProductDetailTemplatePayload(
+  actor: CatalogOperationsActor | null | undefined,
+  body: unknown,
+  templateStore: CourseProductDetailTemplateStore = getCourseProductDetailTemplateStore(),
+  now = new Date().toISOString()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.detailTemplateManage
+  );
+  if (denied) return denied;
+
+  const parsed = CourseProductDetailTemplateCreateRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程详情模板参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductDetailTemplateMutationResponseSchema.parse({
+        ok: true,
+        data: await createCourseProductDetailTemplate({
+          actorId: actor!.id,
+          request: parsed.data,
+          store: templateStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程详情模板保存失败");
+  }
+}
+
+export async function deleteCourseProductDetailTemplatePayload(
+  actor: CatalogOperationsActor | null | undefined,
+  templateId: string,
+  body: unknown,
+  templateStore: CourseProductDetailTemplateStore = getCourseProductDetailTemplateStore(),
+  now = new Date().toISOString()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.detailTemplateManage
+  );
+  if (denied) return denied;
+
+  const parsed = CourseProductDetailTemplateDeleteRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程详情模板删除参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductDetailTemplateMutationResponseSchema.parse({
+        ok: true,
+        data: await deleteCourseProductDetailTemplate({
+          actorId: actor!.id,
+          templateId,
+          request: parsed.data,
+          store: templateStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程详情模板删除失败");
+  }
+}
+
+export async function applyCourseProductDetailTemplatePayload(
+  actor: CatalogOperationsActor | null | undefined,
+  templateId: string,
+  body: unknown,
+  templateStore: CourseProductDetailTemplateStore = getCourseProductDetailTemplateStore(),
+  now = new Date().toISOString()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.detailTemplateManage
+  );
+  if (denied) return denied;
+
+  const parsed = CourseProductDetailTemplateApplyRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程详情模板套用参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductDetailTemplateMutationResponseSchema.parse({
+        ok: true,
+        data: await applyCourseProductDetailTemplate({
+          actorId: actor!.id,
+          templateId,
+          request: parsed.data,
+          store: templateStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程详情模板套用失败");
   }
 }
 
@@ -2139,6 +2306,87 @@ export function registerCatalogApi(app: Express) {
   );
 
   app.get(
+    "/api/catalog/admin/course-products/detail-templates",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await getCourseProductDetailTemplatesPayload(
+          session?.user
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程详情模板读取失败")
+        );
+      }
+    }
+  );
+
+  app.post(
+    "/api/catalog/admin/course-products/detail-templates",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await createCourseProductDetailTemplatePayload(
+          session?.user,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程详情模板保存失败")
+        );
+      }
+    }
+  );
+
+  app.delete(
+    "/api/catalog/admin/course-products/detail-templates/:templateId",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await deleteCourseProductDetailTemplatePayload(
+          session?.user,
+          req.params.templateId,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程详情模板删除失败")
+        );
+      }
+    }
+  );
+
+  app.post(
+    "/api/catalog/admin/course-products/detail-templates/:templateId/apply",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await applyCourseProductDetailTemplatePayload(
+          session?.user,
+          req.params.templateId,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程详情模板套用失败")
+        );
+      }
+    }
+  );
+
+  app.get(
     "/api/catalog/admin/course-products/content-quality",
     async (req, res) => {
       try {
@@ -2806,6 +3054,93 @@ export function handleCatalogApiRequest(
         )
       );
 
+    return true;
+  }
+
+  if (url.pathname === "/api/catalog/admin/course-products/detail-templates") {
+    if (req.method !== "GET" && req.method !== "POST") {
+      sendJson(
+        res,
+        405,
+        errorPayload("BAD_REQUEST", "接口仅支持 GET/POST 请求")
+      );
+      return true;
+    }
+
+    if (req.method === "GET") {
+      void getLoginSessionFromRequest(req)
+        .then(session => getCourseProductDetailTemplatesPayload(session?.user))
+        .then(payload => sendJson(res, payload.status, payload.body))
+        .catch(() =>
+          sendJson(
+            res,
+            500,
+            errorPayload("INTERNAL_ERROR", "课程详情模板读取失败")
+          )
+        );
+      return true;
+    }
+
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await createCourseProductDetailTemplatePayload(
+          session?.user,
+          body
+        );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程详情模板保存失败")
+        )
+      );
+    return true;
+  }
+
+  const detailTemplateActionMatch = url.pathname.match(
+    /^\/api\/catalog\/admin\/course-products\/detail-templates\/([^/]+)(?:\/(apply))?$/
+  );
+  if (detailTemplateActionMatch?.[1]) {
+    const templateId = decodeURIComponent(detailTemplateActionMatch[1]);
+    const action = detailTemplateActionMatch[2];
+    const expectedMethod = action === "apply" ? "POST" : "DELETE";
+
+    if (req.method !== expectedMethod) {
+      sendJson(
+        res,
+        405,
+        errorPayload("BAD_REQUEST", `接口仅支持 ${expectedMethod} 请求`)
+      );
+      return true;
+    }
+
+    void readRequestBody(req)
+      .then(async body => {
+        const session = await getLoginSessionFromRequest(req);
+        const payload =
+          action === "apply"
+            ? await applyCourseProductDetailTemplatePayload(
+                session?.user,
+                templateId,
+                body
+              )
+            : await deleteCourseProductDetailTemplatePayload(
+                session?.user,
+                templateId,
+                body
+              );
+        sendJson(res, payload.status, payload.body);
+      })
+      .catch(() =>
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程详情模板操作失败")
+        )
+      );
     return true;
   }
 
@@ -3743,6 +4078,36 @@ function courseProductActionFailure(
     return {
       status: 404,
       body: errorPayload("NOT_FOUND", "课程商品不存在"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_DETAIL_TEMPLATE_NOT_FOUND"
+  ) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "课程详情模板不存在"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_DETAIL_TEMPLATE_SYSTEM_READONLY"
+  ) {
+    return {
+      status: 409,
+      body: errorPayload("CONFLICT", "系统模板不能删除"),
+    };
+  }
+
+  if (
+    err instanceof Error &&
+    err.message === "COURSE_PRODUCT_DETAIL_TEMPLATE_FORBIDDEN"
+  ) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "不能操作其他管理员的个人模板"),
     };
   }
 

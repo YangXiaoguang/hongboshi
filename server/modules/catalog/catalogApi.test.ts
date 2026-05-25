@@ -10,10 +10,13 @@ import {
 } from "./courseProductStore";
 import {
   catalogOperationPermissions,
+  applyCourseProductDetailTemplatePayload,
   applyCourseProductAssetGovernanceActionPayload,
   cancelCourseProductAssetGovernanceBatchTaskPayload,
   createCourseProductPayload,
+  createCourseProductDetailTemplatePayload,
   createCourseProductAssetGovernanceBatchTaskPayload,
+  deleteCourseProductDetailTemplatePayload,
   executeCourseProductAssetGovernanceBatchTaskPayload,
   getCourseProductAdminListPayload,
   getCourseProductAssetBackfillPayload,
@@ -31,6 +34,7 @@ import {
   reviewCourseProductAssetGovernanceBatchTaskPayload,
   getCourseProductContentQualityPayload,
   getCourseProductContentPayload,
+  getCourseProductDetailTemplatesPayload,
   createCourseProductPublishQueueBatchTaskPayload,
   getCourseProductPublishQueueBatchTasksPayload,
   getCourseProductPublishQueueBatchTaskPreflightPayload,
@@ -48,6 +52,7 @@ import {
   uploadCourseProductAssetPayload,
 } from "./catalogApi";
 import { InMemoryCourseProductContentStore } from "./courseProductContentStore";
+import { InMemoryCourseProductDetailTemplateStore } from "./courseProductDetailTemplateStore";
 import {
   InMemoryCourseProductAssetFileStorage,
   InMemoryCourseProductAssetStore,
@@ -105,6 +110,8 @@ describe("catalog admin api payloads", () => {
       list: "catalog:read",
       contentRead: "catalog:read",
       contentQualityRead: "catalog:read",
+      detailTemplateRead: "catalog:read",
+      detailTemplateManage: "catalog:edit",
       publishQueueRead: "catalog:read",
       publishQueueBatchTaskRead: "catalog:review",
       publishQueueBatchTaskManage: "catalog:review",
@@ -257,6 +264,113 @@ describe("catalog admin api payloads", () => {
       deniedReview.status,
       deniedContent.status,
     ]).toEqual([403, 403, 403, 403, 403]);
+  });
+
+  it("serves detail templates and protects template mutations by permission", async () => {
+    const templateStore = new InMemoryCourseProductDetailTemplateStore();
+    const viewer = {
+      id: "catalog_viewer_1",
+      roles: ["catalog_viewer" as const],
+    };
+    const operator = {
+      id: "catalog_operator_1",
+      roles: ["catalog_operator" as const],
+    };
+
+    const listed = await getCourseProductDetailTemplatesPayload(
+      viewer,
+      templateStore
+    );
+    expect(listed.status).toBe(200);
+    expect(
+      listed.body.ok && listed.body.data.summary.systemCount
+    ).toBeGreaterThan(0);
+
+    const denied = await createCourseProductDetailTemplatePayload(
+      viewer,
+      {
+        name: "只读账号模板",
+        scope: "personal",
+        content: {
+          summary: "只读账号不能保存模板。",
+          richTextBlocks: [
+            {
+              id: "block_heading",
+              type: "section_heading",
+              title: "只读账号不能保存",
+            },
+          ],
+        },
+        reason: "只读账号不能保存模板",
+      },
+      templateStore
+    );
+    expect(denied.status).toBe(403);
+
+    const created = await createCourseProductDetailTemplatePayload(
+      operator,
+      {
+        name: "运营成交模板",
+        scope: "personal",
+        sourceProductId: products[0].id,
+        content: {
+          summary: "运营沉淀的课程详情成交模板。",
+          targetAudience: ["需要快速判断适合度的购买用户"],
+          headline: "先看清问题，再开始练习",
+          subheadline: "把适合人群、学习收获和购买须知放在详情页前半段。",
+          sellingPoints: ["适合人群前置", "购买权益清晰"],
+          richTextBlocks: [
+            {
+              id: "block_heading",
+              type: "section_heading",
+              title: "适合先从一个可练习的改变开始",
+            },
+          ],
+        },
+        reason: "保存可复用详情模板",
+      },
+      templateStore,
+      "2026-05-25T10:00:00.000Z"
+    );
+
+    expect(created.status).toBe(200);
+    expect(created.body.ok && created.body.data.auditEvent.action).toBe(
+      "template_create"
+    );
+    const templateId =
+      created.body.ok && created.body.data.template.id
+        ? created.body.data.template.id
+        : "";
+
+    const applied = await applyCourseProductDetailTemplatePayload(
+      operator,
+      templateId,
+      {
+        productId: products[0].id,
+        reason: "套用运营成交模板",
+      },
+      templateStore,
+      "2026-05-25T10:01:00.000Z"
+    );
+    expect(applied.status).toBe(200);
+    expect(applied.body.ok && applied.body.data.auditEvent.action).toBe(
+      "template_apply"
+    );
+
+    const deleted = await deleteCourseProductDetailTemplatePayload(
+      operator,
+      templateId,
+      { reason: "删除运营成交模板" },
+      templateStore,
+      "2026-05-25T10:02:00.000Z"
+    );
+    expect(deleted.status).toBe(200);
+    expect(
+      deleted.body.ok &&
+        deleted.body.data.templates.items.some(
+          template => template.id === templateId
+        )
+    ).toBe(false);
   });
 
   it("serves publish queue aggregation and saves draft tasks without mutating products", async () => {
