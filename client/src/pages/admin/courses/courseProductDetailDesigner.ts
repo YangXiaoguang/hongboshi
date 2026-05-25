@@ -65,6 +65,24 @@ export type DetailContentTemplateContext = {
   type: string;
 };
 
+export type DetailDesignerSavedTemplate = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  summary: string;
+  targetAudienceText: string;
+  headline: string;
+  subheadline: string;
+  sellingPointsText: string;
+  richTextBlocks: H5BlockFormState[];
+};
+
+export type DetailDesignerStorageLike = Pick<
+  Storage,
+  "getItem" | "setItem" | "removeItem"
+>;
+
 export const detailBlockStyleDefaults: DetailBlockStyleState = {
   tone: "plain",
   spacing: "normal",
@@ -73,6 +91,9 @@ export const detailBlockStyleDefaults: DetailBlockStyleState = {
   imageFit: "cover",
   captionMode: "below",
 };
+
+export const detailDesignerSavedTemplateStorageKey =
+  "hongboshi.admin.courseProductDetailTemplates.v1";
 
 export const styleToneOptions: {
   value: DetailBlockStyleState["tone"];
@@ -301,6 +322,195 @@ export function createH5BlockForm(
         : undefined
     ),
   };
+}
+
+export function cloneH5BlockForm(block: H5BlockFormState): H5BlockFormState {
+  return {
+    ...block,
+    id: createDetailDraftId("h5_block_copy"),
+    title: block.title ? `${block.title} 副本` : block.title,
+    question: block.question ? `${block.question} 副本` : block.question,
+  };
+}
+
+export function moveH5BlockForm(
+  blocks: H5BlockFormState[],
+  blockId: string,
+  direction: "up" | "down"
+): H5BlockFormState[] {
+  const currentIndex = blocks.findIndex(block => block.id === blockId);
+  if (currentIndex < 0) return blocks;
+  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= blocks.length) return blocks;
+
+  const nextBlocks = [...blocks];
+  const [currentBlock] = nextBlocks.splice(currentIndex, 1);
+  if (!currentBlock) return blocks;
+  nextBlocks.splice(targetIndex, 0, currentBlock);
+  return nextBlocks;
+}
+
+export function insertH5BlockAfter(
+  blocks: H5BlockFormState[],
+  afterBlockId: string,
+  block: H5BlockFormState
+): H5BlockFormState[] {
+  const currentIndex = blocks.findIndex(item => item.id === afterBlockId);
+  if (currentIndex < 0) return [...blocks, block];
+  return [
+    ...blocks.slice(0, currentIndex + 1),
+    block,
+    ...blocks.slice(currentIndex + 1),
+  ];
+}
+
+export function removeH5BlockForm(
+  blocks: H5BlockFormState[],
+  blockId: string
+): H5BlockFormState[] {
+  return blocks.filter(block => block.id !== blockId);
+}
+
+export function createDetailDesignerSavedTemplate(
+  form: ContentWorkbenchFormState,
+  name: string,
+  options: { id?: string; createdAt?: string; now?: string } = {}
+): DetailDesignerSavedTemplate {
+  const now = options.now ?? new Date().toISOString();
+  const createdAt = options.createdAt ?? now;
+
+  return {
+    id: options.id ?? createDetailDraftId("detail_template"),
+    name: name.trim() || "未命名详情模板",
+    createdAt,
+    updatedAt: now,
+    summary: form.summary,
+    targetAudienceText: form.targetAudienceText,
+    headline: form.headline,
+    subheadline: form.subheadline,
+    sellingPointsText: form.sellingPointsText,
+    richTextBlocks: form.richTextBlocks.map(block => ({
+      ...block,
+      id: createDetailDraftId("template_block"),
+    })),
+  };
+}
+
+export function applyDetailDesignerSavedTemplate(
+  form: ContentWorkbenchFormState,
+  template: DetailDesignerSavedTemplate
+): ContentWorkbenchFormState {
+  return {
+    ...form,
+    summary: template.summary,
+    targetAudienceText: template.targetAudienceText,
+    headline: template.headline,
+    subheadline: template.subheadline,
+    sellingPointsText: template.sellingPointsText,
+    richTextBlocks: template.richTextBlocks.map(block => ({
+      ...block,
+      id: createDetailDraftId("saved_template_block"),
+    })),
+  };
+}
+
+function isH5BlockType(
+  value: unknown
+): value is CourseProductRichTextBlockType {
+  return h5BlockTypeOptions.some(option => option.value === value);
+}
+
+function stringFromUnknown(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function normalizeSavedBlock(value: unknown): H5BlockFormState | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const item = value as Partial<H5BlockFormState>;
+  if (!isH5BlockType(item.type)) return undefined;
+
+  return {
+    id: stringFromUnknown(item.id) || createDetailDraftId("saved_block"),
+    type: item.type,
+    title: stringFromUnknown(item.title),
+    body: stringFromUnknown(item.body),
+    imageUrl: stringFromUnknown(item.imageUrl),
+    altText: stringFromUnknown(item.altText),
+    itemsText: stringFromUnknown(item.itemsText),
+    question: stringFromUnknown(item.question),
+    answer: stringFromUnknown(item.answer),
+    style: detailBlockStyleFromValue(item.style),
+  };
+}
+
+function normalizeSavedTemplate(
+  value: unknown
+): DetailDesignerSavedTemplate | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const item = value as Partial<DetailDesignerSavedTemplate>;
+  const blocks = Array.isArray(item.richTextBlocks)
+    ? item.richTextBlocks
+        .map(block => normalizeSavedBlock(block))
+        .filter((block): block is H5BlockFormState => Boolean(block))
+    : [];
+  if (!item.id || !item.name || blocks.length === 0) return undefined;
+
+  return {
+    id: stringFromUnknown(item.id),
+    name: stringFromUnknown(item.name),
+    createdAt: stringFromUnknown(item.createdAt),
+    updatedAt: stringFromUnknown(item.updatedAt),
+    summary: stringFromUnknown(item.summary),
+    targetAudienceText: stringFromUnknown(item.targetAudienceText),
+    headline: stringFromUnknown(item.headline),
+    subheadline: stringFromUnknown(item.subheadline),
+    sellingPointsText: stringFromUnknown(item.sellingPointsText),
+    richTextBlocks: blocks,
+  };
+}
+
+export function parseDetailDesignerSavedTemplates(
+  value: string | null | undefined
+): DetailDesignerSavedTemplate[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(item => normalizeSavedTemplate(item))
+      .filter((template): template is DetailDesignerSavedTemplate =>
+        Boolean(template)
+      )
+      .slice(0, 12);
+  } catch {
+    return [];
+  }
+}
+
+export function loadDetailDesignerSavedTemplates(
+  storage?: Pick<DetailDesignerStorageLike, "getItem">
+): DetailDesignerSavedTemplate[] {
+  if (!storage) return [];
+  return parseDetailDesignerSavedTemplates(
+    storage.getItem(detailDesignerSavedTemplateStorageKey)
+  );
+}
+
+export function saveDetailDesignerSavedTemplates(
+  storage:
+    | Pick<DetailDesignerStorageLike, "setItem" | "removeItem">
+    | undefined,
+  templates: DetailDesignerSavedTemplate[]
+) {
+  if (!storage) return;
+  if (templates.length === 0) {
+    storage.removeItem(detailDesignerSavedTemplateStorageKey);
+    return;
+  }
+  storage.setItem(
+    detailDesignerSavedTemplateStorageKey,
+    JSON.stringify(templates.slice(0, 12))
+  );
 }
 
 export function createDefaultContentWorkbenchForm(

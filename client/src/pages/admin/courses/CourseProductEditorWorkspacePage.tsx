@@ -9,9 +9,12 @@ import { useLocation, useRoute } from "wouter";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   BadgeCheck,
   ChevronLeft,
   ClipboardCheck,
+  Copy,
   ExternalLink,
   Eye,
   EyeOff,
@@ -72,8 +75,11 @@ import {
 } from "./CourseProductDetailDesignerPanels";
 import {
   applyDetailContentTemplate,
+  applyDetailDesignerSavedTemplate,
+  cloneH5BlockForm,
   createDefaultContentWorkbenchForm,
   createDetailDraftId,
+  createDetailDesignerSavedTemplate,
   createH5BlockForm,
   detailBlockStyleDefaults,
   detailBlockStyleFromValue,
@@ -85,13 +91,20 @@ import {
   detailStyleToneClass,
   h5BlockFormsForSave,
   h5BlockTypeOptions,
+  insertH5BlockAfter,
+  loadDetailDesignerSavedTemplates,
   merchandisingAssetUsageOptions,
+  moveH5BlockForm,
   optionalText,
+  removeH5BlockForm,
+  saveDetailDesignerSavedTemplates,
   splitLines,
   type ContentWorkbenchFormState,
   type DetailBlockStyleState,
   type DetailContentTemplateId,
   type DetailDesignerSelection,
+  type DetailDesignerSavedTemplate,
+  type H5BlockFormState,
   type MediaAssetFormState,
 } from "./courseProductDetailDesigner";
 
@@ -688,6 +701,12 @@ export default function CourseProductEditorWorkspacePage() {
     useState<DetailDesignerSelection>({ kind: "overview" });
   const [activeDetailTemplateId, setActiveDetailTemplateId] =
     useState<DetailContentTemplateId>();
+  const [savedDetailTemplates, setSavedDetailTemplates] = useState<
+    DetailDesignerSavedTemplate[]
+  >([]);
+  const [templateDraftName, setTemplateDraftName] = useState("");
+  const [pendingBlockDelete, setPendingBlockDelete] =
+    useState<H5BlockFormState>();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -834,6 +853,23 @@ export default function CourseProductEditorWorkspacePage() {
       setIsLoading(false);
     }
   }, [courseId]);
+
+  const persistDetailTemplates = useCallback(
+    (templates: DetailDesignerSavedTemplate[]) => {
+      setSavedDetailTemplates(templates);
+      if (typeof window !== "undefined") {
+        saveDetailDesignerSavedTemplates(window.localStorage, templates);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setSavedDetailTemplates(
+      loadDetailDesignerSavedTemplates(window.localStorage)
+    );
+  }, []);
 
   useEffect(() => {
     if (isAuthSyncing || !isLoggedIn || !catalogPermissions.canRead) return;
@@ -1180,6 +1216,149 @@ export default function CourseProductEditorWorkspacePage() {
       setDetailDesignerSelection({ kind: "block", id: nextBlock.id });
     },
     []
+  );
+
+  const moveDesignerBlock = useCallback(
+    (blockId: string, direction: "up" | "down") => {
+      setContentForm(current => ({
+        ...current,
+        richTextBlocks: moveH5BlockForm(
+          current.richTextBlocks,
+          blockId,
+          direction
+        ),
+      }));
+      setIsAdvancedH5Editing(true);
+      setDetailDesignerSelection({ kind: "block", id: blockId });
+      setActiveDetailTemplateId(undefined);
+      setActionError(undefined);
+      setActionMessage(direction === "up" ? "内容块已上移" : "内容块已下移");
+    },
+    []
+  );
+
+  const duplicateDesignerBlock = useCallback(
+    (blockId: string) => {
+      const sourceBlock = contentForm.richTextBlocks.find(
+        block => block.id === blockId
+      );
+      if (!sourceBlock) return;
+      const duplicatedBlock = cloneH5BlockForm(sourceBlock);
+      setContentForm(current => ({
+        ...current,
+        richTextBlocks: insertH5BlockAfter(
+          current.richTextBlocks,
+          blockId,
+          duplicatedBlock
+        ),
+      }));
+      setIsAdvancedH5Editing(true);
+      setDetailDesignerSelection({ kind: "block", id: duplicatedBlock.id });
+      setActiveDetailTemplateId(undefined);
+      setActionError(undefined);
+      setActionMessage("内容块已复制，可继续编辑副本");
+    },
+    [contentForm.richTextBlocks]
+  );
+
+  const requestRemoveDesignerBlock = useCallback((block: H5BlockFormState) => {
+    setPendingBlockDelete(block);
+  }, []);
+
+  const confirmRemoveDesignerBlock = useCallback(() => {
+    if (!pendingBlockDelete) return;
+    const removedBlockId = pendingBlockDelete.id;
+    setContentForm(current => ({
+      ...current,
+      richTextBlocks: removeH5BlockForm(current.richTextBlocks, removedBlockId),
+    }));
+    setIsAdvancedH5Editing(true);
+    setActiveDetailTemplateId(undefined);
+    setDetailDesignerSelection(current =>
+      current.kind === "block" && current.id === removedBlockId
+        ? { kind: "overview" }
+        : current
+    );
+    setPendingBlockDelete(undefined);
+    setActionError(undefined);
+    setActionMessage("内容块已删除，保存图文内容后生效");
+  }, [pendingBlockDelete]);
+
+  const saveCurrentDetailTemplate = useCallback(() => {
+    const trimmedName =
+      templateDraftName.trim() ||
+      `${basicForm.title.trim() || product?.title || "课程详情"}模板`;
+    const existingTemplate = savedDetailTemplates.find(
+      template => template.name === trimmedName
+    );
+    const template = createDetailDesignerSavedTemplate(
+      contentForm,
+      trimmedName,
+      {
+        id: existingTemplate?.id,
+        createdAt: existingTemplate?.createdAt,
+      }
+    );
+    const nextTemplates = [
+      template,
+      ...savedDetailTemplates.filter(item => item.id !== template.id),
+    ].slice(0, 12);
+    persistDetailTemplates(nextTemplates);
+    setTemplateDraftName("");
+    setActionError(undefined);
+    setActionMessage("运营模板草案已保存，可在本机继续套用");
+  }, [
+    basicForm.title,
+    contentForm,
+    persistDetailTemplates,
+    product?.title,
+    savedDetailTemplates,
+    templateDraftName,
+  ]);
+
+  const applySavedDetailTemplate = useCallback(
+    (templateId: string) => {
+      const template = savedDetailTemplates.find(
+        item => item.id === templateId
+      );
+      if (!template) {
+        setActionError("未找到该模板草案");
+        return;
+      }
+      setContentForm(current =>
+        applyDetailDesignerSavedTemplate(current, template)
+      );
+      setIsAdvancedH5Editing(true);
+      setDetailDesignerSelection({ kind: "overview" });
+      setActiveDetailTemplateId(undefined);
+      setReason(current =>
+        normalizedOperationReason(current, "课程商品详情模板草案更新")
+      );
+      setActionError(undefined);
+      setActionMessage(`已套用「${template.name}」，保存图文内容后生效`);
+    },
+    [savedDetailTemplates]
+  );
+
+  const deleteSavedDetailTemplate = useCallback(
+    (templateId: string) => {
+      const template = savedDetailTemplates.find(
+        item => item.id === templateId
+      );
+      if (
+        template &&
+        typeof window !== "undefined" &&
+        !window.confirm(`确认删除模板草案「${template.name}」吗？`)
+      ) {
+        return;
+      }
+      persistDetailTemplates(
+        savedDetailTemplates.filter(item => item.id !== templateId)
+      );
+      setActionError(undefined);
+      setActionMessage("模板草案已删除");
+    },
+    [persistDetailTemplates, savedDetailTemplates]
   );
 
   const uploadMerchandisingAsset = useCallback(async () => {
@@ -2245,6 +2424,9 @@ export default function CourseProductEditorWorkspacePage() {
                     richTextBlocks={contentForm.richTextBlocks}
                     onSelectionChange={setDetailDesignerSelection}
                     onAddBlock={addDesignerBlock}
+                    onMoveBlock={moveDesignerBlock}
+                    onDuplicateBlock={duplicateDesignerBlock}
+                    onRequestRemoveBlock={requestRemoveDesignerBlock}
                   />
 
                   <div className="space-y-5">
@@ -2434,21 +2616,53 @@ export default function CourseProductEditorWorkspacePage() {
                                       </option>
                                     ))}
                                   </select>
-                                  <button
-                                    onClick={() =>
-                                      setContentForm(current => ({
-                                        ...current,
-                                        richTextBlocks:
-                                          current.richTextBlocks.filter(
-                                            item => item.id !== block.id
-                                          ),
-                                      }))
-                                    }
-                                    className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#A65F48] transition hover:bg-[#FFF4EF]"
-                                    aria-label="删除内容块"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
+                                  <div className="ml-auto flex items-center gap-1">
+                                    <button
+                                      onClick={() =>
+                                        moveDesignerBlock(block.id, "up")
+                                      }
+                                      disabled={blockIndex === 0}
+                                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#6F7771] transition hover:border-[#9FB3A9] hover:text-[#243B35] disabled:cursor-not-allowed disabled:opacity-35"
+                                      aria-label="上移内容块"
+                                      title="上移"
+                                    >
+                                      <ArrowUp className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        moveDesignerBlock(block.id, "down")
+                                      }
+                                      disabled={
+                                        blockIndex ===
+                                        contentForm.richTextBlocks.length - 1
+                                      }
+                                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#6F7771] transition hover:border-[#9FB3A9] hover:text-[#243B35] disabled:cursor-not-allowed disabled:opacity-35"
+                                      aria-label="下移内容块"
+                                      title="下移"
+                                    >
+                                      <ArrowDown className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        duplicateDesignerBlock(block.id)
+                                      }
+                                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#6F7771] transition hover:border-[#9FB3A9] hover:text-[#243B35]"
+                                      aria-label="复制内容块"
+                                      title="复制"
+                                    >
+                                      <Copy className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        requestRemoveDesignerBlock(block)
+                                      }
+                                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#A65F48] transition hover:bg-[#FFF4EF]"
+                                      aria-label="删除内容块"
+                                      title="删除"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
                                 </div>
 
                                 {block.type !== "paragraph" &&
@@ -2737,8 +2951,14 @@ export default function CourseProductEditorWorkspacePage() {
                       selectedStyle={selectedDesignerStyle}
                       selectedIsImage={selectedDesignerIsImage}
                       activeTemplateId={activeDetailTemplateId}
+                      savedTemplates={savedDetailTemplates}
+                      templateDraftName={templateDraftName}
                       onStyleChange={updateSelectedDesignerStyle}
                       onTemplateApply={applyDesignerTemplate}
+                      onTemplateDraftNameChange={setTemplateDraftName}
+                      onTemplateSave={saveCurrentDetailTemplate}
+                      onSavedTemplateApply={applySavedDetailTemplate}
+                      onSavedTemplateDelete={deleteSavedDetailTemplate}
                     />
 
                     <div className="h-fit rounded-[28px] border border-[#D8CEC0] bg-[#243B35] p-3">
@@ -3446,6 +3666,55 @@ export default function CourseProductEditorWorkspacePage() {
               </SectionShell>
             )}
           </motion.main>
+        </div>
+      )}
+
+      {pendingBlockDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18231F]/45 px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="w-full max-w-[460px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#FFF4EF] text-[#A65F48]">
+                <Trash2 className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-[#A65F48]">
+                  删除内容块
+                </p>
+                <h2 className="mt-2 text-lg font-semibold text-[#243B35]">
+                  确认删除这个详情区块吗？
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#6F7771]">
+                  {pendingBlockDelete.title ||
+                    pendingBlockDelete.question ||
+                    pendingBlockDelete.body ||
+                    "未命名内容块"}
+                </p>
+                <p className="mt-2 text-xs leading-5 text-[#8A8176]">
+                  删除只会修改当前草稿，点击“保存图文内容”后才会同步到商品详情。
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setPendingBlockDelete(undefined)}
+                className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmRemoveDesignerBlock}
+                className="h-10 rounded-lg bg-[#A65F48] px-4 text-sm font-semibold text-white transition hover:bg-[#8E4E3C]"
+              >
+                确认删除
+              </button>
+            </div>
+          </motion.div>
         </div>
       )}
     </div>

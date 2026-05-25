@@ -1,4 +1,13 @@
-import { FileImage, Layers3, PanelRight } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  FileImage,
+  Layers3,
+  PanelRight,
+  Save,
+  Trash2,
+} from "lucide-react";
 import type { CourseProductRichTextBlockType } from "@shared/domain";
 import {
   detailContentTemplateDefinitions,
@@ -13,6 +22,7 @@ import {
   type DetailBlockStyleState,
   type DetailContentTemplateId,
   type DetailDesignerSelection,
+  type DetailDesignerSavedTemplate,
   type H5BlockFormState,
   type MediaAssetFormState,
 } from "./courseProductDetailDesigner";
@@ -23,12 +33,18 @@ export function CourseProductDetailStructurePanel({
   richTextBlocks,
   onSelectionChange,
   onAddBlock,
+  onMoveBlock,
+  onDuplicateBlock,
+  onRequestRemoveBlock,
 }: {
   selection: DetailDesignerSelection;
   imageAssets: MediaAssetFormState[];
   richTextBlocks: H5BlockFormState[];
   onSelectionChange: (selection: DetailDesignerSelection) => void;
   onAddBlock: (type: CourseProductRichTextBlockType) => void;
+  onMoveBlock: (blockId: string, direction: "up" | "down") => void;
+  onDuplicateBlock: (blockId: string) => void;
+  onRequestRemoveBlock: (block: H5BlockFormState) => void;
 }) {
   return (
     <div className="h-fit rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-3">
@@ -91,26 +107,66 @@ export function CourseProductDetailStructurePanel({
           <p className="px-1 text-xs font-semibold text-[#8A8176]">详情段落</p>
           <div className="mt-2 space-y-2">
             {richTextBlocks.map((block, index) => (
-              <button
+              <div
                 key={block.id}
-                onClick={() =>
-                  onSelectionChange({ kind: "block", id: block.id })
-                }
                 className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${
                   selection.kind === "block" && selection.id === block.id
                     ? "border-[#6F8F83] bg-[#EEF6ED] text-[#243B35]"
                     : "border-[#E1D7C8] bg-white text-[#6F7771] hover:border-[#9FB3A9]"
                 }`}
               >
-                <span className="block font-semibold text-[#243B35]">
-                  {index + 1}.{" "}
-                  {h5BlockTypeOptions.find(item => item.value === block.type)
-                    ?.label ?? "内容块"}
-                </span>
-                <span className="mt-1 line-clamp-1 block">
-                  {block.title || block.question || block.body || "待填写"}
-                </span>
-              </button>
+                <button
+                  onClick={() =>
+                    onSelectionChange({ kind: "block", id: block.id })
+                  }
+                  className="w-full text-left"
+                >
+                  <span className="block font-semibold text-[#243B35]">
+                    {index + 1}.{" "}
+                    {h5BlockTypeOptions.find(item => item.value === block.type)
+                      ?.label ?? "内容块"}
+                  </span>
+                  <span className="mt-1 line-clamp-1 block">
+                    {block.title || block.question || block.body || "待填写"}
+                  </span>
+                </button>
+                <div className="mt-2 flex items-center gap-1">
+                  <button
+                    onClick={() => onMoveBlock(block.id, "up")}
+                    disabled={index === 0}
+                    className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E1D7C8] text-[#6F7771] transition hover:border-[#9FB3A9] hover:text-[#243B35] disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label="上移内容块"
+                    title="上移"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onMoveBlock(block.id, "down")}
+                    disabled={index === richTextBlocks.length - 1}
+                    className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E1D7C8] text-[#6F7771] transition hover:border-[#9FB3A9] hover:text-[#243B35] disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label="下移内容块"
+                    title="下移"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onDuplicateBlock(block.id)}
+                    className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E1D7C8] text-[#6F7771] transition hover:border-[#9FB3A9] hover:text-[#243B35]"
+                    aria-label="复制内容块"
+                    title="复制"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onRequestRemoveBlock(block)}
+                    className="ml-auto flex h-7 w-7 items-center justify-center rounded-md border border-[#E1D7C8] text-[#A65F48] transition hover:bg-[#FFF4EF]"
+                    aria-label="删除内容块"
+                    title="删除"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -147,16 +203,28 @@ export function CourseProductDetailStylePanel({
   selectedStyle,
   selectedIsImage,
   activeTemplateId,
+  savedTemplates,
+  templateDraftName,
   onStyleChange,
   onTemplateApply,
+  onTemplateDraftNameChange,
+  onTemplateSave,
+  onSavedTemplateApply,
+  onSavedTemplateDelete,
 }: {
   selection: DetailDesignerSelection;
   selectedTitle: string;
   selectedStyle: DetailBlockStyleState;
   selectedIsImage: boolean;
   activeTemplateId?: DetailContentTemplateId;
+  savedTemplates: DetailDesignerSavedTemplate[];
+  templateDraftName: string;
   onStyleChange: (patch: Partial<DetailBlockStyleState>) => void;
   onTemplateApply: (templateId: DetailContentTemplateId) => void;
+  onTemplateDraftNameChange: (value: string) => void;
+  onTemplateSave: () => void;
+  onSavedTemplateApply: (templateId: string) => void;
+  onSavedTemplateDelete: (templateId: string) => void;
 }) {
   return (
     <div className="rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-4">
@@ -209,6 +277,66 @@ export function CourseProductDetailStylePanel({
                 </span>
               </button>
             ))}
+          </div>
+          <div className="border-t border-[#E1D7C8] pt-3">
+            <p className="text-xs font-semibold text-[#41524B]">运营模板草案</p>
+            <p className="mt-1 text-xs leading-5 text-[#6F7771]">
+              保存当前 H5
+              区块结构、文案和样式到本地草案库；套用后仍需保存图文内容。
+            </p>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={templateDraftName}
+                onChange={event =>
+                  onTemplateDraftNameChange(event.target.value)
+                }
+                placeholder="例如：情绪课程图文模板"
+                className="h-9 min-w-0 flex-1 rounded-lg border border-[#D8CEC0] bg-white px-3 text-xs outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+              />
+              <button
+                onClick={onTemplateSave}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047]"
+              >
+                <Save className="h-3.5 w-3.5" />
+                保存
+              </button>
+            </div>
+            {savedTemplates.length === 0 ? (
+              <div className="mt-2 rounded-lg border border-dashed border-[#D8CEC0] bg-white px-3 py-3 text-xs leading-5 text-[#6F7771]">
+                暂无草案模板。整理好一个详情结构后可先保存，后续商品可直接套用。
+              </div>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {savedTemplates.map(template => (
+                  <div
+                    key={template.id}
+                    className="rounded-lg border border-[#E1D7C8] bg-white p-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <button
+                        onClick={() => onSavedTemplateApply(template.id)}
+                        className="min-w-0 text-left"
+                      >
+                        <span className="line-clamp-1 block text-xs font-semibold text-[#243B35]">
+                          {template.name}
+                        </span>
+                        <span className="mt-1 block text-[11px] text-[#8A8176]">
+                          {template.richTextBlocks.length} 个区块
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => onSavedTemplateDelete(template.id)}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#A65F48] transition hover:bg-[#FFF4EF]"
+                        aria-label="删除模板草案"
+                        title="删除草案"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       ) : (

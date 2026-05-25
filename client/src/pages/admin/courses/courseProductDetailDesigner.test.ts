@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   applyDetailContentTemplate,
+  applyDetailDesignerSavedTemplate,
+  cloneH5BlockForm,
+  createDetailDesignerSavedTemplate,
   createDefaultContentWorkbenchForm,
+  createH5BlockForm,
   detailBlockStyleDefaults,
   h5BlockFormsForSave,
+  insertH5BlockAfter,
+  moveH5BlockForm,
+  parseDetailDesignerSavedTemplates,
+  removeH5BlockForm,
 } from "./courseProductDetailDesigner";
 
 describe("course product detail designer", () => {
@@ -59,5 +67,69 @@ describe("course product detail designer", () => {
       "https://example.com/showcase.jpg"
     );
     expect(h5BlockFormsForSave(updated, false)).toHaveLength(6);
+  });
+
+  it("moves, duplicates, inserts and removes controlled H5 blocks", () => {
+    const heading = { ...createH5BlockForm("section_heading"), id: "heading" };
+    const paragraph = { ...createH5BlockForm("paragraph"), id: "paragraph" };
+    const note = { ...createH5BlockForm("purchase_note"), id: "note" };
+
+    expect(
+      moveH5BlockForm([heading, paragraph, note], "paragraph", "up").map(
+        block => block.id
+      )
+    ).toEqual(["paragraph", "heading", "note"]);
+    expect(
+      moveH5BlockForm([heading, paragraph, note], "heading", "up").map(
+        block => block.id
+      )
+    ).toEqual(["heading", "paragraph", "note"]);
+
+    const copy = cloneH5BlockForm(paragraph);
+    expect(copy.id).not.toBe(paragraph.id);
+    expect(copy.body).toBe(paragraph.body);
+
+    expect(
+      insertH5BlockAfter([heading, paragraph], "heading", note).map(
+        block => block.id
+      )
+    ).toEqual(["heading", "note", "paragraph"]);
+    expect(
+      removeH5BlockForm([heading, paragraph, note], "paragraph").map(
+        block => block.id
+      )
+    ).toEqual(["heading", "note"]);
+  });
+
+  it("stores and reapplies a local detail template draft safely", () => {
+    const form = createDefaultContentWorkbenchForm("https://example.com/a.jpg");
+    const template = createDetailDesignerSavedTemplate(
+      {
+        ...form,
+        summary: "用于保存的摘要",
+        headline: "保存后的标题",
+        richTextBlocks: [
+          { ...createH5BlockForm("section_heading"), id: "source_heading" },
+          { ...createH5BlockForm("faq"), id: "source_faq" },
+        ],
+      },
+      "情绪课程模板",
+      { id: "template_1", now: "2026-05-25T09:00:00.000Z" }
+    );
+
+    const parsed = parseDetailDesignerSavedTemplates(
+      JSON.stringify([template, { id: "broken" }])
+    );
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.name).toBe("情绪课程模板");
+
+    const applied = applyDetailDesignerSavedTemplate(form, parsed[0]!);
+    expect(applied.summary).toBe("用于保存的摘要");
+    expect(applied.headline).toBe("保存后的标题");
+    expect(applied.richTextBlocks.map(block => block.type)).toEqual([
+      "section_heading",
+      "faq",
+    ]);
+    expect(applied.richTextBlocks[0]?.id).not.toBe("source_heading");
   });
 });
