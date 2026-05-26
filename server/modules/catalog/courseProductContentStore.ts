@@ -202,6 +202,7 @@ export async function updateCourseProductContent({
   const nextContent = CourseProductDetailContentSchema.parse({
     productId,
     summary: request.summary,
+    summaryRichText: request.summaryRichText,
     targetAudience: request.targetAudience,
     merchandising: request.merchandising,
     chapters: request.chapters,
@@ -242,6 +243,9 @@ export async function updateCourseProductContent({
       ...afterContent,
       status: nextProduct.status,
       reviewStatus: nextProduct.reviewStatus,
+      ...(request.sourceTemplate
+        ? { sourceTemplate: request.sourceTemplate }
+        : {}),
     },
     createdAt: now,
   });
@@ -303,9 +307,21 @@ export function buildDefaultCourseProductContent(
   product: CourseProductListItem,
   updatedAt = product.updatedAt
 ): CourseProductDetailContent {
+  const summary = `${product.title}围绕${product.category}主题，帮助学习者把困扰拆成可理解、可练习、可持续复盘的行动路径。`;
+
   return CourseProductDetailContentSchema.parse({
     productId: product.id,
-    summary: `${product.title}围绕${product.category}主题，帮助学习者把困扰拆成可理解、可练习、可持续复盘的行动路径。`,
+    summary,
+    summaryRichText: {
+      blocks: [
+        {
+          id: `${product.id}_summary_1`,
+          type: "paragraph",
+          text: summary,
+          emphasis: false,
+        },
+      ],
+    },
     targetAudience: [
       `希望系统学习${product.category}的用户`,
       "需要低压力练习和清晰步骤的学习者",
@@ -397,6 +413,7 @@ export function buildDefaultCourseProductContent(
 function pickContentAuditFields(content: CourseProductDetailContent) {
   return {
     summary: content.summary,
+    summaryRichTextBlockCount: content.summaryRichText.blocks.length,
     targetAudienceCount: content.targetAudience.length,
     merchandisingHeadline: content.merchandising.headline ?? null,
     merchandisingAssetCount:

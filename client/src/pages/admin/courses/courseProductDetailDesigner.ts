@@ -7,6 +7,7 @@ import type {
   CourseProductDetailTemplateScope,
   CourseProductMerchandisingAssetUsage,
   CourseProductRichTextBlockType,
+  CourseProductSummaryRichTextBlock,
 } from "@shared/domain";
 
 export type DetailBlockStyleState = {
@@ -47,8 +48,16 @@ export type H5BlockFormState = {
   style: DetailBlockStyleState;
 };
 
+export type SummaryRichTextBlockFormState = {
+  id: string;
+  type: CourseProductSummaryRichTextBlock["type"];
+  text: string;
+  emphasis: boolean;
+};
+
 export type ContentWorkbenchFormState = {
   summary: string;
+  summaryRichText: SummaryRichTextBlockFormState[];
   targetAudienceText: string;
   headline: string;
   subheadline: string;
@@ -81,6 +90,7 @@ export type DetailDesignerSavedTemplate = {
   createdAt: string;
   updatedAt: string;
   summary: string;
+  summaryRichText: SummaryRichTextBlockFormState[];
   targetAudienceText: string;
   headline: string;
   subheadline: string;
@@ -287,6 +297,91 @@ export function optionalText(value: string) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+export function createSummaryRichTextBlockForm(
+  type: SummaryRichTextBlockFormState["type"] = "paragraph",
+  patch: Partial<SummaryRichTextBlockFormState> = {}
+): SummaryRichTextBlockFormState {
+  return {
+    id: patch.id ?? createDetailDraftId("summary_block"),
+    type: patch.type ?? type,
+    text: patch.text ?? "",
+    emphasis: patch.emphasis ?? false,
+  };
+}
+
+export function summaryRichTextPlainText(
+  blocks: SummaryRichTextBlockFormState[]
+) {
+  return blocks
+    .map(block => block.text.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function summaryRichTextBlocksFromPlainText(
+  value: string
+): SummaryRichTextBlockFormState[] {
+  return splitLines(value)
+    .slice(0, 8)
+    .map(line => {
+      const isBullet = /^[-•·]\s+/.test(line);
+      const isEmphasis = /^重点[:：]\s*/.test(line);
+      const text = line
+        .replace(/^[-•·]\s+/, "")
+        .replace(/^重点[:：]\s*/, "")
+        .trim();
+
+      return createSummaryRichTextBlockForm(isBullet ? "bullet" : "paragraph", {
+        text,
+        emphasis: isEmphasis,
+      });
+    })
+    .filter(block => block.text.length > 0);
+}
+
+export function normalizeSummaryRichTextBlockForms({
+  blocks,
+  fallbackSummary,
+}: {
+  blocks?: CourseProductSummaryRichTextBlock[];
+  fallbackSummary: string;
+}): SummaryRichTextBlockFormState[] {
+  const normalized =
+    blocks
+      ?.filter(block => block.text.trim().length > 0)
+      .slice(0, 8)
+      .map(block =>
+        createSummaryRichTextBlockForm(block.type, {
+          id: block.id,
+          text: block.text,
+          emphasis: block.emphasis,
+        })
+      ) ?? [];
+
+  return normalized.length > 0
+    ? normalized
+    : summaryRichTextBlocksFromPlainText(fallbackSummary);
+}
+
+export function summaryRichTextBlockFormsForSave(
+  form: ContentWorkbenchFormState
+): CourseProductSummaryRichTextBlock[] {
+  const blocks =
+    form.summaryRichText.length > 0
+      ? form.summaryRichText
+      : summaryRichTextBlocksFromPlainText(form.summary);
+
+  return blocks
+    .map(block => ({
+      id: block.id,
+      type: block.type,
+      text: block.text.trim(),
+      emphasis: block.emphasis,
+    }))
+    .filter(block => block.text.length >= 2)
+    .slice(0, 8);
+}
+
 export function createH5BlockForm(
   type: CourseProductRichTextBlockType
 ): H5BlockFormState {
@@ -405,6 +500,13 @@ export function createDetailDesignerSavedTemplate(
     createdAt,
     updatedAt: now,
     summary: form.summary,
+    summaryRichText: summaryRichTextBlockFormsForSave(form).map(block =>
+      createSummaryRichTextBlockForm(block.type, {
+        id: createDetailDraftId("template_summary_block"),
+        text: block.text,
+        emphasis: block.emphasis,
+      })
+    ),
     targetAudienceText: form.targetAudienceText,
     headline: form.headline,
     subheadline: form.subheadline,
@@ -423,6 +525,15 @@ export function applyDetailDesignerSavedTemplate(
   return {
     ...form,
     summary: template.summary,
+    summaryRichText:
+      template.summaryRichText.length > 0
+        ? template.summaryRichText.map(block =>
+            createSummaryRichTextBlockForm(block.type, {
+              text: block.text,
+              emphasis: block.emphasis,
+            })
+          )
+        : summaryRichTextBlocksFromPlainText(template.summary),
     targetAudienceText: template.targetAudienceText,
     headline: template.headline,
     subheadline: template.subheadline,
@@ -465,6 +576,9 @@ export function applyCourseProductDetailTemplateToForm(
   return {
     ...form,
     summary: template.content.summary,
+    summaryRichText: summaryRichTextBlocksFromPlainText(
+      template.content.summary
+    ),
     targetAudienceText: template.content.targetAudience.join("\n"),
     headline: template.content.headline,
     subheadline: template.content.subheadline,
@@ -607,6 +721,22 @@ function normalizeSavedBlock(value: unknown): H5BlockFormState | undefined {
   };
 }
 
+function normalizeSavedSummaryBlock(
+  value: unknown
+): SummaryRichTextBlockFormState | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const item = value as Partial<SummaryRichTextBlockFormState>;
+  if (item.type !== "paragraph" && item.type !== "bullet") return undefined;
+  const text = stringFromUnknown(item.text).trim();
+  if (!text) return undefined;
+
+  return createSummaryRichTextBlockForm(item.type, {
+    id: stringFromUnknown(item.id) || createDetailDraftId("saved_summary"),
+    text,
+    emphasis: Boolean(item.emphasis),
+  });
+}
+
 function normalizeSavedTemplate(
   value: unknown
 ): DetailDesignerSavedTemplate | undefined {
@@ -617,6 +747,13 @@ function normalizeSavedTemplate(
         .map(block => normalizeSavedBlock(block))
         .filter((block): block is H5BlockFormState => Boolean(block))
     : [];
+  const summaryRichText = Array.isArray(item.summaryRichText)
+    ? item.summaryRichText
+        .map(block => normalizeSavedSummaryBlock(block))
+        .filter((block): block is SummaryRichTextBlockFormState =>
+          Boolean(block)
+        )
+    : [];
   if (!item.id || !item.name || blocks.length === 0) return undefined;
 
   return {
@@ -625,6 +762,10 @@ function normalizeSavedTemplate(
     createdAt: stringFromUnknown(item.createdAt),
     updatedAt: stringFromUnknown(item.updatedAt),
     summary: stringFromUnknown(item.summary),
+    summaryRichText:
+      summaryRichText.length > 0
+        ? summaryRichText
+        : summaryRichTextBlocksFromPlainText(stringFromUnknown(item.summary)),
     targetAudienceText: stringFromUnknown(item.targetAudienceText),
     headline: stringFromUnknown(item.headline),
     subheadline: stringFromUnknown(item.subheadline),
@@ -682,6 +823,7 @@ export function createDefaultContentWorkbenchForm(
 ): ContentWorkbenchFormState {
   return {
     summary: "",
+    summaryRichText: [],
     targetAudienceText: "",
     headline: "",
     subheadline: "",
@@ -924,12 +1066,20 @@ export function applyDetailContentTemplate(
   const instructor = context.instructorName || "讲师";
   const hasAudience = splitLines(form.targetAudienceText).length > 0;
   const hasSellingPoints = splitLines(form.sellingPointsText).length >= 2;
+  const summary =
+    optionalText(form.summary) ??
+    `${title}围绕${category}主题设计，把心理成长内容拆成可理解、可练习、可复盘的学习步骤，适合希望用${type}方式稳定推进自我调整的用户。`;
+  const existingSummaryRichText = summaryRichTextPlainText(
+    form.summaryRichText
+  );
 
   return {
     ...form,
-    summary:
-      optionalText(form.summary) ??
-      `${title}围绕${category}主题设计，把心理成长内容拆成可理解、可练习、可复盘的学习步骤，适合希望用${type}方式稳定推进自我调整的用户。`,
+    summary,
+    summaryRichText:
+      existingSummaryRichText.length > 0
+        ? form.summaryRichText
+        : summaryRichTextBlocksFromPlainText(summary),
     targetAudienceText: hasAudience
       ? form.targetAudienceText
       : [

@@ -23,6 +23,7 @@ describe("course product content store", () => {
 
     expect(content.productId).toBe(product.id);
     expect(content.summary).toContain(product.title);
+    expect(content.summaryRichText.blocks[0]?.text).toContain(product.title);
     expect(content.merchandising.showcaseImageUrl).toBe(product.coverUrl);
     expect(content.merchandising.sellingPoints.length).toBeGreaterThan(1);
     expect(content.merchandising.richTextBlocks).toHaveLength(3);
@@ -53,6 +54,22 @@ describe("course product content store", () => {
       productId: product.id,
       request: {
         summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+        summaryRichText: {
+          blocks: [
+            {
+              id: "summary_block_1",
+              type: "paragraph",
+              text: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+              emphasis: true,
+            },
+            {
+              id: "summary_block_2",
+              type: "bullet",
+              text: "先看清触发点，再进入练习。",
+              emphasis: false,
+            },
+          ],
+        },
         targetAudience: ["希望提升情绪调节能力的学习者"],
         merchandising: {
           headline: "情绪调节成交主视觉",
@@ -85,6 +102,12 @@ describe("course product content store", () => {
           },
         ],
         reason: "课程详情内容完成校对",
+        sourceTemplate: {
+          id: "warm_course",
+          name: "温暖课程型",
+          source: "quick_template",
+          appliedAt: "2026-05-11T11:10:00.000Z",
+        },
       },
       actorId: "operator_1",
       productStore,
@@ -93,11 +116,16 @@ describe("course product content store", () => {
     });
 
     expect(result.content.chapters).toHaveLength(1);
+    expect(result.content.summaryRichText.blocks).toHaveLength(2);
     expect(result.product).toMatchObject({
       status: "unpublished",
       reviewStatus: "not_submitted",
     });
     expect(result.auditEvent.action).toBe("content_update");
+    expect(result.auditEvent.after.sourceTemplate).toMatchObject({
+      id: "warm_course",
+      source: "quick_template",
+    });
   });
 
   it("evaluates content quality for all course products", async () => {

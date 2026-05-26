@@ -298,6 +298,7 @@ export default function CourseDetail() {
     course,
     learningPath,
     merchandising: detailContent?.merchandising,
+    summaryRichText: detailContent?.summaryRichText,
     totalDuration,
     totalLessons,
   });
@@ -1626,6 +1627,45 @@ function CourseDetailAnchorNav({
   );
 }
 
+function CourseSummaryRichText({
+  blocks,
+  fallbackSummary,
+}: {
+  blocks: CourseMerchandisingProfile["summaryRichText"];
+  fallbackSummary: string;
+}) {
+  const visibleBlocks = blocks.filter(block => block.text.trim()).slice(0, 8);
+  if (visibleBlocks.length === 0) {
+    return (
+      <p className="mt-4 text-sm leading-7 text-[#6D746F]">{fallbackSummary}</p>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-2 text-sm leading-7 text-[#6D746F]">
+      {visibleBlocks.map(block =>
+        block.type === "bullet" ? (
+          <p key={block.id} className="flex gap-2">
+            <span className="mt-0.5 text-[#6F8F83]">•</span>
+            <span
+              className={block.emphasis ? "font-semibold text-[#243B35]" : ""}
+            >
+              {block.text}
+            </span>
+          </p>
+        ) : (
+          <p
+            key={block.id}
+            className={block.emphasis ? "font-semibold text-[#243B35]" : ""}
+          >
+            {block.text}
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
 function CourseContentShowcase({
   course,
   locked,
@@ -1691,9 +1731,10 @@ function CourseContentShowcase({
           <h2 className="mt-3 text-3xl font-semibold leading-tight text-[#243B35] sm:text-4xl">
             这门课解决什么、怎么学、买后获得什么
           </h2>
-          <p className="mt-4 text-sm leading-7 text-[#6D746F]">
-            {course.summary}
-          </p>
+          <CourseSummaryRichText
+            blocks={profile.summaryRichText}
+            fallbackSummary={course.summary}
+          />
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
             {profile.proofPoints.map(item => (

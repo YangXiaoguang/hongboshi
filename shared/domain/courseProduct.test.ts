@@ -1375,6 +1375,7 @@ describe("course product domain contract", () => {
 
     expect(parsed.merchandising.imageAssets).toEqual([]);
     expect(parsed.merchandising.richTextBlocks).toEqual([]);
+    expect(parsed.summaryRichText.blocks).toEqual([]);
     expect(parsed.chapters[0]?.materialPlaceholders[0]?.status).toBe("pending");
     expect(parsed.chapters[0]?.materialPlaceholders[0]?.assetId).toBe(
       "asset_emotion_intro_1"
@@ -1396,6 +1397,22 @@ describe("course product domain contract", () => {
   it("validates course detail content update requests", () => {
     const parsed = CourseProductContentUpdateRequestSchema.parse({
       summary: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+      summaryRichText: {
+        blocks: [
+          {
+            id: "summary_block_1",
+            type: "paragraph",
+            text: "适合希望系统学习情绪识别、调节和沟通表达的用户。",
+            emphasis: true,
+          },
+          {
+            id: "summary_block_2",
+            type: "bullet",
+            text: "购买前先看清适配人群和学习路径。",
+            emphasis: false,
+          },
+        ],
+      },
       targetAudience: ["希望提升情绪调节能力的学习者"],
       merchandising: {
         imageAssets: [
@@ -1455,9 +1472,17 @@ describe("course product domain contract", () => {
         },
       ],
       reason: "课程详情内容完成校对",
+      sourceTemplate: {
+        id: "warm_course",
+        name: "温暖课程型",
+        source: "quick_template",
+        appliedAt: "2026-05-11T10:30:00.000Z",
+      },
     });
 
     expect(parsed.chapters[0]?.durationMinutes).toBe(36);
+    expect(parsed.summaryRichText.blocks[0]?.emphasis).toBe(true);
+    expect(parsed.sourceTemplate?.source).toBe("quick_template");
     expect(parsed.merchandising.imageAssets[0]?.style?.captionMode).toBe(
       "overlay"
     );

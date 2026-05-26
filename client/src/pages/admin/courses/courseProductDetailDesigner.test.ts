@@ -12,6 +12,7 @@ import {
   createDetailDesignerSavedTemplate,
   createDefaultContentWorkbenchForm,
   createH5BlockForm,
+  createSummaryRichTextBlockForm,
   detailBlockStyleDefaults,
   detailTemplateAuditActionLabel,
   detailTemplateAuditEventsForTemplate,
@@ -21,6 +22,9 @@ import {
   h5BlockFormsForSave,
   insertH5BlockAfter,
   moveH5BlockForm,
+  summaryRichTextBlockFormsForSave,
+  summaryRichTextBlocksFromPlainText,
+  summaryRichTextPlainText,
   parseDetailDesignerSavedTemplates,
   removeH5BlockForm,
   summarizeCourseProductDetailTemplates,
@@ -32,6 +36,7 @@ describe("course product detail designer", () => {
     const updated = applyDetailContentTemplate(
       {
         ...form,
+        summaryRichText: [createSummaryRichTextBlockForm("paragraph")],
         imageAssets: [
           {
             id: "asset_1",
@@ -65,6 +70,7 @@ describe("course product detail designer", () => {
     );
 
     expect(updated.headline).toContain("情绪管理入门");
+    expect(updated.summaryRichText[0]?.text).toContain("情绪管理入门");
     expect(updated.imageAssets[0]?.style.captionMode).toBe("overlay");
     expect(updated.imageAssets[1]?.style.imageAspectRatio).toBe("long");
     expect(updated.richTextBlocks.map(block => block.type)).toEqual([
@@ -113,12 +119,48 @@ describe("course product detail designer", () => {
     ).toEqual(["heading", "note"]);
   });
 
+  it("converts product summary copy into safe rich text blocks", () => {
+    const blocks = summaryRichTextBlocksFromPlainText(
+      "重点：先看清情绪问题\n- 适合碎片时间练习\n购买后可进入个人中心继续学习"
+    );
+
+    expect(blocks).toMatchObject([
+      {
+        type: "paragraph",
+        text: "先看清情绪问题",
+        emphasis: true,
+      },
+      {
+        type: "bullet",
+        text: "适合碎片时间练习",
+        emphasis: false,
+      },
+      {
+        type: "paragraph",
+        text: "购买后可进入个人中心继续学习",
+        emphasis: false,
+      },
+    ]);
+    expect(summaryRichTextPlainText(blocks)).toContain("碎片时间练习");
+
+    const form = {
+      ...createDefaultContentWorkbenchForm("https://example.com/a.jpg"),
+      summary: "普通摘要会在富文本为空时转换为段落。",
+      summaryRichText: blocks,
+    };
+
+    expect(summaryRichTextBlockFormsForSave(form)).toHaveLength(3);
+    expect(summaryRichTextBlockFormsForSave(form)[0]?.emphasis).toBe(true);
+  });
+
   it("stores and reapplies a local detail template draft safely", () => {
     const form = createDefaultContentWorkbenchForm("https://example.com/a.jpg");
     const template = createDetailDesignerSavedTemplate(
       {
         ...form,
         summary: "用于保存的摘要",
+        summaryRichText:
+          summaryRichTextBlocksFromPlainText("重点：用于保存的摘要"),
         headline: "保存后的标题",
         richTextBlocks: [
           { ...createH5BlockForm("section_heading"), id: "source_heading" },
@@ -137,6 +179,7 @@ describe("course product detail designer", () => {
 
     const applied = applyDetailDesignerSavedTemplate(form, parsed[0]!);
     expect(applied.summary).toBe("用于保存的摘要");
+    expect(applied.summaryRichText[0]?.emphasis).toBe(true);
     expect(applied.headline).toBe("保存后的标题");
     expect(applied.richTextBlocks.map(block => block.type)).toEqual([
       "section_heading",

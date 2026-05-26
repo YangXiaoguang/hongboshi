@@ -76,6 +76,7 @@ type ContentMerchandisingFormState = {
 };
 type ContentFormState = {
   summary: string;
+  summaryRichText: CourseProductDetailContent["summaryRichText"];
   targetAudienceText: string;
   merchandising: ContentMerchandisingFormState;
   chapters: ContentChapterFormState[];
@@ -135,6 +136,7 @@ function contentFormFromDetail(
 ): ContentFormState {
   return {
     summary: content.summary,
+    summaryRichText: content.summaryRichText,
     targetAudienceText: content.targetAudience.join("\n"),
     merchandising: {
       headline: content.merchandising.headline ?? "",
@@ -382,6 +384,7 @@ function isUsableAssetUrl(value: string | undefined) {
 function defaultContentForm(): ContentFormState {
   return {
     summary: "",
+    summaryRichText: { blocks: [] },
     targetAudienceText: "",
     merchandising: {
       headline: "",
@@ -845,6 +848,7 @@ export default function CourseProductContentEditorPage() {
 
     const request: CourseProductContentUpdateRequest = {
       summary: contentForm.summary,
+      summaryRichText: contentForm.summaryRichText,
       targetAudience,
       merchandising: merchandisingFromContentForm(contentForm.merchandising),
       chapters,

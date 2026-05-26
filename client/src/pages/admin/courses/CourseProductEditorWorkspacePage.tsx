@@ -88,6 +88,7 @@ import {
   createDefaultContentWorkbenchForm,
   createDetailDraftId,
   createH5BlockForm,
+  createSummaryRichTextBlockForm,
   detailBlockStyleDefaults,
   detailBlockStyleFromValue,
   detailContentTemplateDefinitions,
@@ -104,12 +105,16 @@ import {
   optionalText,
   removeH5BlockForm,
   splitLines,
+  normalizeSummaryRichTextBlockForms,
+  summaryRichTextBlockFormsForSave,
+  summaryRichTextPlainText,
   type ContentWorkbenchFormState,
   type DetailBlockStyleState,
   type DetailContentTemplateId,
   type DetailDesignerSelection,
   type H5BlockFormState,
   type MediaAssetFormState,
+  type SummaryRichTextBlockFormState,
 } from "./courseProductDetailDesigner";
 
 type WorkspaceStepId = "basic" | "media" | "price" | "content" | "publish";
@@ -129,6 +134,10 @@ type PriceFormState = {
   isFree: boolean;
   memberIncluded: boolean;
 };
+
+type ActiveContentTemplateSource = NonNullable<
+  CourseProductContentUpdateRequest["sourceTemplate"]
+>;
 
 const defaultCoverUrl =
   "https://images.unsplash.com/photo-1499209974431-9dddcece7f88";
@@ -231,6 +240,10 @@ function contentFormFromContent(
 ): ContentWorkbenchFormState {
   return {
     summary: content.summary,
+    summaryRichText: normalizeSummaryRichTextBlockForms({
+      blocks: content.summaryRichText.blocks,
+      fallbackSummary: content.summary,
+    }),
     targetAudienceText: content.targetAudience.join("\n"),
     headline: content.merchandising.headline ?? "",
     subheadline: content.merchandising.subheadline ?? "",
@@ -582,13 +595,17 @@ function buildContentUpdateRequest(
   content: CourseProductDetailContent,
   form: ContentWorkbenchFormState,
   reason: string,
-  useSimpleContentMode: boolean
+  useSimpleContentMode: boolean,
+  sourceTemplate?: CourseProductContentUpdateRequest["sourceTemplate"]
 ): CourseProductContentUpdateRequest | undefined {
   const targetAudience = splitLines(form.targetAudienceText);
   const sellingPoints = splitLines(form.sellingPointsText);
   const richTextBlocks = h5BlockFormsForSave(form, useSimpleContentMode);
   const request = {
     summary: form.summary,
+    summaryRichText: {
+      blocks: summaryRichTextBlockFormsForSave(form),
+    },
     targetAudience,
     merchandising: {
       headline: optionalText(form.headline),
@@ -621,6 +638,7 @@ function buildContentUpdateRequest(
     },
     chapters: content.chapters,
     reason: normalizedOperationReason(reason, defaultContentUpdateReason),
+    ...(sourceTemplate ? { sourceTemplate } : {}),
   };
 
   const parsed = CourseProductContentUpdateRequestSchema.safeParse(request);
@@ -728,6 +746,144 @@ function QuickRichTextField({
         {helper}
       </span>
     </label>
+  );
+}
+
+function SummaryRichTextEditor({
+  label,
+  blocks,
+  fallbackSummary,
+  helper,
+  onChange,
+}: {
+  label: string;
+  blocks: SummaryRichTextBlockFormState[];
+  fallbackSummary: string;
+  helper: string;
+  onChange: (blocks: SummaryRichTextBlockFormState[], summary: string) => void;
+}) {
+  const editableBlocks =
+    blocks.length > 0
+      ? blocks
+      : [
+          createSummaryRichTextBlockForm("paragraph", {
+            id: "summary_rich_text_draft",
+            text: fallbackSummary,
+          }),
+        ];
+
+  const commitBlocks = (nextBlocks: SummaryRichTextBlockFormState[]) => {
+    onChange(nextBlocks, summaryRichTextPlainText(nextBlocks));
+  };
+
+  const updateBlock = (
+    blockId: string,
+    patch: Partial<SummaryRichTextBlockFormState>
+  ) => {
+    commitBlocks(
+      editableBlocks.map(block =>
+        block.id === blockId ? { ...block, ...patch } : block
+      )
+    );
+  };
+
+  const addBlock = (type: SummaryRichTextBlockFormState["type"]) => {
+    commitBlocks([...editableBlocks, createSummaryRichTextBlockForm(type)]);
+  };
+
+  const removeBlock = (blockId: string) => {
+    const nextBlocks = editableBlocks.filter(block => block.id !== blockId);
+    commitBlocks(
+      nextBlocks.length > 0 ? nextBlocks : [createSummaryRichTextBlockForm()]
+    );
+  };
+
+  return (
+    <div className="text-sm font-semibold text-[#41524B]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>{label}</div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => addBlock("paragraph")}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#CFC4B5] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+          >
+            <Type className="h-3.5 w-3.5" />
+            段落
+          </button>
+          <button
+            type="button"
+            onClick={() => addBlock("bullet")}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#CFC4B5] bg-white px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+          >
+            <List className="h-3.5 w-3.5" />
+            要点
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-2 divide-y divide-[#EFE7DA] rounded-lg border border-[#D8CEC0] bg-white">
+        {editableBlocks.slice(0, 8).map((block, index) => (
+          <div key={block.id} className="px-3 py-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <select
+                value={block.type}
+                onChange={event =>
+                  updateBlock(block.id, {
+                    type: event.target
+                      .value as SummaryRichTextBlockFormState["type"],
+                  })
+                }
+                className="h-8 rounded-lg border border-[#D8CEC0] bg-[#FFFDF8] px-2 text-xs font-semibold text-[#41524B] outline-none transition focus:border-[#6F8F83]"
+              >
+                <option value="paragraph">段落</option>
+                <option value="bullet">要点</option>
+              </select>
+              <button
+                type="button"
+                onClick={() =>
+                  updateBlock(block.id, { emphasis: !block.emphasis })
+                }
+                className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
+                  block.emphasis
+                    ? "border-[#6F8F83] bg-[#EEF6ED] text-[#243B35]"
+                    : "border-[#E1D7C8] text-[#6F7771] hover:border-[#9FB3A9]"
+                }`}
+              >
+                <BadgeCheck className="h-3.5 w-3.5" />
+                重点
+              </button>
+              <button
+                type="button"
+                onClick={() => removeBlock(block.id)}
+                className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg border border-[#E7C7B8] text-[#A65F48] transition hover:bg-[#FFF4EF]"
+                aria-label="删除摘要段落"
+                title="删除摘要段落"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <textarea
+              value={block.text}
+              onChange={event =>
+                updateBlock(block.id, { text: event.target.value })
+              }
+              placeholder={
+                index === 0
+                  ? "用 2-4 句话讲清楚适合谁、解决什么问题、买后获得什么。"
+                  : "继续补充一段说明或一个购买决策点。"
+              }
+              className={`min-h-[76px] w-full resize-y border-0 bg-transparent text-sm font-normal leading-6 text-[#394A44] outline-none placeholder:text-[#A39A90] ${
+                block.emphasis ? "font-semibold text-[#243B35]" : ""
+              }`}
+            />
+          </div>
+        ))}
+      </div>
+      <span className="mt-1 block text-xs font-normal leading-5 text-[#8A8176]">
+        {helper}
+      </span>
+    </div>
   );
 }
 
@@ -1028,14 +1184,62 @@ function CourseMobileDetailPreview({
           <p className="text-lg font-semibold leading-7 text-[#243B35]">
             {contentForm.headline || basicForm.title || "详情标题"}
           </p>
-          <p className="text-xs leading-5 text-[#6F7771]">
-            {contentForm.subheadline || contentForm.summary || "商品摘要预览"}
-          </p>
+          {contentForm.subheadline && (
+            <p className="text-xs leading-5 text-[#6F7771]">
+              {contentForm.subheadline}
+            </p>
+          )}
+          <CourseMobileSummaryPreview
+            blocks={contentForm.summaryRichText}
+            fallbackSummary={contentForm.summary || "商品摘要预览"}
+          />
           {previewRichTextBlocks.slice(0, 5).map(block => (
             <CourseMobilePreviewBlock key={block.id} block={block} />
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function CourseMobileSummaryPreview({
+  blocks,
+  fallbackSummary,
+}: {
+  blocks: SummaryRichTextBlockFormState[];
+  fallbackSummary: string;
+}) {
+  const visibleBlocks =
+    blocks.filter(block => block.text.trim()).length > 0
+      ? blocks.filter(block => block.text.trim()).slice(0, 3)
+      : [
+          createSummaryRichTextBlockForm("paragraph", {
+            id: "summary_preview_fallback",
+            text: fallbackSummary,
+          }),
+        ];
+
+  return (
+    <div className="space-y-1.5 text-xs leading-5 text-[#6F7771]">
+      {visibleBlocks.map(block =>
+        block.type === "bullet" ? (
+          <p key={block.id} className="flex gap-1.5">
+            <span className="text-[#6F8F83]">•</span>
+            <span
+              className={block.emphasis ? "font-semibold text-[#243B35]" : ""}
+            >
+              {block.text}
+            </span>
+          </p>
+        ) : (
+          <p
+            key={block.id}
+            className={block.emphasis ? "font-semibold text-[#243B35]" : ""}
+          >
+            {block.text}
+          </p>
+        )
+      )}
     </div>
   );
 }
@@ -1142,6 +1346,8 @@ export default function CourseProductEditorWorkspacePage() {
     useState<DetailDesignerSelection>({ kind: "overview" });
   const [activeDetailTemplateId, setActiveDetailTemplateId] =
     useState<DetailContentTemplateId>();
+  const [activeContentTemplateSource, setActiveContentTemplateSource] =
+    useState<ActiveContentTemplateSource>();
   const [savedDetailTemplates, setSavedDetailTemplates] = useState<
     CourseProductDetailTemplate[]
   >([]);
@@ -1290,6 +1496,7 @@ export default function CourseProductEditorWorkspacePage() {
       setIsAdvancedDesignerOpen(false);
       setDetailDesignerSelection({ kind: "overview" });
       setActiveDetailTemplateId(undefined);
+      setActiveContentTemplateSource(undefined);
       setServerContentQuality(
         evaluateCourseProductContentQuality(loadedContent)
       );
@@ -1478,7 +1685,8 @@ export default function CourseProductEditorWorkspacePage() {
         content,
         contentForm,
         reason,
-        !isAdvancedH5Editing
+        !isAdvancedH5Editing,
+        activeContentTemplateSource
       );
       if (!request) {
         setActionError("请检查商品摘要、适合人群、卖点和图片是否填写完整");
@@ -1497,6 +1705,7 @@ export default function CourseProductEditorWorkspacePage() {
         setProduct(result.product);
         setContent(result.content);
         setContentForm(contentFormFromContent(result.content));
+        setActiveContentTemplateSource(undefined);
         setServerContentQuality(
           evaluateCourseProductContentQuality(result.content)
         );
@@ -1513,6 +1722,7 @@ export default function CourseProductEditorWorkspacePage() {
       catalogPermissions.canEdit,
       content,
       contentForm,
+      activeContentTemplateSource,
       isAdvancedH5Editing,
       product,
       reason,
@@ -1606,14 +1816,20 @@ export default function CourseProductEditorWorkspacePage() {
       setIsAdvancedH5Editing(true);
       setDetailDesignerSelection({ kind: "overview" });
       setActiveDetailTemplateId(templateId);
-      setReason(current =>
-        normalizedOperationReason(current, "课程商品详情模板更新")
-      );
-      setActionError(undefined);
       const templateLabel =
         detailContentTemplateDefinitions.find(
           template => template.id === templateId
         )?.label ?? "详情模板";
+      setActiveContentTemplateSource({
+        id: templateId,
+        name: templateLabel,
+        source: "quick_template",
+        appliedAt: new Date().toISOString(),
+      });
+      setReason(current =>
+        normalizedOperationReason(current, "课程商品详情模板更新")
+      );
+      setActionError(undefined);
       setActionMessage(`已套用${templateLabel}，可继续局部调整后保存`);
     },
     [detailTemplateContext]
@@ -1818,6 +2034,12 @@ export default function CourseProductEditorWorkspacePage() {
         setIsAdvancedH5Editing(true);
         setDetailDesignerSelection({ kind: "overview" });
         setActiveDetailTemplateId(undefined);
+        setActiveContentTemplateSource({
+          id: result.template.id,
+          name: result.template.name,
+          source: "server_template",
+          appliedAt: new Date().toISOString(),
+        });
         setReason(current =>
           normalizedOperationReason(current, "课程商品详情模板更新")
         );
@@ -3018,18 +3240,18 @@ export default function CourseProductEditorWorkspacePage() {
                       </div>
                     </div>
 
-                    <QuickRichTextField
+                    <SummaryRichTextEditor
                       label="商品摘要"
-                      value={contentForm.summary}
-                      onChange={value =>
+                      blocks={contentForm.summaryRichText}
+                      fallbackSummary={contentForm.summary}
+                      onChange={(blocks, summary) =>
                         setContentForm(current => ({
                           ...current,
-                          summary: value,
+                          summary,
+                          summaryRichText: blocks,
                         }))
                       }
-                      placeholder="用 2-4 句话讲清楚这门课适合谁、解决什么问题、买后能获得什么。"
-                      helper="支持换行和要点，前台会按安全文本渲染。"
-                      minHeightClass="min-h-[132px]"
+                      helper="支持段落、要点和重点样式，前台会按白名单安全渲染。"
                     />
 
                     <div className="grid gap-4 md:grid-cols-2">
@@ -3165,19 +3387,19 @@ export default function CourseProductEditorWorkspacePage() {
                         </button>
                       </div>
 
-                      <label className="block text-sm font-semibold text-[#41524B]">
-                        商品摘要
-                        <textarea
-                          value={contentForm.summary}
-                          onChange={event =>
-                            setContentForm(current => ({
-                              ...current,
-                              summary: event.target.value,
-                            }))
-                          }
-                          className="mt-2 min-h-[96px] w-full rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-sm font-normal leading-6 outline-none transition focus:border-[#6F8F83]"
-                        />
-                      </label>
+                      <SummaryRichTextEditor
+                        label="商品摘要"
+                        blocks={contentForm.summaryRichText}
+                        fallbackSummary={contentForm.summary}
+                        onChange={(blocks, summary) =>
+                          setContentForm(current => ({
+                            ...current,
+                            summary,
+                            summaryRichText: blocks,
+                          }))
+                        }
+                        helper="高级装修里仍复用同一份摘要结构，避免默认编辑与高级编辑不一致。"
+                      />
 
                       <div className="grid gap-4 md:grid-cols-2">
                         <label className="block text-sm font-semibold text-[#41524B]">

@@ -5,6 +5,8 @@ import type {
   CourseProductMerchandisingAsset,
   CourseProductMerchandisingContent,
   CourseProductRichTextBlock,
+  CourseProductSummaryRichText,
+  CourseProductSummaryRichTextBlock,
 } from "@shared/domain";
 import type { CourseLearningPath } from "./coursePath";
 
@@ -32,6 +34,7 @@ export interface CourseMerchandisingProfile {
   proofPoints: CourseMerchandisingProof[];
   sellingPoints: string[];
   visualAssets: CourseMerchandisingVisualAsset[];
+  summaryRichText: CourseProductSummaryRichTextBlock[];
   richTextBlocks: CourseProductRichTextBlock[];
 }
 
@@ -140,12 +143,14 @@ export function createCourseMerchandisingProfile({
   course,
   learningPath,
   merchandising,
+  summaryRichText,
   totalDuration,
   totalLessons,
 }: {
   course: CourseDetail;
   learningPath: CourseLearningPath;
   merchandising?: CourseProductMerchandisingContent;
+  summaryRichText?: CourseProductSummaryRichText;
   totalDuration: number;
   totalLessons: number;
 }): CourseMerchandisingProfile {
@@ -182,6 +187,10 @@ export function createCourseMerchandisingProfile({
     merchandising?.richTextBlocks
       .filter(isRenderableRichTextBlock)
       .slice(0, 12) ?? [];
+  const safeSummaryRichText =
+    summaryRichText?.blocks
+      .filter(block => block.text.trim().length > 0)
+      .slice(0, 8) ?? [];
 
   return {
     promise: merchandising?.headline ?? categoryPromises[course.category],
@@ -218,6 +227,7 @@ export function createCourseMerchandisingProfile({
     ],
     sellingPoints,
     visualAssets,
+    summaryRichText: safeSummaryRichText,
     richTextBlocks,
   };
 }

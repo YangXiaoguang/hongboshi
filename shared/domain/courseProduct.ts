@@ -1983,6 +1983,19 @@ export const CourseProductRichTextBlockSchema = z
     }
   });
 
+export const CourseProductSummaryRichTextBlockSchema = z.object({
+  id: EntityIdSchema,
+  type: z.enum(["paragraph", "bullet"]),
+  text: z.string().trim().min(2).max(240),
+  emphasis: z.boolean().default(false),
+});
+
+export const CourseProductSummaryRichTextSchema = z
+  .object({
+    blocks: z.array(CourseProductSummaryRichTextBlockSchema).max(8).default([]),
+  })
+  .default({ blocks: [] });
+
 export const CourseProductMerchandisingContentSchema = z
   .object({
     headline: z.string().trim().min(6).max(100).optional(),
@@ -2011,10 +2024,18 @@ export const CourseProductMerchandisingContentSchema = z
 export const CourseProductDetailContentSchema = z.object({
   productId: EntityIdSchema,
   summary: z.string().trim().min(20).max(500),
+  summaryRichText: CourseProductSummaryRichTextSchema,
   targetAudience: z.array(z.string().trim().min(2).max(80)).min(1).max(8),
   merchandising: CourseProductMerchandisingContentSchema,
   chapters: z.array(CourseProductContentChapterSchema).min(1).max(60),
   updatedAt: DateTimeLikeSchema,
+});
+
+export const CourseProductContentTemplateSourceSchema = z.object({
+  id: EntityIdSchema,
+  name: z.string().trim().min(2).max(80),
+  source: z.enum(["quick_template", "server_template"]),
+  appliedAt: DateTimeLikeSchema,
 });
 
 export const CourseProductContentUpdateRequestSchema =
@@ -2023,6 +2044,7 @@ export const CourseProductContentUpdateRequestSchema =
     updatedAt: true,
   }).extend({
     reason: z.string().trim().min(4).max(240),
+    sourceTemplate: CourseProductContentTemplateSourceSchema.optional(),
   });
 
 export const CourseProductDetailTemplateBlockSchema = z.object({
@@ -2705,6 +2727,12 @@ export type CourseProductMerchandisingAsset = z.infer<
 export type CourseProductRichTextBlock = z.infer<
   typeof CourseProductRichTextBlockSchema
 >;
+export type CourseProductSummaryRichTextBlock = z.infer<
+  typeof CourseProductSummaryRichTextBlockSchema
+>;
+export type CourseProductSummaryRichText = z.infer<
+  typeof CourseProductSummaryRichTextSchema
+>;
 export type CourseProductMerchandisingContent = z.infer<
   typeof CourseProductMerchandisingContentSchema
 >;
@@ -2713,6 +2741,9 @@ export type CourseProductDetailContent = z.infer<
 >;
 export type CourseProductContentUpdateRequest = z.infer<
   typeof CourseProductContentUpdateRequestSchema
+>;
+export type CourseProductContentTemplateSource = z.infer<
+  typeof CourseProductContentTemplateSourceSchema
 >;
 export type CourseProductDetailTemplateBlock = z.infer<
   typeof CourseProductDetailTemplateBlockSchema
