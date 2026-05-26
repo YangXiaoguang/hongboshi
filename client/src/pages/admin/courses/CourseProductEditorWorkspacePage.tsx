@@ -89,6 +89,7 @@ import {
   createDetailDraftId,
   createH5BlockForm,
   createSummaryRichTextBlockForm,
+  createSummaryRichTextSuggestion,
   detailBlockStyleDefaults,
   detailBlockStyleFromValue,
   detailContentTemplateDefinitions,
@@ -754,14 +755,19 @@ function SummaryRichTextEditor({
   blocks,
   fallbackSummary,
   helper,
+  onGenerateSuggestion,
   onChange,
 }: {
   label: string;
   blocks: SummaryRichTextBlockFormState[];
   fallbackSummary: string;
   helper: string;
+  onGenerateSuggestion: () => SummaryRichTextBlockFormState[];
   onChange: (blocks: SummaryRichTextBlockFormState[], summary: string) => void;
 }) {
+  const [suggestedBlocks, setSuggestedBlocks] = useState<
+    SummaryRichTextBlockFormState[]
+  >([]);
   const editableBlocks =
     blocks.length > 0
       ? blocks
@@ -791,6 +797,25 @@ function SummaryRichTextEditor({
     commitBlocks([...editableBlocks, createSummaryRichTextBlockForm(type)]);
   };
 
+  const applySuggestedBlocks = () => {
+    if (suggestedBlocks.length === 0) return;
+    const writtenBlocks = editableBlocks.filter(block => block.text.trim());
+    const nextBlocks = (
+      writtenBlocks.length > 0
+        ? [...writtenBlocks, ...suggestedBlocks]
+        : suggestedBlocks
+    )
+      .slice(0, 8)
+      .map(block =>
+        createSummaryRichTextBlockForm(block.type, {
+          text: block.text,
+          emphasis: block.emphasis,
+        })
+      );
+    commitBlocks(nextBlocks);
+    setSuggestedBlocks([]);
+  };
+
   const removeBlock = (blockId: string) => {
     const nextBlocks = editableBlocks.filter(block => block.id !== blockId);
     commitBlocks(
@@ -803,6 +828,14 @@ function SummaryRichTextEditor({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>{label}</div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setSuggestedBlocks(onGenerateSuggestion())}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#243B35] px-2.5 text-xs font-semibold text-white transition hover:bg-[#315047]"
+          >
+            <Target className="h-3.5 w-3.5" />
+            生成建议
+          </button>
           <button
             type="button"
             onClick={() => addBlock("paragraph")}
@@ -822,23 +855,66 @@ function SummaryRichTextEditor({
         </div>
       </div>
 
+      {suggestedBlocks.length > 0 && (
+        <div className="mt-2 rounded-lg border border-[#D8CEC0] bg-[#FBF7EF] px-3 py-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-[#243B35]">摘要建议</p>
+              <p className="mt-1 text-xs font-normal leading-5 text-[#7B817C]">
+                仅生成草稿建议，不会自动覆盖当前摘要。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={applySuggestedBlocks}
+              className="inline-flex h-8 shrink-0 items-center justify-center rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+            >
+              {summaryRichTextPlainText(editableBlocks)
+                ? "追加建议"
+                : "填入摘要"}
+            </button>
+          </div>
+          <div className="mt-3 grid gap-2">
+            {suggestedBlocks.map(block => (
+              <div
+                key={block.id}
+                className="rounded-lg border border-[#E5DCCF] bg-white px-3 py-2 text-xs leading-5 text-[#41524B]"
+              >
+                <span className="mr-2 font-semibold text-[#6F8F83]">
+                  {block.type === "bullet" ? "要点" : "说明"}
+                </span>
+                <span className={block.emphasis ? "font-semibold" : ""}>
+                  {block.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-2 divide-y divide-[#EFE7DA] rounded-lg border border-[#D8CEC0] bg-white">
         {editableBlocks.slice(0, 8).map((block, index) => (
           <div key={block.id} className="px-3 py-3">
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <select
-                value={block.type}
-                onChange={event =>
+              <span className="text-xs font-semibold text-[#8A8176]">
+                摘要 {index + 1}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
                   updateBlock(block.id, {
-                    type: event.target
-                      .value as SummaryRichTextBlockFormState["type"],
+                    type: block.type === "paragraph" ? "bullet" : "paragraph",
                   })
                 }
-                className="h-8 rounded-lg border border-[#D8CEC0] bg-[#FFFDF8] px-2 text-xs font-semibold text-[#41524B] outline-none transition focus:border-[#6F8F83]"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8CEC0] bg-[#FFFDF8] px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
               >
-                <option value="paragraph">段落</option>
-                <option value="bullet">要点</option>
-              </select>
+                {block.type === "paragraph" ? (
+                  <Type className="h-3.5 w-3.5" />
+                ) : (
+                  <List className="h-3.5 w-3.5" />
+                )}
+                {block.type === "paragraph" ? "说明" : "要点"}
+              </button>
               <button
                 type="button"
                 onClick={() =>
@@ -1463,6 +1539,10 @@ export default function CourseProductEditorWorkspacePage() {
       product?.title,
       product?.type,
     ]
+  );
+  const generateSummarySuggestion = useCallback(
+    () => createSummaryRichTextSuggestion(contentForm, detailTemplateContext),
+    [contentForm, detailTemplateContext]
   );
 
   const loadProduct = useCallback(async () => {
@@ -3244,6 +3324,7 @@ export default function CourseProductEditorWorkspacePage() {
                       label="商品摘要"
                       blocks={contentForm.summaryRichText}
                       fallbackSummary={contentForm.summary}
+                      onGenerateSuggestion={generateSummarySuggestion}
                       onChange={(blocks, summary) =>
                         setContentForm(current => ({
                           ...current,
@@ -3391,6 +3472,7 @@ export default function CourseProductEditorWorkspacePage() {
                         label="商品摘要"
                         blocks={contentForm.summaryRichText}
                         fallbackSummary={contentForm.summary}
+                        onGenerateSuggestion={generateSummarySuggestion}
                         onChange={(blocks, summary) =>
                           setContentForm(current => ({
                             ...current,

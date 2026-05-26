@@ -382,6 +382,38 @@ export function summaryRichTextBlockFormsForSave(
     .slice(0, 8);
 }
 
+export function createSummaryRichTextSuggestion(
+  form: ContentWorkbenchFormState,
+  context: DetailContentTemplateContext
+): SummaryRichTextBlockFormState[] {
+  const title = context.title || "这门课程";
+  const category = context.category || "心理成长";
+  const type = context.type || "课程";
+  const audience = splitLines(form.targetAudienceText);
+  const sellingPoints = splitLines(form.sellingPointsText);
+  const primaryAudience =
+    audience[0] ?? `正在关注${category}议题，希望先用${type}建立清晰认识的人`;
+  const primaryPoint =
+    sellingPoints[0] ?? `围绕${category}的常见场景展开，先看清问题再练习`;
+  const secondaryPoint =
+    sellingPoints[1] ?? "购买后可在个人中心查看课程权益、学习进度和配套资料";
+
+  return [
+    createSummaryRichTextBlockForm("paragraph", {
+      text:
+        optionalText(form.headline) ??
+        `${title}围绕${category}主题，帮助学习者把困扰拆成可理解、可练习、可复盘的学习路径。`,
+      emphasis: true,
+    }),
+    createSummaryRichTextBlockForm("bullet", {
+      text: `适合${primaryAudience.replace(/^适合/, "")}`,
+    }),
+    createSummaryRichTextBlockForm("bullet", {
+      text: `${primaryPoint}；${secondaryPoint}`,
+    }),
+  ];
+}
+
 export function createH5BlockForm(
   type: CourseProductRichTextBlockType
 ): H5BlockFormState {

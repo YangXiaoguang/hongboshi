@@ -12,6 +12,7 @@ import {
   createDetailDesignerSavedTemplate,
   createDefaultContentWorkbenchForm,
   createH5BlockForm,
+  createSummaryRichTextSuggestion,
   createSummaryRichTextBlockForm,
   detailBlockStyleDefaults,
   detailTemplateAuditActionLabel,
@@ -151,6 +152,41 @@ describe("course product detail designer", () => {
 
     expect(summaryRichTextBlockFormsForSave(form)).toHaveLength(3);
     expect(summaryRichTextBlockFormsForSave(form)[0]?.emphasis).toBe(true);
+  });
+
+  it("creates course summary suggestions without mutating written summary", () => {
+    const form = {
+      ...createDefaultContentWorkbenchForm("https://example.com/a.jpg"),
+      summary: "人工已经写好的商品摘要。",
+      summaryRichText:
+        summaryRichTextBlocksFromPlainText("人工已经写好的商品摘要。"),
+      targetAudienceText: "需要低压力练习的人",
+      sellingPointsText: "章节结构清晰\n购买后资料统一管理",
+      headline: "情绪管理课程：先看清问题",
+    };
+    const suggestion = createSummaryRichTextSuggestion(form, {
+      title: "情绪管理入门",
+      instructorName: "李静博士",
+      category: "情绪管理",
+      type: "录播",
+    });
+
+    expect(suggestion).toMatchObject([
+      {
+        type: "paragraph",
+        text: "情绪管理课程：先看清问题",
+        emphasis: true,
+      },
+      {
+        type: "bullet",
+        text: "适合需要低压力练习的人",
+      },
+      {
+        type: "bullet",
+        text: "章节结构清晰；购买后资料统一管理",
+      },
+    ]);
+    expect(form.summaryRichText[0]?.text).toBe("人工已经写好的商品摘要。");
   });
 
   it("stores and reapplies a local detail template draft safely", () => {
