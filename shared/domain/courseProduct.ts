@@ -263,6 +263,8 @@ export const COURSE_PRODUCT_DETAIL_TEMPLATE_AUDIT_ACTIONS = [
   "template_delete",
   "template_apply",
   "template_share_request",
+  "template_share_approve",
+  "template_share_reject",
 ] as const;
 
 export const COURSE_PRODUCT_DETAIL_TEMPLATE_SHARE_STATUSES = [
@@ -2093,6 +2095,10 @@ export const CourseProductDetailTemplateSchema = z.object({
   sourceProductId: EntityIdSchema.optional(),
   teamShareRequestedBy: EntityIdSchema.optional(),
   teamShareRequestedAt: DateTimeLikeSchema.optional(),
+  teamShareReviewedBy: EntityIdSchema.optional(),
+  teamShareReviewedAt: DateTimeLikeSchema.optional(),
+  teamShareReviewReason: z.string().trim().max(240).optional(),
+  teamSharedTemplateId: EntityIdSchema.optional(),
   content: CourseProductDetailTemplateContentSchema,
   createdAt: DateTimeLikeSchema,
   updatedAt: DateTimeLikeSchema,
@@ -2140,6 +2146,11 @@ export const CourseProductDetailTemplateApplyRequestSchema = z.object({
 });
 
 export const CourseProductDetailTemplateShareRequestSchema = z.object({
+  reason: z.string().trim().min(4).max(240),
+});
+
+export const CourseProductDetailTemplateShareReviewRequestSchema = z.object({
+  action: z.enum(["approve", "reject"]),
   reason: z.string().trim().min(4).max(240),
 });
 
@@ -2771,6 +2782,9 @@ export type CourseProductDetailTemplateApplyRequest = z.infer<
 >;
 export type CourseProductDetailTemplateShareRequest = z.infer<
   typeof CourseProductDetailTemplateShareRequestSchema
+>;
+export type CourseProductDetailTemplateShareReviewRequest = z.infer<
+  typeof CourseProductDetailTemplateShareReviewRequestSchema
 >;
 export type CourseProductDetailTemplateMutationResult = z.infer<
   typeof CourseProductDetailTemplateMutationResultSchema

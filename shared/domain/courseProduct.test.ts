@@ -37,6 +37,9 @@ import {
   CourseProductBasicInfoUpdateRequestSchema,
   CourseProductContentUpdateRequestSchema,
   CourseProductDetailContentSchema,
+  CourseProductDetailTemplateAuditEventSchema,
+  CourseProductDetailTemplateShareReviewRequestSchema,
+  CourseProductDetailTemplateSchema,
   CourseProductLearningMaterialOperationsReportSchema,
   CourseProductListQuerySchema,
   CourseProductListResultSchema,
@@ -1511,6 +1514,62 @@ describe("course product domain contract", () => {
             durationMinutes: 0,
           },
         ],
+      }).success
+    ).toBe(false);
+  });
+
+  it("validates course detail template share review contracts", () => {
+    const parsedTemplate = CourseProductDetailTemplateSchema.parse({
+      id: "template_pending_1",
+      name: "情绪课程共享模板",
+      scope: "personal",
+      shareStatus: "pending_team_review",
+      ownerId: "operator_1",
+      teamShareRequestedBy: "operator_1",
+      teamShareRequestedAt: "2026-05-25T10:00:00.000Z",
+      teamShareReviewedBy: "reviewer_1",
+      teamShareReviewedAt: "2026-05-25T10:05:00.000Z",
+      teamShareReviewReason: "审核通过团队共享",
+      teamSharedTemplateId: "team_template_1",
+      content: {
+        summary: "适合团队复用的课程成交详情模板。",
+        targetAudience: ["需要快速判断课程适配度的用户"],
+        headline: "先看清问题，再开始练习",
+        subheadline: "把适合人群、学习收获和购买须知放在详情页前半段。",
+        sellingPoints: ["适合人群清晰", "购买权益明确"],
+        richTextBlocks: [
+          {
+            id: "block_heading",
+            type: "section_heading",
+            title: "适合先从一个可练习的改变开始",
+          },
+        ],
+      },
+      createdAt: "2026-05-25T10:00:00.000Z",
+      updatedAt: "2026-05-25T10:05:00.000Z",
+    });
+    const parsedRequest =
+      CourseProductDetailTemplateShareReviewRequestSchema.parse({
+        action: "approve",
+        reason: "审核通过团队共享",
+      });
+    const parsedAudit = CourseProductDetailTemplateAuditEventSchema.parse({
+      id: "audit_template_share_approve",
+      templateId: parsedTemplate.id,
+      templateName: parsedTemplate.name,
+      actorId: "reviewer_1",
+      action: "template_share_approve",
+      reason: parsedRequest.reason,
+      createdAt: "2026-05-25T10:05:00.000Z",
+    });
+
+    expect(parsedRequest.action).toBe("approve");
+    expect(parsedTemplate.teamSharedTemplateId).toBe("team_template_1");
+    expect(parsedAudit.action).toBe("template_share_approve");
+    expect(
+      CourseProductDetailTemplateShareReviewRequestSchema.safeParse({
+        action: "archive",
+        reason: "非法审核动作",
       }).success
     ).toBe(false);
   });

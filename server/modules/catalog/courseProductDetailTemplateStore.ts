@@ -7,6 +7,7 @@ import {
   CourseProductDetailTemplateCreateRequestSchema,
   CourseProductDetailTemplateListResultSchema,
   CourseProductDetailTemplateMutationResultSchema,
+  CourseProductDetailTemplateShareReviewRequestSchema,
   CourseProductDetailTemplateShareRequestSchema,
   CourseProductDetailTemplateSchema,
   type CourseProductDetailTemplate,
@@ -16,6 +17,7 @@ import {
   type CourseProductDetailTemplateCreateRequest,
   type CourseProductDetailTemplateListResult,
   type CourseProductDetailTemplateMutationResult,
+  type CourseProductDetailTemplateShareReviewRequest,
   type CourseProductDetailTemplateShareRequest,
 } from "../../../shared/domain";
 
@@ -406,6 +408,105 @@ export async function requestCourseProductDetailTemplateTeamShare({
 
   return CourseProductDetailTemplateMutationResultSchema.parse({
     template: savedTemplate,
+    templates: await listCourseProductDetailTemplates({ actorId, store }),
+    auditEvent,
+  });
+}
+
+export async function reviewCourseProductDetailTemplateTeamShare({
+  actorId,
+  templateId,
+  request,
+  store = getCourseProductDetailTemplateStore(),
+  now = new Date().toISOString(),
+}: {
+  actorId: string;
+  templateId: string;
+  request: CourseProductDetailTemplateShareReviewRequest;
+  store?: CourseProductDetailTemplateStore;
+  now?: string;
+}): Promise<CourseProductDetailTemplateMutationResult> {
+  const parsedRequest =
+    CourseProductDetailTemplateShareReviewRequestSchema.parse(request);
+  const template = (await store.listTemplates()).find(
+    item => item.id === templateId
+  );
+  if (!template) throw new Error("COURSE_PRODUCT_DETAIL_TEMPLATE_NOT_FOUND");
+  if (
+    template.scope !== "personal" ||
+    template.shareStatus !== "pending_team_review"
+  ) {
+    throw new Error("COURSE_PRODUCT_DETAIL_TEMPLATE_SHARE_REVIEW_UNAVAILABLE");
+  }
+
+  if (parsedRequest.action === "reject") {
+    const rejectedTemplate = CourseProductDetailTemplateSchema.parse({
+      ...template,
+      shareStatus: "private",
+      teamShareReviewedBy: actorId,
+      teamShareReviewedAt: now,
+      teamShareReviewReason: parsedRequest.reason,
+      updatedAt: now,
+    });
+    const savedTemplate = await store.saveTemplate(rejectedTemplate);
+    const auditEvent = await store.appendAuditEvent(
+      createDetailTemplateAuditEvent({
+        action: "template_share_reject",
+        actorId,
+        template: savedTemplate,
+        reason: parsedRequest.reason,
+        now,
+      })
+    );
+
+    return CourseProductDetailTemplateMutationResultSchema.parse({
+      template: savedTemplate,
+      templates: await listCourseProductDetailTemplates({ actorId, store }),
+      auditEvent,
+    });
+  }
+
+  const teamTemplate = CourseProductDetailTemplateSchema.parse({
+    id: createDetailTemplateId("team_detail_template", actorId, now),
+    name: template.name,
+    description: template.description,
+    scope: "team",
+    shareStatus: "team_shared",
+    ownerId: template.ownerId,
+    sourceProductId: template.sourceProductId,
+    teamShareRequestedBy: template.teamShareRequestedBy,
+    teamShareRequestedAt: template.teamShareRequestedAt,
+    teamShareReviewedBy: actorId,
+    teamShareReviewedAt: now,
+    teamShareReviewReason: parsedRequest.reason,
+    content: template.content,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const approvedTemplate = CourseProductDetailTemplateSchema.parse({
+    ...template,
+    shareStatus: "team_shared",
+    teamShareReviewedBy: actorId,
+    teamShareReviewedAt: now,
+    teamShareReviewReason: parsedRequest.reason,
+    teamSharedTemplateId: teamTemplate.id,
+    updatedAt: now,
+  });
+
+  await store.saveTemplate(approvedTemplate);
+  const savedTeamTemplate = await store.saveTemplate(teamTemplate);
+  const auditEvent = await store.appendAuditEvent(
+    createDetailTemplateAuditEvent({
+      action: "template_share_approve",
+      actorId,
+      template: approvedTemplate,
+      reason: parsedRequest.reason,
+      now,
+    })
+  );
+
+  return CourseProductDetailTemplateMutationResultSchema.parse({
+    template: savedTeamTemplate,
     templates: await listCourseProductDetailTemplates({ actorId, store }),
     auditEvent,
   });

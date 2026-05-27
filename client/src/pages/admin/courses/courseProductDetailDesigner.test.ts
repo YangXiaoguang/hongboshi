@@ -362,6 +362,9 @@ describe("course product detail designer", () => {
     expect(detailTemplateAuditActionLabel("template_share_request")).toBe(
       "申请共享"
     );
+    expect(detailTemplateAuditActionLabel("template_share_approve")).toBe(
+      "通过共享"
+    );
     expect(
       detailTemplateAuditEventsForTemplate(
         auditEvents,

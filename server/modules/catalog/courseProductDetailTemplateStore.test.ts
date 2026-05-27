@@ -10,6 +10,7 @@ import {
   deleteCourseProductDetailTemplate,
   listCourseProductDetailTemplates,
   requestCourseProductDetailTemplateTeamShare,
+  reviewCourseProductDetailTemplateTeamShare,
 } from "./courseProductDetailTemplateStore";
 
 const templateContent = {
@@ -93,6 +94,39 @@ describe("course product detail template store", () => {
     expect(requested.auditEvent.action).toBe("template_share_request");
     expect(requested.templates.summary.pendingShareRequestCount).toBe(1);
 
+    const approved = await reviewCourseProductDetailTemplateTeamShare({
+      actorId: "reviewer_1",
+      templateId: created.template.id,
+      store,
+      now: "2026-05-25T10:08:00.000Z",
+      request: {
+        action: "approve",
+        reason: "审核通过团队共享详情模板",
+      },
+    });
+
+    expect(approved.template).toMatchObject({
+      scope: "team",
+      shareStatus: "team_shared",
+      ownerId: "operator_1",
+      teamShareReviewedBy: "reviewer_1",
+    });
+    expect(approved.auditEvent.action).toBe("template_share_approve");
+    expect(approved.templates.summary.teamCount).toBe(1);
+    expect(approved.templates.summary.pendingShareRequestCount).toBe(0);
+
+    const ownerList = await listCourseProductDetailTemplates({
+      actorId: "operator_1",
+      store,
+    });
+    const personalTemplate = ownerList.items.find(
+      template => template.id === created.template.id
+    );
+    expect(personalTemplate).toMatchObject({
+      shareStatus: "team_shared",
+      teamSharedTemplateId: approved.template.id,
+    });
+
     const systemTemplate = requested.templates.items.find(
       template => template.scope === "system"
     );
@@ -104,6 +138,64 @@ describe("course product detail template store", () => {
         request: { reason: "系统模板不能重复申请共享" },
       })
     ).rejects.toThrow("COURSE_PRODUCT_DETAIL_TEMPLATE_SHARE_UNAVAILABLE");
+  });
+
+  it("rejects team share reviews and keeps templates personal", async () => {
+    const store = new InMemoryCourseProductDetailTemplateStore();
+    const created = await createCourseProductDetailTemplate({
+      actorId: "operator_1",
+      store,
+      now: "2026-05-25T10:00:00.000Z",
+      request: {
+        name: "需要修改的成交模板",
+        scope: "personal",
+        content: templateContent,
+        reason: "沉淀可复用详情模板",
+      },
+    });
+    await requestCourseProductDetailTemplateTeamShare({
+      actorId: "operator_1",
+      templateId: created.template.id,
+      store,
+      now: "2026-05-25T10:05:00.000Z",
+      request: { reason: "申请团队共享该成交模板" },
+    });
+
+    const rejected = await reviewCourseProductDetailTemplateTeamShare({
+      actorId: "reviewer_1",
+      templateId: created.template.id,
+      store,
+      now: "2026-05-25T10:08:00.000Z",
+      request: {
+        action: "reject",
+        reason: "图文说明仍需补充后再共享",
+      },
+    });
+
+    expect(rejected.template).toMatchObject({
+      id: created.template.id,
+      scope: "personal",
+      shareStatus: "private",
+      teamShareReviewedBy: "reviewer_1",
+      teamShareReviewReason: "图文说明仍需补充后再共享",
+    });
+    expect(rejected.auditEvent.action).toBe("template_share_reject");
+    expect(rejected.templates.summary.teamCount).toBe(0);
+    expect(rejected.templates.summary.pendingShareRequestCount).toBe(0);
+
+    await expect(
+      reviewCourseProductDetailTemplateTeamShare({
+        actorId: "reviewer_1",
+        templateId: created.template.id,
+        store,
+        request: {
+          action: "approve",
+          reason: "非待审核模板不能通过",
+        },
+      })
+    ).rejects.toThrow(
+      "COURSE_PRODUCT_DETAIL_TEMPLATE_SHARE_REVIEW_UNAVAILABLE"
+    );
   });
 
   it("records apply audit and prevents deleting system templates", async () => {

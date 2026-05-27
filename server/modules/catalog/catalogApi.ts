@@ -43,6 +43,7 @@ import {
   CourseProductDetailTemplateDeleteRequestSchema,
   CourseProductDetailTemplateListResultSchema,
   CourseProductDetailTemplateMutationResultSchema,
+  CourseProductDetailTemplateShareReviewRequestSchema,
   CourseProductDetailTemplateShareRequestSchema,
   CourseProductDetailContentSchema,
   CourseProductLearningMaterialOperationsReportSchema,
@@ -92,6 +93,7 @@ import {
   getCourseProductDetailTemplateStore,
   listCourseProductDetailTemplates,
   requestCourseProductDetailTemplateTeamShare,
+  reviewCourseProductDetailTemplateTeamShare,
   type CourseProductDetailTemplateStore,
 } from "./courseProductDetailTemplateStore";
 import {
@@ -299,6 +301,7 @@ export const catalogOperationPermissions = {
   contentQualityRead: COURSE_CATALOG_PERMISSIONS.read,
   detailTemplateRead: COURSE_CATALOG_PERMISSIONS.read,
   detailTemplateManage: COURSE_CATALOG_PERMISSIONS.edit,
+  detailTemplateReview: COURSE_CATALOG_PERMISSIONS.review,
   publishQueueRead: COURSE_CATALOG_PERMISSIONS.read,
   publishQueueBatchTaskRead: COURSE_CATALOG_PERMISSIONS.review,
   publishQueueBatchTaskManage: COURSE_CATALOG_PERMISSIONS.review,
@@ -846,6 +849,47 @@ export async function requestCourseProductDetailTemplateTeamSharePayload(
     };
   } catch (err) {
     return courseProductActionFailure(err, "课程详情模板共享申请失败");
+  }
+}
+
+export async function reviewCourseProductDetailTemplateTeamSharePayload(
+  actor: CatalogOperationsActor | null | undefined,
+  templateId: string,
+  body: unknown,
+  templateStore: CourseProductDetailTemplateStore = getCourseProductDetailTemplateStore(),
+  now = new Date().toISOString()
+): Promise<CatalogApiPayload> {
+  const denied = denyUnauthorizedActor(
+    actor,
+    catalogOperationPermissions.detailTemplateReview
+  );
+  if (denied) return denied;
+
+  const parsed =
+    CourseProductDetailTemplateShareReviewRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "课程详情模板共享审核参数不合法"),
+    };
+  }
+
+  try {
+    return {
+      status: 200,
+      body: CourseProductDetailTemplateMutationResponseSchema.parse({
+        ok: true,
+        data: await reviewCourseProductDetailTemplateTeamShare({
+          actorId: actor!.id,
+          templateId,
+          request: parsed.data,
+          store: templateStore,
+          now,
+        }),
+      }),
+    };
+  } catch (err) {
+    return courseProductActionFailure(err, "课程详情模板共享审核失败");
   }
 }
 
@@ -2450,6 +2494,27 @@ export function registerCatalogApi(app: Express) {
     }
   );
 
+  app.post(
+    "/api/catalog/admin/course-products/detail-templates/:templateId/share-review",
+    async (req, res) => {
+      try {
+        const session = await getLoginSessionFromRequest(req);
+        const payload = await reviewCourseProductDetailTemplateTeamSharePayload(
+          session?.user,
+          req.params.templateId,
+          req.body
+        );
+        sendJson(res, payload.status, payload.body);
+      } catch {
+        sendJson(
+          res,
+          500,
+          errorPayload("INTERNAL_ERROR", "课程详情模板共享审核失败")
+        );
+      }
+    }
+  );
+
   app.get(
     "/api/catalog/admin/course-products/content-quality",
     async (req, res) => {
@@ -3165,7 +3230,7 @@ export function handleCatalogApiRequest(
   }
 
   const detailTemplateActionMatch = url.pathname.match(
-    /^\/api\/catalog\/admin\/course-products\/detail-templates\/([^/]+)(?:\/(apply|share-request))?$/
+    /^\/api\/catalog\/admin\/course-products\/detail-templates\/([^/]+)(?:\/(apply|share-request|share-review))?$/
   );
   if (detailTemplateActionMatch?.[1]) {
     const templateId = decodeURIComponent(detailTemplateActionMatch[1]);
@@ -3197,11 +3262,17 @@ export function handleCatalogApiRequest(
                   templateId,
                   body
                 )
-              : await deleteCourseProductDetailTemplatePayload(
-                  session?.user,
-                  templateId,
-                  body
-                );
+              : action === "share-review"
+                ? await reviewCourseProductDetailTemplateTeamSharePayload(
+                    session?.user,
+                    templateId,
+                    body
+                  )
+                : await deleteCourseProductDetailTemplatePayload(
+                    session?.user,
+                    templateId,
+                    body
+                  );
         sendJson(res, payload.status, payload.body);
       })
       .catch(() =>

@@ -40,6 +40,7 @@ import {
   getCourseProductPublishQueueBatchTaskPreflightPayload,
   getCourseProductPublishQueuePayload,
   requestCourseProductDetailTemplateTeamSharePayload,
+  reviewCourseProductDetailTemplateTeamSharePayload,
   reviewCourseProductPublishQueueBatchTaskPayload,
   runCourseProductAssetBackfillPayload,
   submitCourseProductPublishQueueBatchTaskPayload,
@@ -277,6 +278,10 @@ describe("catalog admin api payloads", () => {
       id: "catalog_operator_1",
       roles: ["catalog_operator" as const],
     };
+    const reviewer = {
+      id: "catalog_operator_2",
+      roles: ["catalog_operator" as const],
+    };
 
     const listed = await getCourseProductDetailTemplatesPayload(
       viewer,
@@ -362,6 +367,35 @@ describe("catalog admin api payloads", () => {
       shareRequested.body.ok &&
         shareRequested.body.data.templates.summary.pendingShareRequestCount
     ).toBe(1);
+
+    const reviewDenied =
+      await reviewCourseProductDetailTemplateTeamSharePayload(
+        viewer,
+        templateId,
+        { action: "approve", reason: "只读账号不能审核共享模板" },
+        templateStore
+      );
+    expect(reviewDenied.status).toBe(403);
+
+    const shareApproved =
+      await reviewCourseProductDetailTemplateTeamSharePayload(
+        reviewer,
+        templateId,
+        { action: "approve", reason: "审核通过团队共享成交模板" },
+        templateStore,
+        "2026-05-25T10:00:45.000Z"
+      );
+    expect(shareApproved.status).toBe(200);
+    expect(
+      shareApproved.body.ok && shareApproved.body.data.auditEvent.action
+    ).toBe("template_share_approve");
+    expect(
+      shareApproved.body.ok && shareApproved.body.data.template.scope
+    ).toBe("team");
+    expect(
+      shareApproved.body.ok &&
+        shareApproved.body.data.templates.summary.pendingShareRequestCount
+    ).toBe(0);
 
     const applied = await applyCourseProductDetailTemplatePayload(
       operator,

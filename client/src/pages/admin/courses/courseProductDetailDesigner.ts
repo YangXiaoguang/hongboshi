@@ -651,6 +651,8 @@ export function detailTemplateAuditActionLabel(
     template_delete: "删除模板",
     template_apply: "套用模板",
     template_share_request: "申请共享",
+    template_share_approve: "通过共享",
+    template_share_reject: "驳回共享",
   }[action];
 }
 

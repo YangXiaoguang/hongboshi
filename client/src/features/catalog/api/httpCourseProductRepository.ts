@@ -63,6 +63,7 @@ import {
   type CourseProductDetailTemplateDeleteRequest,
   type CourseProductDetailTemplateListResult,
   type CourseProductDetailTemplateMutationResult,
+  type CourseProductDetailTemplateShareReviewRequest,
   type CourseProductDetailTemplateShareRequest,
   type CourseProductDetailContent,
   type CourseProductLearningMaterialOperationsReport,
@@ -847,6 +848,18 @@ export const httpCourseProductRepository = {
       `${API_BASE}/course-products/detail-templates/${encodeURIComponent(templateId)}/share-request`,
       request,
       "课程详情模板共享申请失败",
+      "POST"
+    );
+  },
+
+  async reviewCourseProductDetailTemplateTeamShare(
+    templateId: string,
+    request: CourseProductDetailTemplateShareReviewRequest
+  ): Promise<CourseProductDetailTemplateMutationResult> {
+    return requestCourseProductDetailTemplateMutation(
+      `${API_BASE}/course-products/detail-templates/${encodeURIComponent(templateId)}/share-review`,
+      request,
+      "课程详情模板共享审核失败",
       "POST"
     );
   },

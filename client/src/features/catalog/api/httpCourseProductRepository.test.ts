@@ -1725,6 +1725,13 @@ describe("http course product repository parsing", () => {
         reason: "申请团队共享课程详情模板",
       }
     );
+    await httpCourseProductRepository.reviewCourseProductDetailTemplateTeamShare(
+      "template_1",
+      {
+        action: "approve",
+        reason: "审核通过团队共享课程详情模板",
+      }
+    );
     await httpCourseProductRepository.deleteCourseProductDetailTemplate(
       "template_1",
       {
@@ -1749,6 +1756,11 @@ describe("http course product repository parsing", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
+      "/api/catalog/admin/course-products/detail-templates/template_1/share-review",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
       "/api/catalog/admin/course-products/detail-templates/template_1",
       expect.objectContaining({ method: "DELETE" })
     );
