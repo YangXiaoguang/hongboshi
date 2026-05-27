@@ -122,7 +122,7 @@ describe("course API payloads", () => {
     expect(hiddenPayload.status).toBe(404);
   });
 
-  it("serves approved image assets publicly and gates downloads by course access", async () => {
+  it("serves image assets publicly and gates downloads by course access", async () => {
     const first = courseProductFromCourse(
       courses.find(course => !course.isFree) ?? courses[0]!
     );

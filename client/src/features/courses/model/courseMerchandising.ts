@@ -118,17 +118,16 @@ export function getCourseMerchandisingImage(course: Course): string {
   return showcaseImages[course.category] ?? course.coverUrl;
 }
 
-function isPublicMerchandisingAsset(asset: CourseProductMerchandisingAsset) {
-  return (
-    asset.complianceStatus === "approved" ||
-    asset.complianceStatus === "not_required"
-  );
+function isRenderableMerchandisingAsset(
+  asset: CourseProductMerchandisingAsset
+) {
+  return Boolean(asset.imageUrl);
 }
 
-function isPublicVisualAsset(
+function isRenderableVisualAsset(
   asset: CourseProductMerchandisingAsset
 ): asset is CourseProductMerchandisingAsset & { usage: "proof" | "gallery" } {
-  return asset.usage !== "showcase" && isPublicMerchandisingAsset(asset);
+  return asset.usage !== "showcase" && isRenderableMerchandisingAsset(asset);
 }
 
 function isRenderableRichTextBlock(block: CourseProductRichTextBlock) {
@@ -157,11 +156,11 @@ export function createCourseMerchandisingProfile({
   const primaryAudience = course.suitableFor[0];
   const primaryOutcome = course.outcomes[0];
   const showcaseAsset = merchandising?.imageAssets.find(
-    asset => asset.usage === "showcase" && isPublicMerchandisingAsset(asset)
+    asset => asset.usage === "showcase" && isRenderableMerchandisingAsset(asset)
   );
   const visualAssets =
     merchandising?.imageAssets
-      .filter(isPublicVisualAsset)
+      .filter(isRenderableVisualAsset)
       .slice(0, 3)
       .map(asset => {
         const visualAsset: CourseMerchandisingVisualAsset = {

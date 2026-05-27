@@ -146,13 +146,6 @@ const defaultCoverUrl =
 const defaultAssetUploadReason = "商品图片上传";
 const defaultContentUpdateReason = "课程商品内容更新";
 
-const assetComplianceStatusCopy = {
-  not_required: "免审",
-  pending: "待审核",
-  approved: "已通过",
-  rejected: "已驳回",
-} satisfies Record<MediaAssetFormState["complianceStatus"], string>;
-
 const workspaceSteps: {
   id: WorkspaceStepId;
   label: string;
@@ -180,8 +173,8 @@ const workspaceSteps: {
   },
   {
     id: "publish",
-    label: "发布审核",
-    description: "完整度、审核和上架状态",
+    label: "发布设置",
+    description: "完整度和上架状态",
   },
 ];
 
@@ -331,13 +324,6 @@ function isMerchandisingImageAsset(asset: CourseProductAsset) {
   );
 }
 
-function isStorefrontReadyAsset(asset: CourseProductAsset) {
-  return (
-    asset.complianceStatus === "approved" ||
-    asset.complianceStatus === "not_required"
-  );
-}
-
 function usageFromCourseProductAsset(
   asset: CourseProductAsset
 ): CourseProductMerchandisingAssetUsage {
@@ -411,15 +397,6 @@ function buildPublishPreflightWarnings({
     )
   ) {
     warnings.push("存在未选择图片的 H5 图片块");
-  }
-  if (
-    form.imageAssets.some(
-      asset =>
-        asset.complianceStatus === "pending" ||
-        asset.complianceStatus === "rejected"
-    )
-  ) {
-    warnings.push("存在待审核或已驳回的商品图片素材");
   }
   if (reason.trim().length < 4) warnings.push("操作原因至少需要 4 个字");
   if (product?.status === "archived") warnings.push("归档商品不能发布");
@@ -1486,14 +1463,7 @@ export default function CourseProductEditorWorkspacePage() {
     () => assetLibrary.filter(isMerchandisingImageAsset),
     [assetLibrary]
   );
-  const storefrontReadyImageAssets = useMemo(
-    () => merchandisingImageAssets.filter(isStorefrontReadyAsset),
-    [merchandisingImageAssets]
-  );
-  const storefrontReadyAssetCount = useMemo(
-    () => storefrontReadyImageAssets.length,
-    [storefrontReadyImageAssets]
-  );
+  const reusableImageAssets = merchandisingImageAssets;
   const publishPreflightWarnings = useMemo(
     () =>
       buildPublishPreflightWarnings({
@@ -1503,15 +1473,6 @@ export default function CourseProductEditorWorkspacePage() {
         reason,
       }),
     [content, contentForm, product, reason]
-  );
-  const pendingMerchandisingAssetCount = useMemo(
-    () =>
-      contentForm.imageAssets.filter(
-        asset =>
-          asset.complianceStatus === "pending" ||
-          asset.complianceStatus === "rejected"
-      ).length,
-    [contentForm.imageAssets]
   );
   const availableReviewActions = useMemo(
     () => reviewActionsForProduct(product),
@@ -1836,11 +1797,6 @@ export default function CourseProductEditorWorkspacePage() {
         setActionError("该素材缺少可用于前台展示的读取地址");
         return;
       }
-      if (usage === "showcase" && !isStorefrontReadyAsset(asset)) {
-        setActionError("待审核或驳回素材不能直接设为成交主视觉");
-        return;
-      }
-
       setContentForm(current => ({
         ...current,
         showcaseImageUrl:
@@ -1861,10 +1817,6 @@ export default function CourseProductEditorWorkspacePage() {
 
   const applyAssetToH5ImageBlock = useCallback(
     (blockIndex: number, asset: CourseProductAsset) => {
-      if (!isStorefrontReadyAsset(asset)) {
-        setActionError("H5 图片块只能选择已通过或免审素材");
-        return;
-      }
       if (!asset.publicUrl) {
         setActionError("该素材缺少可用于前台展示的读取地址");
         return;
@@ -2349,9 +2301,7 @@ export default function CourseProductEditorWorkspacePage() {
       setAssetUploadFile(undefined);
       setAssetUploadTitle("");
       setAssetUploadInputKey(current => current + 1);
-      setActionMessage(
-        "素材已上传并加入商品图片草稿，审核通过后会在前台详情中展示"
-      );
+      setActionMessage("图片已上传并加入当前商品草稿，保存商品图片后生效");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "课程素材上传失败");
     } finally {
@@ -2479,7 +2429,7 @@ export default function CourseProductEditorWorkspacePage() {
           </h1>
           <p className="mt-3 max-w-[760px] text-sm leading-6 text-[#6F7771]">
             按电商商品发布链路维护基础资料、商品图片、价格权益、H5
-            详情和发布审核。
+            详情和发布设置。
           </p>
         </div>
 
@@ -2790,7 +2740,7 @@ export default function CourseProductEditorWorkspacePage() {
             {activeStep === "media" && (
               <SectionShell
                 title="商品图片"
-                description="维护商品封面、成交主视觉、详情图和证明图，支撑移动端购买决策。"
+                description="上传后即可用于主视觉、详情图和 H5 图片块，当前编辑链路不再使用审核。"
               >
                 <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
                   <div>
@@ -2804,50 +2754,81 @@ export default function CourseProductEditorWorkspacePage() {
                     <p className="mt-3 text-xs leading-5 text-[#8A8176]">
                       封面图来自基础信息，会用于货架卡片和订单摘要；成交主视觉用于详情页首屏。
                     </p>
-                    <button
-                      onClick={() =>
-                        setContentForm(current => ({
-                          ...current,
-                          showcaseImageUrl: basicForm.coverUrl,
-                          showcaseImageAlt: basicForm.title,
-                        }))
-                      }
-                      className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
-                    >
-                      <FileImage className="h-4 w-4" />
-                      同步为成交主视觉
-                    </button>
                   </div>
 
                   <div className="space-y-5">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="text-sm font-semibold text-[#41524B]">
-                        成交主视觉 URL
-                        <input
-                          value={contentForm.showcaseImageUrl}
-                          onChange={event =>
+                    <div className="rounded-lg border border-[#E1D7C8] bg-white p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-[#243B35]">
+                            当前主视觉
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                            用于课程详情首屏，建议选择最能表达课程价值的一张图。
+                          </p>
+                        </div>
+                        <button
+                          onClick={() =>
                             setContentForm(current => ({
                               ...current,
-                              showcaseImageUrl: event.target.value,
+                              showcaseImageUrl: basicForm.coverUrl,
+                              showcaseImageAlt: basicForm.title,
                             }))
                           }
-                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition focus:border-[#6F8F83]"
-                        />
-                      </label>
-                      <label className="text-sm font-semibold text-[#41524B]">
-                        主视觉说明
-                        <input
-                          value={contentForm.showcaseImageAlt}
-                          onChange={event =>
-                            setContentForm(current => ({
-                              ...current,
-                              showcaseImageAlt: event.target.value,
-                            }))
-                          }
-                          placeholder="用于图片无障碍与素材备注"
-                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
-                        />
-                      </label>
+                          className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-[#FFFDF8] px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                        >
+                          <FileImage className="h-4 w-4" />
+                          使用封面
+                        </button>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
+                        <div className="overflow-hidden rounded-lg bg-[#F8F3EA]">
+                          <img
+                            src={
+                              contentForm.showcaseImageUrl || basicForm.coverUrl
+                            }
+                            alt={
+                              contentForm.showcaseImageAlt ||
+                              basicForm.title ||
+                              "课程商品主视觉"
+                            }
+                            className="aspect-[4/3] w-full object-cover"
+                          />
+                        </div>
+                        <div className="space-y-3">
+                          <label className="block text-sm font-semibold text-[#41524B]">
+                            图片说明
+                            <input
+                              value={contentForm.showcaseImageAlt}
+                              onChange={event =>
+                                setContentForm(current => ({
+                                  ...current,
+                                  showcaseImageAlt: event.target.value,
+                                }))
+                              }
+                              placeholder="例如：情绪管理课程主视觉"
+                              className="mt-2 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                            />
+                          </label>
+                          <details className="rounded-lg border border-[#E5DCCF] bg-[#FBF7EF] px-3 py-2 text-xs text-[#6F7771]">
+                            <summary className="cursor-pointer font-semibold text-[#41524B]">
+                              手动修改图片地址
+                            </summary>
+                            <input
+                              value={contentForm.showcaseImageUrl}
+                              onChange={event =>
+                                setContentForm(current => ({
+                                  ...current,
+                                  showcaseImageUrl: event.target.value,
+                                }))
+                              }
+                              placeholder="https://... 或 /api/..."
+                              className="mt-3 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm font-normal outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                            />
+                          </details>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="rounded-lg border border-[#E1D7C8] bg-[#FBF7EF] p-4">
@@ -2855,10 +2836,10 @@ export default function CourseProductEditorWorkspacePage() {
                         <div>
                           <div className="flex items-center gap-2 text-sm font-semibold text-[#41524B]">
                             <ImagePlus className="h-4 w-4 text-[#6F8F83]" />
-                            商品素材选择器
+                            可用图片
                           </div>
                           <p className="mt-1 text-xs leading-5 text-[#8A8176]">
-                            复用课程素材库图片，已审核素材可直接设为主视觉或加入详情图。
+                            从已上传图片中直接设为主视觉，或加入当前详情图草稿。
                           </p>
                         </div>
                         <button
@@ -2871,12 +2852,12 @@ export default function CourseProductEditorWorkspacePage() {
                           ) : (
                             <RefreshCw className="h-4 w-4" />
                           )}
-                          刷新素材
+                          刷新图片
                         </button>
                       </div>
 
-                      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                        <div>
+                      <div className="mt-4 grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+                        <div className="xl:order-2">
                           {isAssetLibraryLoading ? (
                             <div className="flex min-h-[136px] items-center justify-center rounded-lg border border-dashed border-[#D8CEC0] bg-white text-sm text-[#6F7771]">
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -2890,85 +2871,66 @@ export default function CourseProductEditorWorkspacePage() {
                             <div className="grid gap-3 md:grid-cols-2">
                               {merchandisingImageAssets
                                 .slice(0, 6)
-                                .map(asset => {
-                                  const ready = isStorefrontReadyAsset(asset);
-                                  return (
-                                    <div
-                                      key={asset.id}
-                                      className="grid gap-3 rounded-lg border border-[#E1D7C8] bg-white p-3 sm:grid-cols-[96px_minmax(0,1fr)]"
-                                    >
-                                      <div className="overflow-hidden rounded-lg bg-[#F8F3EA]">
-                                        <img
-                                          src={asset.publicUrl}
-                                          alt={asset.altText || asset.title}
-                                          className="aspect-[4/3] w-full object-cover"
-                                        />
-                                      </div>
-                                      <div className="min-w-0">
-                                        <div className="flex items-start justify-between gap-2">
-                                          <p className="line-clamp-2 text-sm font-semibold leading-5 text-[#243B35]">
-                                            {asset.title}
-                                          </p>
-                                          <span
-                                            className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${
-                                              ready
-                                                ? "bg-[#EEF6ED] text-[#41675A]"
-                                                : "bg-[#FFF4EF] text-[#A65F48]"
-                                            }`}
-                                          >
-                                            {
-                                              assetComplianceStatusCopy[
-                                                asset.complianceStatus
-                                              ]
-                                            }
-                                          </span>
-                                        </div>
-                                        <p className="mt-1 text-xs text-[#8A8176]">
-                                          {asset.kind === "proof_image"
-                                            ? "证明图"
-                                            : "详情图"}{" "}
-                                          · {asset.fileName}
-                                        </p>
-                                        <div className="mt-3 flex flex-wrap gap-2">
-                                          <button
-                                            onClick={() =>
-                                              applyAssetToContentForm(
-                                                asset,
-                                                "gallery"
-                                              )
-                                            }
-                                            className="inline-flex h-8 items-center rounded-lg border border-[#D8CEC0] px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
-                                          >
-                                            加入详情图
-                                          </button>
-                                          <button
-                                            onClick={() =>
-                                              applyAssetToContentForm(
-                                                asset,
-                                                "showcase"
-                                              )
-                                            }
-                                            disabled={!ready}
-                                            className="inline-flex h-8 items-center rounded-lg bg-[#243B35] px-2.5 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-45"
-                                          >
-                                            设为主视觉
-                                          </button>
-                                        </div>
+                                .map(asset => (
+                                  <div
+                                    key={asset.id}
+                                    className="grid gap-3 rounded-lg border border-[#E1D7C8] bg-white p-3 sm:grid-cols-[112px_minmax(0,1fr)]"
+                                  >
+                                    <div className="overflow-hidden rounded-lg bg-[#F8F3EA]">
+                                      <img
+                                        src={asset.publicUrl}
+                                        alt={asset.altText || asset.title}
+                                        className="aspect-[4/3] w-full object-cover"
+                                      />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="line-clamp-2 text-sm font-semibold leading-5 text-[#243B35]">
+                                        {asset.title}
+                                      </p>
+                                      <p className="mt-1 truncate text-xs text-[#8A8176]">
+                                        {asset.kind === "proof_image"
+                                          ? "证明图"
+                                          : "详情图"}{" "}
+                                        · {asset.fileName}
+                                      </p>
+                                      <div className="mt-3 grid grid-cols-2 gap-2">
+                                        <button
+                                          onClick={() =>
+                                            applyAssetToContentForm(
+                                              asset,
+                                              "showcase"
+                                            )
+                                          }
+                                          className="inline-flex h-9 items-center justify-center rounded-lg bg-[#243B35] px-2.5 text-xs font-semibold text-white transition hover:bg-[#315047]"
+                                        >
+                                          设为主图
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            applyAssetToContentForm(
+                                              asset,
+                                              "gallery"
+                                            )
+                                          }
+                                          className="inline-flex h-9 items-center justify-center rounded-lg border border-[#D8CEC0] px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                                        >
+                                          加入详情
+                                        </button>
                                       </div>
                                     </div>
-                                  );
-                                })}
+                                  </div>
+                                ))}
                             </div>
                           )}
                           <p className="mt-3 text-xs text-[#8A8176]">
-                            素材库共 {merchandisingImageAssets.length} 张图片，
-                            {storefrontReadyAssetCount} 张已可前台展示。
+                            共 {merchandisingImageAssets.length}{" "}
+                            张可用图片。保存后即可在商品详情中使用。
                           </p>
                         </div>
 
-                        <div className="rounded-lg border border-[#E1D7C8] bg-white p-3">
+                        <div className="rounded-lg border border-[#E1D7C8] bg-white p-3 xl:order-1">
                           <p className="text-sm font-semibold text-[#41524B]">
-                            上传商品图片
+                            上传图片
                           </p>
                           <input
                             key={assetUploadInputKey}
@@ -2990,7 +2952,7 @@ export default function CourseProductEditorWorkspacePage() {
                             onChange={event =>
                               setAssetUploadTitle(event.target.value)
                             }
-                            placeholder="素材标题"
+                            placeholder="图片标题"
                             className="mt-3 h-10 w-full rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
                           />
                           <select
@@ -3024,10 +2986,10 @@ export default function CourseProductEditorWorkspacePage() {
                             ) : (
                               <Upload className="h-4 w-4" />
                             )}
-                            上传并加入草稿
+                            上传并使用
                           </button>
                           <p className="mt-3 text-xs leading-5 text-[#8A8176]">
-                            新上传素材默认待审核，保存商品图片后会进入内容复审。
+                            上传后会立即加入当前商品草稿；选择“成交主视觉”时会同步更新主图。
                           </p>
                         </div>
                       </div>
@@ -3040,7 +3002,7 @@ export default function CourseProductEditorWorkspacePage() {
                           详情图与证明图
                         </div>
                         <p className="mt-1 text-xs leading-5 text-[#8A8176]">
-                          支持手动 URL、已审核素材和工作台上传素材。
+                          已加入的图片会出现在课程详情图文中，可编辑标题、说明和用途。
                         </p>
                       </div>
                       <button
@@ -3170,22 +3132,6 @@ export default function CourseProductEditorWorkspacePage() {
                                 placeholder="图片说明"
                                 className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83] md:col-span-2"
                               />
-                              <div className="md:col-span-2">
-                                <span
-                                  className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                    asset.complianceStatus === "approved" ||
-                                    asset.complianceStatus === "not_required"
-                                      ? "bg-[#EEF6ED] text-[#41675A]"
-                                      : "bg-[#FFF4EF] text-[#A65F48]"
-                                  }`}
-                                >
-                                  {
-                                    assetComplianceStatusCopy[
-                                      asset.complianceStatus
-                                    ]
-                                  }
-                                </span>
-                              </div>
                             </div>
                             <button
                               onClick={() =>
@@ -3233,7 +3179,7 @@ export default function CourseProductEditorWorkspacePage() {
                         className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-4 text-sm font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
                       >
                         <Layers3 className="h-4 w-4" />
-                        {product ? "打开素材库" : "创建后管理素材"}
+                        {product ? "打开详情管理" : "创建后管理图片"}
                       </button>
                     </div>
                   </div>
@@ -3345,7 +3291,7 @@ export default function CourseProductEditorWorkspacePage() {
                           富文本快编
                         </div>
                         <p className="mt-1 text-xs leading-5 text-[#6F7771]">
-                          先把商品说清楚，再补图文段落；保存后进入发布审核。
+                          先把商品说清楚，再补图文段落；保存后进入发布设置。
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -3804,8 +3750,7 @@ export default function CourseProductEditorWorkspacePage() {
                                               从素材库选择图片
                                             </p>
                                             <p className="mt-1 text-xs leading-5 text-[#8A8176]">
-                                              仅展示已通过或免审素材，避免 H5
-                                              图片绕过合规。
+                                              使用商品图片步骤已上传的图片，点击即可填入当前内容块。
                                             </p>
                                           </div>
                                           <button
@@ -3825,14 +3770,13 @@ export default function CourseProductEditorWorkspacePage() {
                                             刷新
                                           </button>
                                         </div>
-                                        {storefrontReadyImageAssets.length ===
-                                        0 ? (
+                                        {reusableImageAssets.length === 0 ? (
                                           <div className="mt-3 rounded-lg border border-dashed border-[#D8CEC0] bg-white px-3 py-4 text-xs leading-5 text-[#6F7771]">
-                                            还没有已通过图片素材。可先在“商品图片”步骤上传并完成合规处理。
+                                            还没有可用图片。可先在“商品图片”步骤上传课程场景图或详情图。
                                           </div>
                                         ) : (
                                           <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                                            {storefrontReadyImageAssets
+                                            {reusableImageAssets
                                               .slice(0, 4)
                                               .map(asset => (
                                                 <button
@@ -4209,8 +4153,8 @@ export default function CourseProductEditorWorkspacePage() {
 
             {activeStep === "publish" && (
               <SectionShell
-                title="发布审核"
-                description="商品创建后默认进入草稿和未提交审核，发布前必须完成内容与素材校验。"
+                title="发布设置"
+                description="查看完整度、预览成交页，并处理当前商品的上架状态。"
               >
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="border border-[#E1D7C8] bg-[#FBF7EF] px-4 py-3">
@@ -4383,7 +4327,7 @@ export default function CourseProductEditorWorkspacePage() {
                             发布前预检
                           </p>
                           <p className="mt-1 text-xs leading-5 text-[#8A8176]">
-                            聚合商品信息、图文内容、素材合规和操作原因，减少发布后返工。
+                            聚合商品信息、图文内容和操作原因，减少发布后返工。
                           </p>
                         </div>
                         <span
@@ -4406,9 +4350,7 @@ export default function CourseProductEditorWorkspacePage() {
                             {contentForm.imageAssets.length} 张
                           </p>
                           <p className="mt-1 text-xs leading-5 text-[#8A8176]">
-                            {pendingMerchandisingAssetCount > 0
-                              ? `${pendingMerchandisingAssetCount} 张需处理合规`
-                              : "素材合规状态正常"}
+                            主视觉和详情图会按当前草稿保存
                           </p>
                         </div>
                         <div className="rounded-lg border border-[#E1D7C8] bg-white px-4 py-3">
@@ -4723,20 +4665,20 @@ export default function CourseProductEditorWorkspacePage() {
 
                     <div className="rounded-lg border border-[#E1D7C8] bg-white p-4">
                       <p className="text-sm font-semibold text-[#243B35]">
-                        合规与复审边界
+                        当前发布边界
                       </p>
                       <div className="mt-3 space-y-2 text-xs leading-5 text-[#6F7771]">
                         <p>
                           · 商品图片、H5
-                          内容和价格信息仍需保存后再执行审核动作。
+                          内容和价格信息仍需先保存，再执行上架状态动作。
                         </p>
                         <p>
-                          · 待审核或驳回素材不会被允许作为 H5
-                          图片块快速选择来源。
+                          · 开发期商品图片上传后即可用于主视觉、详情图和 H5
+                          图片块。
                         </p>
                         <p>
                           ·
-                          审核和上架动作复用既有权限、状态机和审计，不绕过运营复核。
+                          现有审核能力暂时保留为权限边界，当前商品图片编辑链路不再要求素材审核。
                         </p>
                       </div>
                     </div>

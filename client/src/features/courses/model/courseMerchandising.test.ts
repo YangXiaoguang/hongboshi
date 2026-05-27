@@ -115,6 +115,13 @@ describe("courseMerchandising", () => {
         usage: "proof",
         altText: "课程练习卡片预览",
       },
+      {
+        id: "asset_pending_1",
+        title: "待审核素材",
+        imageUrl: "https://example.com/pending.jpg",
+        usage: "gallery",
+        altText: "待审核素材",
+      },
     ]);
     expect(profile.richTextBlocks.map(block => block.id)).toEqual([
       "h5_heading_1",

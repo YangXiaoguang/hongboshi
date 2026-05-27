@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`ADM-PRO 课程商品详情装修器与成交内容运营升级`
-- 当前状态：`ADM-PRO-Q-C 模板共享审核队列前端接入` 已完成；模板库管理弹窗新增待审核筛选、申请人/申请时间展示、审核意见输入和通过/驳回动作，具备 `catalog:review` 权限的管理员可直接处理共享申请，审核后刷新模板库快照和审计时间线。发布队列 `ADM-IA-B-C-G` 暂缓，待商品编辑体验稳定后回到批量执行预案。
-- 本轮完成后下一步：执行 `ADM-PRO-Q-D 团队模板来源与套用审计解释增强`
+- 当前状态：`ADM-PRO-R-A 商品图片编辑减负与开发期免审核链路` 已完成；商品图片步骤改为“当前主视觉 / 上传图片 / 可用图片 / 当前详情图”的直接编辑路径，去掉待审核状态提示和设主图/H5 选图阻塞，成交图文图片上传后即可被后台草稿、前台详情模型和公开图片读取链路使用。发布队列 `ADM-IA-B-C-G` 继续暂缓，待商品编辑体验稳定后回到批量执行预案。
+- 本轮完成后下一步：执行 `ADM-PRO-R-B 商品图片排序、批量选择与上传后自动保存体验`
 
 ## 已完成关键能力
 
@@ -26,7 +26,7 @@
 - 完成新增课程商品与商品编辑工作台壳：新增 `POST /api/catalog/admin/course-products`、`product_create` 审计动作、`/admin/courses/new` 与 `/admin/courses/:courseId/edit` 后台路由；课程商品列表新增“新增商品”和“工作台”入口，工作台已按基础信息、商品图片、价格权益、H5 详情和发布审核组织后续编辑能力。
 - 完成商品图片管理与 H5 富文本编辑器底座：`CourseProductDetailContentSchema` 新增受控 `richTextBlocks`，支持标题、正文、图片、要点、FAQ、讲师介绍和购买须知；商品工作台会加载既有详情内容，图片步骤可维护成交主视觉、详情图和证明图，H5 步骤可维护摘要、适合人群、卖点和结构化内容块，并提供移动端预览。
 - 完成商品编辑工作台减负修正：取消左侧 5 步竖向导航和右侧常驻发布面板，改为顶部流程条、紧凑发布状态条和可展开发布详情，让基础信息、商品图片、价格权益与 H5 编辑拥有完整横向空间。
-- 完成商品素材选择器与上传接入：商品工作台图片步骤会加载既有课程素材资产，展示图片素材合规状态，已审核素材可设为成交主视觉或加入详情图；工作台内可上传图片素材，复用既有素材文件上传 API 和合规队列，并加入商品图片草稿等待保存。
+- 完成商品图片编辑减负与开发期免审核链路：商品工作台图片步骤改为上传即用，图片状态不再打断主视觉、详情图和 H5 图片块选择；前台课程详情模型会渲染后台维护的成交图文图片，公开图片读取不再要求成交图先过素材审核，学习资料下载仍保留原权限和审核边界。
 - 完成前台 H5 内容块消费：课程详情页读取 `merchandising.richTextBlocks`，按标题、正文、图片、要点、FAQ、讲师介绍和购买须知渲染课程图文介绍，不使用任意 HTML，缺失时继续保留现有成交展示结构。
 - 完成课程商品运营体验降复杂度修正：商品工作台图文内容默认进入简化编辑，可一键生成成交摘要、适合人群、卖点和移动端详情；图片上传支持 MIME 兜底、大小提示、默认操作原因和主视觉直传，服务端 JSON body limit 与 20MB 素材上限匹配；用户端课程详情新增购买决策条，并对长图文详情做渐进展开。
 - 完成课程商品详情装修器 Lite 首个切片：图文内容页升级为三栏结构（页面结构/内容编辑/样式面板 + 移动预览），详情图和 H5 图片块支持受控样式（风格、留白、圆角、比例、适配、说明展示），用户端课程详情按同一份结构化样式渲染，旧内容编辑页保存时保留样式字段。
@@ -35,7 +35,7 @@
 - 完成详情装修器服务端模板库与动作审计：新增详情模板共享契约、开发期 JSON Store、读取/创建/删除/套用 API、前端 repository 和工作台接入；模板库区分系统、团队和个人作用域，首版开放系统模板读取与个人模板写入；模板保存、套用和删除会写入模板动作审计。
 - 完成详情模板库管理与团队共享申请：商品编辑工作台新增模板库管理弹窗，支持系统/团队/个人筛选、关键词搜索、模板详情预览、区块摘要、审计时间线、套用/删除和个人模板申请团队共享；服务端新增共享申请契约、API、状态和 `template_share_request` 审计。
 - 完成图文内容富文本快编减负：商品编辑工作台“图文内容”默认展示轻量富文本摘要、适合人群、成交卖点、结构化详细图文编辑器和手机预览；原页面结构、样式面板、模板库和复杂区块控制收进“高级装修”，默认不再打断运营主路径。
-- 完成 H5 图片块素材选择增强与发布前预览收口：H5 图片块可从已通过/免审图片素材中一键填入图片地址、说明和标题；发布审核步骤展示移动成交页预览、价格权益、卖点、详情图、H5 内容块和合规预检提醒。
+- 完成 H5 图片块素材选择增强与发布前预览收口：H5 图片块可从商品图片中一键填入图片地址、说明和标题；发布设置步骤展示移动成交页预览、价格权益、卖点、详情图、H5 内容块和图文预检提醒。
 - 完成工作台审核动作接入与内容质量问题定位：发布审核步骤可直接提交审核、通过、驳回或撤回；服务端提交审核失败会返回结构化质量问题，工作台按问题路径跳转到商品图片、H5 详情或课程内容详情页。
 - 完成工作台上架状态联动与商品中心发布队列减负：发布审核步骤可直接执行上架/下架，展示商品草稿、内容审核、上架状态和前台可售状态流；商品中心列表行收敛为“工作台”和“发布管理”，基础信息/价格/内容编辑优先进入工作台。
 - 完成课程商品列表行与筛选组件化：`CourseProducts.tsx` 仅保留查询、权限、分页和动作弹窗编排；指标、最近审计、筛选条、列表行和展示格式化逻辑已拆入 `client/src/pages/admin/courses/*`，为后续发布队列分组和批量操作预案预留边界。
@@ -64,7 +64,7 @@
 - 完成课程优惠与组合购：新增共享 `coursePricing` 和前端 `coursePromotion` 纯模型，课程卡片、快速开始区、详情页和结算抽屉统一展示券后价、本单优惠、会员替代和路径组合预览。
 - 完成课程交易界面商品化优化：新增课程商品陈列模型，首页首屏直接展示可购买课程商品，课程中心首屏提供热门课程商品推荐和独立货架，课程卡片默认进入详情页课程介绍区，详情页新增粘性锚点、图文课程亮点区、内容规模/适合状态/核心收获证明点和就近购买动作，降低用户找课与购买路径成本。
 - 完成课程详情成交图文素材后台化：`CourseProductDetailContentSchema` 新增 `merchandising` 成交素材契约，后台 `/admin/courses` 可维护主视觉、成交卖点和图文资产，前台课程详情优先使用运营素材，PostgreSQL `course_product_contents.sales_assets` 可保存同一份内容。
-- 完成课程素材资产登记、真实文件上传、受控读取与学习页资料绑定基础：新增 `CourseProductAsset*` 共享契约、开发期 JSON Store、本地文件存储 adapter、后台素材读取/URL 登记/文件上传/合规处理 API、审计动作、公开已审核图片读取、章节资料绑定和已解锁课程资料下载入口。
+- 完成课程素材资产登记、真实文件上传、受控读取与学习页资料绑定基础：新增 `CourseProductAsset*` 共享契约、开发期 JSON Store、本地文件存储 adapter、后台素材读取/URL 登记/文件上传/合规处理 API、审计动作、成交图文图片公开读取、章节资料绑定和已解锁课程资料下载入口。
 - 完成课程素材正式存储设计准备：新增素材对象/短期读取 URL/删除结果/引用关系/回填计划共享契约，服务端对象存储 adapter 接口和本地兼容实现，文件上传写入 `objectKey` 与 sha256 `contentHash`，并落下素材对象表、素材元数据表和素材引用表迁移草案。
 - 完成课程素材 PostgreSQL Store 与回填 dry-run 基础：新增 `PostgresCourseProductAssetStore`、显式 `HONGBOSHI_COURSE_PRODUCT_ASSET_STORE=postgres` 切换、对象素材表同步和 `dryRunCourseProductAssetBackfill`，可检查 JSON Store 与章节占位回填到专表前的素材数、引用数和跳过原因。
 - 完成课程素材回填写入任务与运营确认入口准备：新增 backfill 请求/结果契约、受控 commit service、PostgreSQL 引用 upsert、后台 `GET/POST /api/catalog/admin/course-products/assets/backfill` 和前端 repository 入口，管理员可先预检再确认写入对象素材、素材元数据和章节引用关系。
@@ -357,8 +357,8 @@ CUX-I-B-B-A 课程素材真实文件上传与受控读取基础已交付：
 - `shared/domain/courseProduct.ts`：新增 `CourseProductAssetFileUploadRequestSchema`，并允许课程详情成交图文引用同源 `/api/` 图片资产 URL，文件上传契约继续校验素材类型、文件名、MIME、大小、上传原因和图片素材 MIME 边界。
 - `server/modules/catalog/courseProductAssetStore.ts`：新增 `CourseProductAssetFileStorage`、内存实现与 `LocalCourseProductAssetFileStorage`，开发期文件默认写入 `.hongboshi-data/course-product-assets/files`，JSON Store 只保存 `storageKey`、文件名、MIME、大小和合规状态。
 - `server/modules/catalog/catalogApi.ts`：新增 `POST /api/catalog/admin/course-products/:productId/assets/files` 和后台文件下载接口，继续按 `catalog:edit` / `catalog:read` 权限控制，并复用 `asset_upload` 审计动作。
-- `server/modules/courses/courseApi.ts`：新增 `GET /api/courses/:courseId/assets/:assetId/view` 公开读取已发布已审核课程的已通过图片资产；新增 `GET /api/courses/:courseId/assets/:assetId/download`，要求登录、课程已解锁、素材已通过合规且开启下载。
-- `client/src/features/catalog/api/httpCourseProductRepository.ts` 与 `client/src/pages/admin/CourseProducts.tsx`：后台素材资产库支持真实文件选择上传，自动带出文件名、MIME 和大小；对象存储素材可在后台下载，已通过图片可一键设为成交主视觉或成交图文。
+- `server/modules/courses/courseApi.ts`：新增 `GET /api/courses/:courseId/assets/:assetId/view` 公开读取已发布课程的成交图文图片资产；新增 `GET /api/courses/:courseId/assets/:assetId/download`，要求登录、课程已解锁、素材已通过合规且开启下载。
+- `client/src/features/catalog/api/httpCourseProductRepository.ts` 与 `client/src/pages/admin/CourseProducts.tsx`：后台素材资产库支持真实文件选择上传，自动带出文件名、MIME 和大小；对象存储素材可在后台下载，成交图文图片可一键设为成交主视觉或成交图文。
 - `server/index.ts`：JSON 请求体上限调整到 25MB，匹配当前素材上传大小限制，真实二进制仍不会写入素材 JSON Store。
 
 CUX-I-B-B-A 验收结果：
@@ -389,7 +389,7 @@ CUX-I-A 课程详情成交图文素材后台化已交付：
 - `shared/domain/courseProduct.ts`：新增 `CourseProductMerchandisingContentSchema`、成交图文资产 usage、内容质量提醒和更新请求字段，详情内容契约可保存成交标题、副标题、主视觉、卖点和图文资产。
 - `server/modules/catalog/courseProductContentStore.ts` 与 `server/modules/catalog/postgresCourseProductContentStore.ts`：默认详情内容会生成成交图文素材，更新内容时保存 `merchandising`；PostgreSQL 版新增 `sales_assets` JSONB 字段映射，并补充迁移与 schema 测试。
 - `client/src/pages/admin/CourseProducts.tsx`：课程商品详情编辑器新增“成交图文素材”区，运营可维护详情主视觉、替代文本、成交卖点、图文资产用途、合规状态和素材备注，内容质量会提示缺少主视觉、卖点不足或资产待合规确认。
-- `client/src/features/courses/model/courseMerchandising.ts` 与 `client/src/pages/CourseDetail.tsx`：课程详情商品化模型优先消费后台成交素材，详情页课程亮点区展示后台主视觉、标题、卖点和已审核图文资产，待审或驳回图文资产不会进入用户端展示。
+- `client/src/features/courses/model/courseMerchandising.ts` 与 `client/src/pages/CourseDetail.tsx`：课程详情商品化模型优先消费后台成交素材，详情页课程亮点区展示后台主视觉、标题、卖点和成交图文资产。
 - `docs/domain-contracts.md`、`docs/product-engineering-roadmap.md`、`docs/admin-management-roadmap.md` 和 `docs/database-schema.md` 已同步 CUX-I-A 的契约、后台边界和数据库字段。
 
 CUX-I-A 验收结果：
@@ -826,10 +826,10 @@ ADM-PRO-F 已把素材库接入商品图片步骤，但 H5 图片块仍需要手
 
 ADM-PRO-G 稳定切片已交付：
 
-- 在 H5 内容块的图片块中接入同一套素材选择器，支持从已审核图片素材一键填入 `imageUrl`、`altText` 和标题。
-- 发布审核步骤增加移动端成交页预览摘要，展示主视觉、卖点、详情图、H5 内容块、价格权益和合规提醒。
-- 对待审核/驳回素材给出更明确的发布前提醒，保持 `content_update` 审计与复审边界不变。
-- `client/src/pages/admin/courses/CourseProductEditorWorkspacePage.tsx` 新增发布前预检清单，覆盖主视觉、详情图、卖点数量、H5 内容块、H5 图片块、素材合规、操作原因和归档状态。
+- 在 H5 内容块的图片块中接入同一套素材选择器，支持从商品图片一键填入 `imageUrl`、`altText` 和标题。
+- 发布设置步骤增加移动端成交页预览摘要，展示主视觉、卖点、详情图、H5 内容块和价格权益。
+- 成交图文图片上传后可直接用于主视觉、详情图和 H5 图片块，保持 `content_update` 审计边界不变。
+- `client/src/pages/admin/courses/CourseProductEditorWorkspacePage.tsx` 新增发布前预检清单，覆盖主视觉、详情图、卖点数量、H5 内容块、H5 图片块、操作原因和归档状态。
 - 发布审核步骤新增手机成交页预览，运营可在提交审核前查看主视觉、标题、副标题、价格权益、卖点、详情图和 H5 内容块的组合效果。
 
 ### 最近完成阶段：ADM-PRO-H 工作台审核动作接入 + 内容质量问题定位

@@ -2271,21 +2271,6 @@ export function evaluateCourseProductContentQuality(
     });
   }
 
-  const pendingMerchandisingAssetCount =
-    normalized.merchandising.imageAssets.filter(
-      asset =>
-        asset.complianceStatus === "pending" ||
-        asset.complianceStatus === "rejected"
-    ).length;
-  if (pendingMerchandisingAssetCount > 0) {
-    addIssue({
-      code: "merchandising_asset_pending",
-      severity: "warning",
-      message: `课程成交图文还有 ${pendingMerchandisingAssetCount} 个素材待合规确认。`,
-      path: "merchandising.imageAssets",
-    });
-  }
-
   if (normalized.chapters.length < 2) {
     addIssue({
       code: "chapters_too_few",

@@ -571,9 +571,6 @@ export async function getCourseProductAssetPublicViewFile(options: {
   if (!isImageKind(result.asset.kind)) {
     throw new Error("COURSE_PRODUCT_ASSET_FILE_NOT_FOUND");
   }
-  if (!isApprovedForUse(result.asset)) {
-    throw new Error("COURSE_PRODUCT_ASSET_NOT_APPROVED");
-  }
   return result;
 }
 

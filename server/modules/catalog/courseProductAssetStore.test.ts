@@ -184,7 +184,7 @@ describe("course product asset store", () => {
     expect(downloaded.file.bytes.toString("utf8")).toBe("course worksheet");
   });
 
-  it("exposes approved image uploads through public view files", async () => {
+  it("exposes image uploads through public view files", async () => {
     const productStore = new InMemoryCourseProductStore(products);
     const assetStore = new InMemoryCourseProductAssetStore();
     const fileStorage = new InMemoryCourseProductAssetFileStorage();
@@ -209,14 +209,13 @@ describe("course product asset store", () => {
     expect(uploaded.asset.publicUrl).toBe(
       `/api/courses/${products[0].courseId}/assets/${uploaded.asset.id}/view`
     );
-    await expect(
-      getCourseProductAssetPublicViewFile({
-        productId: products[0].id,
-        assetId: uploaded.asset.id,
-        assetStore,
-        fileStorage,
-      })
-    ).rejects.toThrow("COURSE_PRODUCT_ASSET_NOT_APPROVED");
+    const pendingViewed = await getCourseProductAssetPublicViewFile({
+      productId: products[0].id,
+      assetId: uploaded.asset.id,
+      assetStore,
+      fileStorage,
+    });
+    expect(pendingViewed.file.mimeType).toBe("image/jpeg");
 
     await updateCourseProductAssetCompliance({
       productId: products[0].id,
