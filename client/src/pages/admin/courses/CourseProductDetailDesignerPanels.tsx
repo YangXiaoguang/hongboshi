@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowUp,
+  CheckCircle2,
   Clock3,
   Copy,
   Eye,
@@ -13,11 +14,13 @@ import {
   Share2,
   Trash2,
   X,
+  XCircle,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CourseProductDetailTemplate,
   CourseProductDetailTemplateAuditEvent,
+  CourseProductDetailTemplateShareReviewRequest,
   CourseProductRichTextBlockType,
 } from "@shared/domain";
 import {
@@ -528,6 +531,8 @@ export function CourseProductDetailTemplateManagerDialog({
   onTemplateApply,
   onTemplateDelete,
   onTemplateShareRequest,
+  onTemplateShareReview,
+  canReviewTemplates = false,
 }: {
   isOpen: boolean;
   templates: CourseProductDetailTemplate[];
@@ -537,11 +542,21 @@ export function CourseProductDetailTemplateManagerDialog({
   onTemplateApply: (templateId: string) => void | Promise<void>;
   onTemplateDelete: (templateId: string) => void | Promise<void>;
   onTemplateShareRequest: (templateId: string) => void | Promise<void>;
+  onTemplateShareReview?: (
+    templateId: string,
+    action: CourseProductDetailTemplateShareReviewRequest["action"],
+    reason: string
+  ) => void | Promise<void>;
+  canReviewTemplates?: boolean;
 }) {
   const [scopeFilter, setScopeFilter] =
     useState<DetailTemplateLibraryScopeFilter>("all");
   const [keyword, setKeyword] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>();
+  const [reviewReason, setReviewReason] = useState("");
+  const [reviewError, setReviewError] = useState<string>();
+  const [reviewingAction, setReviewingAction] =
+    useState<CourseProductDetailTemplateShareReviewRequest["action"]>();
   const summary = useMemo(
     () => summarizeCourseProductDetailTemplates(templates),
     [templates]
@@ -566,6 +581,43 @@ export function CourseProductDetailTemplateManagerDialog({
         : [],
     [auditEvents, selectedTemplate]
   );
+  const selectedTemplateNeedsReview =
+    selectedTemplate?.scope === "personal" &&
+    selectedTemplate.shareStatus === "pending_team_review";
+
+  useEffect(() => {
+    setReviewReason("");
+    setReviewError(undefined);
+    setReviewingAction(undefined);
+  }, [selectedTemplate?.id]);
+
+  const submitTemplateReview = async (
+    action: CourseProductDetailTemplateShareReviewRequest["action"]
+  ) => {
+    if (!selectedTemplate || !onTemplateShareReview) return;
+    const trimmedReason = reviewReason.trim();
+    const resolvedReason =
+      trimmedReason ||
+      (action === "approve"
+        ? `通过团队共享模板「${selectedTemplate.name}」`
+        : "");
+
+    if (resolvedReason.length < 4) {
+      setReviewError(
+        action === "reject" ? "驳回必须填写原因" : "请填写至少 4 个字的审核原因"
+      );
+      return;
+    }
+
+    setReviewError(undefined);
+    setReviewingAction(action);
+    try {
+      await onTemplateShareReview(selectedTemplate.id, action, resolvedReason);
+      setReviewReason("");
+    } finally {
+      setReviewingAction(undefined);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -604,7 +656,7 @@ export function CourseProductDetailTemplateManagerDialog({
                 className="h-10 w-full rounded-lg border border-[#D8CEC0] bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
               />
             </div>
-            <div className="mt-3 grid grid-cols-4 gap-1 rounded-lg border border-[#E1D7C8] bg-white p-1">
+            <div className="mt-3 grid grid-cols-5 gap-1 rounded-lg border border-[#E1D7C8] bg-white p-1">
               {detailTemplateLibraryScopeOptions.map(option => (
                 <button
                   key={option.value}
@@ -625,7 +677,7 @@ export function CourseProductDetailTemplateManagerDialog({
               <TemplateStat label="个人" value={summary.personalCount} />
               <TemplateStat label="团队" value={summary.teamCount} />
               <TemplateStat
-                label="待共享"
+                label="待审核"
                 value={summary.pendingShareRequestCount}
               />
             </div>
@@ -680,6 +732,11 @@ export function CourseProductDetailTemplateManagerDialog({
                         <span className="rounded-full bg-[#F8F3EA] px-2.5 py-1 text-[#8A6D4B]">
                           {detailTemplateShareStatusLabel(selectedTemplate)}
                         </span>
+                        {selectedTemplateNeedsReview && (
+                          <span className="rounded-full bg-[#FFF4EF] px-2.5 py-1 text-[#A65F48]">
+                            共享审核
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -776,6 +833,83 @@ export function CourseProductDetailTemplateManagerDialog({
                 </div>
 
                 <aside className="h-fit border-t border-[#E5DCCF] pt-5 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+                  {selectedTemplateNeedsReview && (
+                    <div className="mb-5 rounded-lg border border-[#E7D2BA] bg-[#FFF8EE] p-4">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                        <CheckCircle2 className="h-4 w-4 text-[#6F8F83]" />
+                        共享审核
+                      </div>
+                      <dl className="mt-3 space-y-2 text-xs leading-5 text-[#6F7771]">
+                        <div>
+                          <dt className="font-semibold text-[#41524B]">
+                            申请人
+                          </dt>
+                          <dd>
+                            {selectedTemplate.teamShareRequestedBy ?? "未记录"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="font-semibold text-[#41524B]">
+                            申请时间
+                          </dt>
+                          <dd>
+                            {selectedTemplate.teamShareRequestedAt
+                              ? formatTemplateDate(
+                                  selectedTemplate.teamShareRequestedAt
+                                )
+                              : "未记录"}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      {canReviewTemplates && onTemplateShareReview ? (
+                        <>
+                          <textarea
+                            value={reviewReason}
+                            onChange={event => {
+                              setReviewReason(event.target.value);
+                              setReviewError(undefined);
+                            }}
+                            rows={3}
+                            placeholder="填写审核意见；通过可留空使用默认原因，驳回必须说明修改点"
+                            className="mt-3 w-full resize-none rounded-lg border border-[#D8CEC0] bg-white px-3 py-2 text-xs leading-5 text-[#243B35] outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83]"
+                          />
+                          {reviewError && (
+                            <p className="mt-2 text-xs text-[#A65F48]">
+                              {reviewError}
+                            </p>
+                          )}
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <button
+                              onClick={() =>
+                                void submitTemplateReview("reject")
+                              }
+                              disabled={Boolean(reviewingAction)}
+                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#E7C7B8] bg-white text-xs font-semibold text-[#A65F48] transition hover:bg-[#FFF4EF] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <XCircle className="h-3.5 w-3.5" />
+                              驳回
+                            </button>
+                            <button
+                              onClick={() =>
+                                void submitTemplateReview("approve")
+                              }
+                              disabled={Boolean(reviewingAction)}
+                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[#243B35] text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              通过
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="mt-3 rounded-lg border border-dashed border-[#D8CEC0] bg-white px-3 py-3 text-xs leading-5 text-[#6F7771]">
+                          当前账号可查看申请，但暂无模板共享审核权限。
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
                     <Clock3 className="h-4 w-4 text-[#6F8F83]" />
                     审计时间线

@@ -82,6 +82,7 @@ export type DetailContentTemplateContext = {
 
 export type DetailTemplateLibraryScopeFilter =
   | "all"
+  | "pending_review"
   | CourseProductDetailTemplateScope;
 
 export type DetailDesignerSavedTemplate = {
@@ -187,6 +188,7 @@ export const detailTemplateLibraryScopeOptions: {
   label: string;
 }[] = [
   { value: "all", label: "全部" },
+  { value: "pending_review", label: "待审核" },
   { value: "system", label: "系统" },
   { value: "team", label: "团队" },
   { value: "personal", label: "个人" },
@@ -683,7 +685,11 @@ export function filterCourseProductDetailTemplates({
 }) {
   const normalizedKeyword = keyword.trim().toLowerCase();
   return templates.filter(template => {
-    const scopeMatched = scope === "all" || template.scope === scope;
+    const scopeMatched =
+      scope === "all" ||
+      (scope === "pending_review"
+        ? template.shareStatus === "pending_team_review"
+        : template.scope === scope);
     if (!scopeMatched) return false;
     if (!normalizedKeyword) return true;
     return [

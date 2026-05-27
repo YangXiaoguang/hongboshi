@@ -55,6 +55,7 @@ import {
   type CourseProductDetailContent,
   type CourseProductDetailTemplate,
   type CourseProductDetailTemplateAuditEvent,
+  type CourseProductDetailTemplateShareReviewRequest,
   type CourseProductListItem,
   type CourseProductMerchandisingAssetUsage,
   type CourseProductPriceUpdateRequest,
@@ -2222,6 +2223,61 @@ export default function CourseProductEditorWorkspacePage() {
       }
     },
     [catalogPermissions.canEdit, reason, savedDetailTemplates]
+  );
+
+  const reviewShareDetailTemplate = useCallback(
+    async (
+      templateId: string,
+      action: CourseProductDetailTemplateShareReviewRequest["action"],
+      reviewReason: string
+    ) => {
+      if (!catalogPermissions.canReview) {
+        setActionError("当前账号暂无课程详情模板共享审核权限");
+        return;
+      }
+      const template = savedDetailTemplates.find(
+        item => item.id === templateId
+      );
+      if (!template) {
+        setActionError("未找到该课程详情模板");
+        return;
+      }
+      if (
+        template.scope !== "personal" ||
+        template.shareStatus !== "pending_team_review"
+      ) {
+        setActionError("仅待团队复核的个人模板可以审核");
+        return;
+      }
+
+      setIsDetailTemplateSaving(true);
+      setActionError(undefined);
+      setActionMessage(undefined);
+      try {
+        const result =
+          await httpCourseProductRepository.reviewCourseProductDetailTemplateTeamShare(
+            template.id,
+            {
+              action,
+              reason: reviewReason,
+            }
+          );
+        setSavedDetailTemplates(result.templates.items);
+        setDetailTemplateAuditEvents(result.templates.auditEvents);
+        setActionMessage(
+          action === "approve"
+            ? "已通过共享申请，团队模板快照已生成"
+            : "已驳回共享申请，模板已退回个人私有"
+        );
+      } catch (err) {
+        setActionError(
+          err instanceof Error ? err.message : "课程详情模板共享审核失败"
+        );
+      } finally {
+        setIsDetailTemplateSaving(false);
+      }
+    },
+    [catalogPermissions.canReview, savedDetailTemplates]
   );
 
   const uploadMerchandisingAsset = useCallback(async () => {
@@ -4757,6 +4813,8 @@ export default function CourseProductEditorWorkspacePage() {
         onTemplateApply={applySavedDetailTemplate}
         onTemplateDelete={deleteSavedDetailTemplate}
         onTemplateShareRequest={requestShareDetailTemplate}
+        onTemplateShareReview={reviewShareDetailTemplate}
+        canReviewTemplates={catalogPermissions.canReview}
       />
     </div>
   );

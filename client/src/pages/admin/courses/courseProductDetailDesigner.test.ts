@@ -357,6 +357,13 @@ describe("course product detail designer", () => {
         keyword: "情绪",
       }).map(template => template.id)
     ).toEqual(["personal_template"]);
+    expect(
+      filterCourseProductDetailTemplates({
+        templates,
+        scope: "pending_review",
+        keyword: "",
+      }).map(template => template.id)
+    ).toEqual(["personal_template"]);
     expect(detailTemplateScopeLabel("personal")).toBe("个人模板");
     expect(detailTemplateShareStatusLabel(templates[1]!)).toBe("待团队复核");
     expect(detailTemplateAuditActionLabel("template_share_request")).toBe(
@@ -364,6 +371,9 @@ describe("course product detail designer", () => {
     );
     expect(detailTemplateAuditActionLabel("template_share_approve")).toBe(
       "通过共享"
+    );
+    expect(detailTemplateAuditActionLabel("template_share_reject")).toBe(
+      "驳回共享"
     );
     expect(
       detailTemplateAuditEventsForTemplate(
