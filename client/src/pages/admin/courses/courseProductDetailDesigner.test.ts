@@ -23,6 +23,7 @@ import {
   h5BlockFormsForSave,
   insertH5BlockAfter,
   moveH5BlockForm,
+  moveMediaAssetForm,
   summaryRichTextBlockFormsForSave,
   summaryRichTextBlocksFromPlainText,
   summaryRichTextPlainText,
@@ -103,6 +104,40 @@ describe("course product detail designer", () => {
         block => block.id
       )
     ).toEqual(["heading", "paragraph", "note"]);
+
+    const showcase = {
+      id: "showcase",
+      title: "主视觉",
+      imageUrl: "https://example.com/showcase.jpg",
+      altText: "",
+      usage: "showcase" as const,
+      complianceStatus: "not_required" as const,
+      note: "",
+      style: detailBlockStyleDefaults,
+    };
+    const proof = {
+      ...showcase,
+      id: "proof",
+      title: "证明图",
+      usage: "proof" as const,
+    };
+    const gallery = {
+      ...showcase,
+      id: "gallery",
+      title: "详情图",
+      usage: "gallery" as const,
+    };
+
+    expect(
+      moveMediaAssetForm([showcase, proof, gallery], "proof", "up").map(
+        asset => asset.id
+      )
+    ).toEqual(["proof", "showcase", "gallery"]);
+    expect(
+      moveMediaAssetForm([showcase, proof, gallery], "showcase", "up").map(
+        asset => asset.id
+      )
+    ).toEqual(["showcase", "proof", "gallery"]);
 
     const copy = cloneH5BlockForm(paragraph);
     expect(copy.id).not.toBe(paragraph.id);

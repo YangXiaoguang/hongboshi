@@ -499,6 +499,23 @@ export function moveH5BlockForm(
   return nextBlocks;
 }
 
+export function moveMediaAssetForm(
+  assets: MediaAssetFormState[],
+  assetId: string,
+  direction: "up" | "down"
+): MediaAssetFormState[] {
+  const currentIndex = assets.findIndex(asset => asset.id === assetId);
+  if (currentIndex < 0) return assets;
+  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= assets.length) return assets;
+
+  const nextAssets = [...assets];
+  const [currentAsset] = nextAssets.splice(currentIndex, 1);
+  if (!currentAsset) return assets;
+  nextAssets.splice(targetIndex, 0, currentAsset);
+  return nextAssets;
+}
+
 export function insertH5BlockAfter(
   blocks: H5BlockFormState[],
   afterBlockId: string,

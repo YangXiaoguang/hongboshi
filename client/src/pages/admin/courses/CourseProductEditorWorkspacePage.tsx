@@ -14,7 +14,9 @@ import {
   ArrowDown,
   ArrowUp,
   BadgeCheck,
+  CheckCircle2,
   ChevronLeft,
+  Circle,
   ClipboardCheck,
   Copy,
   ExternalLink,
@@ -103,6 +105,7 @@ import {
   h5BlockTypeOptions,
   insertH5BlockAfter,
   merchandisingAssetUsageOptions,
+  moveMediaAssetForm,
   moveH5BlockForm,
   optionalText,
   removeH5BlockForm,
@@ -362,6 +365,24 @@ function upsertMediaAssetForm(
   return assets.map((asset, index) =>
     index === existingIndex ? nextAsset : asset
   );
+}
+
+function contentFormWithMediaAsset(
+  form: ContentWorkbenchFormState,
+  nextAsset: MediaAssetFormState,
+  usage: CourseProductMerchandisingAssetUsage
+): ContentWorkbenchFormState {
+  return {
+    ...form,
+    showcaseImageUrl:
+      usage === "showcase" ? nextAsset.imageUrl : form.showcaseImageUrl,
+    showcaseImageAlt:
+      usage === "showcase" ? nextAsset.altText : form.showcaseImageAlt,
+    imageAssets: upsertMediaAssetForm(form.imageAssets, {
+      ...nextAsset,
+      usage,
+    }),
+  };
 }
 
 function formatWorkspacePrice(form: PriceFormState) {
@@ -1393,6 +1414,9 @@ export default function CourseProductEditorWorkspacePage() {
   const [assetUploadUsage, setAssetUploadUsage] =
     useState<CourseProductMerchandisingAssetUsage>("gallery");
   const [assetUploadInputKey, setAssetUploadInputKey] = useState(0);
+  const [selectedReusableAssetIds, setSelectedReusableAssetIds] = useState<
+    string[]
+  >([]);
   const [reason, setReason] = useState("新增课程商品草稿");
   const [isAdvancedH5Editing, setIsAdvancedH5Editing] = useState(true);
   const [isAdvancedDesignerOpen, setIsAdvancedDesignerOpen] = useState(false);
@@ -1464,6 +1488,14 @@ export default function CourseProductEditorWorkspacePage() {
     [assetLibrary]
   );
   const reusableImageAssets = merchandisingImageAssets;
+  const displayedReusableImageAssets = useMemo(
+    () => reusableImageAssets.slice(0, 6),
+    [reusableImageAssets]
+  );
+  const selectedReusableAssets = useMemo(() => {
+    const selectedIds = new Set(selectedReusableAssetIds);
+    return reusableImageAssets.filter(asset => selectedIds.has(asset.id));
+  }, [reusableImageAssets, selectedReusableAssetIds]);
   const publishPreflightWarnings = useMemo(
     () =>
       buildPublishPreflightWarnings({
@@ -1543,6 +1575,7 @@ export default function CourseProductEditorWorkspacePage() {
         evaluateCourseProductContentQuality(loadedContent)
       );
       setAssetLibrary(loadedAssets.items);
+      setSelectedReusableAssetIds([]);
       setReason("运营工作台更新课程商品");
     } catch (err) {
       setError(err instanceof Error ? err.message : "课程商品读取失败");
@@ -1588,6 +1621,7 @@ export default function CourseProductEditorWorkspacePage() {
       setPriceForm(defaultPriceForm());
       setContentForm(defaultContentWorkbenchForm());
       setAssetLibrary([]);
+      setSelectedReusableAssetIds([]);
       setAssetUploadFile(undefined);
       setAssetUploadTitle("");
       setAssetUploadUsage("gallery");
@@ -1607,6 +1641,16 @@ export default function CourseProductEditorWorkspacePage() {
     isNew,
     loadProduct,
   ]);
+
+  useEffect(() => {
+    if (selectedReusableAssetIds.length === 0) return;
+    const reusableAssetIds = new Set(
+      reusableImageAssets.map(asset => asset.id)
+    );
+    setSelectedReusableAssetIds(current =>
+      current.filter(assetId => reusableAssetIds.has(assetId))
+    );
+  }, [reusableImageAssets, selectedReusableAssetIds.length]);
 
   const submitCreate = useCallback(async () => {
     if (!catalogPermissions.canEdit) {
@@ -1713,26 +1757,26 @@ export default function CourseProductEditorWorkspacePage() {
     }
   }, [catalogPermissions.canPrice, priceForm, product, reason]);
 
-  const submitContentUpdate = useCallback(
-    async (successLabel: string) => {
+  const persistContentFormDraft = useCallback(
+    async (nextForm: ContentWorkbenchFormState, successMessage: string) => {
       if (!product || !content) {
         setActionError("请先创建并读取课程商品后再维护详情内容");
-        return;
+        return false;
       }
       if (!catalogPermissions.canEdit) {
         setActionError("当前账号暂无课程商品编辑权限");
-        return;
+        return false;
       }
       const request = buildContentUpdateRequest(
         content,
-        contentForm,
+        nextForm,
         reason,
         !isAdvancedH5Editing,
         activeContentTemplateSource
       );
       if (!request) {
         setActionError("请检查商品摘要、适合人群、卖点和图片是否填写完整");
-        return;
+        return false;
       }
 
       setIsSaving(true);
@@ -1751,11 +1795,13 @@ export default function CourseProductEditorWorkspacePage() {
         setServerContentQuality(
           evaluateCourseProductContentQuality(result.content)
         );
-        setActionMessage(`${successLabel}已保存，课程商品需重新审核`);
+        setActionMessage(successMessage);
+        return true;
       } catch (err) {
         setActionError(
           err instanceof Error ? err.message : "课程商品详情内容保存失败"
         );
+        return false;
       } finally {
         setIsSaving(false);
       }
@@ -1763,12 +1809,21 @@ export default function CourseProductEditorWorkspacePage() {
     [
       catalogPermissions.canEdit,
       content,
-      contentForm,
       activeContentTemplateSource,
       isAdvancedH5Editing,
       product,
       reason,
     ]
+  );
+
+  const submitContentUpdate = useCallback(
+    async (successLabel: string) => {
+      await persistContentFormDraft(
+        contentForm,
+        `${successLabel}已保存到商品详情`
+      );
+    },
+    [contentForm, persistContentFormDraft]
   );
 
   const refreshAssetLibrary = useCallback(async () => {
@@ -1780,6 +1835,7 @@ export default function CourseProductEditorWorkspacePage() {
         product.id
       );
       setAssetLibrary(result.items);
+      setSelectedReusableAssetIds([]);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "课程素材读取失败");
     } finally {
@@ -1787,8 +1843,64 @@ export default function CourseProductEditorWorkspacePage() {
     }
   }, [product]);
 
+  const toggleReusableAssetSelection = useCallback((assetId: string) => {
+    setSelectedReusableAssetIds(current =>
+      current.includes(assetId)
+        ? current.filter(currentAssetId => currentAssetId !== assetId)
+        : [...current, assetId]
+    );
+  }, []);
+
+  const selectDisplayedReusableAssets = useCallback(() => {
+    setSelectedReusableAssetIds(
+      displayedReusableImageAssets.map(asset => asset.id)
+    );
+  }, [displayedReusableImageAssets]);
+
+  const applySelectedReusableAssetsToGallery = useCallback(async () => {
+    const formAssets = selectedReusableAssets
+      .map(asset => mediaAssetFormFromCourseProductAsset(asset, "gallery"))
+      .filter((asset): asset is MediaAssetFormState => Boolean(asset));
+    if (formAssets.length === 0) {
+      setActionError("请先选择要加入详情图的图片");
+      return;
+    }
+    const nextImageAssets = formAssets.reduce(
+      (assets, formAsset) => upsertMediaAssetForm(assets, formAsset),
+      contentForm.imageAssets
+    );
+    const nextForm = {
+      ...contentForm,
+      imageAssets: nextImageAssets,
+    };
+    setContentForm(nextForm);
+    const saved = await persistContentFormDraft(
+      nextForm,
+      `已加入 ${formAssets.length} 张详情图并保存`
+    );
+    if (saved) setSelectedReusableAssetIds([]);
+  }, [contentForm, persistContentFormDraft, selectedReusableAssets]);
+
+  const moveCurrentImageAsset = useCallback(
+    async (assetId: string, direction: "up" | "down") => {
+      const nextImageAssets = moveMediaAssetForm(
+        contentForm.imageAssets,
+        assetId,
+        direction
+      );
+      if (nextImageAssets === contentForm.imageAssets) return;
+      const nextForm = {
+        ...contentForm,
+        imageAssets: nextImageAssets,
+      };
+      setContentForm(nextForm);
+      await persistContentFormDraft(nextForm, "图片顺序已保存");
+    },
+    [contentForm, persistContentFormDraft]
+  );
+
   const applyAssetToContentForm = useCallback(
-    (
+    async (
       asset: CourseProductAsset,
       usage: CourseProductMerchandisingAssetUsage
     ) => {
@@ -1797,22 +1909,15 @@ export default function CourseProductEditorWorkspacePage() {
         setActionError("该素材缺少可用于前台展示的读取地址");
         return;
       }
-      setContentForm(current => ({
-        ...current,
-        showcaseImageUrl:
-          usage === "showcase" ? formAsset.imageUrl : current.showcaseImageUrl,
-        showcaseImageAlt:
-          usage === "showcase" ? formAsset.altText : current.showcaseImageAlt,
-        imageAssets: upsertMediaAssetForm(current.imageAssets, formAsset),
-      }));
+      const nextForm = contentFormWithMediaAsset(contentForm, formAsset, usage);
+      setContentForm(nextForm);
       setActionError(undefined);
-      setActionMessage(
-        usage === "showcase"
-          ? "已选择成交主视觉，保存商品图片后生效"
-          : "已加入详情图草稿，保存商品图片后生效"
+      await persistContentFormDraft(
+        nextForm,
+        usage === "showcase" ? "成交主视觉已保存" : "详情图已加入并保存"
       );
     },
-    []
+    [contentForm, persistContentFormDraft]
   );
 
   const applyAssetToH5ImageBlock = useCallback(
@@ -2287,21 +2392,22 @@ export default function CourseProductEditorWorkspacePage() {
         assetUploadUsage
       );
       if (formAsset) {
-        setContentForm(current => ({
-          ...current,
-          imageAssets: upsertMediaAssetForm(current.imageAssets, formAsset),
-          showcaseImageUrl:
-            assetUploadUsage === "showcase" && result.asset.publicUrl
-              ? result.asset.publicUrl
-              : current.showcaseImageUrl,
-          showcaseImageAlt:
-            assetUploadUsage === "showcase" ? title : current.showcaseImageAlt,
-        }));
+        const nextForm = contentFormWithMediaAsset(
+          contentForm,
+          formAsset,
+          assetUploadUsage
+        );
+        setContentForm(nextForm);
+        await persistContentFormDraft(
+          nextForm,
+          assetUploadUsage === "showcase"
+            ? "图片已上传并保存为成交主视觉"
+            : "图片已上传并保存到详情图"
+        );
       }
       setAssetUploadFile(undefined);
       setAssetUploadTitle("");
       setAssetUploadInputKey(current => current + 1);
-      setActionMessage("图片已上传并加入当前商品草稿，保存商品图片后生效");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "课程素材上传失败");
     } finally {
@@ -2312,6 +2418,8 @@ export default function CourseProductEditorWorkspacePage() {
     assetUploadTitle,
     assetUploadUsage,
     catalogPermissions.canEdit,
+    contentForm,
+    persistContentFormDraft,
     product,
     reason,
   ]);
@@ -2839,21 +2947,61 @@ export default function CourseProductEditorWorkspacePage() {
                             可用图片
                           </div>
                           <p className="mt-1 text-xs leading-5 text-[#8A8176]">
-                            从已上传图片中直接设为主视觉，或加入当前详情图草稿。
+                            单张设主图，或勾选多张批量加入详情并自动保存。
                           </p>
                         </div>
-                        <button
-                          onClick={() => void refreshAssetLibrary()}
-                          disabled={!product || isAssetLibraryLoading}
-                          className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {isAssetLibraryLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-4 w-4" />
-                          )}
-                          刷新图片
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#6F7771]">
+                            已选 {selectedReusableAssets.length} 张
+                          </span>
+                          <button
+                            onClick={selectDisplayedReusableAssets}
+                            disabled={
+                              displayedReusableImageAssets.length === 0 ||
+                              isAssetLibraryLoading
+                            }
+                            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            全选
+                          </button>
+                          <button
+                            onClick={() => setSelectedReusableAssetIds([])}
+                            disabled={selectedReusableAssets.length === 0}
+                            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            清空
+                          </button>
+                          <button
+                            onClick={() =>
+                              void applySelectedReusableAssetsToGallery()
+                            }
+                            disabled={
+                              selectedReusableAssets.length === 0 ||
+                              isSaving ||
+                              !catalogPermissions.canEdit
+                            }
+                            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isSaving ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="h-4 w-4" />
+                            )}
+                            批量加入详情
+                          </button>
+                          <button
+                            onClick={() => void refreshAssetLibrary()}
+                            disabled={!product || isAssetLibraryLoading}
+                            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-3 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isAssetLibraryLoading ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                            刷新
+                          </button>
+                        </div>
                       </div>
 
                       <div className="mt-4 grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
@@ -2863,28 +3011,55 @@ export default function CourseProductEditorWorkspacePage() {
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                               正在读取素材库
                             </div>
-                          ) : merchandisingImageAssets.length === 0 ? (
+                          ) : reusableImageAssets.length === 0 ? (
                             <div className="rounded-lg border border-dashed border-[#D8CEC0] bg-white px-4 py-5 text-sm text-[#6F7771]">
                               暂无可用于商品展示的图片素材，可以先上传一张课程场景图。
                             </div>
                           ) : (
                             <div className="grid gap-3 md:grid-cols-2">
-                              {merchandisingImageAssets
-                                .slice(0, 6)
-                                .map(asset => (
+                              {displayedReusableImageAssets.map(asset => {
+                                const isSelected =
+                                  selectedReusableAssetIds.includes(asset.id);
+                                return (
                                   <div
                                     key={asset.id}
-                                    className="grid gap-3 rounded-lg border border-[#E1D7C8] bg-white p-3 sm:grid-cols-[112px_minmax(0,1fr)]"
+                                    className={`rounded-lg border bg-white p-2.5 transition ${
+                                      isSelected
+                                        ? "border-[#6F8F83] shadow-[0_0_0_2px_rgba(111,143,131,0.12)]"
+                                        : "border-[#E1D7C8]"
+                                    }`}
                                   >
-                                    <div className="overflow-hidden rounded-lg bg-[#F8F3EA]">
+                                    <div className="relative overflow-hidden rounded-lg bg-[#F8F3EA]">
                                       <img
                                         src={asset.publicUrl}
                                         alt={asset.altText || asset.title}
                                         className="aspect-[4/3] w-full object-cover"
                                       />
+                                      <button
+                                        onClick={() =>
+                                          toggleReusableAssetSelection(asset.id)
+                                        }
+                                        className={`absolute right-2 top-2 inline-flex h-8 items-center gap-1 rounded-full border px-2 text-xs font-semibold shadow-sm transition ${
+                                          isSelected
+                                            ? "border-[#6F8F83] bg-[#EDF5EA] text-[#243B35]"
+                                            : "border-white/80 bg-white/90 text-[#41524B] hover:border-[#9FB3A9]"
+                                        }`}
+                                        aria-label={
+                                          isSelected
+                                            ? `取消选择${asset.title}`
+                                            : `选择${asset.title}`
+                                        }
+                                      >
+                                        {isSelected ? (
+                                          <CheckCircle2 className="h-3.5 w-3.5" />
+                                        ) : (
+                                          <Circle className="h-3.5 w-3.5" />
+                                        )}
+                                        {isSelected ? "已选" : "选择"}
+                                      </button>
                                     </div>
-                                    <div className="min-w-0">
-                                      <p className="line-clamp-2 text-sm font-semibold leading-5 text-[#243B35]">
+                                    <div className="mt-2 min-w-0">
+                                      <p className="line-clamp-2 min-h-[40px] text-sm font-semibold leading-5 text-[#243B35]">
                                         {asset.title}
                                       </p>
                                       <p className="mt-1 truncate text-xs text-[#8A8176]">
@@ -2896,35 +3071,45 @@ export default function CourseProductEditorWorkspacePage() {
                                       <div className="mt-3 grid grid-cols-2 gap-2">
                                         <button
                                           onClick={() =>
-                                            applyAssetToContentForm(
+                                            void applyAssetToContentForm(
                                               asset,
                                               "showcase"
                                             )
                                           }
-                                          className="inline-flex h-9 items-center justify-center rounded-lg bg-[#243B35] px-2.5 text-xs font-semibold text-white transition hover:bg-[#315047]"
+                                          disabled={
+                                            isSaving ||
+                                            !catalogPermissions.canEdit
+                                          }
+                                          className="inline-flex h-9 items-center justify-center rounded-lg bg-[#243B35] px-2.5 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:opacity-50"
                                         >
-                                          设为主图
+                                          设主图
                                         </button>
                                         <button
                                           onClick={() =>
-                                            applyAssetToContentForm(
+                                            void applyAssetToContentForm(
                                               asset,
                                               "gallery"
                                             )
                                           }
-                                          className="inline-flex h-9 items-center justify-center rounded-lg border border-[#D8CEC0] px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9]"
+                                          disabled={
+                                            isSaving ||
+                                            !catalogPermissions.canEdit
+                                          }
+                                          className="inline-flex h-9 items-center justify-center rounded-lg border border-[#D8CEC0] px-2.5 text-xs font-semibold text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-50"
                                         >
                                           加入详情
                                         </button>
                                       </div>
                                     </div>
                                   </div>
-                                ))}
+                                );
+                              })}
                             </div>
                           )}
                           <p className="mt-3 text-xs text-[#8A8176]">
-                            共 {merchandisingImageAssets.length}{" "}
-                            张可用图片。保存后即可在商品详情中使用。
+                            共 {reusableImageAssets.length} 张可用图片，当前展示{" "}
+                            {displayedReusableImageAssets.length}{" "}
+                            张；上传、选图和排序会自动保存。
                           </p>
                         </div>
 
@@ -2986,10 +3171,10 @@ export default function CourseProductEditorWorkspacePage() {
                             ) : (
                               <Upload className="h-4 w-4" />
                             )}
-                            上传并使用
+                            上传并自动保存
                           </button>
                           <p className="mt-3 text-xs leading-5 text-[#8A8176]">
-                            上传后会立即加入当前商品草稿；选择“成交主视觉”时会同步更新主图。
+                            上传成功后会自动保存到商品详情；选择“成交主视觉”时会同步更新主图。
                           </p>
                         </div>
                       </div>
@@ -3002,7 +3187,7 @@ export default function CourseProductEditorWorkspacePage() {
                           详情图与证明图
                         </div>
                         <p className="mt-1 text-xs leading-5 text-[#8A8176]">
-                          已加入的图片会出现在课程详情图文中，可编辑标题、说明和用途。
+                          已加入的图片会出现在课程详情图文中，可上移、下移并自动保存顺序。
                         </p>
                       </div>
                       <button
@@ -3133,20 +3318,49 @@ export default function CourseProductEditorWorkspacePage() {
                                 className="h-10 rounded-lg border border-[#D8CEC0] bg-white px-3 text-sm outline-none transition placeholder:text-[#A39A90] focus:border-[#6F8F83] md:col-span-2"
                               />
                             </div>
-                            <button
-                              onClick={() =>
-                                setContentForm(current => ({
-                                  ...current,
-                                  imageAssets: current.imageAssets.filter(
-                                    item => item.id !== asset.id
-                                  ),
-                                }))
-                              }
-                              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#A65F48] transition hover:bg-[#FFF4EF]"
-                              aria-label="删除图片"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            <div className="flex gap-2 md:flex-col">
+                              <button
+                                onClick={() =>
+                                  void moveCurrentImageAsset(asset.id, "up")
+                                }
+                                disabled={assetIndex === 0 || isSaving}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label="上移图片"
+                                title="上移"
+                              >
+                                <ArrowUp className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() =>
+                                  void moveCurrentImageAsset(asset.id, "down")
+                                }
+                                disabled={
+                                  assetIndex ===
+                                    contentForm.imageAssets.length - 1 ||
+                                  isSaving
+                                }
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#41524B] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label="下移图片"
+                                title="下移"
+                              >
+                                <ArrowDown className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() =>
+                                  setContentForm(current => ({
+                                    ...current,
+                                    imageAssets: current.imageAssets.filter(
+                                      item => item.id !== asset.id
+                                    ),
+                                  }))
+                                }
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E1D7C8] text-[#A65F48] transition hover:bg-[#FFF4EF]"
+                                aria-label="删除图片"
+                                title="删除"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
                           </div>
                         ))
                       )}
@@ -3168,7 +3382,7 @@ export default function CourseProductEditorWorkspacePage() {
                         ) : (
                           <Save className="h-4 w-4" />
                         )}
-                        保存商品图片
+                        保存手动修改
                       </button>
                       <button
                         onClick={() =>
