@@ -14,7 +14,7 @@
 - 后端使用 Express 模块化 API。
 - `shared/domain` 已承载前后端共享 Zod 契约。
 - 已建立 `visitor`、`member`、`counselor`、`catalog_viewer`、`catalog_operator`、`operator`、`admin` 角色和 `admin:manage`、`counseling:fulfill`、`catalog:*`、`membership_product:*`、`user:read`、`user:membership`、`order:read`、`order:operate`、`transaction:read`、`transaction:operate`、`finance:read`、`finance:manage`、`risk:read`、`risk:review`、`risk:sop`、`audit:read` 等权限能力。
-- 咨询运营配置页面 `/admin/counseling` 已拆为咨询师、排班、履约、规则与审计四个工作区；咨询师工作区可新增、编辑、停用和软删除咨询师名册，并管理前台展示资料、擅长方向、价格、资质服务状态和接单门禁。
+- 咨询运营配置页面 `/admin/counseling` 已拆为咨询师、排班、履约、规则与审计四个工作区；咨询师工作区可新增、编辑、停用和软删除咨询师名册，并管理前台展示资料、头像、训练背景、咨询风格、适合人群、擅长方向、服务小时、价格、资质服务状态和接单门禁；新增/编辑已收敛为右侧抽屉，主工作区保留名单和详情概览，避免人数增多后在页面底部维护长表单。
 - 支付对账页面 `/admin/payments` 已可对比支付回调收据、业务订单和咨询预约状态。
 - 课程商品列表 `/admin/courses` 已接入统一后台，可读取课程商品契约、搜索、状态筛选、分类筛选、排序、分页、新增商品草稿、内容质量校验、审核动作、上下架、改价、资源级权限和最近审计；详情内容、成交图文素材、素材资产 URL 登记、真实文件上传和合规队列已进入 `/admin/courses/:courseId` 独立详情页；新增 `/admin/courses/new` 与 `/admin/courses/:courseId/edit` 商品编辑工作台，按基础信息、商品图片、价格权益、H5 详情和发布审核组织编辑能力；工作台已可维护成交主视觉、详情/证明图、摘要、适合人群、成交卖点和受控 H5 内容块，并在图片步骤接入素材库选择与图片上传，发布设置步骤已收敛为一键上架/下架、发布前预检、移动预览、前台回看和购买入口验证；商品中心列表行已减负为工作台/发布管理主入口，列表行、筛选区、指标区和最近审计摘要已组件化，并新增发布队列只读分组和批量操作预案；前台课程详情已消费结构化 H5 内容块。状态与详情内容均可写入 JSON Store 或 PostgreSQL，并已联动前台课程列表/详情。
 - 会员商品后台 `/admin/memberships` 已接入统一后台，可读取会员商品配置、维护商品文案、调整套餐价格、暂停/恢复套餐，并写入会员商品操作审计；当前支持开发期 JSON Store，用户端会员公共快照和服务端会员 checkout 已复用同一 Store，前台已能区分可买、暂不可购买和历史待支付继续支付。

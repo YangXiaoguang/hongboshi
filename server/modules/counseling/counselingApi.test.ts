@@ -612,7 +612,12 @@ describe("counseling api payloads", () => {
           introduction: "擅长情绪压力与个人成长议题的稳定陪伴。",
           specialties: ["emotion", "personal_growth"],
           licenseSummary: "心理咨询服务 5 年",
+          trainingSummary: "接受情绪调节和个案概念化训练，保持定期督导。",
+          serviceStyle: "温和稳定，重视目标共识和阶段性复盘。",
+          idealClientDescription:
+            "适合希望系统梳理情绪压力和自我成长议题的来访者。",
           yearsOfPractice: 5,
+          caseHours: 800,
           sessionPrice: 329,
           serviceStatus: "active",
           acceptsNewClients: true,
@@ -627,6 +632,10 @@ describe("counseling api payloads", () => {
     expect(created.status).toBe(201);
     if (!created.body.ok) throw new Error("expected profile created");
     expect(created.body.data.profile.counselor.name).toBe("周明");
+    expect(created.body.data.profile.counselor.caseHours).toBe(800);
+    expect(created.body.data.profile.counselor.serviceStyle).toContain(
+      "温和稳定"
+    );
     expect(created.body.data.auditEvent.action).toBe(
       "counselor_profile_created"
     );

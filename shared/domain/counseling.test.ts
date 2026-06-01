@@ -319,17 +319,27 @@ describe("counseling appointment status machine", () => {
         introduction: "擅长情绪压力与个人成长议题的稳定陪伴。",
         specialties: ["emotion", "personal_growth"],
         licenseSummary: "心理咨询服务 5 年",
+        trainingSummary: "接受情绪调节和个案概念化训练，保持定期督导。",
+        serviceStyle: "温和稳定，重视目标共识和阶段性复盘。",
+        idealClientDescription:
+          "适合希望系统梳理情绪压力和自我成长议题的来访者。",
         yearsOfPractice: 5,
+        caseHours: 800,
         sessionPrice: 329,
       },
       reason: "新增咨询师档案",
     });
     expect(create.profile.serviceStatus).toBe("active");
+    expect(create.profile.caseHours).toBe(800);
 
     const update = CounselorAdminProfileUpdateRequestSchema.parse({
       counselorId: "counselor_1",
       profile: {
         title: "资深心理咨询师",
+        trainingSummary: "更新训练背景",
+        serviceStyle: "结构清晰，适合持续咨询",
+        idealClientDescription: "适合关注情绪和关系议题的人群",
+        caseHours: 1200,
         specialties: ["emotion", "personal_growth"],
         serviceStatus: "paused",
         acceptsNewClients: false,
@@ -359,7 +369,11 @@ describe("counseling appointment status machine", () => {
             introduction: "擅长情绪与自我成长议题。",
             specialties: ["emotion", "personal_growth"],
             licenseSummary: "执业 9 年",
+            trainingSummary: "接受关系议题和情绪调节系统训练。",
+            serviceStyle: "温和、稳定、重视阶段目标。",
+            idealClientDescription: "适合情绪压力和自我成长来访者。",
             yearsOfPractice: 9,
+            caseHours: 1600,
             sessionPrice: 399,
             rating: 4.9,
           },

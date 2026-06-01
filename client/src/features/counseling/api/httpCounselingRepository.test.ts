@@ -22,7 +22,11 @@ const counselor = {
   introduction: "擅长情绪与自我成长议题。",
   specialties: ["emotion", "personal_growth"],
   licenseSummary: "执业 9 年",
+  trainingSummary: "接受情绪调节和关系议题训练。",
+  serviceStyle: "温和稳定，重视阶段目标。",
+  idealClientDescription: "适合关注情绪压力和自我成长的来访者。",
   yearsOfPractice: 9,
+  caseHours: 1600,
   sessionPrice: 399,
   rating: 4.9,
 };
