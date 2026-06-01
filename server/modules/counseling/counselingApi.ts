@@ -24,6 +24,9 @@ import {
   CounselingCancellationPolicyUpdateResultSchema,
   CounselorAdminProfileConfigSchema,
   CounselorAdminProfileConsoleSchema,
+  CounselorAdminProfileCreateRequestSchema,
+  CounselorAdminProfileDeleteRequestSchema,
+  CounselorAdminProfileDeleteResultSchema,
   CounselorAdminProfileFilterSchema,
   CounselorAdminProfileMutationResultSchema,
   CounselorAdminProfileSchema,
@@ -53,6 +56,8 @@ import {
   type Counselor,
   type CounselorAdminProfile,
   type CounselorAdminProfileConfig,
+  type CounselorAdminProfileCreateRequest,
+  type CounselorAdminProfileDeleteRequest,
   type CounselorAdminProfileFilter,
   type CounselorAdminProfileSummary,
   type CounselorAdminProfileUpdateRequest,
@@ -121,6 +126,9 @@ const CounselorAdminProfileConsoleResponseSchema = ApiResponseSchema(
 );
 const CounselorAdminProfileMutationResponseSchema = ApiResponseSchema(
   CounselorAdminProfileMutationResultSchema
+);
+const CounselorAdminProfileDeleteResponseSchema = ApiResponseSchema(
+  CounselorAdminProfileDeleteResultSchema
 );
 const CounselingServiceRecordConsoleResponseSchema = ApiResponseSchema(
   CounselingServiceRecordConsoleSchema
@@ -2320,6 +2328,102 @@ export async function getCounselingAdminCounselorProfilesPayload(
   } as const;
 }
 
+export async function createCounselingAdminCounselorProfilePayload(
+  body: unknown,
+  actor?: FulfillmentActor,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后新增咨询师"),
+    } as const;
+  }
+
+  if (!userCan(actor, "admin:manage")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无咨询师档案权限"),
+    } as const;
+  }
+
+  const parsed = CounselorAdminProfileCreateRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "新增咨询师参数不合法"),
+    } as const;
+  }
+
+  await expireOverdueCounselingPayments(now);
+
+  const request: CounselorAdminProfileCreateRequest = parsed.data;
+  const counselorId = `counselor_${randomUUID().slice(0, 8)}`;
+  const savedProfile = await counselorAdminProfileStore.saveProfile(
+    CounselorAdminProfileConfigSchema.parse({
+      counselor: {
+        id: counselorId,
+        name: request.profile.name,
+        avatarUrl: request.profile.avatarUrl,
+        title: request.profile.title,
+        introduction: request.profile.introduction,
+        specialties: request.profile.specialties,
+        licenseSummary: request.profile.licenseSummary,
+        yearsOfPractice: request.profile.yearsOfPractice,
+        sessionPrice: request.profile.sessionPrice,
+      },
+      serviceStatus: request.profile.serviceStatus,
+      acceptsNewClients:
+        request.profile.serviceStatus === "active" &&
+        request.profile.acceptsNewClients,
+      credentialStatus: request.profile.credentialStatus,
+      credentialExpiresAt: request.profile.credentialExpiresAt,
+      updatedAt: now,
+      updatedBy: actor.id,
+    })
+  );
+  const auditEvent = CounselingOperationAuditEventSchema.parse({
+    id: `audit_counselor_${Date.parse(now)}_${randomUUID().slice(0, 8)}`,
+    action: "counselor_profile_created",
+    actorId: actor.id,
+    actorRoles: actor.roles,
+    counselorId: savedProfile.counselor.id,
+    note: request.reason,
+    createdAt: now,
+  });
+  await counselingOperationStore.saveAuditEvent(auditEvent);
+
+  const consoleData = await buildCounselorAdminProfileConsole({
+    filters: {
+      limit: 50,
+    },
+    now,
+  });
+  const profile = consoleData.profiles.find(
+    item => item.counselor.id === savedProfile.counselor.id
+  );
+
+  if (!profile) {
+    return {
+      status: 500,
+      body: errorPayload("INTERNAL_ERROR", "新增咨询师档案读取失败"),
+    } as const;
+  }
+
+  return {
+    status: 201,
+    body: CounselorAdminProfileMutationResponseSchema.parse({
+      ok: true,
+      data: {
+        profile,
+        console: consoleData,
+        auditEvent,
+        serverTime: now,
+      },
+    }),
+  } as const;
+}
+
 export async function updateCounselingAdminCounselorProfilePayload(
   body: unknown,
   actor?: FulfillmentActor,
@@ -2417,6 +2521,113 @@ export async function updateCounselingAdminCounselorProfilePayload(
       data: {
         profile,
         console: consoleData,
+        auditEvent,
+        serverTime: now,
+      },
+    }),
+  } as const;
+}
+
+export async function deleteCounselingAdminCounselorProfilePayload(
+  body: unknown,
+  actor?: FulfillmentActor,
+  now = new Date().toISOString()
+) {
+  if (!actor) {
+    return {
+      status: 401,
+      body: errorPayload("UNAUTHORIZED", "请先登录后删除咨询师"),
+    } as const;
+  }
+
+  if (!userCan(actor, "admin:manage")) {
+    return {
+      status: 403,
+      body: errorPayload("FORBIDDEN", "当前账号暂无咨询师档案权限"),
+    } as const;
+  }
+
+  const parsed = CounselorAdminProfileDeleteRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: 400,
+      body: errorPayload("BAD_REQUEST", "删除咨询师参数不合法"),
+    } as const;
+  }
+
+  await expireOverdueCounselingPayments(now);
+
+  const request: CounselorAdminProfileDeleteRequest = parsed.data;
+  const existing = await getCounselorProfileConfig(request.counselorId, now);
+  if (!existing) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "咨询师不存在或已删除"),
+    } as const;
+  }
+
+  const appointments =
+    await counselingAppointmentStore.listAppointmentsByCounselor(
+      request.counselorId
+    );
+  if (appointments.length > 0) {
+    return {
+      status: 409,
+      body: errorPayload(
+        "CONFLICT",
+        "该咨询师已有预约或履约记录，请先暂停接单；为保证订单和审计可追溯，暂不允许删除"
+      ),
+    } as const;
+  }
+
+  await Promise.all(
+    (await counselingAppointmentStore.listSlots(new Date(now)))
+      .filter(
+        slot => slot.counselorId === request.counselorId && slot.available
+      )
+      .map(slot =>
+        counselingAppointmentStore.saveSlot({
+          ...slot,
+          available: false,
+        })
+      )
+  );
+
+  const archived = await counselorAdminProfileStore.archiveProfile(
+    request.counselorId,
+    actor.id,
+    now
+  );
+  if (!archived) {
+    return {
+      status: 404,
+      body: errorPayload("NOT_FOUND", "咨询师不存在或已删除"),
+    } as const;
+  }
+
+  const auditEvent = CounselingOperationAuditEventSchema.parse({
+    id: `audit_counselor_${Date.parse(now)}_${randomUUID().slice(0, 8)}`,
+    action: "counselor_profile_deleted",
+    actorId: actor.id,
+    actorRoles: actor.roles,
+    counselorId: archived.counselor.id,
+    note: request.reason,
+    createdAt: now,
+  });
+  await counselingOperationStore.saveAuditEvent(auditEvent);
+
+  return {
+    status: 200,
+    body: CounselorAdminProfileDeleteResponseSchema.parse({
+      ok: true,
+      data: {
+        counselorId: request.counselorId,
+        console: await buildCounselorAdminProfileConsole({
+          filters: {
+            limit: 50,
+          },
+          now,
+        }),
         auditEvent,
         serverTime: now,
       },
@@ -3140,6 +3351,30 @@ export function registerCounselingApi(app: Express) {
     }
   );
 
+  app.post(
+    "/api/counseling/admin/counselors",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await createCounselingAdminCounselorProfilePayload(
+        req.body,
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
+  app.delete(
+    "/api/counseling/admin/counselors",
+    async (req: Request, res: Response) => {
+      const session = await getLoginSessionFromRequest(req);
+      const payload = await deleteCounselingAdminCounselorProfilePayload(
+        req.body,
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    }
+  );
+
   app.get(
     "/api/counseling/admin/schedules",
     async (req: Request, res: Response) => {
@@ -3329,6 +3564,44 @@ export function handleCounselingApiRequest(
     })().catch(err => {
       reportStoreError(err);
       sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询师档案保存失败"));
+    });
+    return true;
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname === "/api/counseling/admin/counselors"
+  ) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const body = await readRequestBody(req);
+      const payload = await createCounselingAdminCounselorProfilePayload(
+        body,
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      reportStoreError(err);
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询师新增失败"));
+    });
+    return true;
+  }
+
+  if (
+    req.method === "DELETE" &&
+    url.pathname === "/api/counseling/admin/counselors"
+  ) {
+    void (async () => {
+      const session = await getLoginSessionFromRequest(req);
+      const body = await readRequestBody(req);
+      const payload = await deleteCounselingAdminCounselorProfilePayload(
+        body,
+        session?.user
+      );
+      sendJson(res, payload.status, payload.body);
+    })().catch(err => {
+      reportStoreError(err);
+      sendJson(res, 500, errorPayload("INTERNAL_ERROR", "咨询师删除失败"));
     });
     return true;
   }

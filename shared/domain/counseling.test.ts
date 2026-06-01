@@ -6,6 +6,8 @@ import {
   CounselingAdminScheduleActionRequestSchema,
   CounselingAdminScheduleConsoleSchema,
   CounselorAdminProfileConsoleSchema,
+  CounselorAdminProfileCreateRequestSchema,
+  CounselorAdminProfileDeleteRequestSchema,
   CounselorAdminProfileUpdateRequestSchema,
   CounselingOperationAuditEventSchema,
   CounselingServiceRecordConsoleSchema,
@@ -310,6 +312,20 @@ describe("counseling appointment status machine", () => {
   });
 
   it("validates counselor admin profile contracts and updates", () => {
+    const create = CounselorAdminProfileCreateRequestSchema.parse({
+      profile: {
+        name: "周明",
+        title: "心理咨询师",
+        introduction: "擅长情绪压力与个人成长议题的稳定陪伴。",
+        specialties: ["emotion", "personal_growth"],
+        licenseSummary: "心理咨询服务 5 年",
+        yearsOfPractice: 5,
+        sessionPrice: 329,
+      },
+      reason: "新增咨询师档案",
+    });
+    expect(create.profile.serviceStatus).toBe("active");
+
     const update = CounselorAdminProfileUpdateRequestSchema.parse({
       counselorId: "counselor_1",
       profile: {
@@ -322,6 +338,12 @@ describe("counseling appointment status machine", () => {
       reason: "资质年审前暂停接单",
     });
     expect(update.profile.serviceStatus).toBe("paused");
+
+    const deleted = CounselorAdminProfileDeleteRequestSchema.parse({
+      counselorId: "counselor_1",
+      reason: "误建咨询师档案",
+    });
+    expect(deleted.counselorId).toBe("counselor_1");
 
     const consolePayload = CounselorAdminProfileConsoleSchema.parse({
       filters: {

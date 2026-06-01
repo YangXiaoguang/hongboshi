@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  createCounselingAdminCounselorProfilePayload,
   createCounselingAppointmentPayload,
+  deleteCounselingAdminCounselorProfilePayload,
   expireOverdueCounselingPayments,
   fulfillCounselingAppointmentPayload,
   getCounselingAdminCounselorProfilesPayload,
@@ -599,6 +601,66 @@ describe("counseling api payloads", () => {
       "2026-05-10T00:12:00.000Z"
     );
     expect(invalid.status).toBe(400);
+  });
+
+  it("lets operators create and delete counselor profiles with audit", async () => {
+    const created = await createCounselingAdminCounselorProfilePayload(
+      {
+        profile: {
+          name: "周明",
+          title: "心理咨询师",
+          introduction: "擅长情绪压力与个人成长议题的稳定陪伴。",
+          specialties: ["emotion", "personal_growth"],
+          licenseSummary: "心理咨询服务 5 年",
+          yearsOfPractice: 5,
+          sessionPrice: 329,
+          serviceStatus: "active",
+          acceptsNewClients: true,
+          credentialStatus: "verified",
+        },
+        reason: "新增咨询师档案",
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T01:00:00.000Z"
+    );
+
+    expect(created.status).toBe(201);
+    if (!created.body.ok) throw new Error("expected profile created");
+    expect(created.body.data.profile.counselor.name).toBe("周明");
+    expect(created.body.data.auditEvent.action).toBe(
+      "counselor_profile_created"
+    );
+
+    const counselorId = created.body.data.profile.counselor.id;
+    const availability = await getCounselingAvailabilityPayload(
+      "2026-05-10T01:01:00.000Z"
+    );
+    if (!availability.ok) throw new Error("expected availability");
+    expect(
+      availability.data.counselors.some(
+        counselor => counselor.id === counselorId
+      )
+    ).toBe(true);
+
+    const deleted = await deleteCounselingAdminCounselorProfilePayload(
+      {
+        counselorId,
+        reason: "误建咨询师档案",
+      },
+      { id: "operator_1", roles: ["operator"] },
+      "2026-05-10T01:02:00.000Z"
+    );
+
+    expect(deleted.status).toBe(200);
+    if (!deleted.body.ok) throw new Error("expected profile deleted");
+    expect(deleted.body.data.auditEvent.action).toBe(
+      "counselor_profile_deleted"
+    );
+    expect(
+      deleted.body.data.console.profiles.some(
+        profile => profile.counselor.id === counselorId
+      )
+    ).toBe(false);
   });
 
   it("lets operators configure cancellation policy and records policy audit", async () => {

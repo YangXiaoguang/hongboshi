@@ -12,6 +12,9 @@ import {
   CounselingCancellationPolicyUpdateRequestSchema,
   CounselingCancellationPolicyUpdateResultSchema,
   CounselorAdminProfileConsoleSchema,
+  CounselorAdminProfileCreateRequestSchema,
+  CounselorAdminProfileDeleteRequestSchema,
+  CounselorAdminProfileDeleteResultSchema,
   CounselorAdminProfileFilterSchema,
   CounselorAdminProfileMutationResultSchema,
   CounselorAdminProfileUpdateRequestSchema,
@@ -32,6 +35,9 @@ import {
   type CounselingCancellationPolicyUpdateRequest,
   type CounselingCancellationPolicyUpdateResult,
   type CounselorAdminProfileConsole,
+  type CounselorAdminProfileCreateRequest,
+  type CounselorAdminProfileDeleteRequest,
+  type CounselorAdminProfileDeleteResult,
   type CounselorAdminProfileFilter,
   type CounselorAdminProfileMutationResult,
   type CounselorAdminProfileUpdateRequest,
@@ -61,6 +67,9 @@ const CounselorAdminProfileConsoleResponseSchema = ApiResponseSchema(
 );
 const CounselorAdminProfileMutationResponseSchema = ApiResponseSchema(
   CounselorAdminProfileMutationResultSchema
+);
+const CounselorAdminProfileDeleteResponseSchema = ApiResponseSchema(
+  CounselorAdminProfileDeleteResultSchema
 );
 const CounselingServiceRecordConsoleResponseSchema = ApiResponseSchema(
   CounselingServiceRecordConsoleSchema
@@ -149,6 +158,14 @@ export function parseCounselorAdminProfileMutationResponse(
   payload: unknown
 ): CounselorAdminProfileMutationResult {
   const parsed = CounselorAdminProfileMutationResponseSchema.parse(payload);
+  if (!parsed.ok) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+export function parseCounselorAdminProfileDeleteResponse(
+  payload: unknown
+): CounselorAdminProfileDeleteResult {
+  const parsed = CounselorAdminProfileDeleteResponseSchema.parse(payload);
   if (!parsed.ok) throw new Error(parsed.error.message);
   return parsed.data;
 }
@@ -410,6 +427,46 @@ export const httpCounselingRepository = {
       throw new Error(extractErrorMessage(payload, "咨询师档案暂时无法保存"));
     }
     return parseCounselorAdminProfileMutationResponse(payload);
+  },
+
+  async createCounselorAdminProfile(
+    request: CounselorAdminProfileCreateRequest
+  ): Promise<CounselorAdminProfileMutationResult> {
+    const body = CounselorAdminProfileCreateRequestSchema.parse(request);
+    const response = await fetch(`${API_BASE}/admin/counselors`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "咨询师暂时无法新增"));
+    }
+    return parseCounselorAdminProfileMutationResponse(payload);
+  },
+
+  async deleteCounselorAdminProfile(
+    request: CounselorAdminProfileDeleteRequest
+  ): Promise<CounselorAdminProfileDeleteResult> {
+    const body = CounselorAdminProfileDeleteRequestSchema.parse(request);
+    const response = await fetch(`${API_BASE}/admin/counselors`, {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload, "咨询师暂时无法删除"));
+    }
+    return parseCounselorAdminProfileDeleteResponse(payload);
   },
 
   async loadServiceRecords(

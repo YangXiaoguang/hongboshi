@@ -44,4 +44,45 @@ describe("counselor admin profile store", () => {
     ).toBe("资深心理咨询师");
     expect(saved.counselor.id).toBe(existing.counselor.id);
   });
+
+  it("keeps custom counselor profiles and hides archived profiles", () => {
+    const store = new InMemoryCounselorAdminProfileStore();
+    const saved = store.saveProfile({
+      counselor: {
+        id: "counselor_custom_1",
+        name: "周明",
+        title: "心理咨询师",
+        introduction: "擅长情绪压力与个人成长议题的稳定陪伴。",
+        specialties: ["emotion", "personal_growth"],
+        licenseSummary: "心理咨询服务 5 年",
+        yearsOfPractice: 5,
+        sessionPrice: 329,
+      },
+      serviceStatus: "active",
+      acceptsNewClients: true,
+      credentialStatus: "verified",
+      updatedAt: "2026-05-10T00:05:00.000Z",
+      updatedBy: "operator_1",
+    });
+
+    expect(saved.counselor.id).toBe("counselor_custom_1");
+    expect(
+      store
+        .listProfiles("2026-05-10T00:06:00.000Z")
+        .some(profile => profile.counselor.id === "counselor_custom_1")
+    ).toBe(true);
+
+    const archived = store.archiveProfile(
+      "counselor_custom_1",
+      "operator_1",
+      "2026-05-10T00:07:00.000Z"
+    );
+
+    expect(archived?.archivedAt).toBe("2026-05-10T00:07:00.000Z");
+    expect(
+      store
+        .listProfiles("2026-05-10T00:08:00.000Z")
+        .some(profile => profile.counselor.id === "counselor_custom_1")
+    ).toBe(false);
+  });
 });

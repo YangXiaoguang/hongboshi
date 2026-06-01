@@ -11,16 +11,21 @@ import {
   ClipboardList,
   FileSearch,
   History,
+  ListChecks,
   Loader2,
   PauseCircle,
+  Pencil,
+  Plus,
   RefreshCw,
   RotateCcw,
   Save,
   Search,
   SlidersHorizontal,
   ToggleLeft,
+  Trash2,
   UserCheck,
   UserRoundCog,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { userCan } from "@shared/domain";
@@ -53,7 +58,9 @@ const auditActionCopy = {
   schedule_slot_added: "新增排班",
   schedule_slot_closed: "关闭排班",
   schedule_slot_restored: "恢复排班",
+  counselor_profile_created: "新增咨询师档案",
   counselor_profile_updated: "更新咨询师档案",
+  counselor_profile_deleted: "删除咨询师档案",
   counselor_service_status_updated: "更新接单状态",
 } satisfies Record<CounselingOperationAuditEvent["action"], string>;
 
@@ -125,6 +132,37 @@ type CounselorProfileDraft = {
   credentialExpiresAt: string;
   reason: string;
 };
+
+type CounselingWorkspaceTab = "counselors" | "schedule" | "records" | "rules";
+
+type CounselorProfileEditorMode = "create" | "edit";
+
+const counselingWorkspaceTabs: Array<{
+  id: CounselingWorkspaceTab;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "counselors",
+    label: "咨询师",
+    description: "新增、维护、停用和删除",
+  },
+  {
+    id: "schedule",
+    label: "排班",
+    description: "新增时段和关闭时段",
+  },
+  {
+    id: "records",
+    label: "履约",
+    description: "查看预约和异常",
+  },
+  {
+    id: "rules",
+    label: "规则与审计",
+    description: "取消规则和操作流水",
+  },
+];
 
 const counselorProfileServiceStatusCopy = {
   active: "正常接单",
@@ -307,6 +345,24 @@ function counselorProfileDraftFromProfile(
   };
 }
 
+function buildNewCounselorProfileDraft(): CounselorProfileDraft {
+  return {
+    counselorId: "",
+    name: "",
+    title: "心理咨询师",
+    introduction: "",
+    specialties: ["emotion"],
+    licenseSummary: "",
+    yearsOfPractice: "0",
+    sessionPrice: "399",
+    serviceStatus: "active",
+    acceptsNewClients: true,
+    credentialStatus: "verified",
+    credentialExpiresAt: "",
+    reason: "新增咨询师档案",
+  };
+}
+
 function sameSpecialties(a: CounselorSpecialty[], b: CounselorSpecialty[]) {
   if (a.length !== b.length) return false;
   const normalizedA = [...a].sort();
@@ -414,6 +470,8 @@ function AuditMeta({ event }: { event: CounselingOperationAuditEvent }) {
 
 export default function CounselingOperations() {
   const { user, isLoggedIn, isAuthSyncing } = useAuth();
+  const [activeWorkspace, setActiveWorkspace] =
+    useState<CounselingWorkspaceTab>("counselors");
   const [consoleData, setConsoleData] = useState<CounselingOperationsConsole>();
   const [scheduleConsole, setScheduleConsole] =
     useState<CounselingAdminScheduleConsole>();
@@ -425,6 +483,11 @@ export default function CounselingOperations() {
   const [selectedCounselorId, setSelectedCounselorId] = useState<string>();
   const [counselorProfileDraft, setCounselorProfileDraft] =
     useState<CounselorProfileDraft>();
+  const [counselorEditorMode, setCounselorEditorMode] =
+    useState<CounselorProfileEditorMode>();
+  const [deleteCounselorProfile, setDeleteCounselorProfile] =
+    useState<CounselorAdminProfile>();
+  const [deleteCounselorReason, setDeleteCounselorReason] = useState("");
   const [serviceRecordConsole, setServiceRecordConsole] =
     useState<CounselingServiceRecordConsole>();
   const [serviceRecordFilters, setServiceRecordFilters] = useState(
@@ -445,6 +508,7 @@ export default function CounselingOperations() {
     useState<string>();
   const [isCounselorProfileSaving, setIsCounselorProfileSaving] =
     useState(false);
+  const [isCounselorDeleting, setIsCounselorDeleting] = useState(false);
   const [isServiceRecordsLoading, setIsServiceRecordsLoading] = useState(false);
   const [scheduleActionSlotId, setScheduleActionSlotId] = useState<string>();
   const [error, setError] = useState<string>();
@@ -573,6 +637,8 @@ export default function CounselingOperations() {
   ]);
 
   useEffect(() => {
+    if (counselorEditorMode === "create") return;
+
     if (!counselorProfiles.length) {
       if (selectedCounselorId) setSelectedCounselorId(undefined);
       if (counselorProfileDraft) setCounselorProfileDraft(undefined);
@@ -594,7 +660,12 @@ export default function CounselingOperations() {
     if (counselorProfileDraft?.counselorId !== nextSelected.counselor.id) {
       setCounselorProfileDraft(counselorProfileDraftFromProfile(nextSelected));
     }
-  }, [counselorProfileDraft, counselorProfiles, selectedCounselorId]);
+  }, [
+    counselorEditorMode,
+    counselorProfileDraft,
+    counselorProfiles,
+    selectedCounselorId,
+  ]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -761,12 +832,37 @@ export default function CounselingOperations() {
     (profile: CounselorAdminProfile) => {
       setSelectedCounselorId(profile.counselor.id);
       setCounselorProfileDraft(counselorProfileDraftFromProfile(profile));
+      setCounselorEditorMode(undefined);
     },
     []
   );
 
+  const openCreateCounselorProfile = useCallback(() => {
+    setCounselorEditorMode("create");
+    setCounselorProfileDraft(buildNewCounselorProfileDraft());
+  }, []);
+
+  const openEditCounselorProfile = useCallback(
+    (profile: CounselorAdminProfile) => {
+      setSelectedCounselorId(profile.counselor.id);
+      setCounselorProfileDraft(counselorProfileDraftFromProfile(profile));
+      setCounselorEditorMode("edit");
+    },
+    []
+  );
+
+  const closeCounselorEditor = useCallback(() => {
+    setCounselorEditorMode(undefined);
+    if (selectedCounselorProfile) {
+      setCounselorProfileDraft(
+        counselorProfileDraftFromProfile(selectedCounselorProfile)
+      );
+    }
+  }, [selectedCounselorProfile]);
+
   const handleSaveCounselorProfile = useCallback(async () => {
-    if (!selectedCounselorProfile || !counselorProfileDraft) return;
+    if (!counselorProfileDraft) return;
+    if (counselorEditorMode !== "create" && !selectedCounselorProfile) return;
     const yearsOfPractice = Number(counselorProfileDraft.yearsOfPractice);
     const sessionPrice = Number(counselorProfileDraft.sessionPrice);
 
@@ -791,42 +887,53 @@ export default function CounselingOperations() {
     setIsCounselorProfileSaving(true);
     setError(undefined);
     try {
-      const result = await httpCounselingRepository.updateCounselorAdminProfile(
-        {
-          counselorId: selectedCounselorProfile.counselor.id,
-          profile: {
-            name: counselorProfileDraft.name.trim(),
-            title: counselorProfileDraft.title.trim(),
-            introduction: counselorProfileDraft.introduction.trim(),
-            specialties: counselorProfileDraft.specialties,
-            licenseSummary: counselorProfileDraft.licenseSummary.trim(),
-            yearsOfPractice,
-            sessionPrice,
-            serviceStatus: counselorProfileDraft.serviceStatus,
-            acceptsNewClients:
-              counselorProfileDraft.serviceStatus === "active" &&
-              counselorProfileDraft.acceptsNewClients,
-            credentialStatus: counselorProfileDraft.credentialStatus,
-            credentialExpiresAt: dateInputToIso(
-              counselorProfileDraft.credentialExpiresAt
-            ),
-          },
-          reason:
-            counselorProfileDraft.reason.trim() ||
-            `更新咨询师档案：${selectedCounselorProfile.counselor.name}`,
-        }
-      );
+      const profilePayload = {
+        name: counselorProfileDraft.name.trim(),
+        title: counselorProfileDraft.title.trim(),
+        introduction: counselorProfileDraft.introduction.trim(),
+        specialties: counselorProfileDraft.specialties,
+        licenseSummary: counselorProfileDraft.licenseSummary.trim(),
+        yearsOfPractice,
+        sessionPrice,
+        serviceStatus: counselorProfileDraft.serviceStatus,
+        acceptsNewClients:
+          counselorProfileDraft.serviceStatus === "active" &&
+          counselorProfileDraft.acceptsNewClients,
+        credentialStatus: counselorProfileDraft.credentialStatus,
+        credentialExpiresAt: dateInputToIso(
+          counselorProfileDraft.credentialExpiresAt
+        ),
+      };
+      const result =
+        counselorEditorMode === "create"
+          ? await httpCounselingRepository.createCounselorAdminProfile({
+              profile: profilePayload,
+              reason:
+                counselorProfileDraft.reason.trim() ||
+                `新增咨询师档案：${counselorProfileDraft.name.trim()}`,
+            })
+          : await httpCounselingRepository.updateCounselorAdminProfile({
+              counselorId: selectedCounselorProfile!.counselor.id,
+              profile: profilePayload,
+              reason:
+                counselorProfileDraft.reason.trim() ||
+                `更新咨询师档案：${selectedCounselorProfile!.counselor.name}`,
+            });
       setCounselorProfileConsole(result.console);
       setSelectedCounselorId(result.profile.counselor.id);
       setCounselorProfileDraft(
         counselorProfileDraftFromProfile(result.profile)
       );
+      setCounselorEditorMode(undefined);
       syncScheduleAudit(result.auditEvent);
       void loadConsole();
       void loadCounselorProfiles(counselorProfileFilters);
       void loadServiceRecords(serviceRecordFilters);
       toast("咨询师档案已保存", {
-        description: `${result.profile.counselor.name} 的前台展示和接单门禁已更新`,
+        description:
+          counselorEditorMode === "create"
+            ? `${result.profile.counselor.name} 已加入咨询师名册`
+            : `${result.profile.counselor.name} 的前台展示和接单门禁已更新`,
       });
     } catch (err) {
       const message =
@@ -838,11 +945,64 @@ export default function CounselingOperations() {
     }
   }, [
     counselorProfileDraft,
+    counselorEditorMode,
     counselorProfileFilters,
     loadConsole,
     loadCounselorProfiles,
     loadServiceRecords,
     selectedCounselorProfile,
+    serviceRecordFilters,
+    syncScheduleAudit,
+  ]);
+
+  const handleDeleteCounselorProfile = useCallback(async () => {
+    if (!deleteCounselorProfile) return;
+    if (deleteCounselorReason.trim().length < 2) {
+      const message = "请填写删除原因，便于后续审计追溯";
+      setError(message);
+      toast("删除失败", { description: message });
+      return;
+    }
+
+    setIsCounselorDeleting(true);
+    setError(undefined);
+    try {
+      const result = await httpCounselingRepository.deleteCounselorAdminProfile(
+        {
+          counselorId: deleteCounselorProfile.counselor.id,
+          reason: deleteCounselorReason.trim(),
+        }
+      );
+      setCounselorProfileConsole(result.console);
+      const nextProfile = result.console.profiles[0];
+      setSelectedCounselorId(nextProfile?.counselor.id);
+      setCounselorProfileDraft(
+        nextProfile ? counselorProfileDraftFromProfile(nextProfile) : undefined
+      );
+      setCounselorEditorMode(undefined);
+      setDeleteCounselorProfile(undefined);
+      setDeleteCounselorReason("");
+      syncScheduleAudit(result.auditEvent);
+      void loadConsole();
+      void loadCounselorProfiles(counselorProfileFilters);
+      void loadServiceRecords(serviceRecordFilters);
+      toast("咨询师已从名册移除", {
+        description: "删除会保留审计记录；已有预约的咨询师会被服务端拦截",
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "咨询师暂时无法删除";
+      setError(message);
+      toast("删除失败", { description: message });
+    } finally {
+      setIsCounselorDeleting(false);
+    }
+  }, [
+    counselorProfileFilters,
+    deleteCounselorProfile,
+    deleteCounselorReason,
+    loadConsole,
+    loadCounselorProfiles,
+    loadServiceRecords,
     serviceRecordFilters,
     syncScheduleAudit,
   ]);
@@ -897,1332 +1057,1546 @@ export default function CounselingOperations() {
         </div>
       )}
 
-      <section className="mt-6 rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5">
-        <div className="flex flex-col gap-4 border-b border-[#E8DED0] pb-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
-              <UserRoundCog className="h-4 w-4 text-[#6F8F83]" />
-              咨询师维护工作台
-            </div>
-            <p className="mt-2 max-w-[720px] text-xs leading-5 text-[#7A827C]">
-              维护前台展示资料、接单门禁、价格和资质状态；用户端只展示可接单且资质可用的咨询师。
-            </p>
-          </div>
-          <div className="grid gap-2 md:grid-cols-[150px_150px_minmax(220px,1fr)_auto] 2xl:w-[760px]">
-            <select
-              value={counselorProfileFilters.serviceStatus}
-              onChange={event =>
-                setCounselorProfileFilters(previous => ({
-                  ...previous,
-                  serviceStatus: event.target
-                    .value as CounselorProfileServiceStatusFilter,
-                }))
-              }
-              className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-            >
-              <option value="all">全部状态</option>
-              {Object.entries(counselorProfileServiceStatusCopy).map(
-                ([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                )
-              )}
-            </select>
-            <select
-              value={counselorProfileFilters.credentialStatus}
-              onChange={event =>
-                setCounselorProfileFilters(previous => ({
-                  ...previous,
-                  credentialStatus: event.target
-                    .value as CounselorProfileCredentialStatusFilter,
-                }))
-              }
-              className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-            >
-              <option value="all">全部资质</option>
-              {Object.entries(credentialStatusCopy).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <label className="relative block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8A8176]" />
-              <input
-                value={counselorProfileFilters.keyword}
-                onChange={event =>
-                  setCounselorProfileFilters(previous => ({
-                    ...previous,
-                    keyword: event.target.value,
-                  }))
-                }
-                onKeyDown={event => {
-                  if (event.key === "Enter") {
-                    void loadCounselorProfiles(counselorProfileFilters);
-                  }
-                }}
-                placeholder="搜索姓名、职称、资质或擅长方向"
-                className="h-10 w-full rounded-lg border border-[#D8CDBC] bg-white pl-9 pr-3 text-sm font-semibold text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
-              />
-            </label>
+      <nav className="mt-5 grid gap-2 rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-2 shadow-sm shadow-[#243B35]/5 md:grid-cols-4">
+        {counselingWorkspaceTabs.map(tab => {
+          const isActive = activeWorkspace === tab.id;
+          return (
             <button
+              key={tab.id}
               type="button"
-              onClick={() =>
-                void loadCounselorProfiles(counselorProfileFilters)
-              }
-              disabled={isCounselorProfilesLoading}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
+              onClick={() => setActiveWorkspace(tab.id)}
+              className={`rounded-lg px-4 py-3 text-left transition ${
+                isActive
+                  ? "bg-[#E5ECE1] text-[#243B35]"
+                  : "text-[#66716A] hover:bg-[#F8F3EA]"
+              }`}
             >
-              {isCounselorProfilesLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="h-4 w-4" />
-              )}
-              筛选
+              <span className="block text-sm font-semibold">{tab.label}</span>
+              <span className="mt-1 block text-xs">{tab.description}</span>
             </button>
-          </div>
-        </div>
+          );
+        })}
+      </nav>
 
-        <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
-          <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-[#41675A]">
-            咨询师 {counselorProfileConsole?.summary.totalCount ?? 0}
-          </span>
-          <span className="rounded-full bg-[#EEF6F0] px-2.5 py-1 text-[#2F6B54]">
-            正常接单 {counselorProfileConsole?.summary.activeCount ?? 0}
-          </span>
-          <span className="rounded-full bg-[#FFF1EC] px-2.5 py-1 text-[#9A5944]">
-            暂停 {counselorProfileConsole?.summary.pausedCount ?? 0}
-          </span>
-          <span className="rounded-full bg-[#FFF8DF] px-2.5 py-1 text-[#8A641C]">
-            资质待关注{" "}
-            {(counselorProfileConsole?.summary.pendingReviewCount ?? 0) +
-              (counselorProfileConsole?.summary.expiringSoonCount ?? 0) +
-              (counselorProfileConsole?.summary.expiredCredentialCount ?? 0)}
-          </span>
-        </div>
-
-        {isCounselorProfilesLoading && !counselorProfileConsole ? (
-          <div className="mt-5 flex min-h-[220px] items-center justify-center text-sm text-[#6F7771]">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            正在读取咨询师档案
+      {activeWorkspace === "counselors" && (
+        <section className="mt-6 rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5">
+          <div className="flex flex-col gap-4 border-b border-[#E8DED0] pb-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                <UserRoundCog className="h-4 w-4 text-[#6F8F83]" />
+                咨询师维护工作台
+              </div>
+              <p className="mt-2 max-w-[720px] text-xs leading-5 text-[#7A827C]">
+                维护前台展示资料、接单门禁、价格和资质状态；用户端只展示可接单且资质可用的咨询师。
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 2xl:w-[860px]">
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={openCreateCounselorProfile}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35]"
+                >
+                  <Plus className="h-4 w-4" />
+                  新增咨询师
+                </button>
+              </div>
+              <div className="grid gap-2 md:grid-cols-[150px_150px_minmax(220px,1fr)_auto]">
+                <select
+                  value={counselorProfileFilters.serviceStatus}
+                  onChange={event =>
+                    setCounselorProfileFilters(previous => ({
+                      ...previous,
+                      serviceStatus: event.target
+                        .value as CounselorProfileServiceStatusFilter,
+                    }))
+                  }
+                  className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                >
+                  <option value="all">全部状态</option>
+                  {Object.entries(counselorProfileServiceStatusCopy).map(
+                    ([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    )
+                  )}
+                </select>
+                <select
+                  value={counselorProfileFilters.credentialStatus}
+                  onChange={event =>
+                    setCounselorProfileFilters(previous => ({
+                      ...previous,
+                      credentialStatus: event.target
+                        .value as CounselorProfileCredentialStatusFilter,
+                    }))
+                  }
+                  className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                >
+                  <option value="all">全部资质</option>
+                  {Object.entries(credentialStatusCopy).map(
+                    ([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    )
+                  )}
+                </select>
+                <label className="relative block">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8A8176]" />
+                  <input
+                    value={counselorProfileFilters.keyword}
+                    onChange={event =>
+                      setCounselorProfileFilters(previous => ({
+                        ...previous,
+                        keyword: event.target.value,
+                      }))
+                    }
+                    onKeyDown={event => {
+                      if (event.key === "Enter") {
+                        void loadCounselorProfiles(counselorProfileFilters);
+                      }
+                    }}
+                    placeholder="搜索姓名、职称、资质或擅长方向"
+                    className="h-10 w-full rounded-lg border border-[#D8CDBC] bg-white pl-9 pr-3 text-sm font-semibold text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void loadCounselorProfiles(counselorProfileFilters)
+                  }
+                  disabled={isCounselorProfilesLoading}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
+                >
+                  {isCounselorProfilesLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                  筛选
+                </button>
+              </div>
+            </div>
           </div>
-        ) : counselorProfiles.length ? (
-          <div className="mt-5 grid gap-4 2xl:grid-cols-[420px_minmax(0,1fr)]">
-            <div className="min-w-0 rounded-lg border border-[#E8DED0] bg-[#FBF7EF] p-2">
-              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1 2xl:max-h-[680px]">
-                {counselorProfiles.map(profile => {
-                  const isSelected =
-                    profile.counselor.id ===
-                    selectedCounselorProfile?.counselor.id;
-                  return (
-                    <button
-                      key={profile.counselor.id}
-                      type="button"
-                      onClick={() => selectCounselorProfile(profile)}
-                      className={`w-full rounded-lg border px-3 py-3 text-left transition ${
-                        isSelected
-                          ? "border-[#6F8F83] bg-white shadow-sm shadow-[#243B35]/5"
-                          : "border-transparent bg-transparent hover:border-[#E1D7C8] hover:bg-white"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="text-sm font-semibold text-[#243B35]">
-                              {profile.counselor.name}
-                            </h2>
+
+          <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-[#41675A]">
+              咨询师 {counselorProfileConsole?.summary.totalCount ?? 0}
+            </span>
+            <span className="rounded-full bg-[#EEF6F0] px-2.5 py-1 text-[#2F6B54]">
+              正常接单 {counselorProfileConsole?.summary.activeCount ?? 0}
+            </span>
+            <span className="rounded-full bg-[#FFF1EC] px-2.5 py-1 text-[#9A5944]">
+              暂停 {counselorProfileConsole?.summary.pausedCount ?? 0}
+            </span>
+            <span className="rounded-full bg-[#FFF8DF] px-2.5 py-1 text-[#8A641C]">
+              资质待关注{" "}
+              {(counselorProfileConsole?.summary.pendingReviewCount ?? 0) +
+                (counselorProfileConsole?.summary.expiringSoonCount ?? 0) +
+                (counselorProfileConsole?.summary.expiredCredentialCount ?? 0)}
+            </span>
+          </div>
+
+          {isCounselorProfilesLoading && !counselorProfileConsole ? (
+            <div className="mt-5 flex min-h-[220px] items-center justify-center text-sm text-[#6F7771]">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              正在读取咨询师档案
+            </div>
+          ) : counselorProfiles.length ? (
+            <div className="mt-5 grid gap-4 2xl:grid-cols-[420px_minmax(0,1fr)]">
+              <div className="min-w-0 rounded-lg border border-[#E8DED0] bg-[#FBF7EF] p-2">
+                <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1 2xl:max-h-[680px]">
+                  {counselorProfiles.map(profile => {
+                    const isSelected =
+                      profile.counselor.id ===
+                      selectedCounselorProfile?.counselor.id;
+                    return (
+                      <button
+                        key={profile.counselor.id}
+                        type="button"
+                        onClick={() => selectCounselorProfile(profile)}
+                        className={`w-full rounded-lg border px-3 py-3 text-left transition ${
+                          isSelected
+                            ? "border-[#6F8F83] bg-white shadow-sm shadow-[#243B35]/5"
+                            : "border-transparent bg-transparent hover:border-[#E1D7C8] hover:bg-white"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h2 className="text-sm font-semibold text-[#243B35]">
+                                {profile.counselor.name}
+                              </h2>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                  profile.serviceStatus === "active"
+                                    ? "bg-[#E5ECE1] text-[#41675A]"
+                                    : "bg-[#FFF1EC] text-[#9A5944]"
+                                }`}
+                              >
+                                {
+                                  counselorProfileServiceStatusCopy[
+                                    profile.serviceStatus
+                                  ]
+                                }
+                              </span>
+                            </div>
+                            <p className="mt-1 line-clamp-1 text-xs font-semibold text-[#66716A]">
+                              {profile.counselor.title} · ¥
+                              {profile.counselor.sessionPrice}/次
+                            </p>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${credentialStatusClassName[profile.credentialStatus]}`}
+                          >
+                            {credentialStatusCopy[profile.credentialStatus]}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-[#66716A]">
+                          <p>
+                            可约{" "}
+                            <span className="font-semibold text-[#243B35]">
+                              {profile.scheduleSummary.availableCount}
+                            </span>
+                          </p>
+                          <p>
+                            已约{" "}
+                            <span className="font-semibold text-[#243B35]">
+                              {profile.scheduleSummary.scheduledCount}
+                            </span>
+                          </p>
+                          <p>
+                            异常{" "}
+                            <span className="font-semibold text-[#243B35]">
+                              {profile.serviceSummary.anomalyCount}
+                            </span>
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {selectedCounselorProfile && counselorProfileDraft ? (
+                <div className="min-w-0 rounded-lg border border-[#E1D7C8] bg-white p-4">
+                  <div className="flex flex-col gap-4 border-b border-[#E8DED0] pb-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-xl font-semibold text-[#243B35]">
+                          {counselorEditorMode === "create"
+                            ? "新增咨询师"
+                            : selectedCounselorProfile.counselor.name}
+                        </h2>
+                        {counselorEditorMode !== "create" && (
+                          <>
                             <span
-                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                profile.serviceStatus === "active"
+                              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                selectedCounselorProfile.serviceStatus ===
+                                "active"
                                   ? "bg-[#E5ECE1] text-[#41675A]"
                                   : "bg-[#FFF1EC] text-[#9A5944]"
                               }`}
                             >
                               {
                                 counselorProfileServiceStatusCopy[
-                                  profile.serviceStatus
+                                  selectedCounselorProfile.serviceStatus
                                 ]
                               }
                             </span>
-                          </div>
-                          <p className="mt-1 line-clamp-1 text-xs font-semibold text-[#66716A]">
-                            {profile.counselor.title} · ¥
-                            {profile.counselor.sessionPrice}/次
-                          </p>
-                        </div>
-                        <span
-                          className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${credentialStatusClassName[profile.credentialStatus]}`}
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${credentialStatusClassName[selectedCounselorProfile.credentialStatus]}`}
+                            >
+                              {
+                                credentialStatusCopy[
+                                  selectedCounselorProfile.credentialStatus
+                                ]
+                              }
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-[#66716A]">
+                        {counselorEditorMode === "create"
+                          ? "新增后即可进入排班，用户端只展示正常接单且资质可用的咨询师。"
+                          : `${selectedCounselorProfile.counselor.title} · 最近更新 ${formatDate(selectedCounselorProfile.updatedAt)}`}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {counselorEditorMode ? (
+                        <button
+                          type="button"
+                          onClick={closeCounselorEditor}
+                          disabled={isCounselorProfileSaving}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#D8CDBC] bg-white px-4 text-sm font-semibold text-[#5F6B64] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
                         >
-                          {credentialStatusCopy[profile.credentialStatus]}
-                        </span>
-                      </div>
-                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-[#66716A]">
-                        <p>
-                          可约{" "}
-                          <span className="font-semibold text-[#243B35]">
-                            {profile.scheduleSummary.availableCount}
-                          </span>
-                        </p>
-                        <p>
-                          已约{" "}
-                          <span className="font-semibold text-[#243B35]">
-                            {profile.scheduleSummary.scheduledCount}
-                          </span>
-                        </p>
-                        <p>
-                          异常{" "}
-                          <span className="font-semibold text-[#243B35]">
-                            {profile.serviceSummary.anomalyCount}
-                          </span>
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {selectedCounselorProfile && counselorProfileDraft ? (
-              <div className="min-w-0 rounded-lg border border-[#E1D7C8] bg-white p-4">
-                <div className="flex flex-col gap-4 border-b border-[#E8DED0] pb-4 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-xl font-semibold text-[#243B35]">
-                        {selectedCounselorProfile.counselor.name}
-                      </h2>
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          selectedCounselorProfile.serviceStatus === "active"
-                            ? "bg-[#E5ECE1] text-[#41675A]"
-                            : "bg-[#FFF1EC] text-[#9A5944]"
-                        }`}
-                      >
-                        {
-                          counselorProfileServiceStatusCopy[
-                            selectedCounselorProfile.serviceStatus
-                          ]
-                        }
-                      </span>
-                      <span
-                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${credentialStatusClassName[selectedCounselorProfile.credentialStatus]}`}
-                      >
-                        {
-                          credentialStatusCopy[
-                            selectedCounselorProfile.credentialStatus
-                          ]
-                        }
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm leading-6 text-[#66716A]">
-                      {selectedCounselorProfile.counselor.title} · 最近更新{" "}
-                      {formatDate(selectedCounselorProfile.updatedAt)}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void handleToggleCounselorServiceStatus(
-                          selectedCounselorProfile
-                        )
-                      }
-                      disabled={
-                        Boolean(counselorProfileActionId) ||
-                        isCounselorProfileSaving
-                      }
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#D8CDBC] bg-[#FFFDF8] px-4 text-sm font-semibold text-[#355F51] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-55"
-                    >
-                      {counselorProfileActionId ===
-                      selectedCounselorProfile.counselor.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : selectedCounselorProfile.serviceStatus ===
-                        "active" ? (
-                        <PauseCircle className="h-4 w-4" />
+                          <X className="h-4 w-4" />
+                          取消
+                        </button>
                       ) : (
-                        <BadgeCheck className="h-4 w-4" />
-                      )}
-                      {selectedCounselorProfile.serviceStatus === "active"
-                        ? "暂停接单"
-                        : "恢复接单"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setCounselorProfileDraft(
-                          counselorProfileDraftFromProfile(
-                            selectedCounselorProfile
-                          )
-                        )
-                      }
-                      disabled={
-                        !selectedCounselorDraftChanged ||
-                        isCounselorProfileSaving
-                      }
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#D8CDBC] bg-white px-4 text-sm font-semibold text-[#5F6B64] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                      还原
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-2 md:grid-cols-4">
-                  {[
-                    {
-                      label: "未来可约",
-                      value:
-                        selectedCounselorProfile.scheduleSummary.availableCount,
-                    },
-                    {
-                      label: "已预约",
-                      value:
-                        selectedCounselorProfile.scheduleSummary.scheduledCount,
-                    },
-                    {
-                      label: "完成服务",
-                      value:
-                        selectedCounselorProfile.serviceSummary.completedCount,
-                    },
-                    {
-                      label: "异常",
-                      value:
-                        selectedCounselorProfile.serviceSummary.anomalyCount,
-                    },
-                  ].map(item => (
-                    <div
-                      key={item.label}
-                      className="rounded-lg border border-[#E8DED0] bg-[#FFFDF8] px-3 py-3"
-                    >
-                      <p className="text-xs text-[#8A8176]">{item.label}</p>
-                      <p className="mt-1 text-lg font-semibold text-[#243B35]">
-                        {item.value}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-                  <div className="min-w-0 space-y-4">
-                    <div className="rounded-lg border border-[#E8DED0] bg-[#FFFCF6] p-4">
-                      <p className="text-sm font-semibold text-[#243B35]">
-                        接单门禁
-                      </p>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        {[
-                          ["active", "正常接单"],
-                          ["paused", "暂停接单"],
-                        ].map(([value, label]) => (
+                        <>
                           <button
-                            key={value}
                             type="button"
                             onClick={() =>
+                              void handleToggleCounselorServiceStatus(
+                                selectedCounselorProfile
+                              )
+                            }
+                            disabled={
+                              Boolean(counselorProfileActionId) ||
+                              isCounselorProfileSaving
+                            }
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#D8CDBC] bg-[#FFFDF8] px-4 text-sm font-semibold text-[#355F51] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-55"
+                          >
+                            {counselorProfileActionId ===
+                            selectedCounselorProfile.counselor.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : selectedCounselorProfile.serviceStatus ===
+                              "active" ? (
+                              <PauseCircle className="h-4 w-4" />
+                            ) : (
+                              <BadgeCheck className="h-4 w-4" />
+                            )}
+                            {selectedCounselorProfile.serviceStatus === "active"
+                              ? "暂停接单"
+                              : "恢复接单"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openEditCounselorProfile(selectedCounselorProfile)
+                            }
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35]"
+                          >
+                            <Pencil className="h-4 w-4" />
+                            编辑资料
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteCounselorProfile(
+                                selectedCounselorProfile
+                              );
+                              setDeleteCounselorReason(
+                                `删除咨询师：${selectedCounselorProfile.counselor.name}`
+                              );
+                            }}
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#E6C7BB] bg-white px-4 text-sm font-semibold text-[#A65F48] transition hover:border-[#D59A87]"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            删除
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {counselorEditorMode !== "create" && (
+                    <div className="mt-4 grid gap-2 md:grid-cols-4">
+                      {[
+                        {
+                          label: "未来可约",
+                          value:
+                            selectedCounselorProfile.scheduleSummary
+                              .availableCount,
+                        },
+                        {
+                          label: "已预约",
+                          value:
+                            selectedCounselorProfile.scheduleSummary
+                              .scheduledCount,
+                        },
+                        {
+                          label: "完成服务",
+                          value:
+                            selectedCounselorProfile.serviceSummary
+                              .completedCount,
+                        },
+                        {
+                          label: "异常",
+                          value:
+                            selectedCounselorProfile.serviceSummary
+                              .anomalyCount,
+                        },
+                      ].map(item => (
+                        <div
+                          key={item.label}
+                          className="rounded-lg border border-[#E8DED0] bg-[#FFFDF8] px-3 py-3"
+                        >
+                          <p className="text-xs text-[#8A8176]">{item.label}</p>
+                          <p className="mt-1 text-lg font-semibold text-[#243B35]">
+                            {item.value}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {counselorEditorMode ? (
+                    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+                      <div className="min-w-0 space-y-4">
+                        <div className="rounded-lg border border-[#E8DED0] bg-[#FFFCF6] p-4">
+                          <p className="text-sm font-semibold text-[#243B35]">
+                            接单门禁
+                          </p>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {[
+                              ["active", "正常接单"],
+                              ["paused", "暂停接单"],
+                            ].map(([value, label]) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() =>
+                                  setCounselorProfileDraft(previous =>
+                                    previous
+                                      ? {
+                                          ...previous,
+                                          serviceStatus:
+                                            value as CounselorAdminServiceStatus,
+                                          acceptsNewClients: value === "active",
+                                        }
+                                      : previous
+                                  )
+                                }
+                                className={`h-10 rounded-lg border text-sm font-semibold transition ${
+                                  counselorProfileDraft.serviceStatus === value
+                                    ? "border-[#6F8F83] bg-[#E5ECE1] text-[#355F51]"
+                                    : "border-[#D8CDBC] bg-white text-[#66716A] hover:border-[#AAB9AF]"
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#40534B]">
+                            <input
+                              type="checkbox"
+                              checked={
+                                counselorProfileDraft.serviceStatus ===
+                                  "active" &&
+                                counselorProfileDraft.acceptsNewClients
+                              }
+                              disabled={
+                                counselorProfileDraft.serviceStatus !== "active"
+                              }
+                              onChange={event =>
+                                setCounselorProfileDraft(previous =>
+                                  previous
+                                    ? {
+                                        ...previous,
+                                        acceptsNewClients: event.target.checked,
+                                      }
+                                    : previous
+                                )
+                              }
+                              className="h-4 w-4 accent-[#355F51]"
+                            />
+                            接受新来访者
+                          </label>
+                          <p className="mt-2 text-xs leading-5 text-[#7A827C]">
+                            前台展示条件：正常接单、接受新来访者，且资质为已核验或即将到期。
+                          </p>
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="block text-sm font-semibold text-[#40534B]">
+                            姓名
+                            <input
+                              value={counselorProfileDraft.name}
+                              onChange={event =>
+                                setCounselorProfileDraft(previous =>
+                                  previous
+                                    ? { ...previous, name: event.target.value }
+                                    : previous
+                                )
+                              }
+                              className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                            />
+                          </label>
+                          <label className="block text-sm font-semibold text-[#40534B]">
+                            职称
+                            <input
+                              value={counselorProfileDraft.title}
+                              onChange={event =>
+                                setCounselorProfileDraft(previous =>
+                                  previous
+                                    ? { ...previous, title: event.target.value }
+                                    : previous
+                                )
+                              }
+                              className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                            />
+                          </label>
+                          <label className="block text-sm font-semibold text-[#40534B]">
+                            执业年限
+                            <input
+                              type="number"
+                              min={0}
+                              max={60}
+                              step={1}
+                              value={counselorProfileDraft.yearsOfPractice}
+                              onChange={event =>
+                                setCounselorProfileDraft(previous =>
+                                  previous
+                                    ? {
+                                        ...previous,
+                                        yearsOfPractice: event.target.value,
+                                      }
+                                    : previous
+                                )
+                              }
+                              className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                            />
+                          </label>
+                          <label className="block text-sm font-semibold text-[#40534B]">
+                            单次价格
+                            <input
+                              type="number"
+                              min={0}
+                              max={5000}
+                              step={1}
+                              value={counselorProfileDraft.sessionPrice}
+                              onChange={event =>
+                                setCounselorProfileDraft(previous =>
+                                  previous
+                                    ? {
+                                        ...previous,
+                                        sessionPrice: event.target.value,
+                                      }
+                                    : previous
+                                )
+                              }
+                              className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="block text-sm font-semibold text-[#40534B]">
+                          前台介绍
+                          <textarea
+                            value={counselorProfileDraft.introduction}
+                            onChange={event =>
                               setCounselorProfileDraft(previous =>
                                 previous
                                   ? {
                                       ...previous,
-                                      serviceStatus:
-                                        value as CounselorAdminServiceStatus,
-                                      acceptsNewClients: value === "active",
+                                      introduction: event.target.value,
                                     }
                                   : previous
                               )
                             }
-                            className={`h-10 rounded-lg border text-sm font-semibold transition ${
-                              counselorProfileDraft.serviceStatus === value
-                                ? "border-[#6F8F83] bg-[#E5ECE1] text-[#355F51]"
-                                : "border-[#D8CDBC] bg-white text-[#66716A] hover:border-[#AAB9AF]"
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
+                            rows={4}
+                            maxLength={600}
+                            className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                          />
+                        </label>
+
+                        <div>
+                          <p className="text-sm font-semibold text-[#40534B]">
+                            擅长方向
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {counselorSpecialtyOptions.map(([value, label]) => {
+                              const checked =
+                                counselorProfileDraft.specialties.includes(
+                                  value
+                                );
+                              return (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  onClick={() =>
+                                    setCounselorProfileDraft(previous => {
+                                      if (!previous) return previous;
+                                      return {
+                                        ...previous,
+                                        specialties: checked
+                                          ? previous.specialties.filter(
+                                              item => item !== value
+                                            )
+                                          : [...previous.specialties, value],
+                                      };
+                                    })
+                                  }
+                                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                    checked
+                                      ? "border-[#6F8F83] bg-[#E5ECE1] text-[#355F51]"
+                                      : "border-[#D8CDBC] bg-white text-[#66716A] hover:border-[#AAB9AF]"
+                                  }`}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
-                      <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#40534B]">
-                        <input
-                          type="checkbox"
-                          checked={
-                            counselorProfileDraft.serviceStatus === "active" &&
-                            counselorProfileDraft.acceptsNewClients
-                          }
-                          disabled={
-                            counselorProfileDraft.serviceStatus !== "active"
-                          }
-                          onChange={event =>
-                            setCounselorProfileDraft(previous =>
-                              previous
-                                ? {
-                                    ...previous,
-                                    acceptsNewClients: event.target.checked,
-                                  }
-                                : previous
-                            )
-                          }
-                          className="h-4 w-4 accent-[#355F51]"
-                        />
-                        接受新来访者
-                      </label>
-                      <p className="mt-2 text-xs leading-5 text-[#7A827C]">
-                        前台展示条件：正常接单、接受新来访者，且资质为已核验或即将到期。
-                      </p>
-                    </div>
 
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <label className="block text-sm font-semibold text-[#40534B]">
-                        姓名
-                        <input
-                          value={counselorProfileDraft.name}
-                          onChange={event =>
-                            setCounselorProfileDraft(previous =>
-                              previous
-                                ? { ...previous, name: event.target.value }
-                                : previous
-                            )
-                          }
-                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-                        />
-                      </label>
-                      <label className="block text-sm font-semibold text-[#40534B]">
-                        职称
-                        <input
-                          value={counselorProfileDraft.title}
-                          onChange={event =>
-                            setCounselorProfileDraft(previous =>
-                              previous
-                                ? { ...previous, title: event.target.value }
-                                : previous
-                            )
-                          }
-                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-                        />
-                      </label>
-                      <label className="block text-sm font-semibold text-[#40534B]">
-                        执业年限
-                        <input
-                          type="number"
-                          min={0}
-                          max={60}
-                          step={1}
-                          value={counselorProfileDraft.yearsOfPractice}
-                          onChange={event =>
-                            setCounselorProfileDraft(previous =>
-                              previous
-                                ? {
-                                    ...previous,
-                                    yearsOfPractice: event.target.value,
-                                  }
-                                : previous
-                            )
-                          }
-                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-                        />
-                      </label>
-                      <label className="block text-sm font-semibold text-[#40534B]">
-                        单次价格
-                        <input
-                          type="number"
-                          min={0}
-                          max={5000}
-                          step={1}
-                          value={counselorProfileDraft.sessionPrice}
-                          onChange={event =>
-                            setCounselorProfileDraft(previous =>
-                              previous
-                                ? {
-                                    ...previous,
-                                    sessionPrice: event.target.value,
-                                  }
-                                : previous
-                            )
-                          }
-                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-                        />
-                      </label>
-                    </div>
+                      <div className="min-w-0 space-y-4">
+                        <label className="block text-sm font-semibold text-[#40534B]">
+                          资质摘要
+                          <textarea
+                            value={counselorProfileDraft.licenseSummary}
+                            onChange={event =>
+                              setCounselorProfileDraft(previous =>
+                                previous
+                                  ? {
+                                      ...previous,
+                                      licenseSummary: event.target.value,
+                                    }
+                                  : previous
+                              )
+                            }
+                            rows={3}
+                            maxLength={180}
+                            className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                          />
+                        </label>
 
-                    <label className="block text-sm font-semibold text-[#40534B]">
-                      前台介绍
-                      <textarea
-                        value={counselorProfileDraft.introduction}
-                        onChange={event =>
-                          setCounselorProfileDraft(previous =>
-                            previous
-                              ? {
-                                  ...previous,
-                                  introduction: event.target.value,
-                                }
-                              : previous
-                          )
-                        }
-                        rows={4}
-                        maxLength={600}
-                        className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-                      />
-                    </label>
-
-                    <div>
-                      <p className="text-sm font-semibold text-[#40534B]">
-                        擅长方向
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {counselorSpecialtyOptions.map(([value, label]) => {
-                          const checked =
-                            counselorProfileDraft.specialties.includes(value);
-                          return (
-                            <button
-                              key={value}
-                              type="button"
-                              onClick={() =>
-                                setCounselorProfileDraft(previous => {
-                                  if (!previous) return previous;
-                                  return {
-                                    ...previous,
-                                    specialties: checked
-                                      ? previous.specialties.filter(
-                                          item => item !== value
-                                        )
-                                      : [...previous.specialties, value],
-                                  };
-                                })
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+                          <label className="block text-sm font-semibold text-[#40534B]">
+                            资质状态
+                            <select
+                              value={counselorProfileDraft.credentialStatus}
+                              onChange={event =>
+                                setCounselorProfileDraft(previous =>
+                                  previous
+                                    ? {
+                                        ...previous,
+                                        credentialStatus: event.target
+                                          .value as CounselorCredentialStatus,
+                                      }
+                                    : previous
+                                )
                               }
-                              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                                checked
-                                  ? "border-[#6F8F83] bg-[#E5ECE1] text-[#355F51]"
-                                  : "border-[#D8CDBC] bg-white text-[#66716A] hover:border-[#AAB9AF]"
-                              }`}
+                              className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
                             >
-                              {label}
-                            </button>
-                          );
-                        })}
+                              {Object.entries(credentialStatusCopy).map(
+                                ([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          </label>
+                          <label className="block text-sm font-semibold text-[#40534B]">
+                            资质到期日
+                            <input
+                              type="date"
+                              value={counselorProfileDraft.credentialExpiresAt}
+                              onChange={event =>
+                                setCounselorProfileDraft(previous =>
+                                  previous
+                                    ? {
+                                        ...previous,
+                                        credentialExpiresAt: event.target.value,
+                                      }
+                                    : previous
+                                )
+                              }
+                              className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="block text-sm font-semibold text-[#40534B]">
+                          操作原因
+                          <textarea
+                            value={counselorProfileDraft.reason}
+                            onChange={event =>
+                              setCounselorProfileDraft(previous =>
+                                previous
+                                  ? { ...previous, reason: event.target.value }
+                                  : previous
+                              )
+                            }
+                            rows={3}
+                            maxLength={200}
+                            placeholder="例如：更新咨询师展示资料与资质状态"
+                            className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
+                          />
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => void handleSaveCounselorProfile()}
+                          disabled={
+                            isCounselorProfileSaving ||
+                            (counselorEditorMode === "edit" &&
+                              !selectedCounselorDraftChanged)
+                          }
+                          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
+                        >
+                          {isCounselorProfileSaving ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Save className="h-4 w-4" />
+                          )}
+                          保存咨询师维护
+                        </button>
+
+                        <div className="rounded-lg border border-[#E8DED0] bg-[#FFFCF6] px-3 py-3 text-xs leading-5 text-[#6F7771]">
+                          维护会写入咨询运营审计；暂停接单会从用户端可预约列表移除，但不会影响已预约服务。
+                        </div>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="min-w-0 space-y-4">
-                    <label className="block text-sm font-semibold text-[#40534B]">
-                      资质摘要
-                      <textarea
-                        value={counselorProfileDraft.licenseSummary}
-                        onChange={event =>
-                          setCounselorProfileDraft(previous =>
-                            previous
-                              ? {
-                                  ...previous,
-                                  licenseSummary: event.target.value,
-                                }
-                              : previous
-                          )
-                        }
-                        rows={3}
-                        maxLength={180}
-                        className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-                      />
-                    </label>
-
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-                      <label className="block text-sm font-semibold text-[#40534B]">
-                        资质状态
-                        <select
-                          value={counselorProfileDraft.credentialStatus}
-                          onChange={event =>
-                            setCounselorProfileDraft(previous =>
-                              previous
-                                ? {
-                                    ...previous,
-                                    credentialStatus: event.target
-                                      .value as CounselorCredentialStatus,
-                                  }
-                                : previous
-                            )
-                          }
-                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-                        >
-                          {Object.entries(credentialStatusCopy).map(
-                            ([value, label]) => (
-                              <option key={value} value={value}>
-                                {label}
-                              </option>
+                  ) : (
+                    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                          <ListChecks className="h-4 w-4 text-[#6F8F83]" />
+                          前台展示摘要
+                        </div>
+                        <p className="mt-3 text-sm leading-7 text-[#5F6B64]">
+                          {selectedCounselorProfile.counselor.introduction}
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {selectedCounselorProfile.counselor.specialties.map(
+                            specialty => (
+                              <span
+                                key={specialty}
+                                className="rounded-full bg-[#F1E9DD] px-2.5 py-1 text-xs font-semibold text-[#6F675E]"
+                              >
+                                {specialtyCopy[specialty]}
+                              </span>
                             )
                           )}
-                        </select>
-                      </label>
-                      <label className="block text-sm font-semibold text-[#40534B]">
-                        资质到期日
-                        <input
-                          type="date"
-                          value={counselorProfileDraft.credentialExpiresAt}
-                          onChange={event =>
-                            setCounselorProfileDraft(previous =>
-                              previous
-                                ? {
-                                    ...previous,
-                                    credentialExpiresAt: event.target.value,
-                                  }
-                                : previous
-                            )
-                          }
-                          className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-                        />
-                      </label>
-                    </div>
-
-                    <label className="block text-sm font-semibold text-[#40534B]">
-                      操作原因
-                      <textarea
-                        value={counselorProfileDraft.reason}
-                        onChange={event =>
-                          setCounselorProfileDraft(previous =>
-                            previous
-                              ? { ...previous, reason: event.target.value }
-                              : previous
-                          )
-                        }
-                        rows={3}
-                        maxLength={200}
-                        placeholder="例如：更新咨询师展示资料与资质状态"
-                        className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => void handleSaveCounselorProfile()}
-                      disabled={
-                        isCounselorProfileSaving ||
-                        !selectedCounselorDraftChanged
-                      }
-                      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
-                    >
-                      {isCounselorProfileSaving ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save className="h-4 w-4" />
-                      )}
-                      保存咨询师维护
-                    </button>
-
-                    <div className="rounded-lg border border-[#E8DED0] bg-[#FFFCF6] px-3 py-3 text-xs leading-5 text-[#6F7771]">
-                      维护会写入咨询运营审计；暂停接单会从用户端可预约列表移除，但不会影响已预约服务。
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="mt-5 flex min-h-[220px] flex-col items-center justify-center px-6 text-center">
-            <UserRoundCog className="h-8 w-8 text-[#7C9288]" />
-            <h2 className="mt-4 text-lg font-semibold">暂无咨询师档案</h2>
-            <p className="mt-2 max-w-[360px] text-sm leading-6 text-[#6F7771]">
-              当前筛选条件下没有咨询师，调整状态或关键词后再查看。
-            </p>
-          </div>
-        )}
-      </section>
-
-      <section className="mt-6 grid gap-6 xl:grid-cols-[360px_1fr]">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-          className="h-fit rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5"
-        >
-          <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
-            <CalendarPlus className="h-4 w-4 text-[#6F8F83]" />
-            新增可预约时段
-          </div>
-
-          <label className="mt-5 block text-sm font-semibold text-[#40534B]">
-            咨询师
-          </label>
-          <select
-            value={scheduleDraft.counselorId}
-            onChange={event =>
-              setScheduleDraft(previous => ({
-                ...previous,
-                counselorId: event.target.value,
-              }))
-            }
-            className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-          >
-            {(scheduleConsole?.counselors ?? []).map(schedule => (
-              <option key={schedule.counselor.id} value={schedule.counselor.id}>
-                {schedule.counselor.name} ·{" "}
-                {serviceStatusCopy[schedule.serviceStatus]}
-              </option>
-            ))}
-          </select>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <label className="block text-sm font-semibold text-[#40534B]">
-              开始时间
-              <input
-                type="datetime-local"
-                value={scheduleDraft.startsAt}
-                onChange={event =>
-                  setScheduleDraft(previous => ({
-                    ...previous,
-                    startsAt: event.target.value,
-                  }))
-                }
-                className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-              />
-            </label>
-            <label className="block text-sm font-semibold text-[#40534B]">
-              结束时间
-              <input
-                type="datetime-local"
-                value={scheduleDraft.endsAt}
-                onChange={event =>
-                  setScheduleDraft(previous => ({
-                    ...previous,
-                    endsAt: event.target.value,
-                  }))
-                }
-                className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-              />
-            </label>
-          </div>
-
-          <label className="mt-4 block text-sm font-semibold text-[#40534B]">
-            咨询渠道
-          </label>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            {[
-              ["video", "视频"],
-              ["voice", "语音"],
-              ["offline", "线下"],
-            ].map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() =>
-                  setScheduleDraft(previous => ({
-                    ...previous,
-                    channel: value as CounselingChannel,
-                  }))
-                }
-                className={`h-9 rounded-lg border text-sm font-semibold transition ${
-                  scheduleDraft.channel === value
-                    ? "border-[#6F8F83] bg-[#E5ECE1] text-[#355F51]"
-                    : "border-[#D8CDBC] bg-white text-[#66716A] hover:border-[#AAB9AF]"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <label className="mt-4 block text-sm font-semibold text-[#40534B]">
-            备注
-          </label>
-          <textarea
-            value={scheduleDraft.reason}
-            onChange={event =>
-              setScheduleDraft(previous => ({
-                ...previous,
-                reason: event.target.value,
-              }))
-            }
-            maxLength={200}
-            rows={3}
-            placeholder="例如：节后新增晚间咨询窗口"
-            className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
-          />
-
-          <button
-            onClick={handleAddScheduleSlot}
-            disabled={
-              isScheduleSaving ||
-              isLoading ||
-              !scheduleDraft.counselorId ||
-              scheduleActionSlotId === "new"
-            }
-            className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
-          >
-            {isScheduleSaving && scheduleActionSlotId === "new" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CalendarPlus className="h-4 w-4" />
-            )}
-            保存时段
-          </button>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{
-            duration: 0.32,
-            delay: 0.03,
-            ease: [0.16, 1, 0.3, 1],
-          }}
-          className="min-w-0 rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E8DED0] pb-4">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <CalendarClock className="h-4 w-4 text-[#6F8F83]" />
-              未来排班
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs font-semibold">
-              <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-[#41675A]">
-                可约 {scheduleTotals.available}
-              </span>
-              <span className="rounded-full bg-[#EFF4FB] px-2.5 py-1 text-[#3B5F8A]">
-                已约 {scheduleTotals.scheduled}
-              </span>
-              <span className="rounded-full bg-[#FFF8DF] px-2.5 py-1 text-[#8A641C]">
-                锁定 {scheduleTotals.locked}
-              </span>
-              <span className="rounded-full bg-[#FFF1EC] px-2.5 py-1 text-[#9A5944]">
-                关闭 {scheduleTotals.closed}
-              </span>
-            </div>
-          </div>
-
-          {isLoading && !scheduleConsole ? (
-            <div className="flex min-h-[360px] items-center justify-center text-sm text-[#6F7771]">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              正在读取排班
-            </div>
-          ) : scheduleConsole ? (
-            <div className="mt-5 grid gap-4 2xl:grid-cols-2">
-              {scheduleConsole.counselors.map(schedule => (
-                <article
-                  key={schedule.counselor.id}
-                  className="rounded-lg border border-[#E6DDD0] bg-[#FFFCF6] p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-base font-semibold text-[#243B35]">
-                          {schedule.counselor.name}
-                        </h2>
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                            schedule.serviceStatus === "active"
-                              ? "bg-[#E5ECE1] text-[#41675A]"
-                              : schedule.serviceStatus === "full"
-                                ? "bg-[#EFF4FB] text-[#3B5F8A]"
-                                : "bg-[#F1E9DD] text-[#8B7E6D]"
-                          }`}
-                        >
-                          {serviceStatusCopy[schedule.serviceStatus]}
-                        </span>
+                        </div>
                       </div>
-                      <p className="mt-1 text-xs text-[#8A8176]">
-                        {schedule.counselor.title}
-                      </p>
-                    </div>
-                    <div className="text-right text-xs leading-5 text-[#66716A]">
-                      <p>可约 {schedule.summary.availableCount}</p>
-                      <p>
-                        锁定/已约{" "}
-                        {schedule.summary.lockedCount +
-                          schedule.summary.scheduledCount}
-                      </p>
-                    </div>
-                  </div>
-
-                  {schedule.nextAvailableAt && (
-                    <p className="mt-3 rounded-lg bg-[#F3EEE5] px-3 py-2 text-xs font-semibold text-[#5F6B64]">
-                      最近可约 {formatDate(schedule.nextAvailableAt)}
-                    </p>
-                  )}
-
-                  <div className="mt-3 grid gap-2">
-                    {schedule.slots.length ? (
-                      schedule.slots.slice(0, 8).map(slot => {
-                        const canClose = slot.status === "available";
-                        const canRestore = slot.status === "closed";
-                        const isPending = scheduleActionSlotId === slot.id;
-
-                        return (
-                          <div
-                            key={slot.id}
-                            className="rounded-lg border border-[#E8DED0] bg-white px-3 py-2"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-[#243B35]">
-                                  {formatDate(slot.startsAt)} ·{" "}
-                                  {slot.channel === "video"
-                                    ? "视频"
-                                    : slot.channel === "voice"
-                                      ? "语音"
-                                      : "线下"}
-                                </p>
-                                {slot.conflictHint && (
-                                  <p className="mt-1 text-xs leading-5 text-[#8A8176]">
-                                    {slot.conflictHint}
-                                  </p>
-                                )}
-                              </div>
-                              <div className="flex shrink-0 items-center gap-2">
-                                <span
-                                  className={`rounded-full border px-2 py-1 text-xs font-semibold ${scheduleStatusClassName[slot.status]}`}
-                                >
-                                  {scheduleStatusCopy[slot.status]}
-                                </span>
-                                {(canClose || canRestore) && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void handleScheduleAction(
-                                        canClose
-                                          ? {
-                                              action: "close_slot",
-                                              slotId: slot.id,
-                                            }
-                                          : {
-                                              action: "restore_slot",
-                                              slotId: slot.id,
-                                            },
-                                        slot.id
-                                      )
-                                    }
-                                    disabled={isScheduleSaving}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#D8CDBC] bg-[#FFFDF8] text-[#355F51] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-55"
-                                    title={canClose ? "关闭时段" : "恢复时段"}
-                                  >
-                                    {isPending ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : canClose ? (
-                                      <CalendarX className="h-4 w-4" />
-                                    ) : (
-                                      <RotateCcw className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
+                      <div className="min-w-0 rounded-lg border border-[#E8DED0] bg-[#FFFCF6] p-4">
+                        <p className="text-sm font-semibold text-[#243B35]">
+                          维护状态
+                        </p>
+                        <dl className="mt-3 grid gap-3 text-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <dt className="text-[#7A827C]">接新客</dt>
+                            <dd className="font-semibold text-[#243B35]">
+                              {selectedCounselorProfile.acceptsNewClients
+                                ? "开启"
+                                : "关闭"}
+                            </dd>
                           </div>
-                        );
-                      })
-                    ) : (
-                      <div className="rounded-lg border border-dashed border-[#D8CDBC] px-3 py-6 text-center text-sm text-[#8A8176]">
-                        暂无未来排班
+                          <div className="flex items-center justify-between gap-3">
+                            <dt className="text-[#7A827C]">执业年限</dt>
+                            <dd className="font-semibold text-[#243B35]">
+                              {
+                                selectedCounselorProfile.counselor
+                                  .yearsOfPractice
+                              }{" "}
+                              年
+                            </dd>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <dt className="text-[#7A827C]">单次价格</dt>
+                            <dd className="font-semibold text-[#243B35]">
+                              ¥{selectedCounselorProfile.counselor.sessionPrice}
+                            </dd>
+                          </div>
+                          <div className="flex items-start justify-between gap-3">
+                            <dt className="text-[#7A827C]">资质摘要</dt>
+                            <dd className="max-w-[220px] text-right font-semibold leading-6 text-[#243B35]">
+                              {
+                                selectedCounselorProfile.counselor
+                                  .licenseSummary
+                              }
+                            </dd>
+                          </div>
+                        </dl>
                       </div>
-                    )}
-                  </div>
-                </article>
-              ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           ) : (
-            <div className="flex min-h-[360px] items-center justify-center text-sm text-[#6F7771]">
-              暂无排班数据
+            <div className="mt-5 flex min-h-[220px] flex-col items-center justify-center px-6 text-center">
+              <UserRoundCog className="h-8 w-8 text-[#7C9288]" />
+              <h2 className="mt-4 text-lg font-semibold">暂无咨询师档案</h2>
+              <p className="mt-2 max-w-[360px] text-sm leading-6 text-[#6F7771]">
+                当前筛选条件下没有咨询师，调整状态或关键词后再查看。
+              </p>
             </div>
           )}
-        </motion.div>
-      </section>
+        </section>
+      )}
 
-      <section className="mt-6 rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5">
-        <div className="flex flex-col gap-4 border-b border-[#E8DED0] pb-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0">
+      {activeWorkspace === "schedule" && (
+        <section className="mt-6 grid gap-6 xl:grid-cols-[360px_1fr]">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="h-fit rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5"
+          >
             <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
-              <FileSearch className="h-4 w-4 text-[#6F8F83]" />
-              服务记录与履约异常
+              <CalendarPlus className="h-4 w-4 text-[#6F8F83]" />
+              新增可预约时段
             </div>
-            <p className="mt-2 max-w-[720px] text-xs leading-5 text-[#7A827C]">
-              仅展示运营所需的预约、订单、风险等级和审计摘要，不展示咨询说明、测评答案或风险信号原文。
-            </p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 xl:w-[620px] xl:grid-cols-[1fr_1fr_1fr_auto]">
+
+            <label className="mt-5 block text-sm font-semibold text-[#40534B]">
+              咨询师
+            </label>
             <select
-              value={serviceRecordFilters.counselorId}
+              value={scheduleDraft.counselorId}
               onChange={event =>
-                setServiceRecordFilters(previous => ({
+                setScheduleDraft(previous => ({
                   ...previous,
                   counselorId: event.target.value,
                 }))
               }
-              className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+              className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
             >
-              <option value="all">全部咨询师</option>
-              {serviceRecordCounselors.map(counselor => (
-                <option key={counselor.id} value={counselor.id}>
-                  {counselor.name}
+              {(scheduleConsole?.counselors ?? []).map(schedule => (
+                <option
+                  key={schedule.counselor.id}
+                  value={schedule.counselor.id}
+                >
+                  {schedule.counselor.name} ·{" "}
+                  {serviceStatusCopy[schedule.serviceStatus]}
                 </option>
               ))}
             </select>
-            <select
-              value={serviceRecordFilters.appointmentStatus}
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <label className="block text-sm font-semibold text-[#40534B]">
+                开始时间
+                <input
+                  type="datetime-local"
+                  value={scheduleDraft.startsAt}
+                  onChange={event =>
+                    setScheduleDraft(previous => ({
+                      ...previous,
+                      startsAt: event.target.value,
+                    }))
+                  }
+                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                />
+              </label>
+              <label className="block text-sm font-semibold text-[#40534B]">
+                结束时间
+                <input
+                  type="datetime-local"
+                  value={scheduleDraft.endsAt}
+                  onChange={event =>
+                    setScheduleDraft(previous => ({
+                      ...previous,
+                      endsAt: event.target.value,
+                    }))
+                  }
+                  className="mt-2 h-10 w-full rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+                />
+              </label>
+            </div>
+
+            <label className="mt-4 block text-sm font-semibold text-[#40534B]">
+              咨询渠道
+            </label>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {[
+                ["video", "视频"],
+                ["voice", "语音"],
+                ["offline", "线下"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() =>
+                    setScheduleDraft(previous => ({
+                      ...previous,
+                      channel: value as CounselingChannel,
+                    }))
+                  }
+                  className={`h-9 rounded-lg border text-sm font-semibold transition ${
+                    scheduleDraft.channel === value
+                      ? "border-[#6F8F83] bg-[#E5ECE1] text-[#355F51]"
+                      : "border-[#D8CDBC] bg-white text-[#66716A] hover:border-[#AAB9AF]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <label className="mt-4 block text-sm font-semibold text-[#40534B]">
+              备注
+            </label>
+            <textarea
+              value={scheduleDraft.reason}
               onChange={event =>
-                setServiceRecordFilters(previous => ({
+                setScheduleDraft(previous => ({
                   ...previous,
-                  appointmentStatus: event.target
-                    .value as ServiceRecordStatusFilter,
+                  reason: event.target.value,
                 }))
               }
-              className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-            >
-              <option value="all">全部状态</option>
-              {Object.entries(statusCopy).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={serviceRecordFilters.anomalyType}
-              onChange={event =>
-                setServiceRecordFilters(previous => ({
-                  ...previous,
-                  anomalyType: event.target.value as ServiceRecordAnomalyFilter,
-                }))
-              }
-              className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-            >
-              <option value="all">全部异常</option>
-              {Object.entries(anomalyCopy).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+              maxLength={200}
+              rows={3}
+              placeholder="例如：节后新增晚间咨询窗口"
+              className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
+            />
+
             <button
-              type="button"
-              onClick={() => void loadServiceRecords(serviceRecordFilters)}
-              disabled={isServiceRecordsLoading}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
+              onClick={handleAddScheduleSlot}
+              disabled={
+                isScheduleSaving ||
+                isLoading ||
+                !scheduleDraft.counselorId ||
+                scheduleActionSlotId === "new"
+              }
+              className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
             >
-              {isServiceRecordsLoading ? (
+              {isScheduleSaving && scheduleActionSlotId === "new" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Search className="h-4 w-4" />
+                <CalendarPlus className="h-4 w-4" />
               )}
-              筛选
+              保存时段
             </button>
-          </div>
-        </div>
+          </motion.div>
 
-        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap gap-2 text-xs font-semibold">
-            <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-[#41675A]">
-              记录 {serviceRecordConsole?.summary.totalCount ?? 0}
-            </span>
-            <span className="rounded-full bg-[#FFF4EF] px-2.5 py-1 text-[#A65F48]">
-              异常 {serviceRecordConsole?.summary.anomalyCount ?? 0}
-            </span>
-            <span className="rounded-full bg-[#FFF8DF] px-2.5 py-1 text-[#8A641C]">
-              待支付临近{" "}
-              {serviceRecordConsole?.summary.paymentHoldExpiringCount ?? 0}
-            </span>
-            <span className="rounded-full bg-[#EFF4FB] px-2.5 py-1 text-[#3B5F8A]">
-              未到访 {serviceRecordConsole?.summary.noShowCount ?? 0}
-            </span>
-            <span className="rounded-full bg-[#F1E9DD] px-2.5 py-1 text-[#7B6F61]">
-              待退款 {serviceRecordConsole?.summary.refundingCount ?? 0}
-            </span>
-          </div>
-          <label className="relative block md:w-[320px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8A8176]" />
-            <input
-              value={serviceRecordFilters.keyword}
-              onChange={event =>
-                setServiceRecordFilters(previous => ({
-                  ...previous,
-                  keyword: event.target.value,
-                }))
-              }
-              onKeyDown={event => {
-                if (event.key === "Enter") {
-                  void loadServiceRecords(serviceRecordFilters);
-                }
-              }}
-              placeholder="搜索预约、订单、用户 ID"
-              className="h-10 w-full rounded-lg border border-[#D8CDBC] bg-white pl-9 pr-3 text-sm font-semibold text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
-            />
-          </label>
-        </div>
-
-        {isServiceRecordsLoading && !serviceRecordConsole ? (
-          <div className="mt-5 flex min-h-[240px] items-center justify-center text-sm text-[#6F7771]">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            正在读取服务记录
-          </div>
-        ) : serviceRecordConsole?.records.length ? (
-          <div className="mt-5 divide-y divide-[#E8DED0]">
-            {serviceRecordConsole.records.map((record, index) => (
-              <motion.article
-                key={record.appointmentId}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.22,
-                  delay: Math.min(index * 0.02, 0.12),
-                }}
-                className="grid gap-3 py-4 xl:grid-cols-[minmax(220px,1.15fr)_minmax(260px,1.35fr)_minmax(220px,1fr)]"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#F1E9DD] text-[#6F8F83]">
-                      {record.anomalies.length ? (
-                        <AlertTriangle className="h-4 w-4" />
-                      ) : (
-                        <UserCheck className="h-4 w-4" />
-                      )}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[#243B35]">
-                        {record.counselorName} · {formatDate(record.startsAt)}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-[#8A8176]">
-                        {record.appointmentId} · 用户 {record.userId}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="min-w-0">
-                  <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
-                      {statusCopy[record.appointmentStatus]}
-                    </span>
-                    {record.orderStatus && (
-                      <span className="rounded-full bg-[#F3EEE5] px-2.5 py-1 text-xs font-semibold text-[#6F675E]">
-                        {orderStatusCopy[record.orderStatus]}
-                      </span>
-                    )}
-                    {record.riskLevel && (
-                      <span className="rounded-full bg-[#EFF4FB] px-2.5 py-1 text-xs font-semibold text-[#3B5F8A]">
-                        {riskLevelCopy[record.riskLevel]}
-                      </span>
-                    )}
-                    {record.anomalies.map(anomaly => (
-                      <span
-                        key={anomaly}
-                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${anomalyClassName[anomaly]}`}
-                      >
-                        {anomalyCopy[anomaly]}
-                      </span>
-                    ))}
-                  </div>
-                  {record.operationHint && (
-                    <p className="mt-2 text-xs leading-5 text-[#7A827C]">
-                      {record.operationHint}
-                    </p>
-                  )}
-                </div>
-
-                <div className="grid gap-1 text-xs leading-5 text-[#66716A] xl:text-right">
-                  <p>
-                    渠道{" "}
-                    <span className="font-semibold text-[#243B35]">
-                      {record.channel === "video"
-                        ? "视频"
-                        : record.channel === "voice"
-                          ? "语音"
-                          : "线下"}
-                    </span>
-                  </p>
-                  {typeof record.minutesUntilStart === "number" && (
-                    <p>
-                      距开始{" "}
-                      <span className="font-semibold text-[#243B35]">
-                        {record.minutesUntilStart >= 0
-                          ? `${record.minutesUntilStart} 分钟`
-                          : "已开始"}
-                      </span>
-                    </p>
-                  )}
-                  {record.latestAuditAction && (
-                    <p>
-                      最近审计{" "}
-                      <span className="font-semibold text-[#243B35]">
-                        {auditActionCopy[record.latestAuditAction]}
-                      </span>
-                    </p>
-                  )}
-                </div>
-              </motion.article>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-5 flex min-h-[240px] flex-col items-center justify-center px-6 text-center">
-            <FileSearch className="h-8 w-8 text-[#7C9288]" />
-            <h2 className="mt-4 text-lg font-semibold">暂无服务记录</h2>
-            <p className="mt-2 max-w-[360px] text-sm leading-6 text-[#6F7771]">
-              当前筛选条件下没有预约履约记录，调整筛选后再查看。
-            </p>
-          </div>
-        )}
-      </section>
-
-      <section className="mt-6 grid gap-6 lg:grid-cols-[420px_1fr]">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-          className="h-fit rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5"
-        >
-          <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
-            <SlidersHorizontal className="h-4 w-4 text-[#6F8F83]" />
-            取消规则
-          </div>
-
-          <label className="mt-5 block text-sm font-semibold text-[#40534B]">
-            已确认预约可取消截止时间
-          </label>
-          <div className="mt-2 flex items-center gap-3">
-            <input
-              type="number"
-              min={0}
-              step={15}
-              value={draftPolicy.scheduledRefundCutoffMinutesBeforeStart}
-              onChange={event =>
-                setDraftPolicy(previous => ({
-                  ...previous,
-                  scheduledRefundCutoffMinutesBeforeStart: Math.max(
-                    0,
-                    Number(event.target.value) || 0
-                  ),
-                }))
-              }
-              className="h-10 w-32 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
-            />
-            <span className="text-sm text-[#66716A]">分钟前</span>
-          </div>
-          <p className="mt-2 text-xs leading-5 text-[#8A8176]">
-            超过该时间后，用户取消会被拦截并提示联系平台支持。
-          </p>
-
-          <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-[#E6DDD0] bg-[#F8F3EA] px-3 py-3">
-            <input
-              type="checkbox"
-              checked={draftPolicy.allowPendingPaymentCancellation}
-              onChange={event =>
-                setDraftPolicy(previous => ({
-                  ...previous,
-                  allowPendingPaymentCancellation: event.target.checked,
-                }))
-              }
-              className="mt-1 h-4 w-4 accent-[#355F51]"
-            />
-            <span>
-              <span className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
-                <ToggleLeft className="h-4 w-4 text-[#6F8F83]" />
-                允许待支付预约取消
-              </span>
-              <span className="mt-1 block text-xs leading-5 text-[#8A8176]">
-                关闭后，待支付预约只能等待超时释放或由运营介入。
-              </span>
-            </span>
-          </label>
-
-          <label className="mt-5 block text-sm font-semibold text-[#40534B]">
-            变更原因
-          </label>
-          <textarea
-            value={reason}
-            onChange={event => setReason(event.target.value)}
-            maxLength={200}
-            rows={3}
-            placeholder="例如：节假日前临时调整取消规则"
-            className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
-          />
-
-          <button
-            onClick={() => void handleSave()}
-            disabled={isSaving || !hasChanges}
-            className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.32,
+              delay: 0.03,
+              ease: [0.16, 1, 0.3, 1],
+            }}
+            className="min-w-0 rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5"
           >
-            {isSaving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            保存规则
-          </button>
-
-          {consoleData?.serverTime && (
-            <p className="mt-4 text-xs text-[#8A8176]">
-              当前配置读取于 {formatDate(consoleData.serverTime)}
-            </p>
-          )}
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{
-            duration: 0.34,
-            delay: 0.04,
-            ease: [0.16, 1, 0.3, 1],
-          }}
-          className="min-w-0 rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E8DED0] pb-4">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <History className="h-4 w-4 text-[#6F8F83]" />
-              审计流水
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E8DED0] pb-4">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <CalendarClock className="h-4 w-4 text-[#6F8F83]" />
+                未来排班
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-[#41675A]">
+                  可约 {scheduleTotals.available}
+                </span>
+                <span className="rounded-full bg-[#EFF4FB] px-2.5 py-1 text-[#3B5F8A]">
+                  已约 {scheduleTotals.scheduled}
+                </span>
+                <span className="rounded-full bg-[#FFF8DF] px-2.5 py-1 text-[#8A641C]">
+                  锁定 {scheduleTotals.locked}
+                </span>
+                <span className="rounded-full bg-[#FFF1EC] px-2.5 py-1 text-[#9A5944]">
+                  关闭 {scheduleTotals.closed}
+                </span>
+              </div>
             </div>
-            <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
-              {consoleData?.auditEvents.length ?? 0} 条
-            </span>
+
+            {isLoading && !scheduleConsole ? (
+              <div className="flex min-h-[360px] items-center justify-center text-sm text-[#6F7771]">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                正在读取排班
+              </div>
+            ) : scheduleConsole ? (
+              <div className="mt-5 grid gap-4 2xl:grid-cols-2">
+                {scheduleConsole.counselors.map(schedule => (
+                  <article
+                    key={schedule.counselor.id}
+                    className="rounded-lg border border-[#E6DDD0] bg-[#FFFCF6] p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="text-base font-semibold text-[#243B35]">
+                            {schedule.counselor.name}
+                          </h2>
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              schedule.serviceStatus === "active"
+                                ? "bg-[#E5ECE1] text-[#41675A]"
+                                : schedule.serviceStatus === "full"
+                                  ? "bg-[#EFF4FB] text-[#3B5F8A]"
+                                  : "bg-[#F1E9DD] text-[#8B7E6D]"
+                            }`}
+                          >
+                            {serviceStatusCopy[schedule.serviceStatus]}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-[#8A8176]">
+                          {schedule.counselor.title}
+                        </p>
+                      </div>
+                      <div className="text-right text-xs leading-5 text-[#66716A]">
+                        <p>可约 {schedule.summary.availableCount}</p>
+                        <p>
+                          锁定/已约{" "}
+                          {schedule.summary.lockedCount +
+                            schedule.summary.scheduledCount}
+                        </p>
+                      </div>
+                    </div>
+
+                    {schedule.nextAvailableAt && (
+                      <p className="mt-3 rounded-lg bg-[#F3EEE5] px-3 py-2 text-xs font-semibold text-[#5F6B64]">
+                        最近可约 {formatDate(schedule.nextAvailableAt)}
+                      </p>
+                    )}
+
+                    <div className="mt-3 grid gap-2">
+                      {schedule.slots.length ? (
+                        schedule.slots.slice(0, 8).map(slot => {
+                          const canClose = slot.status === "available";
+                          const canRestore = slot.status === "closed";
+                          const isPending = scheduleActionSlotId === slot.id;
+
+                          return (
+                            <div
+                              key={slot.id}
+                              className="rounded-lg border border-[#E8DED0] bg-white px-3 py-2"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-[#243B35]">
+                                    {formatDate(slot.startsAt)} ·{" "}
+                                    {slot.channel === "video"
+                                      ? "视频"
+                                      : slot.channel === "voice"
+                                        ? "语音"
+                                        : "线下"}
+                                  </p>
+                                  {slot.conflictHint && (
+                                    <p className="mt-1 text-xs leading-5 text-[#8A8176]">
+                                      {slot.conflictHint}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                  <span
+                                    className={`rounded-full border px-2 py-1 text-xs font-semibold ${scheduleStatusClassName[slot.status]}`}
+                                  >
+                                    {scheduleStatusCopy[slot.status]}
+                                  </span>
+                                  {(canClose || canRestore) && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void handleScheduleAction(
+                                          canClose
+                                            ? {
+                                                action: "close_slot",
+                                                slotId: slot.id,
+                                              }
+                                            : {
+                                                action: "restore_slot",
+                                                slotId: slot.id,
+                                              },
+                                          slot.id
+                                        )
+                                      }
+                                      disabled={isScheduleSaving}
+                                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#D8CDBC] bg-[#FFFDF8] text-[#355F51] transition hover:border-[#9FB3A9] disabled:cursor-not-allowed disabled:opacity-55"
+                                      title={canClose ? "关闭时段" : "恢复时段"}
+                                    >
+                                      {isPending ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : canClose ? (
+                                        <CalendarX className="h-4 w-4" />
+                                      ) : (
+                                        <RotateCcw className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-[#D8CDBC] px-3 py-6 text-center text-sm text-[#8A8176]">
+                          暂无未来排班
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="flex min-h-[360px] items-center justify-center text-sm text-[#6F7771]">
+                暂无排班数据
+              </div>
+            )}
+          </motion.div>
+        </section>
+      )}
+
+      {activeWorkspace === "records" && (
+        <section className="mt-6 rounded-lg border border-[#D7CBB9] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5">
+          <div className="flex flex-col gap-4 border-b border-[#E8DED0] pb-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                <FileSearch className="h-4 w-4 text-[#6F8F83]" />
+                服务记录与履约异常
+              </div>
+              <p className="mt-2 max-w-[720px] text-xs leading-5 text-[#7A827C]">
+                仅展示运营所需的预约、订单、风险等级和审计摘要，不展示咨询说明、测评答案或风险信号原文。
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:w-[620px] xl:grid-cols-[1fr_1fr_1fr_auto]">
+              <select
+                value={serviceRecordFilters.counselorId}
+                onChange={event =>
+                  setServiceRecordFilters(previous => ({
+                    ...previous,
+                    counselorId: event.target.value,
+                  }))
+                }
+                className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+              >
+                <option value="all">全部咨询师</option>
+                {serviceRecordCounselors.map(counselor => (
+                  <option key={counselor.id} value={counselor.id}>
+                    {counselor.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={serviceRecordFilters.appointmentStatus}
+                onChange={event =>
+                  setServiceRecordFilters(previous => ({
+                    ...previous,
+                    appointmentStatus: event.target
+                      .value as ServiceRecordStatusFilter,
+                  }))
+                }
+                className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+              >
+                <option value="all">全部状态</option>
+                {Object.entries(statusCopy).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={serviceRecordFilters.anomalyType}
+                onChange={event =>
+                  setServiceRecordFilters(previous => ({
+                    ...previous,
+                    anomalyType: event.target
+                      .value as ServiceRecordAnomalyFilter,
+                  }))
+                }
+                className="h-10 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+              >
+                <option value="all">全部异常</option>
+                {Object.entries(anomalyCopy).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => void loadServiceRecords(serviceRecordFilters)}
+                disabled={isServiceRecordsLoading}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {isServiceRecordsLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                筛选
+              </button>
+            </div>
           </div>
 
-          {isLoading && !consoleData ? (
-            <div className="flex min-h-[360px] items-center justify-center text-sm text-[#6F7771]">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              正在读取审计流水
+          <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-[#41675A]">
+                记录 {serviceRecordConsole?.summary.totalCount ?? 0}
+              </span>
+              <span className="rounded-full bg-[#FFF4EF] px-2.5 py-1 text-[#A65F48]">
+                异常 {serviceRecordConsole?.summary.anomalyCount ?? 0}
+              </span>
+              <span className="rounded-full bg-[#FFF8DF] px-2.5 py-1 text-[#8A641C]">
+                待支付临近{" "}
+                {serviceRecordConsole?.summary.paymentHoldExpiringCount ?? 0}
+              </span>
+              <span className="rounded-full bg-[#EFF4FB] px-2.5 py-1 text-[#3B5F8A]">
+                未到访 {serviceRecordConsole?.summary.noShowCount ?? 0}
+              </span>
+              <span className="rounded-full bg-[#F1E9DD] px-2.5 py-1 text-[#7B6F61]">
+                待退款 {serviceRecordConsole?.summary.refundingCount ?? 0}
+              </span>
             </div>
-          ) : consoleData?.auditEvents.length ? (
-            <div className="divide-y divide-[#E8DED0]">
-              {consoleData.auditEvents.map((event, index) => (
+            <label className="relative block md:w-[320px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8A8176]" />
+              <input
+                value={serviceRecordFilters.keyword}
+                onChange={event =>
+                  setServiceRecordFilters(previous => ({
+                    ...previous,
+                    keyword: event.target.value,
+                  }))
+                }
+                onKeyDown={event => {
+                  if (event.key === "Enter") {
+                    void loadServiceRecords(serviceRecordFilters);
+                  }
+                }}
+                placeholder="搜索预约、订单、用户 ID"
+                className="h-10 w-full rounded-lg border border-[#D8CDBC] bg-white pl-9 pr-3 text-sm font-semibold text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
+              />
+            </label>
+          </div>
+
+          {isServiceRecordsLoading && !serviceRecordConsole ? (
+            <div className="mt-5 flex min-h-[240px] items-center justify-center text-sm text-[#6F7771]">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              正在读取服务记录
+            </div>
+          ) : serviceRecordConsole?.records.length ? (
+            <div className="mt-5 divide-y divide-[#E8DED0]">
+              {serviceRecordConsole.records.map((record, index) => (
                 <motion.article
-                  key={event.id}
+                  key={record.appointmentId}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{
-                    duration: 0.24,
-                    delay: Math.min(index * 0.025, 0.16),
+                    duration: 0.22,
+                    delay: Math.min(index * 0.02, 0.12),
                   }}
-                  className="py-4"
+                  className="grid gap-3 py-4 xl:grid-cols-[minmax(220px,1.15fr)_minmax(260px,1.35fr)_minmax(220px,1fr)]"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#F1E9DD] text-[#6F8F83]">
-                        {event.action === "cancellation_policy_updated" ? (
-                          <ClipboardList className="h-4 w-4" />
+                        {record.anomalies.length ? (
+                          <AlertTriangle className="h-4 w-4" />
                         ) : (
-                          <CheckCircle2 className="h-4 w-4" />
+                          <UserCheck className="h-4 w-4" />
                         )}
                       </span>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-[#243B35]">
-                          {auditActionCopy[event.action]}
+                          {record.counselorName} · {formatDate(record.startsAt)}
                         </p>
-                        <p className="mt-1 text-xs text-[#8A8176]">
-                          {event.actorId} · {event.actorRoles.join(" / ")}
+                        <p className="mt-1 truncate text-xs text-[#8A8176]">
+                          {record.appointmentId} · 用户 {record.userId}
                         </p>
                       </div>
                     </div>
-                    <span className="text-xs text-[#8A8176]">
-                      {formatDate(event.createdAt)}
-                    </span>
                   </div>
-                  <AuditMeta event={event} />
-                  {event.note && (
-                    <p className="mt-2 rounded-lg bg-[#F8F3EA] px-3 py-2 text-sm leading-6 text-[#5F6B64]">
-                      {event.note}
+
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
+                        {statusCopy[record.appointmentStatus]}
+                      </span>
+                      {record.orderStatus && (
+                        <span className="rounded-full bg-[#F3EEE5] px-2.5 py-1 text-xs font-semibold text-[#6F675E]">
+                          {orderStatusCopy[record.orderStatus]}
+                        </span>
+                      )}
+                      {record.riskLevel && (
+                        <span className="rounded-full bg-[#EFF4FB] px-2.5 py-1 text-xs font-semibold text-[#3B5F8A]">
+                          {riskLevelCopy[record.riskLevel]}
+                        </span>
+                      )}
+                      {record.anomalies.map(anomaly => (
+                        <span
+                          key={anomaly}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${anomalyClassName[anomaly]}`}
+                        >
+                          {anomalyCopy[anomaly]}
+                        </span>
+                      ))}
+                    </div>
+                    {record.operationHint && (
+                      <p className="mt-2 text-xs leading-5 text-[#7A827C]">
+                        {record.operationHint}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid gap-1 text-xs leading-5 text-[#66716A] xl:text-right">
+                    <p>
+                      渠道{" "}
+                      <span className="font-semibold text-[#243B35]">
+                        {record.channel === "video"
+                          ? "视频"
+                          : record.channel === "voice"
+                            ? "语音"
+                            : "线下"}
+                      </span>
                     </p>
-                  )}
+                    {typeof record.minutesUntilStart === "number" && (
+                      <p>
+                        距开始{" "}
+                        <span className="font-semibold text-[#243B35]">
+                          {record.minutesUntilStart >= 0
+                            ? `${record.minutesUntilStart} 分钟`
+                            : "已开始"}
+                        </span>
+                      </p>
+                    )}
+                    {record.latestAuditAction && (
+                      <p>
+                        最近审计{" "}
+                        <span className="font-semibold text-[#243B35]">
+                          {auditActionCopy[record.latestAuditAction]}
+                        </span>
+                      </p>
+                    )}
+                  </div>
                 </motion.article>
               ))}
             </div>
           ) : (
-            <div className="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
-              <History className="h-8 w-8 text-[#7C9288]" />
-              <h2 className="mt-4 text-lg font-semibold">暂无审计记录</h2>
+            <div className="mt-5 flex min-h-[240px] flex-col items-center justify-center px-6 text-center">
+              <FileSearch className="h-8 w-8 text-[#7C9288]" />
+              <h2 className="mt-4 text-lg font-semibold">暂无服务记录</h2>
               <p className="mt-2 max-w-[360px] text-sm leading-6 text-[#6F7771]">
-                保存规则或处理履约后，这里会显示最近操作。
+                当前筛选条件下没有预约履约记录，调整筛选后再查看。
               </p>
             </div>
           )}
-        </motion.div>
-      </section>
+        </section>
+      )}
+
+      {activeWorkspace === "rules" && (
+        <section className="mt-6 grid gap-6 lg:grid-cols-[420px_1fr]">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="h-fit rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5"
+          >
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+              <SlidersHorizontal className="h-4 w-4 text-[#6F8F83]" />
+              取消规则
+            </div>
+
+            <label className="mt-5 block text-sm font-semibold text-[#40534B]">
+              已确认预约可取消截止时间
+            </label>
+            <div className="mt-2 flex items-center gap-3">
+              <input
+                type="number"
+                min={0}
+                step={15}
+                value={draftPolicy.scheduledRefundCutoffMinutesBeforeStart}
+                onChange={event =>
+                  setDraftPolicy(previous => ({
+                    ...previous,
+                    scheduledRefundCutoffMinutesBeforeStart: Math.max(
+                      0,
+                      Number(event.target.value) || 0
+                    ),
+                  }))
+                }
+                className="h-10 w-32 rounded-lg border border-[#D8CDBC] bg-white px-3 text-sm font-semibold text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+              />
+              <span className="text-sm text-[#66716A]">分钟前</span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-[#8A8176]">
+              超过该时间后，用户取消会被拦截并提示联系平台支持。
+            </p>
+
+            <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-[#E6DDD0] bg-[#F8F3EA] px-3 py-3">
+              <input
+                type="checkbox"
+                checked={draftPolicy.allowPendingPaymentCancellation}
+                onChange={event =>
+                  setDraftPolicy(previous => ({
+                    ...previous,
+                    allowPendingPaymentCancellation: event.target.checked,
+                  }))
+                }
+                className="mt-1 h-4 w-4 accent-[#355F51]"
+              />
+              <span>
+                <span className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                  <ToggleLeft className="h-4 w-4 text-[#6F8F83]" />
+                  允许待支付预约取消
+                </span>
+                <span className="mt-1 block text-xs leading-5 text-[#8A8176]">
+                  关闭后，待支付预约只能等待超时释放或由运营介入。
+                </span>
+              </span>
+            </label>
+
+            <label className="mt-5 block text-sm font-semibold text-[#40534B]">
+              变更原因
+            </label>
+            <textarea
+              value={reason}
+              onChange={event => setReason(event.target.value)}
+              maxLength={200}
+              rows={3}
+              placeholder="例如：节假日前临时调整取消规则"
+              className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition placeholder:text-[#AAA197] focus:border-[#6F8F83]"
+            />
+
+            <button
+              onClick={() => void handleSave()}
+              disabled={isSaving || !hasChanges}
+              className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#355F51] px-4 text-sm font-semibold text-white transition hover:bg-[#243B35] disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              保存规则
+            </button>
+
+            {consoleData?.serverTime && (
+              <p className="mt-4 text-xs text-[#8A8176]">
+                当前配置读取于 {formatDate(consoleData.serverTime)}
+              </p>
+            )}
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.34,
+              delay: 0.04,
+              ease: [0.16, 1, 0.3, 1],
+            }}
+            className="min-w-0 rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E8DED0] pb-4">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <History className="h-4 w-4 text-[#6F8F83]" />
+                审计流水
+              </div>
+              <span className="rounded-full bg-[#E5ECE1] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
+                {consoleData?.auditEvents.length ?? 0} 条
+              </span>
+            </div>
+
+            {isLoading && !consoleData ? (
+              <div className="flex min-h-[360px] items-center justify-center text-sm text-[#6F7771]">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                正在读取审计流水
+              </div>
+            ) : consoleData?.auditEvents.length ? (
+              <div className="divide-y divide-[#E8DED0]">
+                {consoleData.auditEvents.map((event, index) => (
+                  <motion.article
+                    key={event.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.24,
+                      delay: Math.min(index * 0.025, 0.16),
+                    }}
+                    className="py-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#F1E9DD] text-[#6F8F83]">
+                          {event.action === "cancellation_policy_updated" ? (
+                            <ClipboardList className="h-4 w-4" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4" />
+                          )}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[#243B35]">
+                            {auditActionCopy[event.action]}
+                          </p>
+                          <p className="mt-1 text-xs text-[#8A8176]">
+                            {event.actorId} · {event.actorRoles.join(" / ")}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs text-[#8A8176]">
+                        {formatDate(event.createdAt)}
+                      </span>
+                    </div>
+                    <AuditMeta event={event} />
+                    {event.note && (
+                      <p className="mt-2 rounded-lg bg-[#F8F3EA] px-3 py-2 text-sm leading-6 text-[#5F6B64]">
+                        {event.note}
+                      </p>
+                    )}
+                  </motion.article>
+                ))}
+              </div>
+            ) : (
+              <div className="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
+                <History className="h-8 w-8 text-[#7C9288]" />
+                <h2 className="mt-4 text-lg font-semibold">暂无审计记录</h2>
+                <p className="mt-2 max-w-[360px] text-sm leading-6 text-[#6F7771]">
+                  保存规则或处理履约后，这里会显示最近操作。
+                </p>
+              </div>
+            )}
+          </motion.div>
+        </section>
+      )}
+
+      {deleteCounselorProfile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#182E27]/30 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-[520px] rounded-lg border border-[#E1D7C8] bg-[#FFFDF8] p-5 shadow-xl shadow-[#182E27]/20">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-[#243B35]">
+                  删除咨询师
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#6F7771]">
+                  {deleteCounselorProfile.counselor.name}{" "}
+                  将从运营名册和用户端可预约列表移除；若已有预约记录，服务端会拦截删除。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteCounselorProfile(undefined)}
+                disabled={isCounselorDeleting}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#D8CDBC] bg-white text-[#5F6B64] transition hover:border-[#9FB3A9] disabled:opacity-50"
+                title="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-sm font-semibold text-[#40534B]">
+              删除原因
+              <textarea
+                value={deleteCounselorReason}
+                onChange={event => setDeleteCounselorReason(event.target.value)}
+                rows={3}
+                maxLength={200}
+                className="mt-2 w-full resize-none rounded-lg border border-[#D8CDBC] bg-white px-3 py-2 text-sm leading-6 text-[#243B35] outline-none transition focus:border-[#6F8F83]"
+              />
+            </label>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setDeleteCounselorProfile(undefined)}
+                disabled={isCounselorDeleting}
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-[#D8CDBC] bg-white px-4 text-sm font-semibold text-[#5F6B64] transition hover:border-[#9FB3A9] disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteCounselorProfile()}
+                disabled={isCounselorDeleting}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#A65F48] px-4 text-sm font-semibold text-white transition hover:bg-[#8E4E3B] disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {isCounselorDeleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

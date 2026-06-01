@@ -184,6 +184,8 @@ export const CounselorAdminProfileConfigSchema = z.object({
   acceptsNewClients: z.boolean().default(true),
   credentialStatus: CounselorCredentialStatusSchema.default("verified"),
   credentialExpiresAt: DateTimeLikeSchema.optional(),
+  archivedAt: DateTimeLikeSchema.optional(),
+  archivedBy: EntityIdSchema.optional(),
   updatedAt: DateTimeLikeSchema,
   updatedBy: EntityIdSchema.optional(),
 });
@@ -250,6 +252,29 @@ export const CounselorAdminProfileUpdateRequestSchema = z.object({
   reason: z.string().trim().min(2).max(200),
 });
 
+export const CounselorAdminProfileCreateRequestSchema = z.object({
+  profile: z.object({
+    name: z.string().trim().min(1).max(40),
+    avatarUrl: z.string().url().optional(),
+    title: z.string().trim().min(1).max(80),
+    introduction: z.string().trim().min(10).max(600),
+    specialties: z.array(CounselorSpecialtySchema).min(1).max(6),
+    licenseSummary: z.string().trim().min(1).max(180),
+    yearsOfPractice: z.number().int().min(0).max(60),
+    sessionPrice: z.number().finite().nonnegative().max(5000),
+    serviceStatus: CounselorAdminServiceStatusSchema.default("active"),
+    acceptsNewClients: z.boolean().default(true),
+    credentialStatus: CounselorCredentialStatusSchema.default("verified"),
+    credentialExpiresAt: DateTimeLikeSchema.optional(),
+  }),
+  reason: z.string().trim().min(2).max(200),
+});
+
+export const CounselorAdminProfileDeleteRequestSchema = z.object({
+  counselorId: EntityIdSchema,
+  reason: z.string().trim().min(2).max(200),
+});
+
 export const CounselorAdminProfileConsoleSchema = z.object({
   filters: CounselorAdminProfileFilterSchema,
   profiles: z.array(CounselorAdminProfileSchema),
@@ -259,6 +284,13 @@ export const CounselorAdminProfileConsoleSchema = z.object({
 
 export const CounselorAdminProfileMutationResultSchema = z.object({
   profile: CounselorAdminProfileSchema,
+  console: CounselorAdminProfileConsoleSchema,
+  auditEvent: z.lazy(() => CounselingOperationAuditEventSchema),
+  serverTime: DateTimeLikeSchema,
+});
+
+export const CounselorAdminProfileDeleteResultSchema = z.object({
+  counselorId: EntityIdSchema,
   console: CounselorAdminProfileConsoleSchema,
   auditEvent: z.lazy(() => CounselingOperationAuditEventSchema),
   serverTime: DateTimeLikeSchema,
@@ -382,7 +414,9 @@ export const CounselingOperationAuditActionSchema = z.enum([
   "schedule_slot_added",
   "schedule_slot_closed",
   "schedule_slot_restored",
+  "counselor_profile_created",
   "counselor_profile_updated",
+  "counselor_profile_deleted",
   "counselor_service_status_updated",
 ]);
 
@@ -759,11 +793,20 @@ export type CounselorAdminProfilePatch = z.infer<
 export type CounselorAdminProfileUpdateRequest = z.infer<
   typeof CounselorAdminProfileUpdateRequestSchema
 >;
+export type CounselorAdminProfileCreateRequest = z.infer<
+  typeof CounselorAdminProfileCreateRequestSchema
+>;
+export type CounselorAdminProfileDeleteRequest = z.infer<
+  typeof CounselorAdminProfileDeleteRequestSchema
+>;
 export type CounselorAdminProfileConsole = z.infer<
   typeof CounselorAdminProfileConsoleSchema
 >;
 export type CounselorAdminProfileMutationResult = z.infer<
   typeof CounselorAdminProfileMutationResultSchema
+>;
+export type CounselorAdminProfileDeleteResult = z.infer<
+  typeof CounselorAdminProfileDeleteResultSchema
 >;
 export type CounselingAppointmentCreateRequest = z.infer<
   typeof CounselingAppointmentCreateRequestSchema

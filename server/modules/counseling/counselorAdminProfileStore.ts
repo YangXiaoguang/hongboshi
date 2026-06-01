@@ -27,6 +27,11 @@ export interface CounselorAdminProfileStore {
   saveProfile(
     profile: CounselorAdminProfileConfig
   ): MaybePromise<CounselorAdminProfileConfig>;
+  archiveProfile(
+    counselorId: string,
+    actorId?: string,
+    now?: string
+  ): MaybePromise<CounselorAdminProfileConfig | undefined>;
   clear(): MaybePromise<void>;
 }
 
@@ -63,11 +68,12 @@ function normalizeProfiles(
 ): CounselorAdminProfileConfig[] {
   const parsed = z.array(CounselorAdminProfileConfigSchema).safeParse(profiles);
   const storedProfiles = parsed.success ? parsed.data : [];
+  const seedIds = new Set(counselorProfiles.map(counselor => counselor.id));
   const storedById = new Map(
     storedProfiles.map(profile => [profile.counselor.id, profile])
   );
 
-  return counselorProfiles.map(seed => {
+  const seedProfiles = counselorProfiles.map(seed => {
     const stored = storedById.get(seed.id);
     if (!stored) return buildDefaultProfile(seed, now);
 
@@ -80,6 +86,16 @@ function normalizeProfiles(
       },
     });
   });
+
+  const customProfiles = storedProfiles
+    .filter(profile => !seedIds.has(profile.counselor.id))
+    .map(profile => CounselorAdminProfileConfigSchema.parse(profile));
+
+  return [...seedProfiles, ...customProfiles];
+}
+
+function visibleProfiles(profiles: CounselorAdminProfileConfig[]) {
+  return profiles.filter(profile => !profile.archivedAt);
 }
 
 function normalizeStoreFile(
@@ -101,7 +117,7 @@ export class InMemoryCounselorAdminProfileStore implements CounselorAdminProfile
 
   listProfiles(now = new Date().toISOString()): CounselorAdminProfileConfig[] {
     this.profiles = normalizeProfiles(this.profiles, now);
-    return this.profiles.map(cloneProfile);
+    return visibleProfiles(this.profiles).map(cloneProfile);
   }
 
   getProfile(
@@ -132,6 +148,31 @@ export class InMemoryCounselorAdminProfileStore implements CounselorAdminProfile
     return cloneProfile(normalized);
   }
 
+  archiveProfile(
+    counselorId: string,
+    actorId?: string,
+    now = new Date().toISOString()
+  ): CounselorAdminProfileConfig | undefined {
+    const profiles = normalizeProfiles(this.profiles, now);
+    const index = profiles.findIndex(
+      item => item.counselor.id === counselorId && !item.archivedAt
+    );
+    if (index === -1) return undefined;
+
+    const archived = CounselorAdminProfileConfigSchema.parse({
+      ...profiles[index],
+      serviceStatus: "paused",
+      acceptsNewClients: false,
+      archivedAt: now,
+      archivedBy: actorId,
+      updatedAt: now,
+      updatedBy: actorId,
+    });
+    profiles[index] = archived;
+    this.profiles = normalizeProfiles(profiles, now);
+    return cloneProfile(archived);
+  }
+
   clear() {
     this.profiles = buildDefaultProfiles();
   }
@@ -143,7 +184,7 @@ export class JsonFileCounselorAdminProfileStore implements CounselorAdminProfile
   ) {}
 
   listProfiles(now = new Date().toISOString()): CounselorAdminProfileConfig[] {
-    return this.readFile(now).profiles.map(cloneProfile);
+    return visibleProfiles(this.readFile(now).profiles).map(cloneProfile);
   }
 
   getProfile(
@@ -159,7 +200,7 @@ export class JsonFileCounselorAdminProfileStore implements CounselorAdminProfile
     profile: CounselorAdminProfileConfig
   ): CounselorAdminProfileConfig {
     const normalized = CounselorAdminProfileConfigSchema.parse(profile);
-    const profiles = this.listProfiles(normalized.updatedAt);
+    const profiles = this.readFile(normalized.updatedAt).profiles;
     const index = profiles.findIndex(
       item => item.counselor.id === normalized.counselor.id
     );
@@ -175,6 +216,31 @@ export class JsonFileCounselorAdminProfileStore implements CounselorAdminProfile
       profiles,
     });
     return cloneProfile(normalized);
+  }
+
+  archiveProfile(
+    counselorId: string,
+    actorId?: string,
+    now = new Date().toISOString()
+  ): CounselorAdminProfileConfig | undefined {
+    const file = this.readFile(now);
+    const index = file.profiles.findIndex(
+      item => item.counselor.id === counselorId && !item.archivedAt
+    );
+    if (index === -1) return undefined;
+
+    const archived = CounselorAdminProfileConfigSchema.parse({
+      ...file.profiles[index],
+      serviceStatus: "paused",
+      acceptsNewClients: false,
+      archivedAt: now,
+      archivedBy: actorId,
+      updatedAt: now,
+      updatedBy: actorId,
+    });
+    file.profiles[index] = archived;
+    this.writeFile(file);
+    return cloneProfile(archived);
   }
 
   clear() {

@@ -11,6 +11,7 @@ import {
   parseCounselingServiceRecordConsoleResponse,
   parseCounselingWorkbenchResponse,
   parseCounselorAdminProfileConsoleResponse,
+  parseCounselorAdminProfileDeleteResponse,
   parseCounselorAdminProfileMutationResponse,
 } from "./httpCounselingRepository";
 
@@ -439,6 +440,21 @@ describe("http counseling repository parsing", () => {
         },
       }).auditEvent.action
     ).toBe("counselor_service_status_updated");
+
+    expect(
+      parseCounselorAdminProfileDeleteResponse({
+        ok: true,
+        data: {
+          counselorId: counselor.id,
+          console: consolePayload,
+          auditEvent: {
+            ...auditEvent,
+            action: "counselor_profile_deleted",
+          },
+          serverTime: "2026-05-10T00:02:00.000Z",
+        },
+      }).auditEvent.action
+    ).toBe("counselor_profile_deleted");
   });
 
   it("throws on error response", () => {

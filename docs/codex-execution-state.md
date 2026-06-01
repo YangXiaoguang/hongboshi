@@ -9,8 +9,8 @@
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
 - 当前阶段：`M7 咨询运营增强`
-- 当前状态：`M7-D 咨询师维护工作台交互优化` 已完成；`/admin/counseling` 的咨询师档案区从卡片式浏览升级为左侧咨询师清单与右侧维护面板，可在同页维护前台展示资料、擅长方向、价格、执业年限、资质摘要、资质状态、到期日、接单状态和接新客开关，并保留暂停/恢复主动作、操作原因和咨询运营审计写入。课程商品 `ADM-PRO-T-A` 暂缓，待本轮咨询运营体验稳定后继续。
-- 本轮完成后下一步：执行 `M7-E 咨询师前台预览、审计详情与排班联动入口`
+- 当前状态：`M7-E 咨询运营工作区减负与咨询师名册增删` 已完成；`/admin/counseling` 从一个长页面拆为“咨询师 / 排班 / 履约 / 规则与审计”四个工作区，默认只显示咨询师维护；新增咨询师创建、咨询师软删除/名册移除、编辑资料显式入口和删除原因审计，服务端会阻止删除已有预约/履约记录的咨询师。课程商品 `ADM-PRO-T-A` 暂缓，待本轮咨询运营体验稳定后继续。
+- 本轮完成后下一步：执行 `M7-F 咨询师前台预览、审计详情与排班联动入口`
 
 ## 已完成关键能力
 
@@ -215,6 +215,7 @@
 - 前台 `/api/counseling/availability` 已接入咨询师档案 overlay，暂停接单、关闭接新客、资质待复核或资质过期的咨询师不会进入用户可预约列表。
 - `/admin/counseling` 已加入咨询师档案与服务状态区，支持按服务状态和关键词筛选，展示资质状态、排班摘要、服务摘要和接单切换。
 - 完成咨询师维护工作台交互优化：咨询师档案区改为清单 + 详情维护面板，运营可直接编辑前台资料、资质状态、价格、擅长方向、接单门禁和操作原因，并按接单状态、资质状态与关键词筛选。
+- 完成咨询运营页面减负与咨询师名册增删：`/admin/counseling` 拆为咨询师、排班、履约、规则与审计四个工作区；`/api/counseling/admin/counselors` 支持创建咨询师与软删除名册移除，删除会写入审计并阻止已有预约/履约记录的咨询师被移除。
 - 建立 `risk:read` 后台读取权限与 `risk:review` 风险处理权限，`operator` 与 `admin` 可进入风险复核台并执行处理动作。
 - 建立风险复核后台共享契约 `RiskAdminListResultSchema`、`RiskAdminDetailSchema`、`RiskAdminActionRequestSchema`、`RiskAdminReviewRecordSchema` 和 `RiskAdminMutationResultSchema`，统一描述风险队列、隐私最小化详情、SOP 提醒和处理记录。
 - 新增 `server/modules/risk/riskReviewStore.ts`，开发期支持内存/JSON 文件 `.hongboshi-data/risk-reviews.json` 保存风险处理记录。
