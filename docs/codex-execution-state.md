@@ -8,9 +8,9 @@
 - 当前分支：`main`
 - GitHub 仓库：`https://github.com/YangXiaoguang/hongboshi.git`
 - 最近已知基线提交：本轮提交后以 Git 历史最新提交为准
-- 当前阶段：`ADM-PRO 课程商品详情装修器与成交内容运营升级`
-- 当前状态：`ADM-PRO-S-B 发布后前台回看与购买链路验证入口` 已完成；发布设置页在一键上架/下架之后新增发布后验证区，可按前台可售状态开放“查看前台详情”和“打开购买入口”，详情页使用 `?focus=content` 聚焦成交图文，购买入口使用既有 `?checkout=course` 拉起结算抽屉。发布队列 `ADM-IA-B-C-G` 继续暂缓，待商品编辑体验稳定后回到批量执行预案。
-- 本轮完成后下一步：执行 `ADM-PRO-T-A 商品基础信息与价格权益自动保存减负`
+- 当前阶段：`M7 咨询运营增强`
+- 当前状态：`M7-D 咨询师维护工作台交互优化` 已完成；`/admin/counseling` 的咨询师档案区从卡片式浏览升级为左侧咨询师清单与右侧维护面板，可在同页维护前台展示资料、擅长方向、价格、执业年限、资质摘要、资质状态、到期日、接单状态和接新客开关，并保留暂停/恢复主动作、操作原因和咨询运营审计写入。课程商品 `ADM-PRO-T-A` 暂缓，待本轮咨询运营体验稳定后继续。
+- 本轮完成后下一步：执行 `M7-E 咨询师前台预览、审计详情与排班联动入口`
 
 ## 已完成关键能力
 
@@ -214,6 +214,7 @@
 - 新增 `/api/counseling/admin/counselors`，运营/管理员可读取和维护咨询师档案；写动作需要操作原因并写入咨询运营审计。
 - 前台 `/api/counseling/availability` 已接入咨询师档案 overlay，暂停接单、关闭接新客、资质待复核或资质过期的咨询师不会进入用户可预约列表。
 - `/admin/counseling` 已加入咨询师档案与服务状态区，支持按服务状态和关键词筛选，展示资质状态、排班摘要、服务摘要和接单切换。
+- 完成咨询师维护工作台交互优化：咨询师档案区改为清单 + 详情维护面板，运营可直接编辑前台资料、资质状态、价格、擅长方向、接单门禁和操作原因，并按接单状态、资质状态与关键词筛选。
 - 建立 `risk:read` 后台读取权限与 `risk:review` 风险处理权限，`operator` 与 `admin` 可进入风险复核台并执行处理动作。
 - 建立风险复核后台共享契约 `RiskAdminListResultSchema`、`RiskAdminDetailSchema`、`RiskAdminActionRequestSchema`、`RiskAdminReviewRecordSchema` 和 `RiskAdminMutationResultSchema`，统一描述风险队列、隐私最小化详情、SOP 提醒和处理记录。
 - 新增 `server/modules/risk/riskReviewStore.ts`，开发期支持内存/JSON 文件 `.hongboshi-data/risk-reviews.json` 保存风险处理记录。
