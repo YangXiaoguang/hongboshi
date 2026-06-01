@@ -451,6 +451,14 @@ function saleStatusForProduct(product?: CourseProductListItem) {
   };
 }
 
+function userCourseDetailPath(product?: CourseProductListItem) {
+  return product ? `/courses/${product.courseId}?focus=content` : "/courses";
+}
+
+function userCourseCheckoutPath(product?: CourseProductListItem) {
+  return product ? `/courses/${product.courseId}?checkout=course` : "/courses";
+}
+
 function contentQualityIssueTarget(issue: CourseProductContentQualityIssue): {
   step: WorkspaceStepId;
   label: string;
@@ -1435,6 +1443,9 @@ export default function CourseProductEditorWorkspacePage() {
     [content, contentForm, product, reason]
   );
   const saleStatus = useMemo(() => saleStatusForProduct(product), [product]);
+  const canVerifyUserPurchaseFlow = Boolean(
+    product && saleStatus.tone === "live"
+  );
   const detailTemplateContext = useMemo(
     () => ({
       title: basicForm.title.trim() || product?.title || "这门课程",
@@ -4778,6 +4789,112 @@ export default function CourseProductEditorWorkspacePage() {
                           {saleStatus.description}
                         </div>
                       )}
+                    </div>
+
+                    <div className="rounded-lg border border-[#C8D8C8] bg-[#F8FCF6] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-[#243B35]">
+                            发布后验证
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[#6F7771]">
+                            上架完成后直接回看用户端详情页，并打开课程购买入口。
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                            canVerifyUserPurchaseFlow
+                              ? "bg-[#E4F1E4] text-[#41675A]"
+                              : "bg-[#F1E8DC] text-[#756B60]"
+                          }`}
+                        >
+                          {canVerifyUserPurchaseFlow ? "可验证" : "待上架"}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 md:grid-cols-3">
+                        {[
+                          {
+                            label: "前台详情",
+                            value: canVerifyUserPurchaseFlow
+                              ? "可打开"
+                              : "等待可售",
+                          },
+                          {
+                            label: "成交图文",
+                            value:
+                              previewRichTextBlocks.length > 0
+                                ? `${previewRichTextBlocks.length} 段`
+                                : "待补充",
+                          },
+                          {
+                            label: "购买入口",
+                            value: canVerifyUserPurchaseFlow
+                              ? "可拉起"
+                              : "未开放",
+                          },
+                        ].map(item => (
+                          <div
+                            key={item.label}
+                            className="rounded-lg border border-[#D8E5D6] bg-white px-3 py-3"
+                          >
+                            <p className="text-xs text-[#7D8B84]">
+                              {item.label}
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-[#243B35]">
+                              {item.value}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <a
+                          href={userCourseDetailPath(product)}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-disabled={!canVerifyUserPurchaseFlow}
+                          tabIndex={canVerifyUserPurchaseFlow ? undefined : -1}
+                          onClick={event => {
+                            if (!canVerifyUserPurchaseFlow) {
+                              event.preventDefault();
+                            }
+                          }}
+                          className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#243B35] px-4 text-sm font-semibold text-white transition ${
+                            canVerifyUserPurchaseFlow
+                              ? "hover:bg-[#315047]"
+                              : "pointer-events-none cursor-not-allowed opacity-50"
+                          }`}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          查看前台详情
+                        </a>
+                        <a
+                          href={userCourseCheckoutPath(product)}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-disabled={!canVerifyUserPurchaseFlow}
+                          tabIndex={canVerifyUserPurchaseFlow ? undefined : -1}
+                          onClick={event => {
+                            if (!canVerifyUserPurchaseFlow) {
+                              event.preventDefault();
+                            }
+                          }}
+                          className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#CFC4B5] bg-white px-4 text-sm font-semibold text-[#41524B] transition ${
+                            canVerifyUserPurchaseFlow
+                              ? "hover:border-[#9FB3A9]"
+                              : "pointer-events-none cursor-not-allowed opacity-50"
+                          }`}
+                        >
+                          <Target className="h-4 w-4" />
+                          打开购买入口
+                        </a>
+                        {!canVerifyUserPurchaseFlow && (
+                          <p className="text-xs leading-5 text-[#7A7065]">
+                            商品达到前台可售后，验证入口会自动开放。
+                          </p>
+                        )}
+                      </div>
                     </div>
 
                     <div className="rounded-lg border border-[#E1D7C8] bg-white p-4">
