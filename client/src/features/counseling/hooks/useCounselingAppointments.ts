@@ -63,6 +63,7 @@ export function useCounselingAppointments(enabled = true) {
                 appointment: result.appointment,
                 counselor: result.counselor,
                 slot: result.slot,
+                order: result.order,
                 riskEvent: result.riskEvent,
               }
             : record

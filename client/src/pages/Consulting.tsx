@@ -1,5 +1,6 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { useLocation } from "wouter";
 import {
   AlertTriangle,
   ArrowRight,
@@ -31,8 +32,11 @@ import {
 } from "@/features/assessments";
 import {
   COUNSELING_PAYMENT_HOLD_MINUTES,
+  getCounselingPaymentDeadline,
+  useCounselingAppointments,
   useCounselingIntake,
   type Counselor,
+  type CounselingAppointmentActionResult,
   type CounselorSpecialty,
   type CounselingChannel,
   type CounselingConcernTag,
@@ -209,6 +213,7 @@ function counselorScore(counselor: Counselor, tags: CounselingConcernTag[]) {
 }
 
 export default function Consulting() {
+  const [, navigate] = useLocation();
   const { isLoggedIn, isAuthSyncing, openLoginModal } = useAuth();
   const {
     availability,
@@ -225,6 +230,14 @@ export default function Consulting() {
     submit,
   } = useCounselingIntake();
   const {
+    appointments,
+    updateAppointment,
+    updatingAppointmentId,
+    error: appointmentListError,
+  } = useCounselingAppointments(isLoggedIn && !isAuthSyncing);
+  const [appointmentActionResult, setAppointmentActionResult] =
+    useState<CounselingAppointmentActionResult>();
+  const {
     result: latestAssessment,
     source: latestAssessmentSource,
     isLoading: isLatestAssessmentLoading,
@@ -237,6 +250,10 @@ export default function Consulting() {
     const prefill = getAssessmentPrefill(latestAssessment);
     if (prefill) updateDraft(prefill);
   }, [latestAssessment, updateDraft]);
+
+  useEffect(() => {
+    setAppointmentActionResult(undefined);
+  }, [appointmentResult?.appointment.id]);
 
   useEffect(() => {
     const counselorId = new URLSearchParams(window.location.search).get(
@@ -303,6 +320,18 @@ export default function Consulting() {
     () => (selectedCounselor ? counselorFallbackCopy(selectedCounselor) : null),
     [selectedCounselor]
   );
+  const pendingAppointments = useMemo(
+    () =>
+      appointments
+        .filter(record => record.appointment.status === "pending_payment")
+        .sort(
+          (left, right) =>
+            Date.parse(getCounselingPaymentDeadline(left.appointment)) -
+            Date.parse(getCounselingPaymentDeadline(right.appointment))
+        ),
+    [appointments]
+  );
+  const displayAppointmentResult = appointmentActionResult ?? appointmentResult;
 
   const handleCounselorSelect = (counselorId: string) => {
     const firstSlot = availability?.slots.find(
@@ -335,9 +364,44 @@ export default function Consulting() {
     const nextResult = await submit();
     if (nextResult) {
       toast("预约已生成", {
-        description: "咨询师会在服务前查看你的困扰重点。",
+        description: "请在保留时间内完成支付确认，时段才会正式锁定。",
       });
     }
+  };
+
+  const handleConfirmPayment = async (appointmentId: string) => {
+    if (!isLoggedIn) {
+      openLoginModal();
+      toast("请先登录", { description: "登录后可继续支付咨询预约。" });
+      return;
+    }
+
+    const nextResult = await updateAppointment(
+      appointmentId,
+      "confirm_payment"
+    );
+    if (nextResult) {
+      setAppointmentActionResult(nextResult);
+      toast("咨询预约已确认", {
+        description: "预约状态已更新，可在个人中心查看后续安排。",
+      });
+    }
+  };
+
+  const handleCancelPendingAppointment = async (appointmentId: string) => {
+    const nextResult = await updateAppointment(appointmentId, "cancel");
+    if (nextResult) {
+      setAppointmentActionResult(nextResult);
+      toast("待支付预约已取消", {
+        description: "原咨询时段已释放，你可以重新选择更合适的时间。",
+      });
+    }
+  };
+
+  const openPersonalAppointment = (appointmentId: string) => {
+    navigate(
+      `/me?tab=orders&appointmentId=${encodeURIComponent(appointmentId)}`
+    );
   };
 
   return (
@@ -454,6 +518,98 @@ export default function Consulting() {
           <div className="mt-5 rounded-[20px] border border-[#F0D6C9] bg-[#FFF5EF] px-5 py-4 text-sm text-[#A65F48]">
             {error}
           </div>
+        )}
+
+        {appointmentListError && (
+          <div className="mt-5 rounded-[20px] border border-[#F0D6C9] bg-[#FFF5EF] px-5 py-4 text-sm text-[#A65F48]">
+            {appointmentListError}
+          </div>
+        )}
+
+        {pendingAppointments.length > 0 && !displayAppointmentResult && (
+          <section className="mt-6 rounded-[26px] border border-[#E4DCCF] bg-[#FFFDF8] p-4 shadow-sm shadow-[#243B35]/5 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-[#A65F48]">
+                  待支付咨询预约
+                </p>
+                <h2 className="mt-1 text-xl font-semibold text-[#243B35]">
+                  已为你保留咨询时段
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#6D746F]">
+                  继续支付后预约才会正式确认；取消后会释放时段给其他用户。
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  openPersonalAppointment(pendingAppointments[0].appointment.id)
+                }
+                className="inline-flex h-10 items-center justify-center rounded-full border border-[#D8CEC0] px-4 text-sm font-semibold text-[#41675A] transition hover:bg-[#F2F7EE]"
+              >
+                去个人中心
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 lg:grid-cols-2">
+              {pendingAppointments.slice(0, 2).map(record => {
+                const isUpdating =
+                  updatingAppointmentId === record.appointment.id;
+                return (
+                  <div
+                    key={record.appointment.id}
+                    className="rounded-[20px] border border-[#E4DCCF] bg-[#F9F5EE] p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[#243B35]">
+                          {record.counselor.name} · {formatSlot(record.slot)}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-[#6D746F]">
+                          保留至{" "}
+                          {formatSlot({
+                            ...record.slot,
+                            startsAt: getCounselingPaymentDeadline(
+                              record.appointment
+                            ),
+                          })}
+                          ，应付金额 ¥
+                          {record.order?.payableAmount ??
+                            record.counselor.sessionPrice}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-[#FFF1D8] px-2.5 py-1 text-xs font-semibold text-[#8A641C]">
+                        待支付
+                      </span>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        onClick={() =>
+                          handleConfirmPayment(record.appointment.id)
+                        }
+                        disabled={isUpdating}
+                        className="inline-flex h-10 flex-1 items-center justify-center rounded-full bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:bg-[#9AA19B]"
+                      >
+                        {isUpdating && (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        )}
+                        继续支付
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleCancelPendingAppointment(record.appointment.id)
+                        }
+                        disabled={isUpdating}
+                        className="inline-flex h-10 flex-1 items-center justify-center rounded-full border border-[#D8CEC0] px-4 text-sm font-semibold text-[#A65F48] transition hover:bg-[#FFF1EC] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        取消预约
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         )}
 
         <section className="mt-7 grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
@@ -854,7 +1010,7 @@ export default function Consulting() {
                 onClick={handleSubmit}
                 disabled={
                   isSubmitting ||
-                  Boolean(appointmentResult) ||
+                  Boolean(displayAppointmentResult) ||
                   !selectedCounselor ||
                   !selectedSlot
                 }
@@ -863,8 +1019,10 @@ export default function Consulting() {
                 {isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                {appointmentResult ? "预约单已生成" : "立即预约并锁定时段"}
-                {!isSubmitting && !appointmentResult && (
+                {displayAppointmentResult
+                  ? "预约单已生成"
+                  : "立即预约并锁定时段"}
+                {!isSubmitting && !displayAppointmentResult && (
                   <ArrowRight className="ml-2 h-4 w-4" />
                 )}
               </button>
@@ -882,26 +1040,60 @@ export default function Consulting() {
               </div>
             ) : null}
 
-            {appointmentResult && (
+            {displayAppointmentResult && (
               <motion.div
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-                className="rounded-[28px] border border-[#D8CEC0] bg-[#E6EDDF] p-6"
+                className={`rounded-[28px] border p-6 ${
+                  displayAppointmentResult.appointment.status === "scheduled"
+                    ? "border-[#C6D9BD] bg-[#E6EDDF]"
+                    : displayAppointmentResult.appointment.status ===
+                        "cancelled"
+                      ? "border-[#E4DCCF] bg-[#F5EFE5]"
+                      : "border-[#D8CEC0] bg-[#FFFDF8]"
+                }`}
               >
                 <p className="text-sm font-semibold text-[#41675A]">
-                  预约单已生成
+                  {displayAppointmentResult.appointment.status === "scheduled"
+                    ? "预约已确认"
+                    : displayAppointmentResult.appointment.status ===
+                        "cancelled"
+                      ? "预约已取消"
+                      : "预约单已生成"}
                 </p>
                 <h3 className="mt-2 text-xl font-semibold text-[#243B35]">
-                  {appointmentResult.counselor.name} ·{" "}
-                  {formatSlot(appointmentResult.slot)}
+                  {displayAppointmentResult.counselor.name} ·{" "}
+                  {formatSlot(displayAppointmentResult.slot)}
                 </h3>
                 <p className="mt-2 text-sm text-[#4F5B54]">
-                  订单金额 ¥{appointmentResult.order.payableAmount}
-                  ，当前状态为待支付。
+                  订单金额 ¥
+                  {displayAppointmentResult.order?.payableAmount ??
+                    displayAppointmentResult.counselor.sessionPrice}
+                  ，当前状态为
+                  {displayAppointmentResult.appointment.status === "scheduled"
+                    ? "已预约"
+                    : displayAppointmentResult.appointment.status ===
+                        "cancelled"
+                      ? "已取消"
+                      : "待支付"}
+                  。
                 </p>
+                {displayAppointmentResult.appointment.status ===
+                  "pending_payment" && (
+                  <p className="mt-2 text-xs leading-5 text-[#8A641C]">
+                    保留至{" "}
+                    {formatSlot({
+                      ...displayAppointmentResult.slot,
+                      startsAt: getCounselingPaymentDeadline(
+                        displayAppointmentResult.appointment
+                      ),
+                    })}
+                    ，超时未支付会自动释放时段。
+                  </p>
+                )}
                 <div className="mt-5 space-y-3">
-                  {appointmentResult.nextSteps.map(step => (
+                  {displayAppointmentResult.nextSteps.map(step => (
                     <div
                       key={step}
                       className="flex gap-3 text-sm text-[#4F5B54]"
@@ -911,12 +1103,46 @@ export default function Consulting() {
                     </div>
                   ))}
                 </div>
+                <div className="mt-5 grid gap-2">
+                  {displayAppointmentResult.appointment.status ===
+                    "pending_payment" && (
+                    <button
+                      onClick={() =>
+                        handleConfirmPayment(
+                          displayAppointmentResult.appointment.id
+                        )
+                      }
+                      disabled={
+                        updatingAppointmentId ===
+                        displayAppointmentResult.appointment.id
+                      }
+                      className="inline-flex h-11 items-center justify-center rounded-full bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:bg-[#9AA19B]"
+                    >
+                      {updatingAppointmentId ===
+                        displayAppointmentResult.appointment.id && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      立即支付并确认预约
+                    </button>
+                  )}
+                  <button
+                    onClick={() =>
+                      openPersonalAppointment(
+                        displayAppointmentResult.appointment.id
+                      )
+                    }
+                    className="inline-flex h-11 items-center justify-center rounded-full border border-[#D8CEC0] px-4 text-sm font-semibold text-[#41675A] transition hover:bg-[#F2F7EE]"
+                  >
+                    去个人中心查看
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </button>
+                </div>
               </motion.div>
             )}
           </aside>
         </section>
 
-        {selectedCounselor && selectedSlot && !appointmentResult && (
+        {selectedCounselor && selectedSlot && !displayAppointmentResult && (
           <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#D8CEC0] bg-[#FFFDF8]/95 px-4 py-3 shadow-2xl shadow-[#243B35]/12 backdrop-blur lg:hidden">
             <div className="mx-auto flex max-w-[640px] items-center justify-between gap-3">
               <div className="min-w-0">

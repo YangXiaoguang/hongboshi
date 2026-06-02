@@ -61,7 +61,11 @@ import {
   createPersonalOrderTimeline,
   type Course,
 } from "@/features/courses";
-import { useCounselingAppointments } from "@/features/counseling";
+import {
+  getCounselingPaymentDeadline,
+  useCounselingAppointments,
+  type CounselingAppointmentRecord,
+} from "@/features/counseling";
 
 type PersonalTab = "account" | "orders" | "messages" | "favorites" | "coupons";
 
@@ -86,8 +90,20 @@ function initialOrderIdFromUrl(): string | undefined {
   );
 }
 
+function initialAppointmentIdFromUrl(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (
+    new URLSearchParams(window.location.search).get("appointmentId") ??
+    undefined
+  );
+}
+
 function orderElementId(orderId: string) {
   return `personal-order-${orderId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+}
+
+function appointmentElementId(appointmentId: string) {
+  return `personal-appointment-${appointmentId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 }
 
 const roleCopy = {
@@ -165,6 +181,21 @@ const appointmentStatusCopy = {
   cancelled: "已取消",
   no_show: "未到访",
   refunded: "已退款",
+} as const;
+
+const appointmentStatusTone = {
+  pending_payment: "bg-[#FFF1D8] text-[#8A641C]",
+  scheduled: "bg-[#E6EDDF] text-[#41675A]",
+  completed: "bg-[#E6EDDF] text-[#41675A]",
+  cancelled: "bg-[#EFEAE1] text-[#7B817C]",
+  no_show: "bg-[#F4E5DE] text-[#A65F48]",
+  refunded: "bg-[#F4E5DE] text-[#A65F48]",
+} satisfies Record<keyof typeof appointmentStatusCopy, string>;
+
+const counselingChannelCopy = {
+  video: "视频咨询",
+  voice: "语音咨询",
+  offline: "线下咨询",
 } as const;
 
 function formatMoney(amount: number) {
@@ -325,6 +356,9 @@ export default function PersonalCenter() {
   const [focusedOrderId, setFocusedOrderId] = useState<string | undefined>(
     initialOrderIdFromUrl
   );
+  const [focusedAppointmentId, setFocusedAppointmentId] = useState<
+    string | undefined
+  >(initialAppointmentIdFromUrl);
   const [selectedOrderId, setSelectedOrderId] = useState<string | undefined>(
     initialOrderIdFromUrl
   );
@@ -381,7 +415,14 @@ export default function PersonalCenter() {
     favoriteSource: "personal_center",
   });
   const { rules: marketingRules } = useCourseMarketingRules();
-  const { appointments, upcomingCount } = useCounselingAppointments(isLoggedIn);
+  const {
+    appointments,
+    pendingCount: counselingPendingPaymentCount,
+    upcomingCount,
+    updatingAppointmentId,
+    error: counselingAppointmentError,
+    updateAppointment,
+  } = useCounselingAppointments(isLoggedIn);
 
   const favoriteCourses = useMemo(
     () => allCourses.filter(course => favoriteCourseIds.has(course.id)),
@@ -406,21 +447,28 @@ export default function PersonalCenter() {
       ),
     [accessState.orders]
   );
+  const commerceOrders = useMemo(
+    () =>
+      recentOrders.filter(
+        order => order.items[0]?.type !== "counseling_session"
+      ),
+    [recentOrders]
+  );
 
-  const pendingPaymentCount = recentOrders.filter(
-    order => order.status === "pending_payment"
-  ).length;
+  const pendingPaymentCount =
+    commerceOrders.filter(order => order.status === "pending_payment").length +
+    counselingPendingPaymentCount;
 
-  const paidOrderCount = recentOrders.filter(
+  const paidOrderCount = commerceOrders.filter(
     order => order.status === "paid"
   ).length;
 
   const selectedOrder = useMemo(
     () =>
       selectedOrderId
-        ? recentOrders.find(order => order.id === selectedOrderId)
+        ? commerceOrders.find(order => order.id === selectedOrderId)
         : undefined,
-    [recentOrders, selectedOrderId]
+    [commerceOrders, selectedOrderId]
   );
 
   const selectedOrderCourse = selectedOrder
@@ -472,16 +520,39 @@ export default function PersonalCenter() {
         .getElementById(orderElementId(focusedOrderId))
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 80);
-  }, [activeTab, focusedOrderId, recentOrders.length]);
+  }, [activeTab, focusedOrderId, commerceOrders.length]);
+
+  useEffect(() => {
+    if (activeTab !== "orders" || !focusedAppointmentId) return;
+
+    window.setTimeout(() => {
+      document
+        .getElementById(appointmentElementId(focusedAppointmentId))
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+  }, [activeTab, appointments.length, focusedAppointmentId]);
 
   const focusOrder = (orderId: string) => {
     setActiveTab("orders");
     setFocusedOrderId(orderId);
+    setFocusedAppointmentId(undefined);
     setSelectedOrderId(orderId);
     window.history.replaceState(
       null,
       "",
       `/me?tab=orders&orderId=${encodeURIComponent(orderId)}`
+    );
+  };
+
+  const focusAppointment = (appointmentId: string) => {
+    setActiveTab("orders");
+    setFocusedOrderId(undefined);
+    setFocusedAppointmentId(appointmentId);
+    setSelectedOrderId(undefined);
+    window.history.replaceState(
+      null,
+      "",
+      `/me?tab=orders&appointmentId=${encodeURIComponent(appointmentId)}`
     );
   };
 
@@ -600,6 +671,7 @@ export default function PersonalCenter() {
     setActiveTab(tab);
     if (tab !== "orders") {
       setFocusedOrderId(undefined);
+      setFocusedAppointmentId(undefined);
       setSelectedOrderId(undefined);
     }
     window.history.replaceState(null, "", `/me?tab=${tab}`);
@@ -676,6 +748,33 @@ export default function PersonalCenter() {
       });
     } finally {
       setOrderActionPendingId(undefined);
+    }
+  };
+
+  const handleConfirmCounselingPayment = async (
+    record: CounselingAppointmentRecord
+  ) => {
+    const result = await updateAppointment(
+      record.appointment.id,
+      "confirm_payment"
+    );
+    if (result) {
+      focusAppointment(result.appointment.id);
+      toast("咨询预约已确认", {
+        description: "咨询师会在服务前查看你的咨询前信息。",
+      });
+    }
+  };
+
+  const handleCancelCounselingAppointment = async (
+    record: CounselingAppointmentRecord
+  ) => {
+    const result = await updateAppointment(record.appointment.id, "cancel");
+    if (result) {
+      focusAppointment(result.appointment.id);
+      toast("咨询预约已取消", {
+        description: "原咨询时段已释放，可以重新选择合适的咨询师和时间。",
+      });
     }
   };
 
@@ -1064,12 +1163,17 @@ export default function PersonalCenter() {
                 <div className="border-b border-[#E8DED0] px-5 py-4">
                   <h2 className="text-xl font-semibold">我的订单</h2>
                   <p className="mt-1 text-sm text-[#6D746F]">
-                    课程订单来自课程权益服务，咨询预约会在登录后同步显示。
+                    课程和会员订单按交易状态管理；咨询预约在下方独立显示，可继续支付或取消。
                   </p>
+                  {counselingAppointmentError && (
+                    <p className="mt-2 text-xs font-semibold text-[#A65F48]">
+                      {counselingAppointmentError}
+                    </p>
+                  )}
                 </div>
-                {recentOrders.length || appointments.length ? (
+                {commerceOrders.length || appointments.length ? (
                   <div className="divide-y divide-[#E8DED0]">
-                    {recentOrders.map(order => {
+                    {commerceOrders.map(order => {
                       const course = courseForOrder(order, allCourses);
                       const firstItem = order.items[0];
                       const title = firstItem?.title ?? "订单商品";
@@ -1151,52 +1255,123 @@ export default function PersonalCenter() {
                       );
                     })}
 
-                    {appointments.map(record => (
-                      <div
-                        key={record.appointment.id}
-                        className="grid gap-4 px-5 py-5 md:grid-cols-[minmax(0,1fr)_140px_120px]"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="truncate font-semibold">
-                              {record.counselor.name} 咨询预约
-                            </h3>
-                            <span className="rounded-full bg-[#E6EDDF] px-2.5 py-1 text-xs font-semibold text-[#41675A]">
-                              {appointmentStatusCopy[record.appointment.status]}
-                            </span>
+                    {appointments.map(record => {
+                      const isPending =
+                        record.appointment.status === "pending_payment";
+                      const isUpdating =
+                        updatingAppointmentId === record.appointment.id;
+                      return (
+                        <div
+                          id={appointmentElementId(record.appointment.id)}
+                          key={record.appointment.id}
+                          className={`grid gap-4 px-5 py-5 transition md:grid-cols-[minmax(0,1fr)_140px_168px] ${
+                            focusedAppointmentId === record.appointment.id
+                              ? "bg-[#FFF7EC] ring-1 ring-inset ring-[#D8B271]"
+                              : ""
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="truncate font-semibold">
+                                {record.counselor.name} 咨询预约
+                              </h3>
+                              <span
+                                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                  appointmentStatusTone[
+                                    record.appointment.status
+                                  ]
+                                }`}
+                              >
+                                {
+                                  appointmentStatusCopy[
+                                    record.appointment.status
+                                  ]
+                                }
+                              </span>
+                            </div>
+                            <p className="mt-2 truncate text-xs text-[#8A8176]">
+                              {record.appointment.id}
+                            </p>
+                            <p className="mt-2 text-sm text-[#6D746F]">
+                              时段 {formatDate(record.slot.startsAt)} ·{" "}
+                              {counselingChannelCopy[record.slot.channel] ??
+                                "咨询服务"}
+                            </p>
+                            {isPending && (
+                              <p className="mt-2 text-xs font-semibold text-[#8A641C]">
+                                支付保留至{" "}
+                                {formatDate(
+                                  getCounselingPaymentDeadline(
+                                    record.appointment
+                                  )
+                                )}
+                              </p>
+                            )}
                           </div>
-                          <p className="mt-2 truncate text-xs text-[#8A8176]">
-                            {record.appointment.id}
-                          </p>
-                          <p className="mt-2 text-sm text-[#6D746F]">
-                            时段 {formatDate(record.slot.startsAt)}
-                          </p>
+                          <div>
+                            <p className="text-xs text-[#8A8176]">
+                              {isPending ? "应付金额" : "咨询金额"}
+                            </p>
+                            <p className="mt-2 text-lg font-semibold text-[#A65F48]">
+                              {formatMoney(
+                                record.order?.payableAmount ??
+                                  record.counselor.sessionPrice
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-start gap-2 md:flex-col md:items-end">
+                            {isPending && (
+                              <button
+                                onClick={() =>
+                                  handleConfirmCounselingPayment(record)
+                                }
+                                disabled={isUpdating}
+                                className="inline-flex h-9 items-center justify-center rounded-full bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:bg-[#9AA19B]"
+                              >
+                                {isUpdating && (
+                                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                )}
+                                继续支付
+                              </button>
+                            )}
+                            {isPending && (
+                              <button
+                                onClick={() =>
+                                  handleCancelCounselingAppointment(record)
+                                }
+                                disabled={isUpdating}
+                                className="inline-flex h-9 items-center justify-center rounded-full border border-[#D8CDBC] px-3 text-xs font-semibold text-[#A65F48] transition hover:bg-[#FFF1EC] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                取消预约
+                              </button>
+                            )}
+                            {!isPending && (
+                              <button
+                                onClick={() =>
+                                  navigate(
+                                    `/consulting?counselorId=${encodeURIComponent(
+                                      record.counselor.id
+                                    )}`
+                                  )
+                                }
+                                className="inline-flex h-9 items-center justify-center rounded-full border border-[#D8CDBC] px-3 text-xs font-semibold text-[#41675A] transition hover:bg-[#F2F7EE]"
+                              >
+                                查看咨询师
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs text-[#8A8176]">咨询师</p>
-                          <p className="mt-2 text-lg font-semibold">
-                            {record.counselor.name}
-                          </p>
-                        </div>
-                        <div className="flex items-start md:justify-end">
-                          <button
-                            onClick={() => navigate("/consulting")}
-                            className="inline-flex h-9 items-center justify-center rounded-full border border-[#D8CDBC] px-3 text-xs font-semibold text-[#41675A] transition hover:bg-[#F2F7EE]"
-                          >
-                            查看咨询
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="p-5">
                     <EmptyState
                       icon={ReceiptText}
                       title="还没有订单"
-                      description="在课程列表或详情页下单后，待支付、已支付和退款中的订单都会出现在这里。"
-                      actionLabel="去选课程"
-                      onAction={() => navigate("/courses")}
+                      description="课程、会员和咨询预约的待支付、已确认和售后状态都会在这里集中管理。"
+                      actionLabel="去预约咨询"
+                      onAction={() => navigate("/consulting")}
                     />
                   </div>
                 )}
