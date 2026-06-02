@@ -182,6 +182,29 @@ export default function Consulting() {
     if (prefill) updateDraft(prefill);
   }, [latestAssessment, updateDraft]);
 
+  useEffect(() => {
+    const counselorId = new URLSearchParams(window.location.search).get(
+      "counselorId"
+    );
+    if (!counselorId || !availability || draft.counselorId === counselorId) {
+      return;
+    }
+
+    const counselor = availability.counselors.find(
+      item => item.id === counselorId
+    );
+    if (!counselor) return;
+
+    const firstSlot = availability.slots.find(
+      slot => slot.counselorId === counselorId && slot.available
+    );
+    updateDraft({
+      counselorId,
+      slotId: firstSlot?.id,
+      channel: firstSlot?.channel,
+    });
+  }, [availability, draft.counselorId, updateDraft]);
+
   const counselors = useMemo(() => {
     return [...(availability?.counselors ?? [])].sort(
       (a, b) =>
