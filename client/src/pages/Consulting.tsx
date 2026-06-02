@@ -2,15 +2,22 @@ import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
+  ArrowRight,
+  BadgeCheck,
+  BookOpen,
   CalendarCheck,
   CheckCircle2,
   Clock3,
   HeartHandshake,
   Loader2,
+  LockKeyhole,
   MessageCircle,
   ShieldCheck,
   Sparkles,
+  Star,
+  UserCheck,
   Video,
+  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 import AppFooter from "@/components/AppFooter";
@@ -89,6 +96,17 @@ const dimensionConcernMap = {
   risk: "crisis",
 } satisfies Record<AssessmentDimension, CounselingConcernTag>;
 
+const concernSpecialtyMap: Partial<
+  Record<CounselingConcernTag, CounselorSpecialty>
+> = {
+  emotion: "emotion",
+  relationship: "relationship",
+  family: "family",
+  adolescent: "adolescent",
+  workplace: "workplace",
+  self_growth: "personal_growth",
+};
+
 function formatSlot(slot: CounselingSlot) {
   const formatter = new Intl.DateTimeFormat("zh-CN", {
     month: "numeric",
@@ -106,6 +124,55 @@ function slotDuration(slot: CounselingSlot) {
     (Date.parse(slot.endsAt) - Date.parse(slot.startsAt)) / 60000
   );
   return `${minutes} 分钟`;
+}
+
+function formatNextSlot(slot?: CounselingSlot) {
+  return slot ? formatSlot(slot) : "等待排班";
+}
+
+function nextAvailableSlot(slots: CounselingSlot[]) {
+  return [...slots].sort(
+    (a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt)
+  )[0];
+}
+
+function counselorInitial(name: string) {
+  return Array.from(name.trim())[0] ?? "咨";
+}
+
+function matchedSpecialtyLabels(
+  counselor: Counselor,
+  tags: CounselingConcernTag[]
+) {
+  const matched = tags
+    .map(tag => concernSpecialtyMap[tag])
+    .filter((specialty): specialty is CounselorSpecialty =>
+      Boolean(specialty && counselor.specialties.includes(specialty))
+    );
+  const labels = (matched.length ? matched : counselor.specialties.slice(0, 2))
+    .map(specialty => specialtyCopy[specialty])
+    .filter((label, index, labels) => labels.indexOf(label) === index);
+
+  return labels.length ? labels : ["适合进一步沟通"];
+}
+
+function counselorFallbackCopy(counselor: Counselor) {
+  const specialtyLabels = counselor.specialties
+    .slice(0, 2)
+    .map(specialty => specialtyCopy[specialty])
+    .join("、");
+
+  return {
+    training:
+      counselor.trainingSummary ??
+      `${counselor.licenseSummary}，持续接受专业训练和督导。`,
+    style:
+      counselor.serviceStyle ??
+      "咨询节奏稳定，重视安全感、目标共识和每次会谈后的可执行行动。",
+    ideal:
+      counselor.idealClientDescription ??
+      `适合正在经历${specialtyLabels || "情绪压力"}，希望有人陪同梳理问题、降低内耗并建立行动路径的来访者。`,
+  };
 }
 
 function getAssessmentPrefill(result: AssessmentResult | undefined) {
@@ -133,19 +200,8 @@ function getAssessmentPrefill(result: AssessmentResult | undefined) {
 }
 
 function counselorScore(counselor: Counselor, tags: CounselingConcernTag[]) {
-  const tagSpecialtyMap: Partial<
-    Record<CounselingConcernTag, CounselorSpecialty>
-  > = {
-    emotion: "emotion",
-    relationship: "relationship",
-    family: "family",
-    adolescent: "adolescent",
-    workplace: "workplace",
-    self_growth: "personal_growth",
-  };
-
   return tags.reduce((score, tag) => {
-    const specialty = tagSpecialtyMap[tag];
+    const specialty = concernSpecialtyMap[tag];
     return specialty && counselor.specialties.includes(specialty)
       ? score + 1
       : score;
@@ -213,11 +269,48 @@ export default function Consulting() {
         b.yearsOfPractice - a.yearsOfPractice
     );
   }, [availability?.counselors, draft.concernTags]);
+  const slotSummaryByCounselor = useMemo(() => {
+    const summary = new Map<
+      string,
+      { count: number; nextSlot?: CounselingSlot }
+    >();
+    const slots = availability?.slots ?? [];
+
+    for (const counselor of availability?.counselors ?? []) {
+      const counselorSlots = slots.filter(
+        slot => slot.counselorId === counselor.id && slot.available
+      );
+      summary.set(counselor.id, {
+        count: counselorSlots.length,
+        nextSlot: nextAvailableSlot(counselorSlots),
+      });
+    }
+
+    return summary;
+  }, [availability?.counselors, availability?.slots]);
+  const selectedNextSlot = useMemo(
+    () => nextAvailableSlot(slotsForSelectedCounselor),
+    [slotsForSelectedCounselor]
+  );
+  const selectedMatchLabels = useMemo(
+    () =>
+      selectedCounselor
+        ? matchedSpecialtyLabels(selectedCounselor, draft.concernTags)
+        : [],
+    [draft.concernTags, selectedCounselor]
+  );
+  const selectedFallbackCopy = useMemo(
+    () => (selectedCounselor ? counselorFallbackCopy(selectedCounselor) : null),
+    [selectedCounselor]
+  );
 
   const handleCounselorSelect = (counselorId: string) => {
     const firstSlot = availability?.slots.find(
       slot => slot.counselorId === counselorId && slot.available
     );
+    const url = new URL(window.location.href);
+    url.searchParams.set("counselorId", counselorId);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
     updateDraft({
       counselorId,
       slotId: firstSlot?.id,
@@ -251,60 +344,87 @@ export default function Consulting() {
     <div className="min-h-screen bg-[#F9F5EE] text-[#243B35]">
       <AppHeader />
 
-      <main className="mx-auto max-w-[1240px] px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
-        <section className="overflow-hidden rounded-[32px] bg-[#243B35] text-white shadow-xl shadow-[#243B35]/10">
-          <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[1fr_360px] lg:p-10">
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <div className="flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/14 px-3 py-1 text-xs font-semibold text-white/78">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  私密预约
+      <main className="mx-auto max-w-[1240px] px-5 pb-28 pt-6 sm:px-8 lg:px-10 lg:pb-14 lg:pt-9">
+        <section className="border-b border-[#DED6C8] pb-6">
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+            className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[#6F8F83]">
+                心理咨询预约
+              </p>
+              <h1 className="mt-3 max-w-[760px] text-3xl font-semibold text-[#243B35] sm:text-4xl lg:text-5xl">
+                先看清咨询师，再选择适合的时间
+              </h1>
+              <p className="mt-4 max-w-[700px] text-sm leading-7 text-[#66716A]">
+                把测评线索、当前困扰和预约时间放在同一个页面里，帮助你在下单前快速判断“这个人是否适合我”。
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-[#D8CEC0] bg-[#FFFDF8] px-3 py-1.5 text-xs font-semibold text-[#5F6B64]">
+                  <ShieldCheck className="h-3.5 w-3.5 text-[#6F8F83]" />
+                  隐私最小化
                 </span>
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/14 px-3 py-1 text-xs font-semibold text-white/78">
-                  <CalendarCheck className="h-3.5 w-3.5" />
-                  咨询师排班
+                <span className="inline-flex items-center gap-2 rounded-full border border-[#D8CEC0] bg-[#FFFDF8] px-3 py-1.5 text-xs font-semibold text-[#5F6B64]">
+                  <CalendarCheck className="h-3.5 w-3.5 text-[#6F8F83]" />
+                  锁定可约时段
                 </span>
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/14 px-3 py-1 text-xs font-semibold text-white/78">
-                  <Sparkles className="h-3.5 w-3.5" />
+                <span className="inline-flex items-center gap-2 rounded-full border border-[#D8CEC0] bg-[#FFFDF8] px-3 py-1.5 text-xs font-semibold text-[#5F6B64]">
+                  <Sparkles className="h-3.5 w-3.5 text-[#6F8F83]" />
                   可承接测评结果
                 </span>
               </div>
-              <h1 className="mt-7 text-3xl font-semibold tracking-normal sm:text-4xl lg:text-5xl">
-                咨询预约
-              </h1>
-              <p className="mt-4 max-w-[680px] text-sm leading-7 text-white/72">
-                选择适合的咨询师和时间，把测评结果、当前困扰和紧急程度整理成一次清晰的预约意向。
-              </p>
-            </motion.div>
+            </div>
 
-            <div className="rounded-[28px] border border-white/12 bg-white/8 p-5">
-              <p className="text-sm font-semibold text-[#DDE8D9]">当前路径</p>
-              <div className="mt-5 space-y-4 text-sm text-white/74">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#DDE8D9] text-[#243B35]">
-                    1
-                  </span>
-                  选择咨询师与时间
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/12 text-white">
-                    2
-                  </span>
-                  补充咨询前信息
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/12 text-white">
-                    3
-                  </span>
-                  生成预约单与后续步骤
-                </div>
+            <div className="rounded-[24px] border border-[#D8CEC0] bg-[#FFFDF8] p-4">
+              <p className="text-sm font-semibold text-[#243B35]">预约进度</p>
+              <div className="mt-4 grid gap-2">
+                {[
+                  {
+                    label: "选择咨询师",
+                    done: Boolean(selectedCounselor),
+                  },
+                  {
+                    label: "选择可约时段",
+                    done: Boolean(selectedSlot),
+                  },
+                  {
+                    label: "补充预约信息",
+                    done: draft.concernTags.length > 0,
+                  },
+                ].map((step, index) => (
+                  <div
+                    key={step.label}
+                    className="flex items-center justify-between gap-3 rounded-[16px] bg-[#F7F1E7] px-3 py-2"
+                  >
+                    <span className="flex items-center gap-2 text-sm font-semibold text-[#40534B]">
+                      <span
+                        className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${
+                          step.done
+                            ? "bg-[#6F8F83] text-white"
+                            : "bg-white text-[#7A827C]"
+                        }`}
+                      >
+                        {step.done ? (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        ) : (
+                          index + 1
+                        )}
+                      </span>
+                      {step.label}
+                    </span>
+                    {step.done && (
+                      <span className="text-xs font-semibold text-[#6F8F83]">
+                        已完成
+                      </span>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
-          </div>
+          </motion.div>
         </section>
 
         {latestAssessment && (
@@ -336,14 +456,14 @@ export default function Consulting() {
           </div>
         )}
 
-        <section className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_390px]">
-          <div className="space-y-8">
-            <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5 sm:p-6">
-              <div className="flex items-center justify-between gap-4">
+        <section className="mt-7 grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
+          <div className="min-w-0">
+            <section className="rounded-[26px] border border-[#E4DCCF] bg-[#FFFDF8] p-4 shadow-sm shadow-[#243B35]/5 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold text-[#6F8F83]">咨询师</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[#243B35]">
-                    选择一个适合当前议题的人
+                  <h2 className="mt-1 text-2xl font-semibold text-[#243B35]">
+                    推荐咨询师
                   </h2>
                 </div>
                 {isLoading && (
@@ -351,47 +471,69 @@ export default function Consulting() {
                 )}
               </div>
 
-              <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
                 {counselors.map(counselor => {
                   const selected = draft.counselorId === counselor.id;
+                  const slotSummary = slotSummaryByCounselor.get(counselor.id);
+                  const matchLabels = matchedSpecialtyLabels(
+                    counselor,
+                    draft.concernTags
+                  );
                   return (
                     <button
                       key={counselor.id}
                       onClick={() => handleCounselorSelect(counselor.id)}
-                      className={`min-h-[220px] rounded-[24px] border p-5 text-left transition ${
+                      className={`min-h-[168px] rounded-[20px] border p-4 text-left transition ${
                         selected
-                          ? "border-[#6F8F83] bg-[#E6EDDF]"
+                          ? "border-[#6F8F83] bg-[#E6EDDF] shadow-sm shadow-[#243B35]/8"
                           : "border-[#E4DCCF] bg-[#FFFDF8] hover:border-[#BFD0B8] hover:bg-white"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-xl font-semibold text-[#243B35]">
+                      <div className="flex items-start gap-3">
+                        {counselor.avatarUrl ? (
+                          <img
+                            src={counselor.avatarUrl}
+                            alt=""
+                            className="h-12 w-12 shrink-0 rounded-[16px] object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[#243B35] text-lg font-semibold text-white">
+                            {counselorInitial(counselor.name)}
+                          </span>
+                        )}
+                        <span className="min-w-0">
+                          <span className="block truncate text-base font-semibold text-[#243B35]">
                             {counselor.name}
-                          </p>
-                          <p className="mt-1 text-sm text-[#6D746F]">
+                          </span>
+                          <span className="mt-1 block line-clamp-1 text-xs text-[#6D746F]">
                             {counselor.title}
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-[#4F7068]">
-                          {counselor.rating?.toFixed(1) ?? "新"}
+                          </span>
                         </span>
                       </div>
-                      <p className="mt-4 text-sm leading-6 text-[#5F6B64]">
-                        {counselor.introduction}
-                      </p>
-                      <div className="mt-5 flex flex-wrap gap-2">
-                        {counselor.specialties.map(specialty => (
+                      <div className="mt-4 flex flex-wrap gap-1.5">
+                        {matchLabels.slice(0, 2).map(label => (
                           <span
-                            key={specialty}
-                            className="rounded-full bg-[#F5EFE5] px-3 py-1 text-xs font-semibold text-[#65716A]"
+                            key={label}
+                            className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-[#5F6B64]"
                           >
-                            {specialtyCopy[specialty]}
+                            {label}
                           </span>
                         ))}
                       </div>
-                      <div className="mt-5 flex items-center justify-between border-t border-[#E4DCCF] pt-4 text-xs text-[#6D746F]">
-                        <span>{counselor.licenseSummary}</span>
+                      <div className="mt-4 grid gap-1 text-xs leading-5 text-[#6D746F]">
+                        <span>
+                          最近可约 {formatNextSlot(slotSummary?.nextSlot)}
+                        </span>
+                        <span>
+                          可约 {slotSummary?.count ?? 0} 个时段 ·{" "}
+                          {counselor.yearsOfPractice} 年经验
+                        </span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between border-t border-[#E4DCCF] pt-3 text-xs">
+                        <span className="inline-flex items-center gap-1 font-semibold text-[#6F8F83]">
+                          <Star className="h-3.5 w-3.5 fill-[#6F8F83]" />
+                          {counselor.rating?.toFixed(1) ?? "新咨询师"}
+                        </span>
                         <span className="font-semibold text-[#243B35]">
                           ¥{counselor.sessionPrice}
                         </span>
@@ -400,56 +542,227 @@ export default function Consulting() {
                   );
                 })}
               </div>
-            </div>
+            </section>
 
-            <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-5 shadow-sm shadow-[#243B35]/5 sm:p-6">
-              <p className="text-sm font-semibold text-[#6F8F83]">可预约时段</p>
-              <h2 className="mt-2 text-2xl font-semibold text-[#243B35]">
-                选择一个能安心说话的时间
-              </h2>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {slotsForSelectedCounselor.map(slot => {
-                  const selected = draft.slotId === slot.id;
-                  const ChannelIcon = channelCopy[slot.channel].icon;
-                  return (
-                    <button
-                      key={slot.id}
-                      onClick={() => handleSlotSelect(slot)}
-                      className={`rounded-[22px] border p-4 text-left transition ${
-                        selected
-                          ? "border-[#6F8F83] bg-[#E6EDDF]"
-                          : "border-[#E4DCCF] bg-[#FFFDF8] hover:border-[#BFD0B8] hover:bg-white"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-[#243B35]">
-                          {formatSlot(slot)}
-                        </span>
-                        <ChannelIcon className="h-4 w-4 text-[#6F8F83]" />
+            {selectedCounselor && selectedFallbackCopy && (
+              <motion.section
+                key={selectedCounselor.id}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                className="mt-6 overflow-hidden rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] shadow-sm shadow-[#243B35]/5"
+              >
+                <div className="grid lg:grid-cols-[280px_minmax(0,1fr)]">
+                  <div className="bg-[#243B35] p-6 text-white">
+                    {selectedCounselor.avatarUrl ? (
+                      <img
+                        src={selectedCounselor.avatarUrl}
+                        alt=""
+                        className="h-32 w-32 rounded-[28px] object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-32 w-32 items-center justify-center rounded-[28px] bg-white/12 text-5xl font-semibold">
+                        {counselorInitial(selectedCounselor.name)}
                       </div>
-                      <p className="mt-3 text-xs text-[#6D746F]">
-                        {channelCopy[slot.channel].label} · {slotDuration(slot)}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
+                    )}
+                    <h2 className="mt-5 text-2xl font-semibold">
+                      {selectedCounselor.name}
+                    </h2>
+                    <p className="mt-2 text-sm leading-6 text-white/72">
+                      {selectedCounselor.title}
+                    </p>
+                    <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-[18px] bg-white/10 p-3">
+                        <p className="text-xs text-white/58">评分</p>
+                        <p className="mt-1 font-semibold">
+                          {selectedCounselor.rating?.toFixed(1) ?? "新"}
+                        </p>
+                      </div>
+                      <div className="rounded-[18px] bg-white/10 p-3">
+                        <p className="text-xs text-white/58">价格</p>
+                        <p className="mt-1 font-semibold">
+                          ¥{selectedCounselor.sessionPrice}
+                        </p>
+                      </div>
+                      <div className="rounded-[18px] bg-white/10 p-3">
+                        <p className="text-xs text-white/58">经验</p>
+                        <p className="mt-1 font-semibold">
+                          {selectedCounselor.yearsOfPractice} 年
+                        </p>
+                      </div>
+                      <div className="rounded-[18px] bg-white/10 p-3">
+                        <p className="text-xs text-white/58">个案小时</p>
+                        <p className="mt-1 font-semibold">
+                          {selectedCounselor.caseHours
+                            ? `${selectedCounselor.caseHours}+`
+                            : "持续积累"}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="mt-5 rounded-[18px] bg-[#DDE8D9] px-4 py-3 text-xs font-semibold leading-5 text-[#243B35]">
+                      最近可约 {formatNextSlot(selectedNextSlot)}
+                    </p>
+                  </div>
 
-              {!slotsForSelectedCounselor.length && (
-                <div className="mt-6 rounded-[22px] border border-dashed border-[#D8CEC0] p-6 text-sm text-[#6D746F]">
-                  当前咨询师暂无可预约时段，请选择其他咨询师。
+                  <div className="p-5 sm:p-6">
+                    <div className="flex flex-wrap gap-2">
+                      {selectedCounselor.specialties.map(specialty => (
+                        <span
+                          key={specialty}
+                          className="rounded-full bg-[#F5EFE5] px-3 py-1 text-xs font-semibold text-[#65716A]"
+                        >
+                          {specialtyCopy[specialty]}
+                        </span>
+                      ))}
+                    </div>
+                    <h3 className="mt-5 text-2xl font-semibold text-[#243B35]">
+                      {selectedMatchLabels.join("、")}议题可优先了解
+                    </h3>
+                    <p className="mt-3 text-sm leading-7 text-[#5F6B64]">
+                      {selectedCounselor.introduction}
+                    </p>
+
+                    <div className="mt-6 grid gap-3 md:grid-cols-3">
+                      {[
+                        {
+                          icon: BadgeCheck,
+                          label: "资质摘要",
+                          value: selectedCounselor.licenseSummary,
+                        },
+                        {
+                          icon: BookOpen,
+                          label: "训练背景",
+                          value: selectedFallbackCopy.training,
+                        },
+                        {
+                          icon: UserCheck,
+                          label: "咨询风格",
+                          value: selectedFallbackCopy.style,
+                        },
+                      ].map(item => {
+                        const Icon = item.icon;
+                        return (
+                          <div
+                            key={item.label}
+                            className="rounded-[20px] border border-[#E4DCCF] bg-[#FFFCF6] p-4"
+                          >
+                            <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                              <Icon className="h-4 w-4 text-[#6F8F83]" />
+                              {item.label}
+                            </div>
+                            <p className="mt-3 line-clamp-4 text-xs leading-5 text-[#6D746F]">
+                              {item.value}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 rounded-[20px] border border-[#E4DCCF] bg-[#FFFCF6] p-4">
+                      <p className="text-sm font-semibold text-[#243B35]">
+                        适合人群
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-[#5F6B64]">
+                        {selectedFallbackCopy.ideal}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
+
+                <div className="border-t border-[#E4DCCF] p-5 sm:p-6">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-[#6F8F83]">
+                        可预约时段
+                      </p>
+                      <h3 className="mt-1 text-2xl font-semibold text-[#243B35]">
+                        选一个能安心说话的时间
+                      </h3>
+                    </div>
+                    <p className="text-xs leading-5 text-[#6D746F]">
+                      提交后保留 {COUNSELING_PAYMENT_HOLD_MINUTES} 分钟待支付
+                    </p>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {slotsForSelectedCounselor.map(slot => {
+                      const selected = draft.slotId === slot.id;
+                      const ChannelIcon = channelCopy[slot.channel].icon;
+                      return (
+                        <button
+                          key={slot.id}
+                          onClick={() => handleSlotSelect(slot)}
+                          className={`rounded-[20px] border p-4 text-left transition ${
+                            selected
+                              ? "border-[#6F8F83] bg-[#E6EDDF]"
+                              : "border-[#E4DCCF] bg-[#FFFDF8] hover:border-[#BFD0B8] hover:bg-white"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-semibold text-[#243B35]">
+                              {formatSlot(slot)}
+                            </span>
+                            <ChannelIcon className="h-4 w-4 shrink-0 text-[#6F8F83]" />
+                          </div>
+                          <p className="mt-3 text-xs text-[#6D746F]">
+                            {channelCopy[slot.channel].label} ·{" "}
+                            {slotDuration(slot)}
+                          </p>
+                          {selected && (
+                            <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#6F8F83]">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              已选择
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {!slotsForSelectedCounselor.length && (
+                    <div className="mt-5 rounded-[20px] border border-dashed border-[#D8CEC0] p-6 text-sm text-[#6D746F]">
+                      当前咨询师暂无可预约时段，请选择其他咨询师。
+                    </div>
+                  )}
+                </div>
+              </motion.section>
+            )}
+
+            {!selectedCounselor && !isLoading && (
+              <div className="mt-6 rounded-[24px] border border-dashed border-[#D8CEC0] p-8 text-center text-sm text-[#6D746F]">
+                暂无可预约咨询师，请稍后再试。
+              </div>
+            )}
           </div>
 
           <aside className="space-y-6 lg:sticky lg:top-[86px] lg:self-start">
             <div className="rounded-[28px] border border-[#E4DCCF] bg-[#FFFDF8] p-6 shadow-sm shadow-[#243B35]/5">
-              <p className="text-sm font-semibold text-[#6F8F83]">咨询前信息</p>
+              <p className="text-sm font-semibold text-[#6F8F83]">预约单</p>
               <h2 className="mt-2 text-xl font-semibold text-[#243B35]">
-                让咨询师先知道重点
+                确认咨询信息
               </h2>
+
+              <div className="mt-5 rounded-[20px] bg-[#F5EFE5] p-4">
+                {selectedCounselor && selectedSlot ? (
+                  <div className="flex items-start gap-3">
+                    <Clock3 className="mt-0.5 h-5 w-5 text-[#6F8F83]" />
+                    <div>
+                      <p className="text-sm font-semibold text-[#243B35]">
+                        {selectedCounselor.name} · {formatSlot(selectedSlot)}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-[#6D746F]">
+                        {channelCopy[selectedSlot.channel].label}，
+                        {slotDuration(selectedSlot)}，订单金额 ¥
+                        {selectedCounselor.sessionPrice}。
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm leading-6 text-[#6D746F]">
+                    先选择咨询师和可预约时段，系统会在这里生成预约摘要。
+                  </p>
+                )}
+              </div>
 
               <div className="mt-6">
                 <p className="text-xs font-semibold text-[#68736D]">主要困扰</p>
@@ -528,23 +841,14 @@ export default function Consulting() {
                 />
               </label>
 
-              {selectedCounselor && selectedSlot && (
-                <div className="mt-6 rounded-[20px] bg-[#F5EFE5] p-4">
-                  <div className="flex items-start gap-3">
-                    <Clock3 className="mt-0.5 h-5 w-5 text-[#6F8F83]" />
-                    <div>
-                      <p className="text-sm font-semibold text-[#243B35]">
-                        {selectedCounselor.name} · {formatSlot(selectedSlot)}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-[#6D746F]">
-                        {channelCopy[selectedSlot.channel].label}，
-                        {slotDuration(selectedSlot)}，提交后会保留{" "}
-                        {COUNSELING_PAYMENT_HOLD_MINUTES} 分钟待支付。
-                      </p>
-                    </div>
-                  </div>
+              <div className="mt-5 rounded-[18px] border border-[#E4DCCF] bg-[#FFFCF6] px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <LockKeyhole className="mt-0.5 h-4 w-4 text-[#6F8F83]" />
+                  <p className="text-xs leading-5 text-[#6D746F]">
+                    咨询前信息只用于本次预约准备，不在运营后台暴露原文；如出现紧急风险，请优先联系线下紧急支持。
+                  </p>
                 </div>
-              )}
+              </div>
 
               <button
                 onClick={handleSubmit}
@@ -559,7 +863,10 @@ export default function Consulting() {
                 {isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                {appointmentResult ? "预约单已生成" : "提交预约意向"}
+                {appointmentResult ? "预约单已生成" : "立即预约并锁定时段"}
+                {!isSubmitting && !appointmentResult && (
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                )}
               </button>
             </div>
 
@@ -608,6 +915,30 @@ export default function Consulting() {
             )}
           </aside>
         </section>
+
+        {selectedCounselor && selectedSlot && !appointmentResult && (
+          <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#D8CEC0] bg-[#FFFDF8]/95 px-4 py-3 shadow-2xl shadow-[#243B35]/12 backdrop-blur lg:hidden">
+            <div className="mx-auto flex max-w-[640px] items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#243B35]">
+                  {selectedCounselor.name} · {formatSlot(selectedSlot)}
+                </p>
+                <p className="mt-1 flex items-center gap-1 text-xs text-[#6D746F]">
+                  <Wallet className="h-3.5 w-3.5" />¥
+                  {selectedCounselor.sessionPrice} ·{" "}
+                  {channelCopy[selectedSlot.channel].label}
+                </p>
+              </div>
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="inline-flex h-11 shrink-0 items-center justify-center rounded-full bg-[#243B35] px-4 text-sm font-semibold text-white disabled:bg-[#9AA19B]"
+              >
+                {isSubmitting ? "提交中" : "预约"}
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
       <AppFooter />
