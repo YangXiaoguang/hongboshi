@@ -63,8 +63,10 @@ import {
 } from "@/features/courses";
 import {
   getCounselingPaymentDeadline,
+  httpCounselingRepository,
   useCounselingAppointments,
   type CounselingAppointmentRecord,
+  type CounselingSlot,
 } from "@/features/counseling";
 
 type PersonalTab = "account" | "orders" | "messages" | "favorites" | "coupons";
@@ -219,6 +221,30 @@ function formatDate(value?: string) {
   }).format(date);
 }
 
+function formatCounselingSlotRange(
+  slot: Pick<CounselingSlot, "startsAt" | "endsAt">
+) {
+  const startsAt = new Date(slot.startsAt);
+  const endsAt = new Date(slot.endsAt);
+  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+    return "时间待确认";
+  }
+
+  const startCopy = new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(startsAt);
+  const endCopy = new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(endsAt);
+
+  return `${startCopy} - ${endCopy}`;
+}
+
 function couponValue(rule: CourseMarketingRule) {
   if (rule.discount.kind === "fixed_amount") {
     return rule.discount.amount > 0
@@ -244,6 +270,28 @@ const couponStatusTone = {
   used: "bg-[#EFEAE1] text-[#7B817C]",
   expired: "bg-[#F4E5DE] text-[#A65F48]",
 } satisfies Record<UserCouponDisplayStatus, string>;
+
+const counselingServicePrepItems = [
+  {
+    icon: Clock3,
+    title: "提前 10 分钟",
+    description: "确认网络、耳机和安静空间，避免临近开始再切换设备。",
+  },
+  {
+    icon: FileText,
+    title: "准备 2-3 个问题",
+    description: "把最想讨论的困扰写下来，咨询会更容易进入重点。",
+  },
+  {
+    icon: ShieldCheck,
+    title: "隐私边界清晰",
+    description: "咨询师只会看到预约所需摘要，完整测评和敏感内容不外露。",
+  },
+] satisfies {
+  icon: ElementType;
+  title: string;
+  description: string;
+}[];
 
 function courseForOrder(order: Order, courses: Course[]) {
   const item = order.items[0];
@@ -391,6 +439,15 @@ export default function PersonalCenter() {
   >();
   const [isMarkingNotificationsRead, setIsMarkingNotificationsRead] =
     useState(false);
+  const [rescheduleAppointmentId, setRescheduleAppointmentId] = useState<
+    string | undefined
+  >();
+  const [rescheduleSlots, setRescheduleSlots] = useState<CounselingSlot[]>([]);
+  const [selectedRescheduleSlotId, setSelectedRescheduleSlotId] = useState<
+    string | undefined
+  >();
+  const [isRescheduleLoading, setIsRescheduleLoading] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string | undefined>();
   const { user, isLoggedIn, openLoginModal, updateProfile } = useAuth();
   const {
     accessState,
@@ -673,6 +730,7 @@ export default function PersonalCenter() {
       setFocusedOrderId(undefined);
       setFocusedAppointmentId(undefined);
       setSelectedOrderId(undefined);
+      closeCounselingReschedulePanel();
     }
     window.history.replaceState(null, "", `/me?tab=${tab}`);
   };
@@ -776,6 +834,90 @@ export default function PersonalCenter() {
         description: "原咨询时段已释放，可以重新选择合适的咨询师和时间。",
       });
     }
+  };
+
+  const closeCounselingReschedulePanel = () => {
+    setRescheduleAppointmentId(undefined);
+    setRescheduleSlots([]);
+    setSelectedRescheduleSlotId(undefined);
+    setRescheduleError(undefined);
+  };
+
+  const openCounselingReschedulePanel = async (
+    record: CounselingAppointmentRecord
+  ) => {
+    if (rescheduleAppointmentId === record.appointment.id) {
+      closeCounselingReschedulePanel();
+      return;
+    }
+
+    setRescheduleAppointmentId(record.appointment.id);
+    setRescheduleSlots([]);
+    setSelectedRescheduleSlotId(undefined);
+    setRescheduleError(undefined);
+    setIsRescheduleLoading(true);
+
+    try {
+      const availability = await httpCounselingRepository.loadAvailability();
+      const now = Date.now();
+      const nextSlots = availability.slots
+        .filter(slot => {
+          const startsAt = Date.parse(slot.startsAt);
+          return (
+            slot.available &&
+            slot.id !== record.slot.id &&
+            slot.counselorId === record.counselor.id &&
+            !Number.isNaN(startsAt) &&
+            startsAt > now
+          );
+        })
+        .sort(
+          (left, right) =>
+            Date.parse(left.startsAt) - Date.parse(right.startsAt)
+        );
+
+      setRescheduleSlots(nextSlots);
+      setSelectedRescheduleSlotId(nextSlots[0]?.id);
+      if (nextSlots.length === 0) {
+        setRescheduleError(
+          "当前咨询师暂无可改期时段，可以回咨询页重新选择咨询师和时间。"
+        );
+      }
+    } catch (err) {
+      setRescheduleError(
+        err instanceof Error ? err.message : "可改期时间暂时无法读取"
+      );
+    } finally {
+      setIsRescheduleLoading(false);
+    }
+  };
+
+  const handleRescheduleCounselingAppointment = async (
+    record: CounselingAppointmentRecord
+  ) => {
+    if (!selectedRescheduleSlotId) {
+      toast("请选择新的咨询时间", {
+        description: "选择一个可预约时段后再确认改期。",
+      });
+      return;
+    }
+
+    const result = await updateAppointment(record.appointment.id, {
+      action: "reschedule",
+      slotId: selectedRescheduleSlotId,
+    });
+    if (result) {
+      closeCounselingReschedulePanel();
+      focusAppointment(result.appointment.id);
+      toast("咨询时间已调整", {
+        description: `新的服务时间：${formatCounselingSlotRange(result.slot)}`,
+      });
+      return;
+    }
+
+    toast("改期失败", {
+      description: "当前时段可能已被占用，请刷新后再试。",
+    });
   };
 
   const handleSubmitAfterSalesRequest = async (
@@ -1258,13 +1400,20 @@ export default function PersonalCenter() {
                     {appointments.map(record => {
                       const isPending =
                         record.appointment.status === "pending_payment";
+                      const isScheduled =
+                        record.appointment.status === "scheduled";
                       const isUpdating =
                         updatingAppointmentId === record.appointment.id;
+                      const isRescheduleOpen =
+                        rescheduleAppointmentId === record.appointment.id;
+                      const selectedRescheduleSlot = rescheduleSlots.find(
+                        slot => slot.id === selectedRescheduleSlotId
+                      );
                       return (
                         <div
                           id={appointmentElementId(record.appointment.id)}
                           key={record.appointment.id}
-                          className={`grid gap-4 px-5 py-5 transition md:grid-cols-[minmax(0,1fr)_140px_168px] ${
+                          className={`grid gap-4 px-5 py-5 transition md:grid-cols-[minmax(0,1fr)_140px_176px] ${
                             focusedAppointmentId === record.appointment.id
                               ? "bg-[#FFF7EC] ring-1 ring-inset ring-[#D8B271]"
                               : ""
@@ -1293,7 +1442,7 @@ export default function PersonalCenter() {
                               {record.appointment.id}
                             </p>
                             <p className="mt-2 text-sm text-[#6D746F]">
-                              时段 {formatDate(record.slot.startsAt)} ·{" "}
+                              时段 {formatCounselingSlotRange(record.slot)} ·{" "}
                               {counselingChannelCopy[record.slot.channel] ??
                                 "咨询服务"}
                             </p>
@@ -1345,6 +1494,22 @@ export default function PersonalCenter() {
                                 取消预约
                               </button>
                             )}
+                            {isScheduled && (
+                              <button
+                                onClick={() =>
+                                  openCounselingReschedulePanel(record)
+                                }
+                                disabled={isUpdating || isRescheduleLoading}
+                                className="inline-flex h-9 items-center justify-center rounded-full bg-[#243B35] px-3 text-xs font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:bg-[#9AA19B]"
+                              >
+                                {isRescheduleLoading && isRescheduleOpen ? (
+                                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                                )}
+                                {isRescheduleOpen ? "收起改期" : "调整时间"}
+                              </button>
+                            )}
                             {!isPending && (
                               <button
                                 onClick={() =>
@@ -1360,6 +1525,149 @@ export default function PersonalCenter() {
                               </button>
                             )}
                           </div>
+                          {isScheduled && (
+                            <div className="border-t border-[#E8DED0] pt-4 md:col-span-3">
+                              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                  <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                                    <CheckCircle2 className="h-4 w-4 text-[#41675A]" />
+                                    服务前准备
+                                  </div>
+                                  <p className="mt-1 text-sm leading-6 text-[#6D746F]">
+                                    {record.slot.channel === "offline"
+                                      ? "线下咨询请提前确认到达路线；如需调整时间，可以在这里先发起改期。"
+                                      : "咨询开始前保持设备在线；如临时不便，可以在这里先查看可改期时间。"}
+                                  </p>
+                                </div>
+                                <p className="text-xs leading-5 text-[#8A8176] lg:max-w-[220px] lg:text-right">
+                                  咨询师：{record.counselor.title} ·{" "}
+                                  {formatMoney(record.counselor.sessionPrice)}
+                                  /次
+                                </p>
+                              </div>
+                              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                                {counselingServicePrepItems.map(item => {
+                                  const Icon = item.icon;
+                                  return (
+                                    <div
+                                      key={item.title}
+                                      className="rounded-lg bg-[#F8F3EA] px-3 py-3"
+                                    >
+                                      <div className="flex items-center gap-2 text-sm font-semibold text-[#243B35]">
+                                        <Icon className="h-4 w-4 text-[#41675A]" />
+                                        {item.title}
+                                      </div>
+                                      <p className="mt-1 text-xs leading-5 text-[#6D746F]">
+                                        {item.description}
+                                      </p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                          {isScheduled && isRescheduleOpen && (
+                            <div className="border-t border-[#E8DED0] pt-4 md:col-span-3">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-[#243B35]">
+                                    选择新的咨询时间
+                                  </h4>
+                                  <p className="mt-1 text-sm leading-6 text-[#6D746F]">
+                                    仅展示当前咨询师仍可预约的时间，确认后原时段会自动释放。
+                                  </p>
+                                </div>
+                                {selectedRescheduleSlot && (
+                                  <p className="text-xs font-semibold text-[#41675A]">
+                                    已选{" "}
+                                    {formatCounselingSlotRange(
+                                      selectedRescheduleSlot
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+
+                              {isRescheduleLoading ? (
+                                <div className="mt-4 flex items-center gap-2 text-sm text-[#6D746F]">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  正在同步可改期时间
+                                </div>
+                              ) : rescheduleSlots.length ? (
+                                <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                  {rescheduleSlots.slice(0, 9).map(slot => (
+                                    <button
+                                      key={slot.id}
+                                      onClick={() =>
+                                        setSelectedRescheduleSlotId(slot.id)
+                                      }
+                                      className={`rounded-lg border px-3 py-3 text-left text-sm transition ${
+                                        selectedRescheduleSlotId === slot.id
+                                          ? "border-[#41675A] bg-[#E6EDDF] text-[#243B35]"
+                                          : "border-[#D8CDBC] bg-[#FFFDF8] text-[#6D746F] hover:bg-[#F8F3EA]"
+                                      }`}
+                                    >
+                                      <span className="font-semibold">
+                                        {formatCounselingSlotRange(slot)}
+                                      </span>
+                                      <span className="mt-1 block text-xs">
+                                        {counselingChannelCopy[slot.channel] ??
+                                          "咨询服务"}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="mt-4 rounded-lg bg-[#F8F3EA] px-4 py-4 text-sm leading-6 text-[#6D746F]">
+                                  {rescheduleError ??
+                                    "当前咨询师暂无可改期时段。"}
+                                  <button
+                                    onClick={() =>
+                                      navigate(
+                                        `/consulting?counselorId=${encodeURIComponent(
+                                          record.counselor.id
+                                        )}`
+                                      )
+                                    }
+                                    className="ml-2 font-semibold text-[#41675A] underline underline-offset-4"
+                                  >
+                                    回到咨询页
+                                  </button>
+                                </div>
+                              )}
+
+                              {rescheduleError &&
+                                rescheduleSlots.length > 0 && (
+                                  <p className="mt-3 text-xs font-semibold text-[#A65F48]">
+                                    {rescheduleError}
+                                  </p>
+                                )}
+
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                <button
+                                  onClick={() =>
+                                    handleRescheduleCounselingAppointment(
+                                      record
+                                    )
+                                  }
+                                  disabled={
+                                    !selectedRescheduleSlotId || isUpdating
+                                  }
+                                  className="inline-flex h-10 items-center justify-center rounded-full bg-[#243B35] px-4 text-sm font-semibold text-white transition hover:bg-[#315047] disabled:cursor-not-allowed disabled:bg-[#9AA19B]"
+                                >
+                                  {isUpdating && (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  )}
+                                  确认改期
+                                </button>
+                                <button
+                                  onClick={closeCounselingReschedulePanel}
+                                  className="inline-flex h-10 items-center justify-center rounded-full border border-[#D8CDBC] px-4 text-sm font-semibold text-[#41675A] transition hover:bg-[#F2F7EE]"
+                                >
+                                  先不调整
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
